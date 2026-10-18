@@ -21,6 +21,8 @@ interface Layer {
 
 const layers: Layer[] = [];
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+/** How the platform names the key behind "Mod+": Ctrl, or ⌘ on macOS. */
+export const MOD_KEY = isMac ? "⌘" : "Ctrl";
 
 export function useShortcuts(shortcuts: Shortcuts, options: { modal?: boolean } = {}) {
   const keys = useRef(shortcuts);
@@ -87,6 +89,9 @@ export const SHORTCUTS: { keys: string; action: string }[] = [
   { keys: "s", action: "Flag or unflag" },
   { keys: "Shift+U", action: "Mark unread" },
   { keys: "Shift+I", action: "Mark read" },
-  { keys: "z", action: "Undo, while the undo bar shows" },
+  { keys: "z", action: "Undo, while the undo bar shows (also undo send)" },
+  { keys: "c", action: "New message" },
+  { keys: "r / a / f", action: "Reply, reply all, forward" },
+  { keys: `${MOD_KEY}+Enter`, action: "Send, in the composer" },
   { keys: "?", action: "Show or hide these shortcuts" },
 ];

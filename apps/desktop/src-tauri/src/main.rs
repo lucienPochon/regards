@@ -16,9 +16,10 @@ use regards_core::secret::Secret;
 use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity, DeleteResult,
+    DraftCreateParams, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView,
     MailboxListResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef,
-    MoveParams, MoveResult, Principal, ServerSettings, SetFlagsParams, SetFlagsResult, SyncResult, ThreadView,
-    UndoParams, UndoResult, methods,
+    MoveParams, MoveResult, OutboxListResult, OutboxRef, OutboxUndoResult, Principal, ServerSettings, SetFlagsParams,
+    SetFlagsResult, SyncResult, ThreadView, UndoParams, UndoResult, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -339,6 +340,107 @@ async fn undo_apply(bridge: State<'_, Bridge>, id: i64) -> Result<UndoResult, St
         .map_err(describe)
 }
 
+/// A new, empty message from an account.
+#[tauri::command]
+async fn draft_create(bridge: State<'_, Bridge>, account_id: String) -> Result<DraftView, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::DRAFT_CREATE,
+            DraftCreateParams {
+                account_id,
+                ..DraftCreateParams::default()
+            },
+        )
+        .await
+        .map_err(describe)
+}
+
+/// A reply (or reply all), addressed and quoted by the daemon.
+#[tauri::command]
+async fn draft_reply(bridge: State<'_, Bridge>, message_id: i64, all: bool) -> Result<DraftView, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::DRAFT_REPLY, DraftReplyParams { message_id, all })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn draft_forward(bridge: State<'_, Bridge>, message_id: i64) -> Result<DraftView, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::DRAFT_FORWARD, MessageRef { id: message_id })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn draft_get(bridge: State<'_, Bridge>, id: i64) -> Result<DraftView, String> {
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::DRAFT_GET, DraftRef { id }).await.map_err(describe)
+}
+
+/// Autosave: the whole of what the draft says.
+#[tauri::command]
+async fn draft_update(bridge: State<'_, Bridge>, draft: DraftUpdateParams) -> Result<DraftView, String> {
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::DRAFT_UPDATE, draft).await.map_err(describe)
+}
+
+#[tauri::command]
+async fn draft_delete(bridge: State<'_, Bridge>, id: i64) -> Result<Value, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::DRAFT_DELETE, DraftRef { id })
+        .await
+        .map_err(describe)
+}
+
+/// Queue the draft; it goes once the undo window is over.
+#[tauri::command]
+async fn draft_send(bridge: State<'_, Bridge>, id: i64, undo_seconds: Option<u32>) -> Result<DraftSendResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::DRAFT_SEND, DraftSendParams { id, undo_seconds })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn outbox_list(bridge: State<'_, Bridge>) -> Result<OutboxListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::OUTBOX_LIST, Value::Null).await.map_err(describe)
+}
+
+/// Undo send, or edit a failed message: returns the draft to reopen.
+#[tauri::command]
+async fn outbox_undo(bridge: State<'_, Bridge>, id: i64) -> Result<OutboxUndoResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::OUTBOX_UNDO, OutboxRef { id })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn outbox_send_again(bridge: State<'_, Bridge>, id: i64) -> Result<Value, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::OUTBOX_SEND_AGAIN, OutboxRef { id })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn outbox_dismiss(bridge: State<'_, Bridge>, id: i64) -> Result<Value, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::OUTBOX_DISMISS, OutboxRef { id })
+        .await
+        .map_err(describe)
+}
+
 /// Keep one subscribed connection to the daemon and re-emit its change
 /// notifications to the WebView as `changes` events (ADR-0007). Reconnects
 /// with backoff when the daemon restarts or is replaced.
@@ -419,7 +521,18 @@ fn main() {
             message_trash,
             message_delete,
             message_move,
-            undo_apply
+            undo_apply,
+            draft_create,
+            draft_reply,
+            draft_forward,
+            draft_get,
+            draft_update,
+            draft_delete,
+            draft_send,
+            outbox_list,
+            outbox_undo,
+            outbox_send_again,
+            outbox_dismiss
         ])
         .build(tauri::generate_context!())
         .expect("failed to start the Regards desktop app");

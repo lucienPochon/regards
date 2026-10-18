@@ -17,6 +17,7 @@ import {
   trashMessages,
 } from "./accounts";
 import { useChanges } from "./changes";
+import { type Draft, forwardDraft, replyDraft } from "./compose";
 import { useShortcuts } from "./shortcuts";
 
 type Load = { state: "loading" } | { state: "ready"; detail: MessageDetail } | { state: "failed"; message: string };
@@ -25,12 +26,15 @@ export function ReadingPane({
   messageId,
   accountId,
   onOpenMessage,
+  onCompose,
   onMoved,
   onClose,
 }: {
   messageId: number;
   accountId: string;
   onOpenMessage: (id: number) => void;
+  /** Open the composer on a draft being started. */
+  onCompose: (start: Promise<Draft>) => void;
   onMoved: (undo: UndoInfo | null) => void;
   onClose: () => void;
 }) {
@@ -123,6 +127,9 @@ export function ReadingPane({
     ...(ready && !confirmingDelete
       ? {
           e: () => move(() => archiveMessages([messageId])),
+          r: () => onCompose(replyDraft(messageId, false)),
+          a: () => onCompose(replyDraft(messageId, true)),
+          f: () => onCompose(forwardDraft(messageId)),
           "#": remove,
           Delete: remove,
           s: () => act({ flagged: !ready.message.flagged }),
@@ -153,6 +160,15 @@ export function ReadingPane({
     <article className="card reading" aria-labelledby="reading-subject">
       <h2 id="reading-subject">{message.subject || "(no subject)"}</h2>
       <div className="actions-bar">
+        <button type="button" onClick={() => onCompose(replyDraft(messageId, false))}>
+          Reply
+        </button>
+        <button type="button" onClick={() => onCompose(replyDraft(messageId, true))}>
+          Reply all
+        </button>
+        <button type="button" onClick={() => onCompose(forwardDraft(messageId))}>
+          Forward
+        </button>
         <button type="button" onClick={() => act({ seen: !message.seen })}>
           {message.seen ? "Mark unread" : "Mark read"}
         </button>

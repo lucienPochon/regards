@@ -4,9 +4,13 @@ import { useChanges } from "./changes";
 import { MessageList, type OpenMailbox } from "./MessageList";
 import { ReadingPane } from "./ReadingPane";
 import { ShortcutHelp } from "./ShortcutHelp";
+import { Composer } from "./Composer";
+import { OutboxPanel } from "./OutboxPanel";
+import { SendToast } from "./SendToast";
 import { UndoToast } from "./UndoToast";
 import { useShortcuts } from "./shortcuts";
 import type { UndoInfo } from "./accounts";
+import { type Draft, type Queued, newDraft } from "./compose";
 import { type DaemonStatus, fetchDaemonStatus } from "./daemon";
 
 type Check =
@@ -21,7 +25,20 @@ export function App() {
   const [toast, setToast] = useState<UndoInfo | null>(null);
   const closeToast = useCallback(() => setToast(null), []);
   const [help, setHelp] = useState(false);
-  useShortcuts({ "?": () => setHelp(true) });
+  const [composing, setComposing] = useState<number | null>(null);
+  const [queued, setQueued] = useState<Queued | null>(null);
+  const closeQueued = useCallback(() => setQueued(null), []);
+  const [composeError, setComposeError] = useState<string | null>(null);
+
+  /** Open the composer on a draft the daemon is starting (new, reply, forward). */
+  const compose = useCallback((start: Promise<Draft>) => {
+    setComposeError(null);
+    start.then((draft) => setComposing(draft.id)).catch((error: unknown) => setComposeError(String(error)));
+  }, []);
+  const writeNew = () => {
+    if (open) compose(newDraft(open.accountId));
+  };
+  useShortcuts({ "?": () => setHelp(true), c: writeNew });
 
   // Without "Checking…" in between, so change events do not make the card flicker.
   const update = useCallback(() => {
@@ -46,7 +63,7 @@ export function App() {
     <main className="shell">
       <header>
         <h1>Regards</h1>
-        <p className="subtitle">Pre-alpha · Phase 0 foundation</p>
+        <p className="subtitle">Pre-alpha</p>
       </header>
 
       <section className="card" aria-live="polite">
@@ -57,6 +74,18 @@ export function App() {
         </button>
       </section>
 
+      <div className="toolbar">
+        <button
+          type="button"
+          onClick={writeNew}
+          disabled={!open}
+          title={open ? `New message from ${open.account} (c)` : "Open a folder of the account to write from"}
+        >
+          New message
+        </button>
+        {composeError && <span className="error small">{composeError}</span>}
+      </div>
+
       <div className="workspace">
         <div className="side">
           <AccountsPanel
@@ -66,6 +95,7 @@ export function App() {
               setReading(null);
             }}
           />
+          <OutboxPanel onEdit={setComposing} />
         </div>
         <div className="main">
           {open ? (
@@ -80,6 +110,7 @@ export function App() {
               messageId={reading}
               accountId={open.accountId}
               onOpenMessage={setReading}
+              onCompose={compose}
               onMoved={(undo) => {
                 setReading(null);
                 setToast(undo);
@@ -89,7 +120,31 @@ export function App() {
           )}
         </div>
       </div>
-      {toast && <UndoToast undo={toast} onDone={closeToast} />}
+      <div className="toasts">
+        {toast && <UndoToast undo={toast} onDone={closeToast} />}
+        {queued && (
+          <SendToast
+            key={queued.outbox_id}
+            queued={queued}
+            onDone={closeQueued}
+            onUndone={(draftId) => {
+              setQueued(null);
+              if (draftId !== null) setComposing(draftId);
+            }}
+          />
+        )}
+      </div>
+      {composing !== null && (
+        <Composer
+          key={composing}
+          draftId={composing}
+          onClose={() => setComposing(null)}
+          onQueued={(result) => {
+            setComposing(null);
+            setQueued(result);
+          }}
+        />
+      )}
       {help && <ShortcutHelp onClose={() => setHelp(false)} />}
       <p className="muted small hint">
         Press <kbd>?</kbd> for keyboard shortcuts.
