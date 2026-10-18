@@ -9,7 +9,8 @@ use regards_daemon::Daemon;
 use regards_imap::{ImapServer, Session, SystemFlag, TlsOptions};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountSummary, ClientKind, ConnectionSecurity, MailboxListResult, MessageDetail,
-    MessageListParams, MessageListResult, MessageRef, ServerSettings, SyncResult, methods,
+    MessageHtml, MessageHtmlParams, MessageListParams, MessageListResult, MessageRef, ServerSettings, SyncResult,
+    methods,
 };
 use regards_ipc::{Client, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -368,6 +369,21 @@ async fn live_message_bodies_download_once_and_stay_unread() {
     assert_eq!(detail.attachments.len(), 1);
     assert_eq!(detail.attachments[0].name.as_deref(), Some("report.pdf"));
     assert_eq!(detail.to[0].address.as_deref(), Some("bob@example.test"));
+    assert_eq!(detail.remote_images, 0);
+
+    let html: MessageHtml = desktop
+        .call(
+            methods::MESSAGE_HTML,
+            MessageHtmlParams {
+                id,
+                allow_remote: false,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(html.html.starts_with("<!doctype html>"));
+    assert!(html.html.contains("<b>report</b>"), "{}", html.html);
+    assert_eq!(html.blocked_remote, 0);
 
     // BODY.PEEK[]: reading it here did not mark it read on the server.
     seed.select(b"INBOX").await.unwrap();

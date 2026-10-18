@@ -9,6 +9,8 @@
 // Release builds on Windows have no console window.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod mail_frame;
+
 use regards_core::paths::DataDirs;
 use regards_core::secret::Secret;
 use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
@@ -30,7 +32,7 @@ use tokio::sync::Mutex;
 const DAEMON_PROGRAM_ENV: &str = "REGARDS_DAEMON_BIN";
 
 /// The app's link to the daemon.
-struct Bridge {
+pub(crate) struct Bridge {
     /// `Err` when the data directory or the `regards` program could not be located.
     launcher: Result<Launcher, String>,
     /// Token of the daemon this process started, if it is still the one running.
@@ -108,7 +110,7 @@ impl DaemonStatus {
 
 impl Bridge {
     /// Connect with desktop access, starting or replacing the daemon as needed.
-    async fn connect(&self) -> Result<Connected, String> {
+    pub(crate) async fn connect(&self) -> Result<Connected, String> {
         if self.closing.load(Ordering::SeqCst) {
             return Err("Regards is quitting".into());
         }
@@ -296,7 +298,7 @@ async fn forward_changes(app: AppHandle) {
 }
 
 /// Daemon errors carry messages written for people; show those as they are.
-fn describe(error: ClientError) -> String {
+pub(crate) fn describe(error: ClientError) -> String {
     match error {
         ClientError::Rpc(error) => error.message,
         other => other.to_string(),
@@ -325,6 +327,7 @@ fn main() {
             }
         }))
         .manage(Bridge::new())
+        .register_asynchronous_uri_scheme_protocol(mail_frame::SCHEME, mail_frame::handle)
         .setup(|app| {
             tauri::async_runtime::spawn(forward_changes(app.handle().clone()));
             Ok(())

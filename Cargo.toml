@@ -28,6 +28,7 @@ regards-imap = { path = "crates/regards-imap" }
 regards-store = { path = "crates/regards-store" }
 regards-vault = { path = "crates/regards-vault" }
 
+ammonia = "4.2"
 anyhow = "1"
 bytes = "1"
 clap = { version = "4.6", features = ["derive"] }

@@ -7,6 +7,7 @@
 pub mod body;
 pub mod build_info;
 pub mod headers;
+pub mod html;
 pub mod mailbox;
 pub mod paths;
 pub mod secret;

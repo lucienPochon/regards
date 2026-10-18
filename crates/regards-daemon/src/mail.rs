@@ -3,9 +3,10 @@
 
 use crate::State;
 use crate::sync;
-use regards_core::body;
+use regards_core::{body, html};
 use regards_ipc::protocol::{
-    MessageCursor, MessageDetail, MessageListParams, MessageListResult, MessageRef, MessageSummary, RpcError, codes,
+    MessageCursor, MessageDetail, MessageHtml, MessageHtmlParams, MessageListParams, MessageListResult, MessageRef,
+    MessageSummary, RpcError, codes,
 };
 use regards_store::mailboxes::Mailbox;
 use regards_store::messages::{self, Cursor, Message};
@@ -64,7 +65,45 @@ fn store_error(error: StoreError) -> RpcError {
 /// One message with its body. The source is downloaded the first time and
 /// kept under `blobs/`; afterwards it opens without contacting the server.
 pub(crate) async fn get(state: &State, params: MessageRef) -> Result<Value, RpcError> {
-    let id = params.id;
+    let (message, source) = load(state, params.id).await?;
+    let (body, remote_images) = tokio::task::spawn_blocking(move || {
+        let body = body::parse(&source);
+        let remote = if body.has_html {
+            html::render(&source, false).map_or(0, |rendered| rendered.blocked_remote)
+        } else {
+            0
+        };
+        (body, remote)
+    })
+    .await
+    .map_err(crate::session::internal)?;
+    Ok(json!(MessageDetail {
+        to: message.to.clone(),
+        cc: message.cc.clone(),
+        text: body.text,
+        has_html: body.has_html,
+        remote_images,
+        attachments: body.attachments,
+        message: summary(message),
+    }))
+}
+
+/// The sanitised HTML version of a message.
+pub(crate) async fn html(state: &State, params: MessageHtmlParams) -> Result<Value, RpcError> {
+    let (_, source) = load(state, params.id).await?;
+    let allow_remote = params.allow_remote;
+    let rendered = tokio::task::spawn_blocking(move || html::render(&source, allow_remote))
+        .await
+        .map_err(crate::session::internal)?
+        .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "this message has no HTML version"))?;
+    Ok(json!(MessageHtml {
+        html: rendered.html,
+        blocked_remote: rendered.blocked_remote,
+    }))
+}
+
+/// A message and its source, downloading the source the first time.
+async fn load(state: &State, id: i64) -> Result<(Message, Vec<u8>), RpcError> {
     let found = state
         .store
         .read(move |conn| {
@@ -93,17 +132,7 @@ pub(crate) async fn get(state: &State, params: MessageRef) -> Result<Value, RpcE
         Some(source) => source,
         None => download(state, &message, &mailbox).await?,
     };
-    let body = tokio::task::spawn_blocking(move || body::parse(&source))
-        .await
-        .map_err(crate::session::internal)?;
-    Ok(json!(MessageDetail {
-        to: message.to.clone(),
-        cc: message.cc.clone(),
-        text: body.text,
-        has_html: body.has_html,
-        attachments: body.attachments,
-        message: summary(message),
-    }))
+    Ok((message, source))
 }
 
 async fn download(state: &State, message: &Message, mailbox: &Mailbox) -> Result<Vec<u8>, RpcError> {

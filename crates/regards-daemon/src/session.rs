@@ -167,6 +167,10 @@ impl Session {
                 self.require_ui()?;
                 mail::get(&self.state, params(request)?).await
             }
+            methods::MESSAGE_HTML => {
+                self.require_ui()?;
+                mail::html(&self.state, params(request)?).await
+            }
             methods::CHANGES_SUBSCRIBE => {
                 self.require_ui()?;
                 let mut feed = self.state.feed.subscribe();

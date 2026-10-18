@@ -160,7 +160,7 @@ flowchart LR
   - **Live updates in the UI:** a change feed (ADR-0007) notifies subscribed clients of every committed change and sync-status change. The app refreshes on those events and no longer polls.
 - **Still to come in Phase 1:**
   - **Sync:** QRESYNC and backfill of older messages.
-  - **Bodies and threading:** HTML rendering in a sandbox, and References threading. Opening a message already shows its text and attachments; the source is downloaded once (`BODY.PEEK[]`, so it stays unread) and kept in `blobs/`.
+  - **Threading and links:** References threading, and opening links from messages in the browser. Opening a message already shows it: the source is downloaded once (`BODY.PEEK[]`, so it stays unread) and kept in `blobs/`; HTML is sanitised and shown in a sandboxed frame with remote images blocked until allowed.
   - **Operations:** the operation queue for user actions.
 - **Capability-aware:** incremental flag sync with CONDSTORE/QRESYNC; efficient UID-range sync plus periodic flag resync without them (Infomaniak advertises neither before login; recheck after login). MOVE, or UIDPLUS COPY + `\Deleted` + UID EXPUNGE.
 - Gmail X-GM-EXT-1 labels and thread IDs when present.

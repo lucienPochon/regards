@@ -45,6 +45,14 @@ Loopback TCP is reachable by every local user and, through DNS-rebinding mistake
    - The WebView gets a **narrow, explicit command set**: no generic passthrough to the daemon, no shutdown or settings-of-agents from JS without a UI gesture.
    - Minimal Tauri capabilities; strict CSP.
    - The email HTML reader runs in a sandboxed iframe without `allow-scripts`, with its own CSP and remote content blocked until the user opts in.
+     - **Implementation (Phase 1), three layers:**
+       1. **Sanitising in the daemon (`ammonia`):**
+          - **Removed:** scripts, event handlers, forms, frames and objects; links other than `http(s)` and `mailto`; and `data:` anywhere except images.
+          - **Inline images:** `cid:` images become `data:` URIs, within a size limit.
+          - **Remote images:** removed and counted unless allowed.
+       2. **Its own origin:** the desktop serves the result through the `regards-mail` scheme, to the main window only. The response CSP is `default-src 'none'; style-src 'unsafe-inline'; img-src data:` (plus `https:`/`http:` once remote images are allowed), with `form-action 'none'; base-uri 'none'`.
+       3. **The frame:** an `<iframe sandbox="">`, so no scripts, no same-origin access, no popups and no navigation. The app CSP allows framing only `regards-mail`.
+     - **Not yet:** links inside messages do not open yet. That comes later, through the app, never by navigating the frame.
 5. **Deep links:** a custom URL scheme (`regards://thread/<id>`, `…/draft/<id>`) is registered by the desktop app. Handlers only navigate; they never perform actions.
 
 ## Threat model and limits

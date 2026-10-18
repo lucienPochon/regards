@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 
 export type ConnectionSecurity = "tls" | "starttls";
 
@@ -128,10 +128,20 @@ export interface MessageDetail {
   cc: Person[];
   text: string;
   has_html: boolean;
+  /** Remote images in the HTML version, not loaded unless asked for. */
+  remote_images: number;
   attachments: Attachment[];
 }
 
 /** One message with its body; downloaded from the server the first time. */
 export function getMessage(id: number): Promise<MessageDetail> {
   return invoke<MessageDetail>("message_get", { id });
+}
+
+/**
+ * Where the sandboxed reading frame loads a message's sanitised HTML from
+ * (the `regards-mail` scheme, served by the desktop bridge with a strict CSP).
+ */
+export function messageHtmlUrl(id: number, allowRemote: boolean): string {
+  return convertFileSrc(`message/${id}?remote=${allowRemote ? 1 : 0}`, "regards-mail");
 }

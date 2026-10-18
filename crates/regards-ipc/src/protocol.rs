@@ -36,6 +36,8 @@ pub mod methods {
     pub const MESSAGE_LIST: &str = "message.list";
     /// One message with its body, downloading it if needed. `ui` only for now.
     pub const MESSAGE_GET: &str = "message.get";
+    /// The sanitised HTML version of a message (ADR-0006 §4). `ui` only for now.
+    pub const MESSAGE_HTML: &str = "message.html";
     /// Dedicate this connection to change notifications (ADR-0007). `ui` only for now.
     pub const CHANGES_SUBSCRIBE: &str = "changes.subscribe";
 }
@@ -383,7 +385,26 @@ pub struct MessageDetail {
     pub text: String,
     /// Whether there is an HTML version to show instead.
     pub has_html: bool,
+    /// Remote images in the HTML version, which are not loaded unless asked for.
+    pub remote_images: usize,
     pub attachments: Vec<Attachment>,
+}
+
+/// Parameters of [`methods::MESSAGE_HTML`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageHtmlParams {
+    pub id: i64,
+    /// Load remote images. They can tell the sender the message was opened.
+    #[serde(default)]
+    pub allow_remote: bool,
+}
+
+/// Result of [`methods::MESSAGE_HTML`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageHtml {
+    /// A complete, sanitised document. Show it only in a sandboxed frame with a strict CSP.
+    pub html: String,
+    pub blocked_remote: usize,
 }
 
 /// Result of [`methods::MESSAGE_LIST`].

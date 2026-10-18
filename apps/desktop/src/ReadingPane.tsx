@@ -1,14 +1,18 @@
 import { useEffect, useState } from "react";
-import { type MessageDetail, type Person, getMessage } from "./accounts";
+import { type MessageDetail, type Person, getMessage, messageHtmlUrl } from "./accounts";
 
 type Load = { state: "loading" } | { state: "ready"; detail: MessageDetail } | { state: "failed"; message: string };
 
 export function ReadingPane({ messageId }: { messageId: number }) {
   const [load, setLoad] = useState<Load>({ state: "loading" });
+  const [showText, setShowText] = useState(false);
+  const [allowRemote, setAllowRemote] = useState(false);
 
   useEffect(() => {
     let current = true;
     setLoad({ state: "loading" });
+    setShowText(false);
+    setAllowRemote(false);
     getMessage(messageId)
       .then((detail) => current && setLoad({ state: "ready", detail }))
       .catch((error: unknown) => current && setLoad({ state: "failed", message: String(error) }));
@@ -56,9 +60,35 @@ export function ReadingPane({ messageId }: { messageId: number }) {
         <dd>{new Date(message.sent_at ?? message.received_at).toLocaleString()}</dd>
       </dl>
       {detail.has_html && (
-        <p className="muted small">This message also has a formatted version; showing its text.</p>
+        <div className="view-options small">
+          <button type="button" onClick={() => setShowText((text) => !text)}>
+            {showText ? "Show formatted" : "Show plain text"}
+          </button>
+          {!showText && detail.remote_images > 0 && !allowRemote && (
+            <>
+              <span className="muted">
+                {detail.remote_images} remote {detail.remote_images === 1 ? "image" : "images"} blocked. They can
+                tell the sender you opened this message.
+              </span>
+              <button type="button" onClick={() => setAllowRemote(true)}>
+                Load images
+              </button>
+            </>
+          )}
+        </div>
       )}
-      <pre className="body">{detail.text.trim() || "(no text)"}</pre>
+      {detail.has_html && !showText ? (
+        // No scripts, no same-origin access, no popups or navigation: an empty sandbox.
+        <iframe
+          className="html-body"
+          sandbox=""
+          referrerPolicy="no-referrer"
+          title="Message content"
+          src={messageHtmlUrl(message.id, allowRemote)}
+        />
+      ) : (
+        <pre className="body">{detail.text.trim() || "(no text)"}</pre>
+      )}
       {attachments.length > 0 && (
         <>
           <h3 className="small">Attachments</h3>
