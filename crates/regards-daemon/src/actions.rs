@@ -5,9 +5,10 @@
 use crate::State;
 use regards_core::mailbox::Role;
 use regards_ipc::protocol::{
-    DeleteResult, MessageIds, MoveParams, MoveResult, RpcError, SetFlagsParams, SetFlagsResult, UndoInfo, UndoParams,
-    UndoResult, codes,
+    AsideParams, DeleteResult, MarkResult, MessageIds, MoveParams, MoveResult, PinParams, RpcError, SetFlagsParams,
+    SetFlagsResult, UndoInfo, UndoParams, UndoResult, codes,
 };
+use regards_store::marks::{self, Mark};
 use regards_store::operations::{self, FlagName, NewOperation, OperationKind};
 use regards_store::{StoreError, mailboxes, messages, undo};
 use serde::{Deserialize, Serialize};
@@ -210,13 +211,81 @@ pub(crate) async fn delete_forever(state: &Arc<State>, params: MessageIds) -> Re
     Ok(json!(DeleteResult { deleted }))
 }
 
+pub(crate) async fn pin(state: &State, params: PinParams) -> Result<Value, RpcError> {
+    let done = if params.pinned { "Pinned" } else { "Unpinned" };
+    mark_messages(state, params.ids, Mark::Pinned, params.pinned, done).await
+}
+
+pub(crate) async fn set_aside(state: &State, params: AsideParams) -> Result<Value, RpcError> {
+    let done = if params.aside { "Set aside" } else { "Back in the inbox" };
+    mark_messages(state, params.ids, Mark::Aside, params.aside, done).await
+}
+
+/// Put a mark on messages, or take it off; one undo entry for all of them.
+async fn mark_messages(state: &State, ids: Vec<i64>, mark: Mark, on: bool, done: &str) -> Result<Value, RpcError> {
+    check_count(&ids)?;
+    let now = now_ms();
+    let done = done.to_owned();
+    let committed = state
+        .store
+        .write(move |tx| {
+            let mut seen = BTreeSet::new();
+            let mut inverse = Vec::new();
+            for id in &ids {
+                let message =
+                    messages::get(tx, *id)?.ok_or_else(|| StoreError::Conflict(format!("no message {id}")))?;
+                let account = mailboxes::get(tx, message.mailbox_id)?
+                    .ok_or_else(|| StoreError::Conflict("the folder no longer exists".into()))?
+                    .account_id;
+                let message_id = message.message_id.clone().ok_or_else(|| {
+                    StoreError::Conflict("this message has no Message-ID, so it cannot be marked".into())
+                })?;
+                // Copies of one message (Inbox and All Mail, say) carry one mark.
+                if !seen.insert((account.clone(), message_id.clone())) {
+                    continue;
+                }
+                let current = marks::get(tx, &account, &message_id)?.get(mark);
+                if current.is_some() == on {
+                    continue;
+                }
+                let before = marks::set(tx, &account, &message_id, mark, on.then_some(now))?;
+                inverse.push((account, message_id, mark, before));
+            }
+            let changed = inverse.len();
+            let undo = if changed > 0 {
+                let description = if changed == 1 {
+                    done.clone()
+                } else {
+                    format!("{done} ({changed} messages)")
+                };
+                let inverse = serde_json::to_string(&Inverse {
+                    moves: Vec::new(),
+                    marks: inverse,
+                })
+                .expect("plain data serializes");
+                let id = undo::record(tx, &description, &inverse, now, now + UNDO_FOR_MS)?;
+                Some(UndoInfo { id, description })
+            } else {
+                None
+            };
+            Ok(MarkResult { changed, undo })
+        })
+        .await
+        .map_err(conflict)?;
+    Ok(json!(committed.value))
+}
+
 /// Undo entries last this long; the app offers undo for the first seconds.
 const UNDO_FOR_MS: i64 = 10 * 60 * 1000;
 
 /// What reverses a set of moves: put each message (id) back where it was seen (folder id).
 #[derive(Debug, Serialize, Deserialize)]
 struct Inverse {
+    #[serde(default)]
     moves: Vec<(i64, i64)>,
+    /// Marks to put back: account, Message-ID, which mark, what it was.
+    #[serde(default)]
+    marks: Vec<(String, String, Mark, Option<i64>)>,
 }
 
 pub(crate) async fn move_to(state: &Arc<State>, params: MoveParams) -> Result<Value, RpcError> {
@@ -302,7 +371,11 @@ async fn run_moves(state: &Arc<State>, requests: Vec<(i64, i64)>, done: &str) ->
                 } else {
                     format!("{done} ({moved} messages)")
                 };
-                let inverse = serde_json::to_string(&Inverse { moves: inverse }).expect("plain data serializes");
+                let inverse = serde_json::to_string(&Inverse {
+                    moves: inverse,
+                    marks: Vec::new(),
+                })
+                .expect("plain data serializes");
                 let id = undo::record(tx, &description, &inverse, now, now + UNDO_FOR_MS)?;
                 Some(UndoInfo { id, description })
             } else {
@@ -337,8 +410,11 @@ pub(crate) async fn apply_undo(state: &Arc<State>, params: UndoParams) -> Result
                     present.push((message, folder));
                 }
             }
-            let (undone, _, accounts) = plan_moves(tx, &present, now)?;
-            Ok((undone, accounts))
+            let (moved, _, accounts) = plan_moves(tx, &present, now)?;
+            for (account, message_id, mark, before) in &inverse.marks {
+                marks::set(tx, account, message_id, *mark, *before)?;
+            }
+            Ok((moved + inverse.marks.len(), accounts))
         })
         .await
         .map_err(conflict)?;

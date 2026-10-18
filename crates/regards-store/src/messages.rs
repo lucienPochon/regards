@@ -224,14 +224,17 @@ pub fn set_blob(tx: &Transaction<'_>, id: i64, hash: &str) -> Result<(), StoreEr
 /// on their way into it, are separate so that each walks its own index: with
 /// an OR, a 100k-message folder took 55 ms per page instead of well under 1.
 fn list_sql() -> String {
+    // With ?5 (an account), messages it has set aside or snoozed past ?6 (now) stay out.
+    const UNPARKED: &str = "(?5 IS NULL OR NOT EXISTS (SELECT 1 FROM marks k WHERE k.account_id = ?5 \
+        AND k.message_id = messages.message_id_header AND (k.aside_at IS NOT NULL OR k.snoozed_until > ?6)))";
     format!(
         "SELECT * FROM (SELECT {COLUMNS} FROM messages \
              WHERE mailbox_id = ?1 AND moving_to IS NULL AND deleted = 0 AND (received_at, id) < (?2, ?3) \
-             ORDER BY received_at DESC, id DESC LIMIT ?4) \
+             AND {UNPARKED} ORDER BY received_at DESC, id DESC LIMIT ?4) \
          UNION ALL \
          SELECT * FROM (SELECT {COLUMNS} FROM messages \
              WHERE moving_to = ?1 AND deleted = 0 AND (received_at, id) < (?2, ?3) \
-             ORDER BY received_at DESC, id DESC LIMIT ?4) \
+             AND {UNPARKED} ORDER BY received_at DESC, id DESC LIMIT ?4) \
          ORDER BY received_at DESC, id DESC LIMIT ?4"
     )
 }
@@ -243,10 +246,53 @@ pub fn list(
     limit: u32,
     before: Option<Cursor>,
 ) -> Result<Vec<Message>, StoreError> {
+    list_without_parked(conn, mailbox_id, limit, before, None)
+}
+
+/// [`list`], leaving out what `parked` (an account, and the time now) has set
+/// aside or snoozed: how the inbox is shown.
+pub fn list_without_parked(
+    conn: &Connection,
+    mailbox_id: i64,
+    limit: u32,
+    before: Option<Cursor>,
+    parked: Option<(&str, i64)>,
+) -> Result<Vec<Message>, StoreError> {
     let (received_at, id) = before.map_or((i64::MAX, i64::MAX), |c| (c.received_at, c.id));
+    let (account, now) = parked.map_or((None, 0), |(account, now)| (Some(account), now));
     let mut statement = conn.prepare_cached(&list_sql())?;
     let messages = statement
-        .query_map(params![mailbox_id, received_at, id, limit], from_row)?
+        .query_map(params![mailbox_id, received_at, id, limit, account, now], from_row)?
+        .map(|row| row?)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(messages)
+}
+
+/// The account's messages carrying `mark` (snoozed: until after `now`), one per
+/// Message-ID, newest first: the Pinned, Set aside and Snoozed views.
+pub fn marked(
+    conn: &Connection,
+    account_id: &str,
+    mark: crate::marks::Mark,
+    now: i64,
+    limit: u32,
+    before: Option<Cursor>,
+) -> Result<Vec<Message>, StoreError> {
+    let condition = match mark {
+        crate::marks::Mark::Pinned => "k.pinned_at IS NOT NULL",
+        crate::marks::Mark::Aside => "k.aside_at IS NOT NULL",
+        crate::marks::Mark::Snoozed => "k.snoozed_until > ?2",
+    };
+    let (received_at, id) = before.map_or((i64::MAX, i64::MAX), |c| (c.received_at, c.id));
+    let mut statement = conn.prepare_cached(&format!(
+        "SELECT {COLUMNS} FROM messages WHERE id IN ( \
+             SELECT MIN(m.id) FROM messages m JOIN mailboxes b ON b.id = m.mailbox_id \
+             JOIN marks k ON k.account_id = b.account_id AND k.message_id = m.message_id_header \
+             WHERE b.account_id = ?1 AND m.deleted = 0 AND {condition} GROUP BY m.message_id_header) \
+         AND (received_at, id) < (?3, ?4) ORDER BY received_at DESC, id DESC LIMIT ?5"
+    ))?;
+    let messages = statement
+        .query_map(params![account_id, now, received_at, id, limit], from_row)?
         .map(|row| row?)
         .collect::<Result<Vec<_>, _>>()?;
     Ok(messages)
@@ -340,7 +386,9 @@ mod tests {
             .read(|conn| {
                 let mut statement = conn.prepare(&format!("EXPLAIN QUERY PLAN {}", list_sql()))?;
                 let details = statement
-                    .query_map(params![1, i64::MAX, i64::MAX, 50], |row| row.get::<_, String>(3))?
+                    .query_map(params![1, i64::MAX, i64::MAX, 50, "account", 0], |row| {
+                        row.get::<_, String>(3)
+                    })?
                     .collect::<Result<_, _>>()?;
                 Ok(details)
             })
@@ -416,6 +464,58 @@ mod tests {
                 }),
                 ..Headers::default()
             },
+        }
+    }
+
+    #[tokio::test]
+    async fn the_inbox_leaves_out_what_is_set_aside_or_snoozed_and_views_show_it() {
+        use crate::marks::{self, Mark};
+        let (_temp, store, mailbox) = store_with_inbox().await;
+        let account: String = store
+            .read(move |c| {
+                Ok(
+                    c.query_row("SELECT account_id FROM mailboxes WHERE id = ?1", [mailbox], |r| {
+                        r.get(0)
+                    })?,
+                )
+            })
+            .await
+            .unwrap();
+        let batch: Vec<NewMessage> = (1..=4)
+            .map(|uid| {
+                let mut new = message(uid, i64::from(uid) * 1000, &format!("m{uid}"));
+                new.headers.message_id = Some(format!("m{uid}@x"));
+                new
+            })
+            .collect();
+        store.write(move |tx| upsert(tx, mailbox, &batch)).await.unwrap();
+        let a = account.clone();
+        store
+            .write(move |tx| {
+                marks::set(tx, &a, "m1@x", Mark::Pinned, Some(10))?;
+                marks::set(tx, &a, "m2@x", Mark::Aside, Some(10))?;
+                marks::set(tx, &a, "m3@x", Mark::Snoozed, Some(5_000))?;
+                marks::set(tx, &a, "m4@x", Mark::Snoozed, Some(500))
+            })
+            .await
+            .unwrap();
+        let subjects = |list: Vec<Message>| list.into_iter().map(|m| m.subject).collect::<Vec<_>>();
+        let a = account.clone();
+        let inbox = store
+            .read(move |c| list_without_parked(c, mailbox, 10, None, Some((&a, 1_000))))
+            .await
+            .unwrap();
+        // m2 is set aside and m3 snoozed until later; m4's snooze is over; pinned m1 stays.
+        assert_eq!(subjects(inbox), ["m4", "m1"]);
+        assert_eq!(
+            subjects(store.read(move |c| list(c, mailbox, 10, None)).await.unwrap()),
+            ["m4", "m3", "m2", "m1"],
+            "other folders show everything"
+        );
+        for (mark, expected) in [(Mark::Pinned, "m1"), (Mark::Aside, "m2"), (Mark::Snoozed, "m3")] {
+            let a = account.clone();
+            let view = store.read(move |c| marked(c, &a, mark, 1_000, 10, None)).await.unwrap();
+            assert_eq!(subjects(view), [expected], "{mark:?}");
         }
     }
 

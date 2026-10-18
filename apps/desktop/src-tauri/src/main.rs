@@ -15,12 +15,12 @@ use regards_core::paths::DataDirs;
 use regards_core::secret::Secret;
 use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity, DeleteResult,
-    DraftAttachFileParams, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult, DraftRef,
-    DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MailboxListResult, MessageCursor,
-    MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult,
-    OutboxListResult, OutboxRef, OutboxUndoResult, Principal, ServerSettings, SetFlagsParams, SetFlagsResult,
-    SyncResult, ThreadView, UndoParams, UndoResult, methods,
+    AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, AsideParams, ClientKind, ConnectionSecurity,
+    DeleteResult, DraftAttachFileParams, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult,
+    DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MailboxListResult,
+    MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams,
+    MoveResult, OutboxListResult, OutboxRef, OutboxUndoResult, PinParams, Principal, ServerSettings, SetFlagsParams,
+    SetFlagsResult, SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -341,6 +341,49 @@ async fn undo_apply(bridge: State<'_, Bridge>, id: i64) -> Result<UndoResult, St
         .map_err(describe)
 }
 
+/// Pin or unpin messages (kept on this device); undoable.
+#[tauri::command]
+async fn message_pin(bridge: State<'_, Bridge>, ids: Vec<i64>, pinned: bool) -> Result<MarkResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_PIN, PinParams { ids, pinned })
+        .await
+        .map_err(describe)
+}
+
+/// Set messages aside (out of the inbox) or bring them back; undoable.
+#[tauri::command]
+async fn message_set_aside(bridge: State<'_, Bridge>, ids: Vec<i64>, aside: bool) -> Result<MarkResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_SET_ASIDE, AsideParams { ids, aside })
+        .await
+        .map_err(describe)
+}
+
+/// An account's pinned, set-aside or snoozed messages, newest first.
+#[tauri::command]
+async fn message_view(
+    bridge: State<'_, Bridge>,
+    account_id: String,
+    view: View,
+    before: Option<MessageCursor>,
+) -> Result<MessageListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::MESSAGE_VIEW,
+            ViewParams {
+                account_id,
+                view,
+                limit: None,
+                before,
+            },
+        )
+        .await
+        .map_err(describe)
+}
+
 /// A new, empty message from an account.
 #[tauri::command]
 async fn draft_create(bridge: State<'_, Bridge>, account_id: String) -> Result<DraftView, String> {
@@ -583,6 +626,9 @@ fn main() {
             message_delete,
             message_move,
             undo_apply,
+            message_pin,
+            message_set_aside,
+            message_view,
             draft_create,
             draft_reply,
             draft_forward,

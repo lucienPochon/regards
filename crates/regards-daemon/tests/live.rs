@@ -9,12 +9,12 @@ use regards_core::secret::Secret;
 use regards_daemon::{Daemon, SyncLimits};
 use regards_imap::{ImapServer, Session, SystemFlag, TlsOptions};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountRef, AccountSummary, ClientKind, ConnectionSecurity, DeleteResult, DraftAttachFileParams,
-    DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult, DraftRef, DraftReplyParams,
-    DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MailboxListResult, MessageDetail, MessageHtml,
-    MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveResult, OutboxEntryView,
-    OutboxListResult, OutboxRef, OutboxState, OutboxUndoResult, ServerSettings, SetFlagsParams, SetFlagsResult,
-    SyncResult, ThreadView, UndoParams, UndoResult, methods,
+    AccountAddParams, AccountRef, AccountSummary, AsideParams, ClientKind, ConnectionSecurity, DeleteResult,
+    DraftAttachFileParams, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult, DraftRef,
+    DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MailboxListResult, MarkResult,
+    MessageDetail, MessageHtml, MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef,
+    MoveResult, OutboxEntryView, OutboxListResult, OutboxRef, OutboxState, OutboxUndoResult, PinParams, ServerSettings,
+    SetFlagsParams, SetFlagsResult, SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -1175,6 +1175,10 @@ async fn live_a_reply_can_be_undone_then_goes_out_once_and_lands_in_sent() {
         .find(|m| m.role == Some(Role::Sent))
         .unwrap()
         .id;
+    // Synced into Sent right after the copy, or by the next sync if that failed.
+    if messages(&mut desktop, sent_folder).await.messages.is_empty() {
+        sync(&mut desktop, &account.id).await;
+    }
     assert_eq!(
         messages(&mut desktop, sent_folder).await.messages[0].subject,
         "Re: Plans"
@@ -1435,6 +1439,99 @@ async fn live_a_forward_carries_the_original_files() {
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].name, "report.pdf");
     assert_eq!(files[0].data, b"%PDF-1.4\n");
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_pin_and_set_aside_stay_on_the_device_and_can_be_undone() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    for (n, subject) in [(1, "Keep in view"), (2, "Later"), (3, "Plain")] {
+        seed.append(b"INBOX", &[], &message(n, subject, "ada@example.test"))
+            .await
+            .unwrap();
+    }
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
+    let listed = messages(&mut desktop, inbox).await.messages;
+    let id = |subject: &str| listed.iter().find(|m| m.subject == subject).unwrap().id;
+    let subjects = |page: MessageListResult| page.messages.into_iter().map(|m| m.subject).collect::<Vec<_>>();
+    let view = |view: View| ViewParams {
+        account_id: account.id.clone(),
+        view,
+        limit: None,
+        before: None,
+    };
+
+    let pinned: MarkResult = desktop
+        .call(
+            methods::MESSAGE_PIN,
+            PinParams {
+                ids: vec![id("Keep in view")],
+                pinned: true,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(pinned.changed, 1);
+    assert_eq!(pinned.undo.unwrap().description, "Pinned");
+    let page = messages(&mut desktop, inbox).await;
+    assert!(
+        page.messages
+            .iter()
+            .find(|m| m.subject == "Keep in view")
+            .unwrap()
+            .pinned
+    );
+    let in_view: MessageListResult = desktop.call(methods::MESSAGE_VIEW, view(View::Pinned)).await.unwrap();
+    assert_eq!(subjects(in_view), ["Keep in view"]);
+    let detail: MessageDetail = desktop
+        .call(methods::MESSAGE_GET, MessageRef { id: id("Keep in view") })
+        .await
+        .unwrap();
+    assert!(detail.message.pinned, "the reading pane knows");
+
+    // Set aside: out of the inbox, in its view; undo brings it back.
+    let aside: MarkResult = desktop
+        .call(
+            methods::MESSAGE_SET_ASIDE,
+            AsideParams {
+                ids: vec![id("Later")],
+                aside: true,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(subjects(messages(&mut desktop, inbox).await), ["Plain", "Keep in view"]);
+    let in_view: MessageListResult = desktop.call(methods::MESSAGE_VIEW, view(View::Aside)).await.unwrap();
+    assert_eq!(subjects(in_view), ["Later"]);
+    let undone: UndoResult = desktop
+        .call(
+            methods::UNDO_APPLY,
+            UndoParams {
+                id: aside.undo.unwrap().id,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(undone.undone, 1);
+    assert_eq!(
+        subjects(messages(&mut desktop, inbox).await),
+        ["Plain", "Later", "Keep in view"]
+    );
+
+    // Marks stay on the device: the server's flags did not change.
+    seed.select(b"INBOX").await.unwrap();
+    let flags = seed.fetch_flags("1:*", None).await.unwrap().items;
+    assert!(flags.iter().all(|f| !f.flags.flagged && !f.flags.seen));
+    // And they survive a sync.
+    sync(&mut desktop, &account.id).await;
+    let in_view: MessageListResult = desktop.call(methods::MESSAGE_VIEW, view(View::Pinned)).await.unwrap();
+    assert_eq!(subjects(in_view), ["Keep in view"]);
 
     seed.logout().await;
     handle.abort();

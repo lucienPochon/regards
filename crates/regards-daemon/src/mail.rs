@@ -3,12 +3,14 @@
 
 use crate::State;
 use crate::sync;
+use regards_core::mailbox::Role;
 use regards_core::{body, html};
 use regards_ipc::protocol::{
     MessageCursor, MessageDetail, MessageHtml, MessageHtmlParams, MessageListParams, MessageListResult, MessageRef,
-    MessageSummary, RpcError, ThreadEntry, ThreadView, codes,
+    MessageSummary, RpcError, ThreadEntry, ThreadView, View, ViewParams, codes,
 };
 use regards_store::mailboxes::Mailbox;
+use regards_store::marks::{self, Mark, Marks};
 use regards_store::messages::{self, Cursor, Message};
 use regards_store::{StoreError, mailboxes};
 use serde_json::{Value, json};
@@ -36,18 +38,23 @@ pub(crate) async fn list(state: &State, params: MessageListParams) -> Result<Val
         received_at: c.received_at,
         id: c.id,
     });
+    let now = crate::compose::now_ms();
     let page = state
         .store
         .read(move |conn| {
-            if mailboxes::get(conn, mailbox_id)?.is_none() {
+            let Some(mailbox) = mailboxes::get(conn, mailbox_id)? else {
                 return Ok(None);
-            }
+            };
+            // The inbox leaves out what is set aside or snoozed (plan §5.5–5.6).
+            let parked = (mailbox.role == Some(Role::Inbox)).then_some((mailbox.account_id.as_str(), now));
             // One extra row tells whether another page exists.
-            Ok(Some(messages::list(conn, mailbox_id, limit + 1, before)?))
+            let rows = messages::list_without_parked(conn, mailbox_id, limit + 1, before, parked)?;
+            let marks = marks_of(conn, &mailbox.account_id, &rows)?;
+            Ok(Some((rows, marks)))
         })
         .await
         .map_err(store_error)?;
-    let Some(mut rows) = page else {
+    let Some((mut rows, marks)) = page else {
         return Err(RpcError::new(codes::NOT_FOUND, "no such mailbox"));
     };
     let more = rows.len() > limit as usize;
@@ -59,7 +66,59 @@ pub(crate) async fn list(state: &State, params: MessageListParams) -> Result<Val
             id: last.id,
         }
     });
-    let messages = rows.into_iter().map(summary).collect();
+    let messages = rows.into_iter().map(|row| summary(row, &marks)).collect();
+    Ok(json!(MessageListResult { messages, next }))
+}
+
+/// The marks of a page of messages.
+fn marks_of(
+    conn: &rusqlite::Connection,
+    account_id: &str,
+    rows: &[Message],
+) -> Result<HashMap<String, Marks>, StoreError> {
+    let ids: Vec<&str> = rows.iter().filter_map(|m| m.message_id.as_deref()).collect();
+    marks::of(conn, account_id, &ids)
+}
+
+/// An account's pinned, set-aside or snoozed messages (one per Message-ID), newest first.
+pub(crate) async fn view(state: &State, params: ViewParams) -> Result<Value, RpcError> {
+    let limit = params.limit.unwrap_or(DEFAULT_PAGE);
+    if !(1..=MAX_PAGE).contains(&limit) {
+        return Err(RpcError::new(
+            codes::INVALID_PARAMS,
+            format!("limit must be 1 to {MAX_PAGE}"),
+        ));
+    }
+    let mark = match params.view {
+        View::Pinned => Mark::Pinned,
+        View::Aside => Mark::Aside,
+        View::Snoozed => Mark::Snoozed,
+    };
+    let before = params.before.map(|c| Cursor {
+        received_at: c.received_at,
+        id: c.id,
+    });
+    let now = crate::compose::now_ms();
+    let account_id = params.account_id;
+    let (mut rows, marks) = state
+        .store
+        .read(move |conn| {
+            let rows = messages::marked(conn, &account_id, mark, now, limit + 1, before)?;
+            let marks = marks_of(conn, &account_id, &rows)?;
+            Ok((rows, marks))
+        })
+        .await
+        .map_err(store_error)?;
+    let more = rows.len() > limit as usize;
+    rows.truncate(limit as usize);
+    let next = more.then(|| {
+        let last = rows.last().expect("a full page is not empty");
+        MessageCursor {
+            received_at: last.received_at,
+            id: last.id,
+        }
+    });
+    let messages = rows.into_iter().map(|row| summary(row, &marks)).collect();
     Ok(json!(MessageListResult { messages, next }))
 }
 
@@ -71,6 +130,7 @@ fn store_error(error: StoreError) -> RpcError {
 /// kept under `blobs/`; afterwards it opens without contacting the server.
 pub(crate) async fn get(state: &State, params: MessageRef) -> Result<Value, RpcError> {
     let (message, source) = load(state, params.id).await?;
+    let marks = message_marks(state, &message).await?;
     let (body, remote_images) = tokio::task::spawn_blocking(move || {
         let body = body::parse(&source);
         let remote = if body.has_html {
@@ -90,8 +150,23 @@ pub(crate) async fn get(state: &State, params: MessageRef) -> Result<Value, RpcE
         has_html: body.has_html,
         remote_images,
         attachments: body.attachments,
-        message: summary(message),
+        message: summary(message, &marks),
     }))
+}
+
+/// One message's marks.
+async fn message_marks(state: &State, message: &Message) -> Result<HashMap<String, Marks>, RpcError> {
+    let (mailbox_id, row) = (message.mailbox_id, message.clone());
+    state
+        .store
+        .read(move |conn| {
+            let Some(mailbox) = mailboxes::get(conn, mailbox_id)? else {
+                return Ok(HashMap::new());
+            };
+            marks_of(conn, &mailbox.account_id, std::slice::from_ref(&row))
+        })
+        .await
+        .map_err(store_error)
 }
 
 /// The sanitised HTML version of a message.
@@ -220,8 +295,18 @@ async fn download(state: &State, message: &Message, mailbox: &Mailbox) -> Result
     Ok(source)
 }
 
-fn summary(m: Message) -> MessageSummary {
+/// A message as lists show it, with its marks (by Message-ID).
+fn summary(m: Message, marks: &HashMap<String, Marks>) -> MessageSummary {
+    let mark = m
+        .message_id
+        .as_ref()
+        .and_then(|id| marks.get(id))
+        .copied()
+        .unwrap_or_default();
     MessageSummary {
+        pinned: mark.pinned_at.is_some(),
+        aside: mark.aside_at.is_some(),
+        snoozed_until: mark.snoozed_until,
         id: m.id,
         uid: m.uid,
         subject: m.subject,
@@ -260,11 +345,12 @@ pub(crate) async fn thread(state: &State, params: MessageRef) -> Result<Value, R
                 let Some(folder) = folder else {
                     continue;
                 };
+                let marks = marks_of(conn, &folder.account_id, std::slice::from_ref(&row))?;
                 entries.push(ThreadEntry {
                     mailbox_id: folder.id,
                     mailbox_name: folder.name.clone(),
                     mailbox_role: folder.role,
-                    message: summary(row),
+                    message: summary(row, &marks),
                 });
             }
             Ok(Some(entries))

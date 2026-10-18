@@ -14,6 +14,7 @@ pub mod accounts;
 pub mod blobs;
 pub mod drafts;
 pub mod mailboxes;
+pub mod marks;
 pub mod messages;
 mod migrate;
 pub mod operations;

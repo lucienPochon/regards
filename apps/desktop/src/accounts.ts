@@ -99,6 +99,12 @@ export interface MessageSummary {
   flagged: boolean;
   answered: boolean;
   size: number | null;
+  /** Pinned on this device. */
+  pinned: boolean;
+  /** Set aside: out of the inbox until brought back. */
+  aside: boolean;
+  /** Out of the inbox until then (Unix ms), if snoozed. */
+  snoozed_until: number | null;
 }
 
 export interface MessageListResult {
@@ -195,4 +201,26 @@ export function moveMessages(ids: number[], mailboxId: number): Promise<MoveResu
 /** Reverse a recent action. Each undo id works once, for a few minutes. */
 export function applyUndo(id: number): Promise<{ undone: number }> {
   return invoke("undo_apply", { id });
+}
+
+export interface MarkResult {
+  changed: number;
+  undo: UndoInfo | null;
+}
+
+/** Pin or unpin (kept on this device); the result can be undone like a move. */
+export function pinMessages(ids: number[], pinned: boolean): Promise<MarkResult> {
+  return invoke<MarkResult>("message_pin", { ids, pinned });
+}
+
+/** Set aside (out of the inbox) or bring back; undoable. */
+export function setAside(ids: number[], aside: boolean): Promise<MarkResult> {
+  return invoke<MarkResult>("message_set_aside", { ids, aside });
+}
+
+export type MessageView = "pinned" | "aside" | "snoozed";
+
+/** An account's pinned, set-aside or snoozed messages, newest first; pass `next` back for more. */
+export function listView(accountId: string, view: MessageView, before: MessageCursor | null): Promise<MessageListResult> {
+  return invoke<MessageListResult>("message_view", { accountId, view, before });
 }

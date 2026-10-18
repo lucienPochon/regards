@@ -237,10 +237,14 @@ async fn copy_to_sent(state: &Arc<State>, entry: &Entry) -> Result<(), StoreErro
     let copied: Result<(), sync::SyncError> = async {
         let mut session = sync::login(state, &entry.account_id).await?;
         session.append(&sent.remote_name, &[SystemFlag::Seen], &mime).await?;
-        // Show it in Sent, and in its conversation, at once.
-        let outcome = sync::sync_mailbox(state, &mut session, &sent).await;
+        // The copy is made: whatever happens next must not make another one.
+        // Showing it in Sent (and its conversation) at once is best effort;
+        // the next sync brings it otherwise.
+        if let Err(error) = sync::sync_mailbox(state, &mut session, &sent).await {
+            tracing::info!(outbox = id, %error, "the Sent folder will show the copy at its next sync");
+        }
         session.logout().await;
-        outcome.map(drop)
+        Ok(())
     }
     .await;
     match copied {

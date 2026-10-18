@@ -231,6 +231,18 @@ impl Session {
                 self.require_ui()?;
                 compose::dismiss(&self.state, params(request)?).await
             }
+            methods::MESSAGE_PIN => {
+                self.require_ui()?;
+                actions::pin(&self.state, params(request)?).await
+            }
+            methods::MESSAGE_SET_ASIDE => {
+                self.require_ui()?;
+                actions::set_aside(&self.state, params(request)?).await
+            }
+            methods::MESSAGE_VIEW => {
+                self.require_ui()?;
+                mail::view(&self.state, params(request)?).await
+            }
             methods::THREAD_GET => {
                 self.require_ui()?;
                 mail::thread(&self.state, params(request)?).await

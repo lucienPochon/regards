@@ -8,6 +8,7 @@ use regards_core::paths::DataDirs;
 use regards_store::Store;
 use regards_store::accounts::{self, AuthKind, NewAccount, Security, Server};
 use regards_store::mailboxes::{self, RemoteMailbox};
+use regards_store::marks::{self, Mark};
 use regards_store::messages::{self, Cursor, MessageFlags, NewMessage};
 use regards_store::operations::{self, FlagName};
 use std::time::{Duration, Instant};
@@ -132,6 +133,33 @@ async fn bench_a_100k_message_mailbox_stays_responsive() {
     .await
     .unwrap();
     assert_eq!(page[0].uid, MESSAGES);
+
+    // The inbox as shown: what is set aside or snoozed stays out (every 10th of the newest 1,000 here).
+    let a = account.clone();
+    store
+        .write(move |tx| {
+            for uid in (MESSAGES - 999..=MESSAGES).step_by(10) {
+                marks::set(tx, &a, &format!("m{uid}@example.test"), Mark::Aside, Some(1))?;
+            }
+            Ok(())
+        })
+        .await
+        .unwrap();
+    let shown = time("inbox page, 100 set aside", Duration::from_millis(20), || {
+        let a = account.clone();
+        store.read(move |conn| messages::list_without_parked(conn, inbox, 50, None, Some((&a, 0))))
+    })
+    .await
+    .unwrap();
+    assert_eq!(shown.len(), 50);
+    // 99001, 99011, … were set aside.
+    assert!(shown.iter().all(|m| m.uid % 10 != 1), "the set-aside ones are left out");
+    time("the Set aside view", Duration::from_millis(20), || {
+        let a = account.clone();
+        store.read(move |conn| messages::marked(conn, &a, Mark::Aside, 0, 50, None))
+    })
+    .await
+    .unwrap();
 
     let middle = Cursor {
         received_at: 1_700_000_000_000 + i64::from(MESSAGES / 2) * 60_000,

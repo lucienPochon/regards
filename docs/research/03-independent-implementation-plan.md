@@ -194,6 +194,7 @@ flowchart LR
 - **Done** = archive.
 - **Pin**, **Set aside** and **Seen** are local overlays.
 - Everything is undoable and agent-callable, with identical semantics in the UI, CLI and MCP.
+- **Built so far (Phase 3):** Pin and Set aside are kept on the device, keyed by account and Message-ID, so they follow a message across folders, moves and resyncs (migration 0012). The inbox leaves out what is set aside or snoozed; other folders show everything. The Pinned, Set aside and Snoozed views list one entry per message. Marking is undoable like moves (`message.pin`, `message.set_aside`, `message.view`). Measured on the 100k fixture: an inbox page with 100 messages set aside takes 0.3 ms. Done is archive. The buttons come with the new app shell.
 
 ### 5.6 Snooze and reminders (P1, 1.0, ADR-0011)
 

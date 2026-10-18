@@ -54,6 +54,12 @@ pub mod methods {
     pub const MESSAGE_DELETE: &str = "message.delete";
     /// Reverse a recent action, by the undo id it returned. `ui` only for now.
     pub const UNDO_APPLY: &str = "undo.apply";
+    /// Pin or unpin messages (kept on this device); undoable. `ui` only for now.
+    pub const MESSAGE_PIN: &str = "message.pin";
+    /// Set messages aside (out of the inbox) or bring them back; undoable.
+    pub const MESSAGE_SET_ASIDE: &str = "message.set_aside";
+    /// An account's pinned, set-aside or snoozed messages, newest first.
+    pub const MESSAGE_VIEW: &str = "message.view";
     /// Start a new message (Phase 2). Drafts and the outbox are `ui` only for now.
     pub const DRAFT_CREATE: &str = "draft.create";
     /// Start a reply (or reply all) to a stored message, quoted and addressed.
@@ -409,6 +415,15 @@ pub struct MessageSummary {
     pub flagged: bool,
     pub answered: bool,
     pub size: Option<u32>,
+    /// Pinned on this device (plan §5.5).
+    #[serde(default)]
+    pub pinned: bool,
+    /// Set aside: out of the inbox until brought back.
+    #[serde(default)]
+    pub aside: bool,
+    /// Out of the inbox until then (Unix ms).
+    #[serde(default)]
+    pub snoozed_until: Option<i64>,
 }
 
 /// Parameters naming one message: [`methods::MESSAGE_GET`].
@@ -513,6 +528,49 @@ pub struct UndoParams {
 pub struct UndoResult {
     /// Messages put back.
     pub undone: usize,
+}
+
+/// Parameters of [`methods::MESSAGE_PIN`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PinParams {
+    pub ids: Vec<i64>,
+    pub pinned: bool,
+}
+
+/// Parameters of [`methods::MESSAGE_SET_ASIDE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AsideParams {
+    pub ids: Vec<i64>,
+    /// `false` brings them back to the inbox.
+    pub aside: bool,
+}
+
+/// Result of marking messages (pin, set aside, snooze).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MarkResult {
+    /// Messages whose mark changed.
+    pub changed: usize,
+    /// Set when something changed.
+    pub undo: Option<UndoInfo>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum View {
+    Pinned,
+    Aside,
+    Snoozed,
+}
+
+/// Parameters of [`methods::MESSAGE_VIEW`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ViewParams {
+    pub account_id: String,
+    pub view: View,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<MessageCursor>,
 }
 
 /// A message being written.
