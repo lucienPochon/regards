@@ -13,9 +13,9 @@ use regards_ipc::protocol::{
     DraftAttachFileParams, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult, DraftRef,
     DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MailboxListResult, MarkResult,
     MessageDetail, MessageHtml, MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef,
-    MoveResult, OutboxEntryView, OutboxListResult, OutboxRef, OutboxState, OutboxUndoResult, PinParams, RemindParams,
-    ServerSettings, SetFlagsParams, SetFlagsResult, SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View,
-    ViewParams, methods,
+    MoveResult, NoticeKind, NoticeListResult, OutboxEntryView, OutboxListResult, OutboxRef, OutboxState,
+    OutboxUndoResult, PinParams, RemindParams, ServerSettings, SetFlagsParams, SetFlagsResult, SnoozeParams,
+    SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -1746,6 +1746,15 @@ async fn live_a_reminder_with_no_reply_comes_back_on_top_and_a_reply_ends_it() {
     assert_eq!(top.mailbox_id, sent, "it stays filed in Sent");
     assert!(top.listed_at > top.received_at, "listed by when it came back");
     assert_eq!(top.remind_at, None);
+    // The person is told: no reply yet, to Bob.
+    let told: NoticeListResult = desktop.call(methods::NOTICE_LIST, Value::Null).await.unwrap();
+    let due = told
+        .notices
+        .iter()
+        .find(|n| n.kind == NoticeKind::ReminderDue)
+        .expect("a notice");
+    assert_eq!(due.subject, "Did you get my plans?");
+    assert_eq!(due.people[0].address.as_deref(), Some("bob@example.test"));
 
     // Done: it leaves the inbox and stays in Sent; undo brings it back.
     let done: MoveResult = desktop

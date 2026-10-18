@@ -16,8 +16,8 @@ use regards_daemon::{DEFAULT_LATE_SEND_GRACE, Daemon};
 use regards_imap::TlsOptions;
 use regards_ipc::protocol::{
     AccountAddParams, AccountSummary, ClientKind, ConnectionSecurity, DraftCreateParams, DraftRef, DraftSendParams,
-    DraftSendResult, DraftView, OutboxEntryView, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxState,
-    OutboxUndoResult, ServerSettings, codes, methods,
+    DraftSendResult, DraftView, NoticeKind, NoticeListResult, NoticeShownParams, OutboxEntryView, OutboxListResult,
+    OutboxRef, OutboxRescheduleParams, OutboxState, OutboxUndoResult, ServerSettings, codes, methods,
 };
 use regards_ipc::{Client, ClientError, Endpoint, UiToken};
 use regards_vault::Vault;
@@ -336,6 +336,22 @@ async fn after_downtime_one_well_past_its_time_waits_and_one_a_little_late_goes(
     );
     tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(world.nothing_sent(), "never sent unasked");
+
+    // ...and the person is told, once.
+    let told: NoticeListResult = desktop.call(methods::NOTICE_LIST, Value::Null).await.unwrap();
+    assert_eq!(told.notices.len(), 1, "{told:?}");
+    let notice = &told.notices[0];
+    assert_eq!(
+        (notice.kind, notice.outbox_id, notice.subject.as_str()),
+        (NoticeKind::SendHeld, Some(held.outbox_id), "Well past its time")
+    );
+    assert_eq!(notice.people[0].address.as_deref(), Some("bob@example.test"));
+    let _: Value = desktop
+        .call(methods::NOTICE_SHOWN, NoticeShownParams { up_to: notice.id })
+        .await
+        .unwrap();
+    let told: NoticeListResult = desktop.call(methods::NOTICE_LIST, Value::Null).await.unwrap();
+    assert!(told.notices.is_empty());
 
     // The person sends it now.
     reschedule(&mut desktop, held.outbox_id, None).await.unwrap();

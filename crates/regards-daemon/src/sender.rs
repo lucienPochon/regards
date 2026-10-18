@@ -25,6 +25,7 @@ use regards_core::mailbox::Role;
 use regards_imap::SystemFlag;
 use regards_smtp::{Credentials, Envelope, Security, SmtpServer, SubmitError, Submitted};
 use regards_store::accounts::{self, Account};
+use regards_store::notices::{self, Kind, NewNotice};
 use regards_store::outbox::{self, Entry, State as EntryState};
 use regards_store::{StoreError, mailboxes};
 use regards_vault::SecretKey;
@@ -92,7 +93,19 @@ async fn process(state: &Arc<State>) -> Result<(), StoreError> {
         match entry.state {
             EntryState::Queued if late(entry.send_at, now_ms(), grace) => {
                 let id = entry.id;
-                if state.store.write(move |tx| outbox::hold(tx, id)).await?.value {
+                let notice = notice_about(&entry, Kind::SendHeld);
+                let held = state
+                    .store
+                    .write(move |tx| {
+                        let held = outbox::hold(tx, id)?;
+                        if held {
+                            notices::add(tx, &notice, now_ms())?;
+                        }
+                        Ok(held)
+                    })
+                    .await?
+                    .value;
+                if held {
                     tracing::info!(
                         outbox = id,
                         "a scheduled message is well past its time; held for the person"
@@ -149,14 +162,40 @@ async fn send_one(state: &Arc<State>, entry: &Entry) -> Result<(), StoreError> {
         }
         Err(SubmitError::NotSent { reason, retry: false }) => {
             tracing::warn!(outbox = id, "message not sent");
-            state.store.write(move |tx| outbox::failed(tx, id, &reason)).await?;
+            let notice = notice_about(entry, Kind::SendFailed);
+            state
+                .store
+                .write(move |tx| {
+                    outbox::failed(tx, id, &reason)?;
+                    notices::add(tx, &notice, now_ms()).map(drop)
+                })
+                .await?;
         }
         Err(SubmitError::Uncertain(reason)) => {
             tracing::warn!(outbox = id, "message may or may not have been sent");
-            state.store.write(move |tx| outbox::uncertain(tx, id, &reason)).await?;
+            let notice = notice_about(entry, Kind::SendUncertain);
+            state
+                .store
+                .write(move |tx| {
+                    outbox::uncertain(tx, id, &reason)?;
+                    notices::add(tx, &notice, now_ms()).map(drop)
+                })
+                .await?;
         }
     }
     Ok(())
+}
+
+/// A notice about an outbox entry: its recipients and subject.
+fn notice_about(entry: &Entry, kind: Kind) -> NewNotice {
+    NewNotice {
+        account_id: entry.account_id.clone(),
+        kind,
+        message_id: None,
+        outbox_id: Some(entry.id),
+        people: entry.recipients.clone(),
+        subject: entry.subject.clone(),
+    }
 }
 
 /// Scheduled, and found more than `grace` ms past its time.

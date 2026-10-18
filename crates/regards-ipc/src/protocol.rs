@@ -95,6 +95,11 @@ pub mod methods {
     pub const OUTBOX_SEND_AGAIN: &str = "outbox.send_again";
     /// Forget a failed or uncertain message (for example: it did go out).
     pub const OUTBOX_DISMISS: &str = "outbox.dismiss";
+    /// What to tell the person that has not been shown yet: a snooze ended, a
+    /// reminder came due, a send held or failed (ADR-0011). `ui` only.
+    pub const NOTICE_LIST: &str = "notice.list";
+    /// The notices up to an id have been shown (or seen in the app).
+    pub const NOTICE_SHOWN: &str = "notice.shown";
     /// Dedicate this connection to change notifications (ADR-0007). `ui` only for now.
     pub const CHANGES_SUBSCRIBE: &str = "changes.subscribe";
 }
@@ -808,6 +813,50 @@ pub struct OutboxListResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutboxRef {
     pub id: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoticeKind {
+    /// A snoozed message is back in the inbox.
+    SnoozeEnded,
+    /// Nobody replied by the reminder's time: the message is back in the inbox.
+    ReminderDue,
+    /// A scheduled message was found well past its time; it waits in the Outbox.
+    SendHeld,
+    /// A message could not be sent.
+    SendFailed,
+    /// A message may or may not have been sent.
+    SendUncertain,
+}
+
+/// One notice: what happened, who (the sender, or the recipients) and the
+/// subject. Never the message's text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoticeView {
+    pub id: i64,
+    pub account_id: String,
+    pub kind: NoticeKind,
+    /// The stored message it is about, if any.
+    pub message_id: Option<i64>,
+    /// The outbox entry it is about, if any.
+    pub outbox_id: Option<i64>,
+    pub people: Vec<Person>,
+    pub subject: String,
+    /// Unix ms.
+    pub created_at: i64,
+}
+
+/// Result of [`methods::NOTICE_LIST`]: oldest first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoticeListResult {
+    pub notices: Vec<NoticeView>,
+}
+
+/// Parameters of [`methods::NOTICE_SHOWN`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoticeShownParams {
+    pub up_to: i64,
 }
 
 /// Parameters of [`methods::OUTBOX_RESCHEDULE`].

@@ -10,6 +10,7 @@ mod backfill;
 mod compose;
 mod feed;
 mod mail;
+mod notices;
 mod push;
 mod queue;
 mod scheduler;

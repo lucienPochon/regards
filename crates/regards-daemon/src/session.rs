@@ -1,6 +1,6 @@
 //! One client connection: handshake, then request dispatch.
 
-use crate::{State, accounts, actions, compose, mail};
+use crate::{State, accounts, actions, compose, mail, notices};
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_ipc::framing::{self, FrameError};
 use regards_ipc::protocol::{
@@ -222,6 +222,14 @@ impl Session {
             methods::OUTBOX_UNDO => {
                 self.require_ui()?;
                 compose::undo(&self.state, params(request)?).await
+            }
+            methods::NOTICE_LIST => {
+                self.require_ui()?;
+                notices::list(&self.state).await
+            }
+            methods::NOTICE_SHOWN => {
+                self.require_ui()?;
+                notices::shown(&self.state, params(request)?).await
             }
             methods::OUTBOX_RESCHEDULE => {
                 self.require_ui()?;

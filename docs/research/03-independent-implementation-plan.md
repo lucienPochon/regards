@@ -244,6 +244,11 @@ flowchart LR
     - **Otherwise** the message is "reminded": shown on top of the inbox from wherever it is filed (Sent, usually), with a Reminders view for those still waiting.
     - **A reply** arriving by incremental sync also ends a waiting or come-due reminder, as with snooze.
     - **Done:** archiving a reminder shown outside the inbox ends it, and the message stays filed. Any move clears the "came back" marks, undoably.
+  - **Notifications:**
+    - **What is recorded:** the daemon records notices (migration 0015) when a snooze ends, a reminder comes due, or a send is held, failed or uncertain. Each carries who and the subject, never the text, and they are kept a week.
+    - **What the desktop does:** it lists unshown notices (`notice.list`) after changes and at start, shows them as OS notifications (`tauri-plugin-notification`), and marks them shown (`notice.shown`).
+    - **How many:** up to three, one each; more become one summary, which covers ADR-0011's summary after downtime.
+    - **When not shown:** while the window has the focus, or when turned off in the tray ("Show notifications"). Either way they are marked shown.
 
 ### 5.7 Send later, undo send and executors (P1)
 

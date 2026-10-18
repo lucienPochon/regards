@@ -16,7 +16,8 @@
 use crate::State;
 use crate::compose::now_ms;
 use regards_store::marks::{self, Mark};
-use regards_store::{StoreError, accounts};
+use regards_store::notices::{self, Kind, NewNotice};
+use regards_store::{StoreError, accounts, messages};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -76,6 +77,7 @@ async fn wake_due(state: &Arc<State>) -> Result<usize, StoreError> {
             for (account, message_id) in &due {
                 marks::set(tx, account, message_id, Mark::Snoozed, None)?;
                 marks::set(tx, account, message_id, Mark::Surfaced, Some(now))?;
+                notice(tx, account, message_id, Kind::SnoozeEnded, now)?;
                 if crate::actions::mark_unread_everywhere(tx, account, message_id, now)? {
                     accounts.insert(account.clone());
                 }
@@ -114,10 +116,49 @@ async fn remind_due(state: &Arc<State>) -> Result<(usize, usize), StoreError> {
                 }
                 marks::set(tx, account, message_id, Mark::Reminded, Some(now))?;
                 marks::set(tx, account, message_id, Mark::Surfaced, Some(now))?;
+                notice(tx, account, message_id, Kind::ReminderDue, now)?;
                 shown += 1;
             }
             Ok((shown, answered))
         })
         .await?;
     Ok(counted.value)
+}
+
+/// Tell the person: who (the sender; for a reminder, the recipients) and the
+/// subject, from a stored copy (one in the inbox if there is one). Nothing
+/// is said about a message with no copy stored.
+fn notice(
+    tx: &rusqlite::Transaction<'_>,
+    account: &str,
+    message_id: &str,
+    kind: Kind,
+    now: i64,
+) -> Result<(), StoreError> {
+    let copies = messages::copies(tx, account, message_id)?;
+    let mut chosen = None;
+    for copy in &copies {
+        let role = regards_store::mailboxes::get(tx, copy.mailbox_id)?.and_then(|m| m.role);
+        if role == Some(regards_core::mailbox::Role::Inbox) || chosen.is_none() {
+            chosen = Some(copy);
+        }
+    }
+    let Some(message) = chosen else { return Ok(()) };
+    let people = match kind {
+        Kind::ReminderDue => message.to.iter().chain(&message.cc).cloned().collect(),
+        _ => message.from.clone().into_iter().collect(),
+    };
+    notices::add(
+        tx,
+        &NewNotice {
+            account_id: account.to_owned(),
+            kind,
+            message_id: Some(message.id),
+            outbox_id: None,
+            people,
+            subject: message.subject.clone(),
+        },
+        now,
+    )?;
+    Ok(())
 }

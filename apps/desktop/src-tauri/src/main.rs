@@ -13,6 +13,7 @@
 
 mod background;
 mod mail_frame;
+mod notify;
 
 use regards_core::paths::DataDirs;
 use regards_core::secret::Secret;
@@ -618,8 +619,11 @@ async fn forward_changes(app: AppHandle) {
                 backoff = Duration::from_millis(500);
                 // Views may be stale after a reconnect: refresh them once.
                 let _ = app.emit("changes", feed.current());
+                // What happened while the app was away is told now.
+                app.state::<notify::Notifier>().poke();
                 while let Ok(change) = feed.next().await {
                     let _ = app.emit("changes", change);
+                    app.state::<notify::Notifier>().poke();
                 }
             }
             Err(error) => eprintln!("change feed unavailable: {error}"),
@@ -659,6 +663,17 @@ fn background_set(app: AppHandle, background: State<'_, background::Background>,
     background.set(&app, on)
 }
 
+/// Whether notifications are shown (ADR-0011).
+#[tauri::command]
+fn notifications_get(background: State<'_, background::Background>) -> bool {
+    background.notifications()
+}
+
+#[tauri::command]
+fn notifications_set(background: State<'_, background::Background>, on: bool) -> Result<(), String> {
+    background.set_notifications(on)
+}
+
 fn main() {
     let app = tauri::Builder::default()
         // Must come first: a second app instance would replace this one's daemon.
@@ -671,11 +686,15 @@ fn main() {
             MacosLauncher::LaunchAgent,
             Some(vec![background::BACKGROUND_ARG]),
         ))
+        // Used from Rust only, as above.
+        .plugin(tauri_plugin_notification::init())
+        .manage(notify::Notifier::default())
         .manage(Bridge::new())
         .manage(background::Background::load(DataDirs::resolve().ok().as_ref()))
         .register_asynchronous_uri_scheme_protocol(mail_frame::SCHEME, mail_frame::handle)
         .setup(|app| {
             tauri::async_runtime::spawn(forward_changes(app.handle().clone()));
+            tauri::async_runtime::spawn(notify::run(app.handle().clone()));
             background::setup(app)?;
             Ok(())
         })
@@ -692,6 +711,8 @@ fn main() {
             daemon_status,
             background_get,
             background_set,
+            notifications_get,
+            notifications_set,
             account_list,
             account_add,
             account_remove,
