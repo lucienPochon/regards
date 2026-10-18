@@ -2,16 +2,18 @@
 //! Opt-in: `REGARDS_TEST_IMAP=localhost:31993 REGARDS_TEST_IMAP_CA=ca.pem \
 //! cargo test -p regards-daemon --test live -- --ignored`
 
+use regards_core::headers::Person;
 use regards_core::mailbox::Role;
 use regards_core::paths::DataDirs;
 use regards_core::secret::Secret;
 use regards_daemon::{Daemon, SyncLimits};
 use regards_imap::{ImapServer, Session, SystemFlag, TlsOptions};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountRef, AccountSummary, ClientKind, ConnectionSecurity, DeleteResult, MailboxListResult,
+    AccountAddParams, AccountRef, AccountSummary, ClientKind, ConnectionSecurity, DeleteResult, DraftCreateParams,
+    DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MailboxListResult,
     MessageDetail, MessageHtml, MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef,
-    MoveResult, ServerSettings, SetFlagsParams, SetFlagsResult, SyncResult, ThreadView, UndoParams, UndoResult,
-    methods,
+    MoveResult, OutboxEntryView, OutboxListResult, OutboxRef, OutboxState, OutboxUndoResult, ServerSettings,
+    SetFlagsParams, SetFlagsResult, SyncResult, ThreadView, UndoParams, UndoResult, methods,
 };
 use regards_ipc::{Client, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -139,7 +141,7 @@ async fn live_sync_follows_new_flagged_expunged_and_reset_mailboxes() {
         .unwrap()
         .with_ui_token(token.clone())
         .with_vault(Vault::in_memory())
-        .with_imap_tls(live.tls.clone());
+        .with_tls(live.tls.clone());
     let endpoint = daemon.endpoint().clone();
     let handle = tokio::spawn(daemon.serve(std::future::pending()));
     let mut desktop = Client::connect_with(&endpoint, ClientKind::Desktop, Some(&token))
@@ -333,7 +335,7 @@ async fn live_message_bodies_download_once_and_stay_unread() {
         .unwrap()
         .with_ui_token(token.clone())
         .with_vault(vault.clone())
-        .with_imap_tls(live.tls.clone());
+        .with_tls(live.tls.clone());
     let endpoint = daemon.endpoint().clone();
     let handle = tokio::spawn(daemon.serve(std::future::pending()));
     let mut desktop = Client::connect_with(&endpoint, ClientKind::Desktop, Some(&token))
@@ -451,6 +453,16 @@ async fn daemon_with_account(live: &Live) -> WithAccount {
 }
 
 async fn daemon_with_limits(live: &Live, limits: SyncLimits) -> WithAccount {
+    let smtp = ServerSettings {
+        host: live.server.host.clone(),
+        port: 587,
+        security: ConnectionSecurity::Starttls,
+    };
+    daemon_with_settings(live, limits, smtp, live.tls.clone()).await
+}
+
+/// A daemon with one account: IMAP on the live server, SMTP as given.
+async fn daemon_with_settings(live: &Live, limits: SyncLimits, smtp: ServerSettings, tls: TlsOptions) -> WithAccount {
     let temp = tempfile::tempdir().unwrap();
     let token = UiToken::generate().unwrap();
     let daemon = Daemon::bind(DataDirs::at(temp.path()))
@@ -458,7 +470,7 @@ async fn daemon_with_limits(live: &Live, limits: SyncLimits) -> WithAccount {
         .unwrap()
         .with_ui_token(token.clone())
         .with_vault(Vault::in_memory())
-        .with_imap_tls(live.tls.clone())
+        .with_tls(tls)
         .with_sync_limits(limits);
     let endpoint = daemon.endpoint().clone();
     let handle = tokio::spawn(daemon.serve(std::future::pending()));
@@ -479,10 +491,7 @@ async fn daemon_with_limits(live: &Live, limits: SyncLimits) -> WithAccount {
                 username: Some(live.user.clone()),
                 password: live.password.clone(),
                 imap: settings(live.server.port),
-                smtp: ServerSettings {
-                    security: ConnectionSecurity::Starttls,
-                    ..settings(587)
-                },
+                smtp,
             },
         )
         .await
@@ -974,5 +983,275 @@ async fn live_actions_taken_offline_reach_the_server_once_it_is_back() {
     assert_eq!(messages(&mut desktop, archive).await.messages.len(), 1);
 
     seed.logout().await;
+    handle.abort();
+}
+
+#[path = "../../regards-smtp/tests/support/fake_smtp.rs"]
+mod fake_smtp;
+
+/// A daemon whose account sends through a fake SMTP server (STARTTLS on 127.0.0.1).
+async fn daemon_sending_through(live: &Live, script: fake_smtp::Script) -> (WithAccount, fake_smtp::Sessions) {
+    let smtp_pki = fake_smtp::pki();
+    let (port, sessions) = fake_smtp::serve(
+        &smtp_pki,
+        fake_smtp::Script {
+            password: Box::leak(live.password.expose().to_owned().into_boxed_str()),
+            ..script
+        },
+    )
+    .await;
+    let tls = live
+        .tls
+        .clone()
+        .with_extra_roots_pem(smtp_pki.ca_pem.as_bytes())
+        .unwrap();
+    let smtp = ServerSettings {
+        host: "127.0.0.1".into(),
+        port,
+        security: ConnectionSecurity::Starttls,
+    };
+    (
+        daemon_with_settings(live, SyncLimits::default(), smtp, tls).await,
+        sessions,
+    )
+}
+
+async fn outbox(desktop: &mut Client) -> Vec<OutboxEntryView> {
+    desktop
+        .call::<_, OutboxListResult>(methods::OUTBOX_LIST, Value::Null)
+        .await
+        .unwrap()
+        .entries
+}
+
+/// Wait until the outbox entries satisfy `check`.
+async fn outbox_becomes(desktop: &mut Client, check: impl Fn(&[OutboxEntryView]) -> bool) -> Vec<OutboxEntryView> {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let entries = outbox(desktop).await;
+        if check(&entries) {
+            return entries;
+        }
+        assert!(Instant::now() < deadline, "the outbox stayed {entries:?}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+fn person(address: &str) -> Person {
+    Person {
+        name: None,
+        address: Some(address.into()),
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_a_reply_can_be_undone_then_goes_out_once_and_lands_in_sent() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let _ = seed.create_mailbox(b"Sent").await;
+    seed.append(b"INBOX", &[], &message(1, "Plans", "Ada <ada@example.test>"))
+        .await
+        .unwrap();
+    let script = fake_smtp::Script::new(fake_smtp::Mode::StartTls {
+        offer: true,
+        inject: false,
+    });
+    let ((_temp, mut desktop, account, inbox, handle), mut sent) = daemon_sending_through(&live, script).await;
+    let original = messages(&mut desktop, inbox).await.messages[0].id;
+
+    // Reply: addressed to the sender, quoted, threaded.
+    let draft: DraftView = desktop
+        .call(
+            methods::DRAFT_REPLY,
+            DraftReplyParams {
+                message_id: original,
+                all: false,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(draft.to[0].address.as_deref(), Some("ada@example.test"));
+    assert_eq!(draft.subject, "Re: Plans");
+    assert!(draft.body.contains("Ada wrote:\n> Body 1"), "{}", draft.body);
+    assert_eq!(draft.replying_to, Some(original));
+    let draft: DraftView = desktop
+        .call(
+            methods::DRAFT_UPDATE,
+            DraftUpdateParams {
+                id: draft.id,
+                to: draft.to.clone(),
+                cc: vec![],
+                bcc: vec![person("hidden@example.test")],
+                subject: draft.subject.clone(),
+                body: format!("Thanks!{}", draft.body),
+            },
+        )
+        .await
+        .unwrap();
+
+    // Send, and undo at once: nothing goes out, the draft is editable again.
+    let queued: DraftSendResult = desktop
+        .call(
+            methods::DRAFT_SEND,
+            DraftSendParams {
+                id: draft.id,
+                undo_seconds: Some(10),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(outbox(&mut desktop).await[0].state, OutboxState::Queued);
+    let undone: OutboxUndoResult = desktop
+        .call(methods::OUTBOX_UNDO, OutboxRef { id: queued.outbox_id })
+        .await
+        .unwrap();
+    assert_eq!(undone.draft_id, Some(draft.id));
+    assert!(outbox(&mut desktop).await.is_empty());
+
+    // Send for real, with a 1-second window.
+    let _: DraftSendResult = desktop
+        .call(
+            methods::DRAFT_SEND,
+            DraftSendParams {
+                id: draft.id,
+                undo_seconds: Some(1),
+            },
+        )
+        .await
+        .unwrap();
+    let delivered = tokio::time::timeout(Duration::from_secs(20), sent.next())
+        .await
+        .expect("the message reached the SMTP server");
+    let me = format!("{}@example.test", live.user);
+    assert_eq!(delivered.from.as_deref(), Some(me.as_str()));
+    assert_eq!(delivered.to, ["ada@example.test", "hidden@example.test"]);
+    let data = String::from_utf8(delivered.data.unwrap()).unwrap();
+    assert!(data.contains("Subject: Re: Plans"), "{data}");
+    assert!(data.contains("In-Reply-To: <sync-1@example.test>"), "{data}");
+    assert!(data.contains("Thanks!"));
+    assert!(!data.contains("hidden@example.test"), "Bcc is not in the message");
+
+    // The copy lands in Sent, the original is answered, the outbox and draft are done.
+    server_count_becomes(&mut seed, b"Sent", 1).await;
+    server_flags_become(&mut seed, |flags| flags.len() == 1 && flags[0].flags.answered).await;
+    outbox_becomes(&mut desktop, <[_]>::is_empty).await;
+    let gone = desktop
+        .call::<_, Value>(methods::DRAFT_GET, DraftRef { id: draft.id })
+        .await;
+    assert!(gone.is_err(), "the draft is gone once sent");
+    let sent_folder = folders(&mut desktop, &account.id)
+        .await
+        .mailboxes
+        .iter()
+        .find(|m| m.role == Some(Role::Sent))
+        .unwrap()
+        .id;
+    assert_eq!(
+        messages(&mut desktop, sent_folder).await.messages[0].subject,
+        "Re: Plans"
+    );
+    let conversation: ThreadView = desktop
+        .call(methods::THREAD_GET, MessageRef { id: original })
+        .await
+        .unwrap();
+    assert_eq!(conversation.messages.len(), 2, "the reply joined the conversation");
+    // Sent exactly once.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(sent.try_next().is_none());
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_a_message_that_may_have_gone_is_never_resent_by_itself() {
+    let live = live();
+    let script = fake_smtp::Script {
+        fault: fake_smtp::Fault::DropAfterData,
+        reject: &["nobody@example.test"],
+        ..fake_smtp::Script::new(fake_smtp::Mode::StartTls {
+            offer: true,
+            inject: false,
+        })
+    };
+    let ((_temp, mut desktop, account, _inbox, handle), mut sent) = daemon_sending_through(&live, script).await;
+    let new = |address: &str| DraftCreateParams {
+        account_id: account.id.clone(),
+        to: vec![person(address)],
+        subject: "Hello".into(),
+        body: "Hi".into(),
+        ..DraftCreateParams::default()
+    };
+
+    // The connection drops after the whole message: uncertain, and it stays so.
+    let draft: DraftView = desktop
+        .call(methods::DRAFT_CREATE, new("bob@example.test"))
+        .await
+        .unwrap();
+    let _: DraftSendResult = desktop
+        .call(
+            methods::DRAFT_SEND,
+            DraftSendParams {
+                id: draft.id,
+                undo_seconds: Some(0),
+            },
+        )
+        .await
+        .unwrap();
+    let entries = outbox_becomes(&mut desktop, |e| {
+        e.first().is_some_and(|e| e.state == OutboxState::Uncertain)
+    })
+    .await;
+    assert!(entries[0].last_error.as_deref().unwrap().contains("may or may not"));
+    assert!(sent.next().await.data.is_some());
+    tokio::time::sleep(Duration::from_secs(6)).await;
+    assert!(sent.try_next().is_none(), "never retried by itself");
+    // The user says it went: it is forgotten with its draft.
+    let _: Value = desktop
+        .call(methods::OUTBOX_DISMISS, OutboxRef { id: entries[0].id })
+        .await
+        .unwrap();
+    assert!(outbox(&mut desktop).await.is_empty());
+
+    // A refused recipient: failed, with the reason, and back to the draft on "edit".
+    let draft: DraftView = desktop
+        .call(methods::DRAFT_CREATE, new("nobody@example.test"))
+        .await
+        .unwrap();
+    let _: DraftSendResult = desktop
+        .call(
+            methods::DRAFT_SEND,
+            DraftSendParams {
+                id: draft.id,
+                undo_seconds: Some(0),
+            },
+        )
+        .await
+        .unwrap();
+    let entries = outbox_becomes(&mut desktop, |e| {
+        e.first().is_some_and(|e| e.state == OutboxState::Failed)
+    })
+    .await;
+    assert!(
+        entries[0]
+            .last_error
+            .as_deref()
+            .unwrap()
+            .contains("nobody@example.test")
+    );
+    let _: OutboxUndoResult = desktop
+        .call(methods::OUTBOX_UNDO, OutboxRef { id: entries[0].id })
+        .await
+        .unwrap();
+    let editable: DraftView = desktop
+        .call(methods::DRAFT_GET, DraftRef { id: draft.id })
+        .await
+        .unwrap();
+    assert!(!editable.sending);
+
     handle.abort();
 }

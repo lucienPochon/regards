@@ -12,10 +12,12 @@
 
 pub mod accounts;
 pub mod blobs;
+pub mod drafts;
 pub mod mailboxes;
 pub mod messages;
 mod migrate;
 pub mod operations;
+pub mod outbox;
 pub mod threads;
 pub mod undo;
 

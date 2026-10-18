@@ -58,10 +58,31 @@ Undo send and send later (ADR-0011) both need an outbox.
    - **At-most-once.** Entering `sending` atomically claims the entry. A timeout or crash after the SMTP DATA phase (or after the API call) results in **`uncertain`, never an automatic retry**. The UI then asks the user, after checking the Sent folder for the Message-ID.
    - **Idempotent requests.** Repeated send requests for an already-sent outbox entry return the existing Sent message.
    - **Sent copies.** IMAP APPEND to the Sent mailbox happens only when the provider doesn't save its own copy (detected per provider and verified by sync), so copies are never duplicated.
+   - **Implementation (Phase 2):**
+     - **Freezing:** `draft.send` builds the MIME (`mail-builder`) and stores it with its SHA-256 in `outbox` (migration 0009).
+       - **Message-ID:** our own random ID on the sender's domain.
+       - **Date:** UTC.
+       - **Bcc:** only in the envelope.
+       - **While queued:** the draft cannot be edited or deleted.
+     - **Guarded writes:** every state change is one guarded write.
+       - **Undo** deletes the entry only while it is `queued` (or `failed`).
+       - **Claim:** the runner claims it only while it is `queued` and past `undo_until`, so exactly one of them wins.
+     - **SMTP outcomes** (our `regards-smtp` client, ADR-0009):
+       - **Sent:** `sent`.
+       - **Not sent, retryable:** back to `queued`, with backoff from 5 s to 10 min.
+       - **Not sent, permanent:** `failed`, with the reason.
+       - **Connection lost after the final `.`:** `uncertain`.
+       - **Crash:** a `sending` entry found at startup becomes `uncertain`.
+       - **Uncertain:** never retried by itself. The user chooses "send again" (`outbox.send_again`) or "it went" (`outbox.dismiss`). Checking the Sent folder for the Message-ID is still to do.
+     - **After sending:**
+       - **Draft:** it is deleted.
+       - **Answered:** the message it answered is marked `\Answered` through the operation queue.
+       - **Sent copy:** appended to Sent, marked read, unless the IMAP host is Gmail's or Microsoft's. That folder is then synced, so the reply appears in its conversation at once. A failed copy is retried up to 10 times.
 4. **Undo send.**
    - Every send gets `undo_until = now + delay`: default 10 s, configurable 0–30 s.
    - Undo during the window moves the entry back to `draft` and reopens the composer.
    - Agent-initiated sends use the hold policy instead (ADR-0012).
+   - **Implementation (Phase 2):** `outbox.undo` takes the entry back and returns its draft. It also works on a `failed` entry, to edit and resend it.
 5. **Visibility.** The Outbox view lists queued, scheduled, failed and uncertain items, each with clear actions.
 
 ## Alternatives considered

@@ -10,8 +10,11 @@ publish.workspace = true
 [dependencies]
 ammonia.workspace = true
 dirs.workspace = true
+getrandom.workspace = true
+mail-builder.workspace = true
 mail-parser.workspace = true
 serde.workspace = true
+thiserror.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]

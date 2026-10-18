@@ -34,7 +34,7 @@ pub(crate) async fn add(state: &Arc<State>, params: AccountAddParams) -> Result<
         host: new.imap.host.clone(),
         port: new.imap.port,
     };
-    let check = regards_imap::verify_login(&server, &new.username, &new.password, &state.imap_tls)
+    let check = regards_imap::verify_login(&server, &new.username, &new.password, &state.tls)
         .await
         .map_err(check_failed)?;
 

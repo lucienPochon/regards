@@ -25,6 +25,9 @@ pub struct Headers {
     pub message_id: Option<String>,
     pub in_reply_to: Vec<String>,
     pub references: Vec<String>,
+    /// Where replies should go, when the sender asked for somewhere else.
+    #[serde(default)]
+    pub reply_to: Vec<Person>,
 }
 
 /// Parse a header block (for example `BODY[HEADER.FIELDS (…)]`). Never fails:
@@ -42,6 +45,7 @@ pub fn parse(raw: &[u8]) -> Headers {
         message_id: message.message_id().map(str::to_owned),
         in_reply_to: ids(message.in_reply_to()),
         references: ids(message.references()),
+        reply_to: people(message.reply_to()),
     }
 }
 

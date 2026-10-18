@@ -1,6 +1,6 @@
 //! One client connection: handshake, then request dispatch.
 
-use crate::{State, accounts, actions, mail};
+use crate::{State, accounts, actions, compose, mail};
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_ipc::framing::{self, FrameError};
 use regards_ipc::protocol::{
@@ -174,6 +174,54 @@ impl Session {
             methods::MESSAGE_DELETE => {
                 self.require_ui()?;
                 actions::delete_forever(&self.state, params(request)?).await
+            }
+            methods::DRAFT_CREATE => {
+                self.require_ui()?;
+                compose::create(&self.state, params(request)?).await
+            }
+            methods::DRAFT_REPLY => {
+                self.require_ui()?;
+                compose::reply(&self.state, params(request)?).await
+            }
+            methods::DRAFT_FORWARD => {
+                self.require_ui()?;
+                compose::forward(&self.state, params(request)?).await
+            }
+            methods::DRAFT_GET => {
+                self.require_ui()?;
+                compose::get(&self.state, params(request)?).await
+            }
+            methods::DRAFT_LIST => {
+                self.require_ui()?;
+                compose::list(&self.state, params(request)?).await
+            }
+            methods::DRAFT_UPDATE => {
+                self.require_ui()?;
+                compose::update(&self.state, params(request)?).await
+            }
+            methods::DRAFT_DELETE => {
+                self.require_ui()?;
+                compose::delete(&self.state, params(request)?).await
+            }
+            methods::DRAFT_SEND => {
+                self.require_ui()?;
+                compose::send(&self.state, params(request)?).await
+            }
+            methods::OUTBOX_LIST => {
+                self.require_ui()?;
+                compose::outbox_list(&self.state).await
+            }
+            methods::OUTBOX_UNDO => {
+                self.require_ui()?;
+                compose::undo(&self.state, params(request)?).await
+            }
+            methods::OUTBOX_SEND_AGAIN => {
+                self.require_ui()?;
+                compose::send_again(&self.state, params(request)?).await
+            }
+            methods::OUTBOX_DISMISS => {
+                self.require_ui()?;
+                compose::dismiss(&self.state, params(request)?).await
             }
             methods::THREAD_GET => {
                 self.require_ui()?;

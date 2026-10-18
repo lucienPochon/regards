@@ -7,10 +7,12 @@
 mod accounts;
 mod actions;
 mod backfill;
+mod compose;
 mod feed;
 mod mail;
 mod push;
 mod queue;
+mod sender;
 mod session;
 mod sync;
 
@@ -54,8 +56,8 @@ pub(crate) struct State {
     /// The credential store, opened on first use so a missing Secret Service
     /// on Linux does not stop the daemon from starting.
     pub(crate) vault: OnceCell<Result<Vault, String>>,
-    /// Which certificates IMAP connections trust.
-    pub(crate) imap_tls: TlsOptions,
+    /// Which certificates IMAP and SMTP connections trust.
+    pub(crate) tls: TlsOptions,
     /// Sync progress per account.
     pub(crate) sync: sync::Tracker,
     /// The IDLE connections, one per account.
@@ -68,6 +70,8 @@ pub(crate) struct State {
     pub(crate) queue: queue::Queue,
     /// Tasks fetching older mail, one per account.
     pub(crate) backfills: backfill::Backfills,
+    /// Sends what is queued in the outbox (ADR-0010 §3).
+    pub(crate) outbox: sender::Outbox,
     pub(crate) limits: SyncLimits,
 }
 
@@ -98,7 +102,7 @@ pub struct Daemon {
     store: Store,
     ui_token: Option<UiToken>,
     vault: Option<Vault>,
-    imap_tls: TlsOptions,
+    tls: TlsOptions,
     limits: SyncLimits,
 }
 
@@ -143,7 +147,7 @@ impl Daemon {
             store,
             ui_token: None,
             vault: None,
-            imap_tls: default_imap_tls(),
+            tls: default_tls(),
             limits: SyncLimits::default(),
         })
     }
@@ -161,9 +165,9 @@ impl Daemon {
         self
     }
 
-    /// Trust these certificates for IMAP instead of the defaults (tests).
-    pub fn with_imap_tls(mut self, tls: TlsOptions) -> Self {
-        self.imap_tls = tls;
+    /// Trust these certificates for IMAP and SMTP instead of the defaults (tests).
+    pub fn with_tls(mut self, tls: TlsOptions) -> Self {
+        self.tls = tls;
         self
     }
 
@@ -192,7 +196,7 @@ impl Daemon {
             ui_token,
             store,
             vault,
-            imap_tls,
+            tls,
             dirs,
             limits,
         } = self;
@@ -204,13 +208,14 @@ impl Daemon {
             ui_token,
             store,
             vault: OnceCell::new_with(vault.map(Ok)),
-            imap_tls,
+            tls,
             sync: sync::Tracker::new(Arc::clone(&feed)),
             watchers: push::Watchers::default(),
             feed,
             blobs: Blobs::new(dirs.blobs()),
             queue: queue::Queue::default(),
             backfills: backfill::Backfills::default(),
+            outbox: sender::Outbox::default(),
             limits,
         });
         queue::Queue::wake_all(&state);
@@ -220,6 +225,7 @@ impl Daemon {
         });
         sync::spawn_all(Arc::clone(&state));
         let threading = tokio::spawn(mail::thread_backfill(Arc::clone(&state)));
+        let sending = tokio::spawn(sender::run(Arc::clone(&state)));
         tracing::info!(%endpoint, "daemon listening");
 
         tokio::pin!(shutdown);
@@ -249,6 +255,7 @@ impl Daemon {
         state.backfills.stop_all();
         follow.abort();
         threading.abort();
+        sending.abort();
         drop(listener);
         // Releasing the lock last lets a replacement daemon start only after we stopped listening.
         drop(lock);
@@ -273,7 +280,7 @@ fn restrict_to_owner(_dir: &std::path::Path) -> io::Result<()> {
 #[cfg(debug_assertions)]
 const DEV_EXTRA_CA_ENV: &str = "REGARDS_DEV_EXTRA_CA";
 
-fn default_imap_tls() -> TlsOptions {
+fn default_tls() -> TlsOptions {
     #[cfg(debug_assertions)]
     if let Some(path) = std::env::var_os(DEV_EXTRA_CA_ENV) {
         match std::fs::read(&path).map_err(|e| e.to_string()).and_then(|pem| {

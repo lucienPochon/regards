@@ -102,6 +102,41 @@ pub(crate) async fn set_flags(state: &Arc<State>, params: SetFlagsParams) -> Res
     Ok(json!(SetFlagsResult { changed }))
 }
 
+/// After a reply went out: mark the message it answers `\Answered`, here and
+/// (through the queue) on the server. Returns the account to wake.
+pub(crate) fn mark_answered(
+    tx: &rusqlite::Transaction<'_>,
+    message_id: i64,
+    now: i64,
+) -> Result<Option<String>, StoreError> {
+    let Some(message) = messages::get(tx, message_id)? else {
+        return Ok(None);
+    };
+    if message.flags.answered {
+        return Ok(None);
+    }
+    let Some(mailbox) = mailboxes::get(tx, message.mailbox_id)? else {
+        return Ok(None);
+    };
+    let Some(uid_validity) = mailbox.uid_validity else {
+        return Ok(None);
+    };
+    operations::apply_locally(tx, mailbox.id, &[message.uid], &[FlagName::Answered], true)?;
+    operations::enqueue(
+        tx,
+        &NewOperation {
+            mailbox_id: mailbox.id,
+            uid_validity: uid_validity as u32,
+            kind: OperationKind::AddFlags,
+            uids: vec![message.uid],
+            flags: vec![FlagName::Answered],
+            target_mailbox_id: None,
+        },
+        now,
+    )?;
+    Ok(Some(mailbox.account_id))
+}
+
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

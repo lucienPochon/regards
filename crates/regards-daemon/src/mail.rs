@@ -120,7 +120,7 @@ pub(crate) async fn html(state: &State, params: MessageHtmlParams) -> Result<Val
 }
 
 /// A message and its source, downloading the source the first time.
-async fn load(state: &State, id: i64) -> Result<(Message, Vec<u8>), RpcError> {
+pub(crate) async fn load(state: &State, id: i64) -> Result<(Message, Vec<u8>), RpcError> {
     let mut retried = false;
     loop {
         let (message, mailbox) = find(state, id)

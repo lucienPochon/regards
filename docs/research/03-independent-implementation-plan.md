@@ -244,6 +244,12 @@ flowchart LR
 - **Saving:** local revisioned autosave plus throttled IMAP draft sync.
 - **Sources:** reply, reply-all, forward, send again, `mailto:`, templates with placeholders, and Markdown input for the CLI and agents.
 - **Send validation:** recipients, subject (or confirmation), attachments ready, no unresolved placeholders.
+- **Built so far (Phase 2):**
+  - **Sending:** the SMTP submission client (`regards-smtp`, at-most-once).
+  - **Drafts:** stored in the daemon. A new message, reply and reply all (Reply-To honoured, my own addresses left out) and forward start addressed and quoted. A reply's References are kept to 20 (the root and the latest).
+  - **Outbox:** frozen MIME, undo send (10 s by default, 0–30 s), retry with backoff, `failed` and `uncertain` states, the Sent copy, and `\Answered` on the original (ADR-0010 §3–4).
+  - **Plain text** for now; the rich editor comes with the composer UI work.
+- **Still to come in Phase 2:** the composer in the app, the HTML editor, attachments, identities and signatures, templates, and IMAP draft sync.
 
 ### 5.10 Search (P0 keyword, P2 semantic, 1.0)
 

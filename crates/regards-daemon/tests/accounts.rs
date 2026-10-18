@@ -41,7 +41,7 @@ async fn start(tls: TlsOptions) -> Running {
         .unwrap()
         .with_ui_token(token.clone())
         .with_vault(vault.clone())
-        .with_imap_tls(tls);
+        .with_tls(tls);
     let endpoint = daemon.endpoint().clone();
     let handle = tokio::spawn(daemon.serve(std::future::pending()));
     Running {
@@ -347,7 +347,7 @@ async fn a_restarted_daemon_syncs_existing_accounts() {
                 .unwrap()
                 .with_ui_token(token)
                 .with_vault(vault)
-                .with_imap_tls(tls);
+                .with_tls(tls);
             let endpoint = daemon.endpoint().clone();
             (endpoint, tokio::spawn(daemon.serve(std::future::pending())))
         }

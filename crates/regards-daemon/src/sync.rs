@@ -176,7 +176,7 @@ pub(crate) async fn login(state: &State, account_id: &str) -> Result<Session, Sy
         host: account.imap.host.clone(),
         port: account.imap.port,
     };
-    Ok(Session::login(&server, &account.username, &password, &state.imap_tls).await?)
+    Ok(Session::login(&server, &account.username, &password, &state.tls).await?)
 }
 
 async fn run(state: &State, account_id: &str) -> Result<Summary, SyncError> {

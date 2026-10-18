@@ -54,6 +54,28 @@ pub mod methods {
     pub const MESSAGE_DELETE: &str = "message.delete";
     /// Reverse a recent action, by the undo id it returned. `ui` only for now.
     pub const UNDO_APPLY: &str = "undo.apply";
+    /// Start a new message (Phase 2). Drafts and the outbox are `ui` only for now.
+    pub const DRAFT_CREATE: &str = "draft.create";
+    /// Start a reply (or reply all) to a stored message, quoted and addressed.
+    pub const DRAFT_REPLY: &str = "draft.reply";
+    /// Start forwarding a stored message.
+    pub const DRAFT_FORWARD: &str = "draft.forward";
+    pub const DRAFT_GET: &str = "draft.get";
+    /// An account's drafts, most recently changed first.
+    pub const DRAFT_LIST: &str = "draft.list";
+    /// Save what the draft says (autosave). Refused while it is being sent.
+    pub const DRAFT_UPDATE: &str = "draft.update";
+    pub const DRAFT_DELETE: &str = "draft.delete";
+    /// Freeze the draft into the outbox; it goes once the undo window is over.
+    pub const DRAFT_SEND: &str = "draft.send";
+    /// What is waiting to be sent, failed or may not have gone.
+    pub const OUTBOX_LIST: &str = "outbox.list";
+    /// Take back a message not yet sent (undo send, or edit after a failure).
+    pub const OUTBOX_UNDO: &str = "outbox.undo";
+    /// Send a failed or uncertain message again: the user decided.
+    pub const OUTBOX_SEND_AGAIN: &str = "outbox.send_again";
+    /// Forget a failed or uncertain message (for example: it did go out).
+    pub const OUTBOX_DISMISS: &str = "outbox.dismiss";
     /// Dedicate this connection to change notifications (ADR-0007). `ui` only for now.
     pub const CHANGES_SUBSCRIBE: &str = "changes.subscribe";
 }
@@ -487,6 +509,128 @@ pub struct UndoParams {
 pub struct UndoResult {
     /// Messages put back.
     pub undone: usize,
+}
+
+/// A message being written.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftView {
+    pub id: i64,
+    pub account_id: String,
+    pub to: Vec<Person>,
+    pub cc: Vec<Person>,
+    pub bcc: Vec<Person>,
+    pub subject: String,
+    pub body: String,
+    /// The stored message it answers, if any.
+    pub replying_to: Option<i64>,
+    /// Unix time in milliseconds.
+    pub updated_at: i64,
+    /// It is in the outbox: take it back before changing it.
+    pub sending: bool,
+}
+
+/// Parameters of [`methods::DRAFT_CREATE`]; everything may start empty.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftCreateParams {
+    pub account_id: String,
+    #[serde(default)]
+    pub to: Vec<Person>,
+    #[serde(default)]
+    pub cc: Vec<Person>,
+    #[serde(default)]
+    pub bcc: Vec<Person>,
+    #[serde(default)]
+    pub subject: String,
+    #[serde(default)]
+    pub body: String,
+}
+
+/// Parameters of [`methods::DRAFT_REPLY`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftReplyParams {
+    /// The stored message to answer.
+    pub message_id: i64,
+    /// Reply to everyone, not just the sender.
+    #[serde(default)]
+    pub all: bool,
+}
+
+/// Names a draft.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftRef {
+    pub id: i64,
+}
+
+/// Parameters of [`methods::DRAFT_UPDATE`]: the whole of what the draft says.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftUpdateParams {
+    pub id: i64,
+    pub to: Vec<Person>,
+    pub cc: Vec<Person>,
+    pub bcc: Vec<Person>,
+    pub subject: String,
+    pub body: String,
+}
+
+/// Parameters of [`methods::DRAFT_SEND`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftSendParams {
+    pub id: i64,
+    /// Seconds during which the send can be undone: 0 to 30, default 10 (ADR-0010 §4).
+    #[serde(default)]
+    pub undo_seconds: Option<u32>,
+}
+
+/// Result of [`methods::DRAFT_SEND`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftSendResult {
+    pub outbox_id: i64,
+    /// Until when [`methods::OUTBOX_UNDO`] stops it, Unix time in milliseconds.
+    pub undo_until: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutboxState {
+    /// Waiting: for its undo window, or to retry.
+    Queued,
+    Sending,
+    /// Not sent; something must change first.
+    Failed,
+    /// It may or may not have gone out; the user decides.
+    Uncertain,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutboxEntryView {
+    pub id: i64,
+    pub account_id: String,
+    pub draft_id: Option<i64>,
+    pub subject: String,
+    pub recipients: Vec<Person>,
+    pub state: OutboxState,
+    pub undo_until: i64,
+    pub next_attempt_at: i64,
+    pub attempts: u32,
+    pub last_error: Option<String>,
+}
+
+/// Result of [`methods::OUTBOX_LIST`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutboxListResult {
+    pub entries: Vec<OutboxEntryView>,
+}
+
+/// Names an outbox entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutboxRef {
+    pub id: i64,
+}
+
+/// Result of [`methods::OUTBOX_UNDO`]: the draft it came from, to reopen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutboxUndoResult {
+    pub draft_id: Option<i64>,
 }
 
 /// Parameters of [`methods::MESSAGE_HTML`].

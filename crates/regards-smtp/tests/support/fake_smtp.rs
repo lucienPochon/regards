@@ -1,5 +1,7 @@
 //! A fake SMTP submission server with a throwaway CA, for tests. It records
 //! what each connection did and can misbehave on purpose.
+// Shared by the SMTP and daemon tests; each uses only part of it.
+#![allow(dead_code)]
 
 use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, Issuer, KeyPair, KeyUsagePurpose};
 use std::sync::Arc;
@@ -75,12 +77,15 @@ pub struct Script {
     /// Recipients refused with 550.
     pub reject: &'static [&'static str],
     pub fault: Fault,
+    /// The only password sign-in accepts.
+    pub password: &'static str,
 }
 
 impl Script {
     pub const fn new(mode: Mode) -> Self {
         Self {
             mode,
+            password: PASSWORD,
             auth: "PLAIN LOGIN",
             size: None,
             reject: &[],
@@ -109,6 +114,11 @@ pub struct Sessions(mpsc::UnboundedReceiver<Session>);
 impl Sessions {
     pub async fn next(&mut self) -> Session {
         self.0.recv().await.expect("the fake server is gone")
+    }
+
+    /// A finished session, if there is one already.
+    pub fn try_next(&mut self) -> Option<Session> {
+        self.0.try_recv().ok()
     }
 }
 
@@ -209,7 +219,7 @@ where
                         [_, user, pass] => (lossy(user), lossy(pass)),
                         _ => (String::new(), String::new()),
                     };
-                    login(session, user, pass, tls)
+                    login(session, user, pass, tls, script.password)
                 }
                 Some("LOGIN") => {
                     if stream.write_all(b"334 VXNlcm5hbWU6\r\n").await.is_err() {
@@ -220,7 +230,13 @@ where
                         return;
                     }
                     let Some(pass) = read_line(stream).await else { return };
-                    login(session, lossy(&decode(&user)), lossy(&decode(&pass)), tls)
+                    login(
+                        session,
+                        lossy(&decode(&user)),
+                        lossy(&decode(&pass)),
+                        tls,
+                        script.password,
+                    )
                 }
                 _ => "504 unknown mechanism\r\n".into(),
             },
@@ -276,8 +292,8 @@ where
     }
 }
 
-fn login(session: &mut Session, user: String, pass: String, tls: bool) -> String {
-    let ok = pass == PASSWORD;
+fn login(session: &mut Session, user: String, pass: String, tls: bool, password: &str) -> String {
+    let ok = pass == password;
     session.login = Some((user, pass));
     session.tls_at_login = tls;
     if ok {
