@@ -314,7 +314,8 @@ async fn live_message_bodies_download_once_and_stay_unread() {
         Content-Type: multipart/mixed; boundary=\"b\"\r\n\r\n\
         --b\r\nContent-Type: multipart/alternative; boundary=\"a\"\r\n\r\n\
         --a\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nPlease find the report attached.\r\n\
-        --a\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Please find the <b>report</b> attached.</p>\r\n\
+        --a\r\nContent-Type: text/html; charset=utf-8\r\n\r\n\
+        <p>Please find the <b>report</b> attached. <a href=\"https://example.test/r?id=1\">Online</a></p>\r\n\
         --a--\r\n\
         --b\r\nContent-Type: application/pdf; name=\"report.pdf\"\r\n\
         Content-Disposition: attachment; filename=\"report.pdf\"\r\nContent-Transfer-Encoding: base64\r\n\r\n\
@@ -384,13 +385,35 @@ async fn live_message_bodies_download_once_and_stay_unread() {
             MessageHtmlParams {
                 id,
                 allow_remote: false,
+                link_prefix: None,
             },
         )
         .await
         .unwrap();
     assert!(html.html.starts_with("<!doctype html>"));
     assert!(html.html.contains("<b>report</b>"), "{}", html.html);
+    assert!(html.html.contains("href=\"https://example.test/r?id=1\""));
     assert_eq!(html.blocked_remote, 0);
+
+    // For the reading frame, links point back at it, to be opened in the browser.
+    let framed: MessageHtml = desktop
+        .call(
+            methods::MESSAGE_HTML,
+            MessageHtmlParams {
+                id,
+                allow_remote: false,
+                link_prefix: Some("regards-mail://localhost/open?t=k&url=".into()),
+            },
+        )
+        .await
+        .unwrap();
+    assert!(
+        framed
+            .html
+            .contains("href=\"regards-mail://localhost/open?t=k&amp;url=https%3A%2F%2Fexample.test%2Fr%3Fid%3D1\""),
+        "{}",
+        framed.html
+    );
 
     // BODY.PEEK[]: reading it here did not mark it read on the server.
     seed.select(b"INBOX").await.unwrap();

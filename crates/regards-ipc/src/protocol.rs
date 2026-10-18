@@ -479,12 +479,16 @@ pub struct UndoResult {
 }
 
 /// Parameters of [`methods::MESSAGE_HTML`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageHtmlParams {
     pub id: i64,
     /// Load remote images. They can tell the sender the message was opened.
     #[serde(default)]
     pub allow_remote: bool,
+    /// When given, every web link becomes `<link_prefix><percent-encoded URL>`,
+    /// so the frame's host can open it outside the app.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_prefix: Option<String>,
 }
 
 /// Result of [`methods::MESSAGE_HTML`].

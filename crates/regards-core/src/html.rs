@@ -5,6 +5,11 @@
 //! (`cid:`) images become `data:` URIs; remote images are removed unless the
 //! reader allows them. The desktop then serves the result with a strict CSP
 //! inside a sandboxed iframe without scripts.
+//!
+//! The frame cannot leave the app, so web links can be pointed back at its
+//! host instead (`links`): `<prefix><percent-encoded URL>`, opened in a hidden
+//! frame inside the document ([`LINK_TARGET`]) so the message stays in view
+//! whatever the host answers. The host then opens the URL in the browser.
 
 use ammonia::{Builder, UrlRelative};
 use mail_parser::{MessageParser, MimeHeaders};
@@ -23,6 +28,9 @@ const FRAME_STYLE: &str = "html{color-scheme:light}body{margin:0;padding:16px;\
     font:15px/1.5 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#1d1d1b;\
     background:#fff;overflow-wrap:anywhere}img{max-width:100%;height:auto}";
 
+/// The hidden frame that rewritten links open in (see the module docs).
+pub const LINK_TARGET: &str = "regards-links";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rendered {
     /// A complete document, ready to serve.
@@ -31,8 +39,9 @@ pub struct Rendered {
     pub blocked_remote: usize,
 }
 
-/// The sanitised HTML version of a message, or `None` if it has none.
-pub fn render(raw: &[u8], allow_remote: bool) -> Option<Rendered> {
+/// The sanitised HTML version of a message, or `None` if it has none. With
+/// `links`, web links become `<links><percent-encoded URL>`.
+pub fn render(raw: &[u8], allow_remote: bool, links: Option<&str>) -> Option<Rendered> {
     let message = MessageParser::default().parse(raw)?;
     let part = message.html_part(0).filter(|part| part.is_text_html())?;
     let html = part.text_contents()?;
@@ -56,20 +65,36 @@ pub fn render(raw: &[u8], allow_remote: bool) -> Option<Rendered> {
         inline.insert(key, format!("data:{mime};base64,{}", base64(bytes)));
     }
 
-    let (body, blocked_remote) = sanitize(html, allow_remote, &inline);
+    let (body, blocked_remote) = sanitize(html, allow_remote, &inline, links);
+    // The message's own <base> and frames were removed; these are ours.
+    let (base, sink) = if links.is_some() {
+        (
+            format!("<base target=\"{LINK_TARGET}\">"),
+            format!("<iframe name=\"{LINK_TARGET}\" hidden></iframe>"),
+        )
+    } else {
+        (String::new(), String::new())
+    };
     Some(Rendered {
         html: format!(
-            "<!doctype html><html><head><meta charset=\"utf-8\"><style>{FRAME_STYLE}</style></head><body>{body}</body></html>"
+            "<!doctype html><html><head><meta charset=\"utf-8\">{base}<style>{FRAME_STYLE}</style></head>\
+             <body>{body}{sink}</body></html>"
         ),
         blocked_remote,
     })
 }
 
 /// Sanitise an HTML fragment; returns it and how many remote resources were removed.
-pub fn sanitize(html: &str, allow_remote: bool, inline: &HashMap<String, String>) -> (String, usize) {
+pub fn sanitize(
+    html: &str,
+    allow_remote: bool,
+    inline: &HashMap<String, String>,
+    links: Option<&str>,
+) -> (String, usize) {
     let blocked = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&blocked);
     let inline = Arc::new(inline.clone());
+    let links = links.map(str::to_owned);
     let clean = Builder::default()
         .add_tags(["style", "font"])
         // Mail layout leans on presentational attributes; none of them can run code.
@@ -94,7 +119,13 @@ pub fn sanitize(html: &str, allow_remote: bool, inline: &HashMap<String, String>
         .rm_clean_content_tags(["style"])
         .add_url_schemes(["cid", "data"])
         .url_relative(UrlRelative::Deny)
-        .link_rel(Some("noopener noreferrer"))
+        // `noopener` would stop links reaching the named link frame. Rewritten
+        // links only lead back to the host, and the frame can open no windows.
+        .link_rel(if links.is_some() {
+            None
+        } else {
+            Some("noopener noreferrer")
+        })
         .strip_comments(true)
         .attribute_filter(move |element, attribute, value| {
             let lower = value.trim_start().to_ascii_lowercase();
@@ -122,8 +153,15 @@ pub fn sanitize(html: &str, allow_remote: bool, inline: &HashMap<String, String>
                     None
                 }
                 // Only ordinary links: no data: or cid: targets.
-                "href" => (lower.starts_with("http:") || lower.starts_with("https:") || lower.starts_with("mailto:"))
-                    .then(|| value.into()),
+                "href" => {
+                    if lower.starts_with("http:") || lower.starts_with("https:") {
+                        return Some(match &links {
+                            Some(prefix) => Cow::Owned(format!("{prefix}{}", percent_encode(value.trim()))),
+                            None => value.into(),
+                        });
+                    }
+                    lower.starts_with("mailto:").then(|| value.into())
+                }
                 _ => Some(value.into()),
             }
         })
@@ -131,6 +169,20 @@ pub fn sanitize(html: &str, allow_remote: bool, inline: &HashMap<String, String>
         .to_string();
     let count = blocked.load(Ordering::Relaxed);
     (clean, count)
+}
+
+/// Everything but unreserved characters (RFC 3986 §2.3) is encoded, so the
+/// result is safe as one query parameter.
+pub fn percent_encode(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() * 3);
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
 }
 
 fn base64(bytes: &[u8]) -> String {
@@ -161,7 +213,7 @@ mod tests {
     use super::*;
 
     fn clean(html: &str, allow_remote: bool) -> (String, usize) {
-        sanitize(html, allow_remote, &HashMap::new())
+        sanitize(html, allow_remote, &HashMap::new(), None)
     }
 
     #[test]
@@ -220,6 +272,7 @@ mod tests {
             "<img src=\"cid:logo@example.test\"><img src=\"cid:missing\"><img src=\"data:text/html;base64,PHNjcmlwdD4=\">",
             false,
             &inline,
+            None,
         );
         assert!(html.contains("src=\"data:image/png;base64,AAAA\""), "{html}");
         assert!(!html.contains("cid:"));
@@ -233,7 +286,7 @@ mod tests {
             <p>Hi <img src=\"cid:pic@x\"> <img src=\"https://t.test/p.gif\"></p>\r\n\
             --r\r\nContent-Type: image/png\r\nContent-ID: <pic@x>\r\nContent-Transfer-Encoding: base64\r\n\r\n\
             iVBORw0KGgo=\r\n--r--\r\n";
-        let rendered = render(raw, false).unwrap();
+        let rendered = render(raw, false, None).unwrap();
         assert_eq!(rendered.blocked_remote, 1);
         assert!(rendered.html.starts_with("<!doctype html>"));
         assert!(
@@ -241,7 +294,64 @@ mod tests {
             "{}",
             rendered.html
         );
-        assert!(render(b"Content-Type: text/plain\r\n\r\nno html\r\n", false).is_none());
+        assert!(render(b"Content-Type: text/plain\r\n\r\nno html\r\n", false, None).is_none());
+    }
+
+    #[test]
+    fn web_links_can_point_back_at_the_frame_host() {
+        let source = "<a href=\"https://example.test/a?b=1&amp;c=d e\">site</a> <a href=\" HTTP://x.test\">x</a> \
+             <a href=\"mailto:ada@example.test\">mail</a> <a href=\"javascript:steal()\">bad</a> \
+             <a href=\"regards-mail://localhost/open?t=forged&amp;url=x\">forged</a>";
+        let (html, _) = sanitize(
+            source,
+            false,
+            &HashMap::new(),
+            Some("regards-mail://localhost/open?t=k&url="),
+        );
+        // The attribute value was entity-decoded: `&amp;` is `&`, encoded here as %26.
+        assert!(
+            html.contains(
+                "href=\"regards-mail://localhost/open?t=k&amp;url=https%3A%2F%2Fexample.test%2Fa%3Fb%3D1%26c%3Dd%20e\""
+            ),
+            "{html}"
+        );
+        assert!(html.contains("url=HTTP%3A%2F%2Fx.test\""), "{html}");
+        assert!(html.contains("href=\"mailto:ada@example.test\""));
+        assert!(!html.contains("javascript:") && !html.contains("forged&"), "{html}");
+        assert!(!html.contains("noopener"), "{html}");
+
+        let (plain, _) = clean("<a href=\"https://example.test/\">site</a>", false);
+        assert!(plain.contains("href=\"https://example.test/\""));
+        assert!(plain.contains("rel=\"noopener noreferrer\""));
+    }
+
+    #[test]
+    fn rewritten_links_open_in_the_hidden_link_frame() {
+        let raw = b"Content-Type: text/html\r\n\r\n<base target=\"_top\" href=\"https://evil.test/\">\
+            <a href=\"https://example.test/\" target=\"_top\">site</a>\r\n";
+        let framed = render(raw, false, Some("regards-mail://localhost/open?t=k&url="))
+            .unwrap()
+            .html;
+        assert!(
+            framed.contains("<head><meta charset=\"utf-8\"><base target=\"regards-links\"><style>"),
+            "{framed}"
+        );
+        assert!(framed.ends_with("<iframe name=\"regards-links\" hidden></iframe></body></html>"));
+        assert_eq!(
+            framed.matches("<base").count(),
+            1,
+            "the message's own base is gone: {framed}"
+        );
+        assert!(!framed.contains("_top") && !framed.contains("evil.test"), "{framed}");
+
+        let plain = render(raw, false, None).unwrap().html;
+        assert!(!plain.contains("<base") && !plain.contains("<iframe"), "{plain}");
+    }
+
+    #[test]
+    fn percent_encoding_keeps_only_unreserved_characters() {
+        assert_eq!(percent_encode("aZ09-._~"), "aZ09-._~");
+        assert_eq!(percent_encode("a b&c=d/é"), "a%20b%26c%3Dd%2F%C3%A9");
     }
 
     #[test]

@@ -19,6 +19,8 @@ const DEFAULT_PAGE: u32 = 50;
 const MAX_PAGE: u32 = 500;
 /// Larger messages are not downloaded yet (they need chunked FETCH).
 const MAX_DOWNLOAD: u32 = 50 * 1024 * 1024;
+/// Longer than any frame host needs.
+const MAX_LINK_PREFIX: usize = 512;
 
 pub(crate) async fn list(state: &State, params: MessageListParams) -> Result<Value, RpcError> {
     let limit = params.limit.unwrap_or(DEFAULT_PAGE);
@@ -71,7 +73,7 @@ pub(crate) async fn get(state: &State, params: MessageRef) -> Result<Value, RpcE
     let (body, remote_images) = tokio::task::spawn_blocking(move || {
         let body = body::parse(&source);
         let remote = if body.has_html {
-            html::render(&source, false).map_or(0, |rendered| rendered.blocked_remote)
+            html::render(&source, false, None).map_or(0, |rendered| rendered.blocked_remote)
         } else {
             0
         };
@@ -92,9 +94,20 @@ pub(crate) async fn get(state: &State, params: MessageRef) -> Result<Value, RpcE
 
 /// The sanitised HTML version of a message.
 pub(crate) async fn html(state: &State, params: MessageHtmlParams) -> Result<Value, RpcError> {
+    if params
+        .link_prefix
+        .as_ref()
+        .is_some_and(|prefix| prefix.len() > MAX_LINK_PREFIX)
+    {
+        return Err(RpcError::new(codes::INVALID_PARAMS, "link_prefix is too long"));
+    }
     let (_, source) = load(state, params.id).await?;
-    let allow_remote = params.allow_remote;
-    let rendered = tokio::task::spawn_blocking(move || html::render(&source, allow_remote))
+    let MessageHtmlParams {
+        allow_remote,
+        link_prefix,
+        ..
+    } = params;
+    let rendered = tokio::task::spawn_blocking(move || html::render(&source, allow_remote, link_prefix.as_deref()))
         .await
         .map_err(crate::session::internal)?
         .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "this message has no HTML version"))?;

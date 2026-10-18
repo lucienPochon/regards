@@ -50,9 +50,14 @@ Loopback TCP is reachable by every local user and, through DNS-rebinding mistake
           - **Removed:** scripts, event handlers, forms, frames and objects; links other than `http(s)` and `mailto`; and `data:` anywhere except images.
           - **Inline images:** `cid:` images become `data:` URIs, within a size limit.
           - **Remote images:** removed and counted unless allowed.
-       2. **Its own origin:** the desktop serves the result through the `regards-mail` scheme, to the main window only. The response CSP is `default-src 'none'; style-src 'unsafe-inline'; img-src data:` (plus `https:`/`http:` once remote images are allowed), with `form-action 'none'; base-uri 'none'`.
+       2. **Its own origin:** the desktop serves the result through the `regards-mail` scheme, to the main window only. The response CSP is `default-src 'none'; style-src 'unsafe-inline'; img-src data:` (plus `https:`/`http:` once remote images are allowed), with `frame-src` limited to the link opener below and `form-action 'none'; base-uri 'none'`.
        3. **The frame:** an `<iframe sandbox="">`, so no scripts, no same-origin access, no popups and no navigation. The app CSP allows framing only `regards-mail`.
-     - **Not yet:** links inside messages do not open yet. That comes later, through the app, never by navigating the frame.
+     - **Links (Phase 1):** web links open in the default browser.
+       - **Rewriting:** for the reading frame, the daemon rewrites each `http(s)` link to the desktop's own `regards-mail` opener, `/open?t=<token>&url=<URL>`.
+       - **Opening:** the links target a hidden frame inside the message document (`<base target>`; the message's own `<base>`, targets and frames are removed). A click loads the opener there, so the message stays in view. The desktop then checks the token, accepts only `http`/`https` URLs, opens them in the browser and answers 204.
+       - **The token:** it is random, new at each launch, and appears only in rewritten links. An image or other resource in a message cannot trigger the opener; only a click on one of its links can.
+       - **Logging:** URLs are not logged.
+       - **Not yet:** `mailto:` links wait for the composer.
 5. **Deep links:** a custom URL scheme (`regards://thread/<id>`, `…/draft/<id>`) is registered by the desktop app. Handlers only navigate; they never perform actions.
 
 ## Threat model and limits
