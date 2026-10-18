@@ -171,6 +171,10 @@ impl Session {
                 self.require_ui()?;
                 mail::html(&self.state, params(request)?).await
             }
+            methods::MESSAGE_DELETE => {
+                self.require_ui()?;
+                actions::delete_forever(&self.state, params(request)?).await
+            }
             methods::THREAD_GET => {
                 self.require_ui()?;
                 mail::thread(&self.state, params(request)?).await

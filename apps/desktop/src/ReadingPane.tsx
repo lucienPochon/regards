@@ -7,6 +7,7 @@ import {
   type ThreadEntry,
   type UndoInfo,
   archiveMessages,
+  deleteForever,
   getMessage,
   getThread,
   listMailboxes,
@@ -36,6 +37,7 @@ export function ReadingPane({
   const [showText, setShowText] = useState(false);
   const [allowRemote, setAllowRemote] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
     let current = true;
@@ -43,6 +45,7 @@ export function ReadingPane({
     setShowText(false);
     setAllowRemote(false);
     setActionError(null);
+    setConfirmingDelete(false);
     getMessage(messageId)
       .then((detail) => {
         if (!current) return;
@@ -96,6 +99,16 @@ export function ReadingPane({
     setFlags([messageId], flags).catch((error: unknown) => setActionError(String(error)));
   };
 
+  const deleteForGood = () => {
+    setActionError(null);
+    deleteForever([messageId])
+      .then(() => onMoved(null))
+      .catch((error: unknown) => {
+        setConfirmingDelete(false);
+        setActionError(String(error));
+      });
+  };
+
   if (load.state === "loading") {
     return (
       <section className="card">
@@ -113,6 +126,9 @@ export function ReadingPane({
   const { detail } = load;
   const { message } = detail;
   const attachments = detail.attachments.filter((a) => !a.inline);
+  // In Trash or Junk, deleting means for good.
+  const shownIn = folders.find((folder) => folder.id === detail.mailbox_id);
+  const disposable = shownIn?.role === "trash" || shownIn?.role === "junk";
   return (
     <article className="card reading" aria-labelledby="reading-subject">
       <h2 id="reading-subject">{message.subject || "(no subject)"}</h2>
@@ -126,9 +142,15 @@ export function ReadingPane({
         <button type="button" onClick={() => move(() => archiveMessages([messageId]))}>
           Archive
         </button>
-        <button type="button" onClick={() => move(() => trashMessages([messageId]))}>
-          Delete
-        </button>
+        {disposable ? (
+          <button type="button" onClick={() => setConfirmingDelete(true)} disabled={confirmingDelete}>
+            Delete forever
+          </button>
+        ) : (
+          <button type="button" onClick={() => move(() => trashMessages([messageId]))}>
+            Delete
+          </button>
+        )}
         <select
           aria-label="Move to folder"
           value=""
@@ -146,6 +168,17 @@ export function ReadingPane({
         </select>
         {actionError && <span className="error small">{actionError}</span>}
       </div>
+      {confirmingDelete && (
+        <div className="confirm small" role="alertdialog" aria-labelledby="confirm-delete">
+          <span id="confirm-delete">Delete this message for good? This cannot be undone.</span>
+          <button type="button" className="danger" onClick={deleteForGood}>
+            Delete forever
+          </button>
+          <button type="button" onClick={() => setConfirmingDelete(false)}>
+            Cancel
+          </button>
+        </div>
+      )}
       <dl className="headers small">
         <dt>From</dt>
         <dd>{people(message.from ? [message.from] : [])}</dd>

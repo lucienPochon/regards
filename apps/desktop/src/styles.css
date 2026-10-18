@@ -455,6 +455,26 @@ button:disabled {
   margin-top: 0;
 }
 
+.confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--error);
+  border-radius: 8px;
+}
+
+.confirm button {
+  margin-top: 0;
+}
+
+button.danger {
+  color: var(--error);
+  border-color: var(--error);
+}
+
 .toast {
   position: fixed;
   left: 50%;

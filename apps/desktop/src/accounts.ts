@@ -124,6 +124,8 @@ export interface Attachment {
 
 export interface MessageDetail {
   message: MessageSummary;
+  /** The folder it is in, or on its way to. */
+  mailbox_id: number;
   to: Person[];
   cc: Person[];
   text: string;
@@ -179,6 +181,11 @@ export function archiveMessages(ids: number[]): Promise<MoveResult> {
 
 export function trashMessages(ids: number[]): Promise<MoveResult> {
   return invoke<MoveResult>("message_trash", { ids });
+}
+
+/** Delete for good, from Trash or Junk only. This cannot be undone: confirm first. */
+export function deleteForever(ids: number[]): Promise<{ deleted: number }> {
+  return invoke("message_delete", { ids });
 }
 
 export function moveMessages(ids: number[], mailboxId: number): Promise<MoveResult> {

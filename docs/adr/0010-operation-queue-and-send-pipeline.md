@@ -34,6 +34,14 @@ Undo send and send later (ADR-0011) both need an outbox.
      - **New UIDs:** with COPYUID, the row moves in place and keeps its id. Without it, the row is removed and the next sync of the target brings it back.
      - **Re-reading:** the runner re-reads each operation before sending it, so an undo that withdrew it is honoured.
      - **Giving up:** a dropped move shows the messages where they still are on the server.
+     - **Opening a moving message:** if the server moved it before we recorded its new UID, the download is retried once the move is recorded.
+   - **Deleting for good (`message.delete`):**
+     - **Where:** only messages shown in Trash or Junk, and not while one is still being moved there. The daemon enforces this, not just the UI.
+     - **No undo:** the app asks for confirmation inline.
+     - **Locally:** the message is marked `\Deleted`. Lists and conversations leave out `\Deleted` messages, including ones another client marked.
+     - **Runner:** `STORE \Deleted` then `UID EXPUNGE` of exactly those UIDs, and the rows go once the server confirms.
+       - **Without UIDPLUS:** it refuses rather than run a plain `EXPUNGE`, and gives up like any refusal, so the message reappears with the reason.
+     - **After undo:** an undo entry naming a message being deleted skips it.
 2. **Reconciliation:**
    - Server state wins for fields with no pending local operation.
    - Pending local operations are re-applied on top of fresh server state.

@@ -49,6 +49,9 @@ pub mod methods {
     pub const MESSAGE_ARCHIVE: &str = "message.archive";
     /// Move messages to their account's Trash folder; undoable. `ui` only for now.
     pub const MESSAGE_TRASH: &str = "message.trash";
+    /// Delete messages for good, from Trash or Junk only. It cannot be undone,
+    /// so clients confirm first. `ui` only for now.
+    pub const MESSAGE_DELETE: &str = "message.delete";
     /// Reverse a recent action, by the undo id it returned. `ui` only for now.
     pub const UNDO_APPLY: &str = "undo.apply";
     /// Dedicate this connection to change notifications (ADR-0007). `ui` only for now.
@@ -392,6 +395,8 @@ pub struct MessageRef {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageDetail {
     pub message: MessageSummary,
+    /// The folder it is in, or on its way to.
+    pub mailbox_id: i64,
     pub to: Vec<Person>,
     pub cc: Vec<Person>,
     /// The text version, or text derived from the HTML.
@@ -463,6 +468,12 @@ pub struct MoveResult {
     pub moved: usize,
     /// Set when something moved.
     pub undo: Option<UndoInfo>,
+}
+
+/// Result of [`methods::MESSAGE_DELETE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeleteResult {
+    pub deleted: usize,
 }
 
 /// Parameters of [`methods::UNDO_APPLY`].

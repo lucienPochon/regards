@@ -162,7 +162,7 @@ flowchart LR
   - **Reading:** the source is downloaded once (`BODY.PEEK[]`, so it stays unread) and kept in `blobs/`. HTML is sanitised and shown in a sandboxed frame, with remote images blocked until allowed. Web links open in the default browser (ADR-0006 §4).
 - **Still to come in Phase 1:**
   - **Sync:** QRESYNC and backfill of older messages.
-  - **Actions:** permanent delete from Trash, and keyboard shortcuts. Read/unread, flag, archive, delete (to Trash) and move already go through the operation queue: they show at once, reach the server in the background, are retried while offline, and moves can be undone.
+  - **Actions:** keyboard shortcuts. Read/unread, flag, archive, delete (to Trash), move and delete for good (from Trash or Junk) already go through the operation queue: they show at once, reach the server in the background, are retried while offline, and moves can be undone.
 - **Capability-aware:** incremental flag sync with CONDSTORE/QRESYNC; efficient UID-range sync plus periodic flag resync without them (Infomaniak advertises neither before login; recheck after login). MOVE, or UIDPLUS COPY + `\Deleted` + UID EXPUNGE.
 - Gmail X-GM-EXT-1 labels and thread IDs when present.
 - **Accepted when:** the fault-injection suite passes with no panics on malformed input, and IDLE delivers new mail in under 5 s.

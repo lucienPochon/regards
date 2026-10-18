@@ -5,8 +5,8 @@
 use crate::State;
 use regards_core::mailbox::Role;
 use regards_ipc::protocol::{
-    MessageIds, MoveParams, MoveResult, RpcError, SetFlagsParams, SetFlagsResult, UndoInfo, UndoParams, UndoResult,
-    codes,
+    DeleteResult, MessageIds, MoveParams, MoveResult, RpcError, SetFlagsParams, SetFlagsResult, UndoInfo, UndoParams,
+    UndoResult, codes,
 };
 use regards_store::operations::{self, FlagName, NewOperation, OperationKind};
 use regards_store::{StoreError, mailboxes, messages, undo};
@@ -107,6 +107,72 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or_default()
+}
+
+/// Delete messages for good. Only what is shown in Trash or Junk, so a
+/// mistaken call cannot destroy mail anywhere else; there is no undo.
+pub(crate) async fn delete_forever(state: &Arc<State>, params: MessageIds) -> Result<Value, RpcError> {
+    check_count(&params.ids)?;
+    let ids = params.ids;
+    let now = now_ms();
+    let committed = state
+        .store
+        .write(move |tx| {
+            let mut groups: BTreeMap<i64, BTreeSet<u32>> = BTreeMap::new();
+            for id in &ids {
+                let message =
+                    messages::get(tx, *id)?.ok_or_else(|| StoreError::Conflict(format!("no message {id}")))?;
+                if message.flags.deleted {
+                    continue;
+                }
+                if message.moving_to.is_some() {
+                    return Err(StoreError::Conflict(
+                        "This message is still being moved. Try again in a moment.".into(),
+                    ));
+                }
+                let mailbox = mailboxes::get(tx, message.mailbox_id)?
+                    .ok_or_else(|| StoreError::Conflict("the folder no longer exists".into()))?;
+                if !matches!(mailbox.role, Some(Role::Trash | Role::Junk)) {
+                    return Err(StoreError::Conflict(
+                        "Only messages in Trash or Junk can be deleted for good".into(),
+                    ));
+                }
+                groups.entry(message.mailbox_id).or_default().insert(message.uid);
+            }
+            let mut deleted = 0;
+            let mut accounts = BTreeSet::new();
+            for (mailbox_id, uids) in groups {
+                let mailbox = mailboxes::get(tx, mailbox_id)?
+                    .ok_or_else(|| StoreError::Conflict("the folder no longer exists".into()))?;
+                let uid_validity = mailbox
+                    .uid_validity
+                    .ok_or_else(|| StoreError::Conflict("the folder has not been synced yet".into()))?;
+                let uids: Vec<u32> = uids.into_iter().collect();
+                operations::apply_locally(tx, mailbox_id, &uids, &[FlagName::Deleted], true)?;
+                operations::enqueue(
+                    tx,
+                    &NewOperation {
+                        mailbox_id,
+                        uid_validity: uid_validity as u32,
+                        kind: OperationKind::Delete,
+                        uids: uids.clone(),
+                        flags: vec![],
+                        target_mailbox_id: None,
+                    },
+                    now,
+                )?;
+                deleted += uids.len();
+                accounts.insert(mailbox.account_id);
+            }
+            Ok((deleted, accounts))
+        })
+        .await
+        .map_err(conflict)?;
+    let (deleted, accounts) = committed.value;
+    for account in accounts {
+        state.queue.wake(state, &account);
+    }
+    Ok(json!(DeleteResult { deleted }))
 }
 
 /// Undo entries last this long; the app offers undo for the first seconds.
@@ -232,7 +298,7 @@ pub(crate) async fn apply_undo(state: &Arc<State>, params: UndoParams) -> Result
             // Messages that have since gone (moved without COPYUID, or deleted) are skipped.
             let mut present = Vec::new();
             for (message, folder) in inverse.moves {
-                if messages::get(tx, message)?.is_some() {
+                if messages::get(tx, message)?.is_some_and(|m| !m.flags.deleted) {
                     present.push((message, folder));
                 }
             }
@@ -259,7 +325,9 @@ fn plan_moves(tx: &rusqlite::Transaction<'_>, requests: &[(i64, i64)], now: i64)
     let mut moved = 0;
     let mut accounts = BTreeSet::new();
     for (id, target) in requests {
-        let message = messages::get(tx, *id)?.ok_or_else(|| StoreError::Conflict(format!("no message {id}")))?;
+        let message = messages::get(tx, *id)?
+            .filter(|message| !message.flags.deleted)
+            .ok_or_else(|| StoreError::Conflict(format!("no message {id}")))?;
         let source = mailboxes::get(tx, message.mailbox_id)?
             .ok_or_else(|| StoreError::Conflict("the folder no longer exists".into()))?;
         let destination = mailboxes::get(tx, *target)?.ok_or_else(|| StoreError::Conflict("no such folder".into()))?;

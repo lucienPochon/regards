@@ -8,9 +8,10 @@ use regards_core::secret::Secret;
 use regards_daemon::Daemon;
 use regards_imap::{ImapServer, Session, SystemFlag, TlsOptions};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountRef, AccountSummary, ClientKind, ConnectionSecurity, MailboxListResult, MessageDetail,
-    MessageHtml, MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveResult,
-    ServerSettings, SetFlagsParams, SetFlagsResult, SyncResult, ThreadView, UndoParams, UndoResult, methods,
+    AccountAddParams, AccountRef, AccountSummary, ClientKind, ConnectionSecurity, DeleteResult, MailboxListResult,
+    MessageDetail, MessageHtml, MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef,
+    MoveResult, ServerSettings, SetFlagsParams, SetFlagsResult, SyncResult, ThreadView, UndoParams, UndoResult,
+    methods,
 };
 use regards_ipc::{Client, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -761,6 +762,64 @@ async fn live_conversations_span_folders() {
         .await
         .unwrap();
     assert_eq!(thread(moved)[0], ("Plans".to_owned(), Some(Role::Trash)));
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_messages_in_trash_can_be_deleted_for_good() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    for (n, subject) in [(1, "Keep"), (2, "Gone")] {
+        seed.append(b"INBOX", &[], &message(n, subject, "ada@example.test"))
+            .await
+            .unwrap();
+    }
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
+    let trash = folders(&mut desktop, &account.id)
+        .await
+        .mailboxes
+        .iter()
+        .find(|m| m.role == Some(Role::Trash))
+        .unwrap()
+        .id;
+    let listed = messages(&mut desktop, inbox).await.messages;
+    let id = |subject: &str| listed.iter().find(|m| m.subject == subject).unwrap().id;
+
+    // Not from the inbox: only Trash and Junk.
+    let refused = desktop
+        .call::<_, Value>(methods::MESSAGE_DELETE, MessageIds { ids: vec![id("Keep")] })
+        .await;
+    assert!(refused.is_err(), "deleting outside Trash is refused");
+
+    let _: MoveResult = desktop
+        .call(methods::MESSAGE_TRASH, MessageIds { ids: vec![id("Gone")] })
+        .await
+        .unwrap();
+    server_count_becomes(&mut seed, b"Trash", 1).await;
+    // The move kept the row (COPYUID), so the same id now names the copy in Trash.
+    let detail: MessageDetail = desktop
+        .call(methods::MESSAGE_GET, MessageRef { id: id("Gone") })
+        .await
+        .unwrap();
+    assert_eq!(detail.mailbox_id, trash);
+
+    let deleted: DeleteResult = desktop
+        .call(methods::MESSAGE_DELETE, MessageIds { ids: vec![id("Gone")] })
+        .await
+        .unwrap();
+    assert_eq!(deleted.deleted, 1);
+    assert!(messages(&mut desktop, trash).await.messages.is_empty(), "gone at once");
+    server_count_becomes(&mut seed, b"Trash", 0).await;
+    server_count_becomes(&mut seed, b"INBOX", 1).await;
+
+    // A sync afterwards does not bring it back.
+    sync(&mut desktop, &account.id).await;
+    assert!(messages(&mut desktop, trash).await.messages.is_empty());
 
     seed.logout().await;
     handle.abort();

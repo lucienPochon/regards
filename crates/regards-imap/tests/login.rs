@@ -363,3 +363,39 @@ async fn live_server_moves_messages_and_reports_their_new_uids() {
     assert_eq!(session.uid_search_all().await.unwrap(), [moved.uids[0].1]);
     session.logout().await;
 }
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_server_deletes_exactly_the_messages_asked_for() {
+    let address = std::env::var("REGARDS_TEST_IMAP").unwrap();
+    let (host, port) = address.rsplit_once(':').unwrap();
+    let ca = std::fs::read(std::env::var("REGARDS_TEST_IMAP_CA").unwrap()).unwrap();
+    let tls = TlsOptions::platform().with_extra_roots_pem(&ca).unwrap();
+    let server = ImapServer {
+        host: host.into(),
+        port: port.parse().unwrap(),
+    };
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .subsec_nanos();
+    let user = format!("delete-{}-{nanos}", std::process::id());
+    let password = Secret::new(std::env::var("REGARDS_TEST_IMAP_PASSWORD").unwrap_or_else(|_| "pass".into()));
+    let mut session = Session::login(&server, &user, &password, &tls).await.unwrap();
+    for n in 1..=3 {
+        session
+            .append(b"INBOX", &[], format!("Subject: m{n}\r\n\r\nbody\r\n").as_bytes())
+            .await
+            .unwrap();
+    }
+    session.select(b"INBOX").await.unwrap();
+    let uids = session.uid_search_all().await.unwrap();
+    // Another client marked message 3 deleted without expunging it: it must survive.
+    session
+        .store_flags(&uids[2].to_string(), true, &[SystemFlag::Deleted])
+        .await
+        .unwrap();
+    session.delete_messages(&uids[0].to_string()).await.unwrap();
+    assert_eq!(session.uid_search_all().await.unwrap(), &uids[1..]);
+    session.logout().await;
+}

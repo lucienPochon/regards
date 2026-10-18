@@ -15,7 +15,7 @@ use regards_core::paths::DataDirs;
 use regards_core::secret::Secret;
 use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity,
+    AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity, DeleteResult,
     MailboxListResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef,
     MoveParams, MoveResult, Principal, ServerSettings, SetFlagsParams, SetFlagsResult, SyncResult, ThreadView,
     UndoParams, UndoResult, methods,
@@ -311,6 +311,16 @@ async fn message_trash(bridge: State<'_, Bridge>, ids: Vec<i64>) -> Result<MoveR
         .map_err(describe)
 }
 
+/// Delete for good, from Trash or Junk only; the UI confirms first.
+#[tauri::command]
+async fn message_delete(bridge: State<'_, Bridge>, ids: Vec<i64>) -> Result<DeleteResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_DELETE, MessageIds { ids })
+        .await
+        .map_err(describe)
+}
+
 #[tauri::command]
 async fn message_move(bridge: State<'_, Bridge>, ids: Vec<i64>, mailbox_id: i64) -> Result<MoveResult, String> {
     let mut client = bridge.connect().await?.client;
@@ -407,6 +417,7 @@ fn main() {
             message_set_flags,
             message_archive,
             message_trash,
+            message_delete,
             message_move,
             undo_apply
         ])

@@ -36,6 +36,8 @@ pub enum OperationKind {
     RemoveFlags,
     /// Move the messages to `target_mailbox_id`.
     Move,
+    /// Delete the messages for good: `\Deleted`, then UID EXPUNGE of exactly these.
+    Delete,
 }
 
 impl OperationKind {
@@ -44,6 +46,7 @@ impl OperationKind {
             Self::AddFlags => "add_flags",
             Self::RemoveFlags => "remove_flags",
             Self::Move => "move",
+            Self::Delete => "delete",
         }
     }
 }
@@ -195,6 +198,9 @@ pub fn reapply_pending(tx: &Transaction<'_>, mailbox_id: i64, uid_validity: u32)
             OperationKind::Move => {
                 crate::messages::set_moving_to(tx, mailbox_id, &operation.uids, operation.target_mailbox_id)?;
             }
+            OperationKind::Delete => {
+                apply_locally(tx, mailbox_id, &operation.uids, &[FlagName::Deleted], true)?;
+            }
         }
     }
     Ok(())
@@ -241,6 +247,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Operation, StoreError>> {
                 "add_flags" => OperationKind::AddFlags,
                 "remove_flags" => OperationKind::RemoveFlags,
                 "move" => OperationKind::Move,
+                "delete" => OperationKind::Delete,
                 other => return Err(StoreError::Corrupt(format!("unknown operation {other:?}"))),
             },
             uids: serde_json::from_str(&uids).map_err(|e| StoreError::Corrupt(format!("operation uids: {e}")))?,
@@ -517,5 +524,58 @@ mod tests {
         // After a UIDVALIDITY change the operation is void and dropped.
         store.write(move |tx| reapply_pending(tx, mailbox, 8)).await.unwrap();
         assert!(store.read(move |conn| pending(conn, mailbox)).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn messages_being_deleted_disappear_at_once_and_stay_hidden_through_a_sync() {
+        let (_temp, store, _account, mailbox) = store_with_messages().await;
+        let uids = |list: Vec<messages::Message>| list.into_iter().map(|m| m.uid).collect::<Vec<_>>();
+        store
+            .write(move |tx| {
+                apply_locally(tx, mailbox, &[2], &[FlagName::Deleted], true)?;
+                enqueue(
+                    tx,
+                    &NewOperation {
+                        mailbox_id: mailbox,
+                        uid_validity: 7,
+                        kind: OperationKind::Delete,
+                        uids: vec![2],
+                        flags: vec![],
+                        target_mailbox_id: None,
+                    },
+                    0,
+                )
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            uids(store.read(move |c| messages::list(c, mailbox, 10, None)).await.unwrap()),
+            [3, 1]
+        );
+        assert_eq!(
+            store.read(move |c| pending(c, mailbox)).await.unwrap()[0].kind,
+            OperationKind::Delete
+        );
+
+        // The server has not deleted it yet and a sync says so: it stays hidden.
+        store
+            .write(move |tx| {
+                messages::apply_flags(
+                    tx,
+                    mailbox,
+                    &[FlagChange {
+                        uid: 2,
+                        modseq: None,
+                        flags: MessageFlags::default(),
+                    }],
+                )?;
+                reapply_pending(tx, mailbox, 7)
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            uids(store.read(move |c| messages::list(c, mailbox, 10, None)).await.unwrap()),
+            [3, 1]
+        );
     }
 }

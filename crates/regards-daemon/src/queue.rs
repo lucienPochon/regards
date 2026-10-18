@@ -160,6 +160,10 @@ async fn send(state: &Arc<State>, session: &mut Session, account_id: &str, due: 
                     Ok(Sent::Moved(moved))
                 }
                 (OperationKind::Move, None) => Ok(Sent::Void),
+                (OperationKind::Delete, _) => {
+                    session.delete_messages(&uids).await?;
+                    Ok(Sent::Deleted)
+                }
                 (kind, _) => {
                     let flags: Vec<SystemFlag> = operation.flags.iter().map(|flag| system_flag(*flag)).collect();
                     session
@@ -173,6 +177,16 @@ async fn send(state: &Arc<State>, session: &mut Session, account_id: &str, due: 
 
         match result {
             Ok(Sent::Done) => finish(state, operation.id).await?,
+            Ok(Sent::Deleted) => {
+                let (id, mailbox_id, uids) = (operation.id, operation.mailbox_id, operation.uids.clone());
+                state
+                    .store
+                    .write(move |tx| {
+                        messages::delete_uids(tx, mailbox_id, &uids)?;
+                        operations::remove(tx, id)
+                    })
+                    .await?;
+            }
             Ok(Sent::Moved(moved)) => {
                 let target = target.expect("moves have a target");
                 complete_move(state, operation, &target, moved).await?;
@@ -204,6 +218,8 @@ async fn send(state: &Arc<State>, session: &mut Session, account_id: &str, due: 
 /// What sending one operation achieved.
 enum Sent {
     Done,
+    /// Gone from the server for good.
+    Deleted,
     /// Moved; where to, when the server said (COPYUID).
     Moved(Option<Moved>),
     /// Can never apply (the mailbox was rebuilt, or the target is gone).

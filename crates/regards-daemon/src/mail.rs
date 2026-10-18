@@ -14,6 +14,7 @@ use regards_store::{StoreError, mailboxes};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::time::Duration;
 
 const DEFAULT_PAGE: u32 = 50;
 const MAX_PAGE: u32 = 500;
@@ -82,6 +83,7 @@ pub(crate) async fn get(state: &State, params: MessageRef) -> Result<Value, RpcE
     .await
     .map_err(crate::session::internal)?;
     Ok(json!(MessageDetail {
+        mailbox_id: message.moving_to.unwrap_or(message.mailbox_id),
         to: message.to.clone(),
         cc: message.cc.clone(),
         text: body.text,
@@ -119,7 +121,37 @@ pub(crate) async fn html(state: &State, params: MessageHtmlParams) -> Result<Val
 
 /// A message and its source, downloading the source the first time.
 async fn load(state: &State, id: i64) -> Result<(Message, Vec<u8>), RpcError> {
-    let found = state
+    let mut retried = false;
+    loop {
+        let (message, mailbox) = find(state, id)
+            .await?
+            .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such message"))?;
+        let stored = match message.blob_hash.clone() {
+            Some(hash) => {
+                let blobs = state.blobs.clone();
+                tokio::task::spawn_blocking(move || blobs.get(&hash))
+                    .await
+                    .map_err(crate::session::internal)?
+                    .map_err(crate::session::internal)?
+            }
+            None => None,
+        };
+        if let Some(source) = stored {
+            return Ok((message, source));
+        }
+        match download(state, &message, &mailbox).await {
+            // The server may have just moved it, and we are about to learn its new UID.
+            Err(error) if error.code == codes::NOT_FOUND && message.moving_to.is_some() && !retried => {
+                retried = true;
+                wait_for_move(state, &message).await?;
+            }
+            outcome => return outcome.map(|source| (message, source)),
+        }
+    }
+}
+
+async fn find(state: &State, id: i64) -> Result<Option<(Message, Mailbox)>, RpcError> {
+    state
         .store
         .read(move |conn| {
             let Some(message) = messages::get(conn, id)? else {
@@ -128,26 +160,21 @@ async fn load(state: &State, id: i64) -> Result<(Message, Vec<u8>), RpcError> {
             Ok(mailboxes::get(conn, message.mailbox_id)?.map(|mailbox| (message, mailbox)))
         })
         .await
-        .map_err(store_error)?;
-    let Some((message, mailbox)) = found else {
-        return Err(RpcError::new(codes::NOT_FOUND, "no such message"));
-    };
+        .map_err(store_error)
+}
 
-    let stored = match message.blob_hash.clone() {
-        Some(hash) => {
-            let blobs = state.blobs.clone();
-            tokio::task::spawn_blocking(move || blobs.get(&hash))
-                .await
-                .map_err(crate::session::internal)?
-                .map_err(crate::session::internal)?
+/// Wait a little for a pending move of `message` to be recorded.
+async fn wait_for_move(state: &State, message: &Message) -> Result<(), RpcError> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+    while tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let now = find(state, message.id).await?;
+        let moved = now.is_none_or(|(row, _)| (row.mailbox_id, row.uid) != (message.mailbox_id, message.uid));
+        if moved {
+            break;
         }
-        None => None,
-    };
-    let source = match stored {
-        Some(source) => source,
-        None => download(state, &message, &mailbox).await?,
-    };
-    Ok((message, source))
+    }
+    Ok(())
 }
 
 async fn download(state: &State, message: &Message, mailbox: &Mailbox) -> Result<Vec<u8>, RpcError> {

@@ -227,9 +227,11 @@ pub fn list(
 ) -> Result<Vec<Message>, StoreError> {
     let (received_at, id) = before.map_or((i64::MAX, i64::MAX), |c| (c.received_at, c.id));
     let mut statement = conn.prepare_cached(&format!(
-        // A message being moved shows in its target folder at once.
+        // A message being moved shows in its target folder at once. One marked
+        // deleted (being deleted for good, or by another client) is not shown.
         "SELECT {COLUMNS} FROM messages \
-         WHERE ((mailbox_id = ?1 AND moving_to IS NULL) OR moving_to = ?1) AND (received_at, id) < (?2, ?3) \
+         WHERE ((mailbox_id = ?1 AND moving_to IS NULL) OR moving_to = ?1) AND deleted = 0 \
+         AND (received_at, id) < (?2, ?3) \
          ORDER BY received_at DESC, id DESC LIMIT ?4"
     ))?;
     let messages = statement
@@ -240,10 +242,11 @@ pub fn list(
 }
 
 /// The messages of a conversation, oldest first, one per Message-ID (copies of
-/// one message in several folders are listed once).
+/// one message in several folders are listed once). Deleted ones are left out.
 pub fn in_thread(conn: &Connection, thread_id: i64) -> Result<Vec<Message>, StoreError> {
     let mut statement = conn.prepare_cached(&format!(
-        "SELECT {COLUMNS} FROM messages WHERE thread_id = ?1 ORDER BY COALESCE(sent_at, received_at), id"
+        "SELECT {COLUMNS} FROM messages WHERE thread_id = ?1 AND deleted = 0 \
+         ORDER BY COALESCE(sent_at, received_at), id"
     ))?;
     let rows = statement
         .query_map([thread_id], from_row)?

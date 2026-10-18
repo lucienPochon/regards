@@ -427,6 +427,25 @@ impl Session {
         Ok(moved)
     }
 
+    /// Delete `uids` of the selected mailbox for good: `\Deleted`, then UID
+    /// EXPUNGE of exactly these. That needs UIDPLUS; without it nothing is
+    /// done, since a plain EXPUNGE could remove other messages marked deleted.
+    pub async fn delete_messages(&mut self, uids: &str) -> Result<(), ImapError> {
+        if !self.has_capability("UIDPLUS") {
+            return Err(ImapError::Protocol(
+                "this server cannot delete single messages safely (it lacks UIDPLUS)".into(),
+            ));
+        }
+        self.store_flags(uids, true, &[SystemFlag::Deleted]).await?;
+        let reply = self
+            .conn
+            .run(CommandBody::ExpungeUid {
+                sequence_set: sequence_set(uids)?,
+            })
+            .await?;
+        ok(&reply, "UID EXPUNGE")
+    }
+
     /// Remove messages flagged `\Deleted` from the selected mailbox.
     pub async fn expunge(&mut self) -> Result<(), ImapError> {
         let reply = self.conn.run(CommandBody::Expunge).await?;
