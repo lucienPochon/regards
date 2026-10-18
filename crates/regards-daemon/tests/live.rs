@@ -8,11 +8,11 @@ use regards_core::secret::Secret;
 use regards_daemon::Daemon;
 use regards_imap::{ImapServer, Session, SystemFlag, TlsOptions};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountRef, AccountSummary, ClientKind, ConnectionSecurity, MailboxListResult, MessageListParams,
-    MessageListResult, ServerSettings, SyncResult, methods,
+    AccountAddParams, AccountRef, AccountSummary, ClientKind, ConnectionSecurity, MailboxListResult, MessageDetail,
+    MessageListParams, MessageListResult, MessageRef, ServerSettings, SyncResult, methods,
 };
 use regards_ipc::{Client, UiToken};
-use regards_vault::Vault;
+use regards_vault::{SecretKey, SecretKind, Vault};
 use std::time::{Duration, Instant};
 
 struct Live {
@@ -288,6 +288,100 @@ async fn live_sync_follows_new_flagged_expunged_and_reset_mailboxes() {
         .unwrap();
     assert_eq!(rest.messages.len(), 2);
     assert!(rest.next.is_none());
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_message_bodies_download_once_and_stay_unread() {
+    let live = live();
+    let vault = Vault::in_memory();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let report = b"From: Ada <ada@example.test>\r\nTo: Bob <bob@example.test>\r\nSubject: Report\r\n\
+        Date: Sun, 18 Oct 2026 11:00:00 +0000\r\nMIME-Version: 1.0\r\n\
+        Content-Type: multipart/mixed; boundary=\"b\"\r\n\r\n\
+        --b\r\nContent-Type: multipart/alternative; boundary=\"a\"\r\n\r\n\
+        --a\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nPlease find the report attached.\r\n\
+        --a\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Please find the <b>report</b> attached.</p>\r\n\
+        --a--\r\n\
+        --b\r\nContent-Type: application/pdf; name=\"report.pdf\"\r\n\
+        Content-Disposition: attachment; filename=\"report.pdf\"\r\nContent-Transfer-Encoding: base64\r\n\r\n\
+        JVBERi0xLjQK\r\n--b--\r\n";
+    seed.append(b"INBOX", &[], report).await.unwrap();
+
+    let temp = tempfile::tempdir().unwrap();
+    let token = UiToken::generate().unwrap();
+    let daemon = Daemon::bind(DataDirs::at(temp.path()))
+        .await
+        .unwrap()
+        .with_ui_token(token.clone())
+        .with_vault(vault.clone())
+        .with_imap_tls(live.tls.clone());
+    let endpoint = daemon.endpoint().clone();
+    let handle = tokio::spawn(daemon.serve(std::future::pending()));
+    let mut desktop = Client::connect_with(&endpoint, ClientKind::Desktop, Some(&token))
+        .await
+        .unwrap();
+    let account: AccountSummary = desktop
+        .call(
+            methods::ACCOUNT_ADD,
+            AccountAddParams {
+                display_name: "Bodies".into(),
+                email: "bodies@example.test".into(),
+                username: Some(live.user.clone()),
+                password: live.password.clone(),
+                imap: ServerSettings {
+                    host: live.server.host.clone(),
+                    port: live.server.port,
+                    security: ConnectionSecurity::Tls,
+                },
+                smtp: ServerSettings {
+                    host: live.server.host.clone(),
+                    port: 587,
+                    security: ConnectionSecurity::Starttls,
+                },
+            },
+        )
+        .await
+        .unwrap();
+    let inbox = loop {
+        let listed = folders(&mut desktop, &account.id).await;
+        if listed.sync.last_success_at.is_some() {
+            break listed
+                .mailboxes
+                .iter()
+                .find(|m| m.role == Some(Role::Inbox))
+                .unwrap()
+                .id;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    let id = messages(&mut desktop, inbox).await.messages[0].id;
+
+    let detail: MessageDetail = desktop.call(methods::MESSAGE_GET, MessageRef { id }).await.unwrap();
+    assert_eq!(detail.text.trim(), "Please find the report attached.");
+    assert!(detail.has_html);
+    assert_eq!(detail.attachments.len(), 1);
+    assert_eq!(detail.attachments[0].name.as_deref(), Some("report.pdf"));
+    assert_eq!(detail.to[0].address.as_deref(), Some("bob@example.test"));
+
+    // BODY.PEEK[]: reading it here did not mark it read on the server.
+    seed.select(b"INBOX").await.unwrap();
+    let flags = seed.fetch_flags("1:*", None).await.unwrap();
+    assert!(!flags.items[0].flags.seen);
+
+    // The second open comes from blobs/: with the password gone, a download would fail.
+    vault
+        .delete(&SecretKey::new(&account.id, SecretKind::MailPassword))
+        .await
+        .unwrap();
+    let again: MessageDetail = desktop.call(methods::MESSAGE_GET, MessageRef { id }).await.unwrap();
+    assert_eq!(again.text, detail.text);
+    assert!(std::fs::read_dir(temp.path().join("blobs")).unwrap().next().is_some());
 
     seed.logout().await;
     handle.abort();

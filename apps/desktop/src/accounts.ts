@@ -114,3 +114,24 @@ export function listMessages(
 ): Promise<MessageListResult> {
   return invoke<MessageListResult>("message_list", { mailboxId, before, limit });
 }
+
+export interface Attachment {
+  name: string | null;
+  mime: string;
+  size: number;
+  inline: boolean;
+}
+
+export interface MessageDetail {
+  message: MessageSummary;
+  to: Person[];
+  cc: Person[];
+  text: string;
+  has_html: boolean;
+  attachments: Attachment[];
+}
+
+/** One message with its body; downloaded from the server the first time. */
+export function getMessage(id: number): Promise<MessageDetail> {
+  return invoke<MessageDetail>("message_get", { id });
+}

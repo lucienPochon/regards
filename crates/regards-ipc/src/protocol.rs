@@ -1,6 +1,7 @@
 //! JSON-RPC 2.0 messages and the typed Regards methods.
 
 use crate::token::UiToken;
+use regards_core::body::Attachment;
 use regards_core::headers::Person;
 use regards_core::mailbox::Role;
 use regards_core::secret::Secret;
@@ -33,6 +34,8 @@ pub mod methods {
     pub const MAILBOX_LIST: &str = "mailbox.list";
     /// A page of a mailbox's messages, newest first. `ui` only for now.
     pub const MESSAGE_LIST: &str = "message.list";
+    /// One message with its body, downloading it if needed. `ui` only for now.
+    pub const MESSAGE_GET: &str = "message.get";
     /// Dedicate this connection to change notifications (ADR-0007). `ui` only for now.
     pub const CHANGES_SUBSCRIBE: &str = "changes.subscribe";
 }
@@ -68,6 +71,8 @@ pub mod codes {
     pub const CREDENTIAL_STORE: i32 = -32011;
     /// A sync with the mail server failed; the message says why.
     pub const SYNC_FAILED: i32 = -32012;
+    /// The message is too large to download for now.
+    pub const TOO_LARGE: i32 = -32013;
 }
 
 /// A client request.
@@ -360,6 +365,25 @@ pub struct MessageSummary {
     pub flagged: bool,
     pub answered: bool,
     pub size: Option<u32>,
+}
+
+/// Parameters naming one message: [`methods::MESSAGE_GET`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageRef {
+    pub id: i64,
+}
+
+/// Result of [`methods::MESSAGE_GET`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageDetail {
+    pub message: MessageSummary,
+    pub to: Vec<Person>,
+    pub cc: Vec<Person>,
+    /// The text version, or text derived from the HTML.
+    pub text: String,
+    /// Whether there is an HTML version to show instead.
+    pub has_html: bool,
+    pub attachments: Vec<Attachment>,
 }
 
 /// Result of [`methods::MESSAGE_LIST`].

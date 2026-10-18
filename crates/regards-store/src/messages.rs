@@ -51,6 +51,8 @@ pub struct Message {
     pub to: Vec<Person>,
     pub cc: Vec<Person>,
     pub message_id: Option<String>,
+    /// Hash of the downloaded source in `blobs/`, once it has been fetched.
+    pub blob_hash: Option<String>,
 }
 
 /// Where a page of a message list ends: list strictly older messages next.
@@ -154,7 +156,13 @@ pub fn clear(tx: &Transaction<'_>, mailbox_id: i64) -> Result<usize, StoreError>
 }
 
 const COLUMNS: &str = "id, mailbox_id, uid, modseq, seen, answered, flagged, draft, deleted, keywords, \
-    received_at, size, sent_at, subject, from_name, from_address, to_json, cc_json, message_id_header";
+    received_at, size, sent_at, subject, from_name, from_address, to_json, cc_json, message_id_header, blob_hash";
+
+/// Record where the downloaded source of message `id` is stored.
+pub fn set_blob(tx: &Transaction<'_>, id: i64, hash: &str) -> Result<(), StoreError> {
+    tx.execute("UPDATE messages SET blob_hash = ?2 WHERE id = ?1", params![id, hash])?;
+    Ok(())
+}
 
 /// A page of a mailbox's messages, newest first, older than `before` if given.
 pub fn list(
@@ -213,6 +221,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Message, StoreError>> {
             to: parse_json(&to, "recipients")?,
             cc: parse_json(&cc, "recipients")?,
             message_id: row.get(18)?,
+            blob_hash: row.get(19)?,
         })
     })();
     Ok(message)

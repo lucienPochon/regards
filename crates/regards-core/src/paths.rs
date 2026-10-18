@@ -55,6 +55,11 @@ impl DataDirs {
         self.data.join("mail.db")
     }
 
+    /// Content-addressed files: downloaded messages (ADR-0008).
+    pub fn blobs(&self) -> PathBuf {
+        self.data.join("blobs")
+    }
+
     /// Copies of `mail.db` taken before each schema migration.
     pub fn backups(&self) -> PathBuf {
         self.data.join("backups")

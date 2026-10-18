@@ -16,6 +16,7 @@ use regards_imap::TlsOptions;
 use regards_ipc::UiToken;
 use regards_ipc::endpoint::Endpoint;
 use regards_ipc::transport::Listener;
+use regards_store::blobs::Blobs;
 use regards_store::{Store, StoreError};
 use regards_vault::Vault;
 use std::fs::{File, TryLockError};
@@ -58,6 +59,8 @@ pub(crate) struct State {
     pub(crate) watchers: push::Watchers,
     /// Change notifications for subscribed clients (ADR-0007).
     pub(crate) feed: Arc<feed::Feed>,
+    /// Downloaded messages (ADR-0008).
+    pub(crate) blobs: Blobs,
 }
 
 /// A daemon that holds its data-directory lock and is listening, but not yet serving.
@@ -156,7 +159,7 @@ impl Daemon {
             store,
             vault,
             imap_tls,
-            ..
+            dirs,
         } = self;
         let (stop, mut stopped) = watch::channel(false);
         let feed = Arc::new(feed::Feed::new(*store.subscribe().borrow()));
@@ -170,6 +173,7 @@ impl Daemon {
             sync: sync::Tracker::new(Arc::clone(&feed)),
             watchers: push::Watchers::default(),
             feed,
+            blobs: Blobs::new(dirs.blobs()),
         });
         let follow = tokio::spawn({
             let state = Arc::clone(&state);

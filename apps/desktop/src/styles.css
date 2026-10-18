@@ -41,7 +41,7 @@ body {
 }
 
 .shell {
-  max-width: 900px;
+  max-width: 1280px;
   margin: 0 auto;
   padding: 48px 24px;
 }
@@ -279,4 +279,89 @@ button:disabled {
 .messages li.unread .from,
 .messages li.unread .subject {
   font-weight: 600;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 16px;
+  align-items: start;
+}
+
+.workspace .card + .card {
+  margin-top: 16px;
+}
+
+@media (max-width: 760px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.messages li {
+  display: block;
+  padding: 0;
+}
+
+.messages button.message {
+  display: grid;
+  grid-template-columns: minmax(0, 10em) minmax(0, 1fr) auto;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 7px 6px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text);
+  text-align: left;
+}
+
+.messages button.message > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.messages button.message.unread .from,
+.messages button.message.unread .subject {
+  font-weight: 600;
+}
+
+.messages button.message.selected {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.reading h2 {
+  font-size: 18px;
+}
+
+.reading .headers {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  margin: 8px 0 12px;
+}
+
+.reading .headers dt {
+  color: var(--muted);
+}
+
+.reading .headers dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.reading .body {
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.attachments {
+  margin: 4px 0 0;
+  padding-left: 18px;
 }

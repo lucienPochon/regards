@@ -11,7 +11,15 @@ export interface OpenMailbox {
 const PAGE = 50;
 const MAX_PAGE = 500;
 
-export function MessageList({ mailbox }: { mailbox: OpenMailbox }) {
+export function MessageList({
+  mailbox,
+  selected,
+  onOpen,
+}: {
+  mailbox: OpenMailbox;
+  selected: number | null;
+  onOpen: (messageId: number) => void;
+}) {
   const [messages, setMessages] = useState<MessageSummary[]>([]);
   const [next, setNext] = useState<MessageCursor | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -64,13 +72,23 @@ export function MessageList({ mailbox }: { mailbox: OpenMailbox }) {
       {!loading && messages.length === 0 && !error && <p className="muted">No messages.</p>}
       <ul className="messages">
         {messages.map((message) => (
-          <li key={message.id} className={message.seen ? undefined : "unread"}>
-            <span className="from">{sender(message)}</span>
-            <span className="subject">{message.subject || "(no subject)"}</span>
-            <span className="date muted small">
-              {message.flagged && <span aria-label="flagged">★ </span>}
-              {formatDate(message.received_at)}
-            </span>
+          <li key={message.id}>
+            <button
+              type="button"
+              className={[
+                "message",
+                message.seen ? "" : "unread",
+                message.id === selected ? "selected" : "",
+              ].join(" ")}
+              onClick={() => onOpen(message.id)}
+            >
+              <span className="from">{sender(message)}</span>
+              <span className="subject">{message.subject || "(no subject)"}</span>
+              <span className="date muted small">
+                {message.flagged && <span aria-label="flagged">★ </span>}
+                {formatDate(message.received_at)}
+              </span>
+            </button>
           </li>
         ))}
       </ul>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AccountsPanel } from "./AccountsPanel";
 import { useChanges } from "./changes";
 import { MessageList, type OpenMailbox } from "./MessageList";
+import { ReadingPane } from "./ReadingPane";
 import { type DaemonStatus, fetchDaemonStatus } from "./daemon";
 
 type Check =
@@ -12,6 +13,7 @@ type Check =
 export function App() {
   const [check, setCheck] = useState<Check>({ state: "checking" });
   const [open, setOpen] = useState<OpenMailbox | null>(null);
+  const [reading, setReading] = useState<number | null>(null);
 
   // Without "Checking…" in between, so change events do not make the card flicker.
   const update = useCallback(() => {
@@ -47,8 +49,27 @@ export function App() {
         </button>
       </section>
 
-      <AccountsPanel selected={open?.id ?? null} onOpen={setOpen} />
-      {open && <MessageList mailbox={open} />}
+      <div className="workspace">
+        <div className="side">
+          <AccountsPanel
+            selected={open?.id ?? null}
+            onOpen={(mailbox) => {
+              setOpen(mailbox);
+              setReading(null);
+            }}
+          />
+        </div>
+        <div className="main">
+          {open ? (
+            <MessageList mailbox={open} selected={reading} onOpen={setReading} />
+          ) : (
+            <section className="card">
+              <p className="muted">Choose a folder to see its messages.</p>
+            </section>
+          )}
+          {reading !== null && <ReadingPane messageId={reading} />}
+        </div>
+      </div>
     </main>
   );
 }

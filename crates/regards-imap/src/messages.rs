@@ -239,6 +239,49 @@ impl Session {
         })
     }
 
+    /// The complete source of one message, without marking it read
+    /// (`BODY.PEEK[]`). `None` if the server no longer has it.
+    pub async fn fetch_source(&mut self, uid: u32) -> Result<Option<Vec<u8>>, ImapError> {
+        let reply = self
+            .conn
+            .run(CommandBody::Fetch {
+                sequence_set: sequence_set(&uid.to_string())?,
+                macro_or_item_names: vec![
+                    MessageDataItemName::Uid,
+                    MessageDataItemName::BodyExt {
+                        section: None,
+                        partial: None,
+                        peek: true,
+                    },
+                ]
+                .into(),
+                uid: true,
+                modifiers: vec![],
+            })
+            .await?;
+        ok(&reply, "FETCH")?;
+        for data in &reply.data {
+            let Data::Fetch { items, .. } = data else { continue };
+            let mut this_uid = false;
+            let mut source = None;
+            for item in items.as_ref() {
+                match item {
+                    MessageDataItem::Uid(found) => this_uid = found.get() == uid,
+                    MessageDataItem::BodyExt {
+                        section: None, data, ..
+                    } => {
+                        source = data.0.as_ref().map(|s| s.as_ref().to_vec());
+                    }
+                    _ => {}
+                }
+            }
+            if this_uid {
+                return Ok(source);
+            }
+        }
+        Ok(None)
+    }
+
     /// Flags of `uids`; with `changed_since` (CONDSTORE), only those changed after that modseq.
     pub async fn fetch_flags(
         &mut self,

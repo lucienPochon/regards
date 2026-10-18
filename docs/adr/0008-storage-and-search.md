@@ -19,6 +19,10 @@ We need durable local storage for mail metadata, bodies, drafts, state overlays,
    - **One main database** (`mail.db`). Large or derivable data goes in separate files:
      - `search.db` for indexes, which can be rebuilt
      - a content-addressed `blobs/` directory for raw messages and attachments, compressed
+     - **Implementation (Phase 1):**
+       - **Naming:** `blobs/<first 2 hex>/<SHA-256>`, written atomically.
+       - **What is stored:** a message's source is stored when it is first opened.
+       - **Not yet:** compression is not done yet, and blobs of deleted messages are not yet cleaned up. Both come later.
 2. **Normalised schema with real columns** for anything queried or sorted (the plan §4 sketch is the starting point). JSON columns are only for opaque provider metadata. Projections (`thread_view`, `list_membership`, counters) are derived tables maintained by the core (ADR-0007).
 3. **Migrations:**
    - Versioned, forward-only SQL migrations embedded in the binary.

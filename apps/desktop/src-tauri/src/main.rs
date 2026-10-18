@@ -14,8 +14,8 @@ use regards_core::secret::Secret;
 use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity,
-    MailboxListResult, MessageCursor, MessageListParams, MessageListResult, Principal, ServerSettings, SyncResult,
-    methods,
+    MailboxListResult, MessageCursor, MessageDetail, MessageListParams, MessageListResult, MessageRef, Principal,
+    ServerSettings, SyncResult, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -255,6 +255,16 @@ async fn message_list(
         .map_err(describe)
 }
 
+/// One message with its body; the daemon downloads it the first time.
+#[tauri::command]
+async fn message_get(bridge: State<'_, Bridge>, id: i64) -> Result<MessageDetail, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_GET, MessageRef { id })
+        .await
+        .map_err(describe)
+}
+
 /// Keep one subscribed connection to the daemon and re-emit its change
 /// notifications to the WebView as `changes` events (ADR-0007). Reconnects
 /// with backoff when the daemon restarts or is replaced.
@@ -326,7 +336,8 @@ fn main() {
             account_remove,
             account_sync,
             mailbox_list,
-            message_list
+            message_list,
+            message_get
         ])
         .build(tauri::generate_context!())
         .expect("failed to start the Regards desktop app");
