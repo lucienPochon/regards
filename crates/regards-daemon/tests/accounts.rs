@@ -385,3 +385,43 @@ async fn desktop_shutdown(endpoint: &Endpoint, token: &UiToken) {
         .unwrap();
     client.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn subscribers_are_told_about_changes_and_agents_cannot_subscribe() {
+    let pki = pki(&["localhost"]);
+    let (port, _) = fake_server(&pki, "* OK ready\r\n", PASSWORD).await;
+    let running = start(
+        TlsOptions::platform()
+            .with_extra_roots_pem(pki.ca_pem.as_bytes())
+            .unwrap(),
+    )
+    .await;
+
+    let agent = Client::connect(&running.endpoint, ClientKind::Cli).await.unwrap();
+    match agent.subscribe_changes().await {
+        Err(ClientError::Rpc(error)) => assert_eq!(error.code, codes::FORBIDDEN),
+        Err(other) => panic!("unexpected {other:?}"),
+        Ok(_) => panic!("an agent must not get the change feed"),
+    }
+
+    let mut feed = running.desktop().await.subscribe_changes().await.unwrap();
+    let start = feed.current();
+    let mut desktop = running.desktop().await;
+    let _: AccountSummary = desktop
+        .call(methods::ACCOUNT_ADD, params("ada@example.test", port, PASSWORD))
+        .await
+        .unwrap();
+
+    // The account row (a database write), then sync status and mailboxes.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let mut latest = start;
+    while latest.revision <= start.revision + 1 {
+        let change = tokio::time::timeout_at(deadline.into(), feed.next())
+            .await
+            .expect("changes are announced")
+            .unwrap();
+        assert!(change.version > latest.version, "versions only grow");
+        latest = change;
+    }
+    assert!(latest.revision > start.revision);
+}

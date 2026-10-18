@@ -5,6 +5,7 @@
 //! server talk to it over the local API (ADR-0006).
 
 mod accounts;
+mod feed;
 mod mail;
 mod push;
 mod session;
@@ -55,6 +56,8 @@ pub(crate) struct State {
     pub(crate) sync: sync::Tracker,
     /// The IDLE connections, one per account.
     pub(crate) watchers: push::Watchers,
+    /// Change notifications for subscribed clients (ADR-0007).
+    pub(crate) feed: Arc<feed::Feed>,
 }
 
 /// A daemon that holds its data-directory lock and is listening, but not yet serving.
@@ -156,6 +159,7 @@ impl Daemon {
             ..
         } = self;
         let (stop, mut stopped) = watch::channel(false);
+        let feed = Arc::new(feed::Feed::new(*store.subscribe().borrow()));
         let state = Arc::new(State {
             started: Instant::now(),
             stop,
@@ -163,8 +167,13 @@ impl Daemon {
             store,
             vault: OnceCell::new_with(vault.map(Ok)),
             imap_tls,
-            sync: sync::Tracker::default(),
+            sync: sync::Tracker::new(Arc::clone(&feed)),
             watchers: push::Watchers::default(),
+            feed,
+        });
+        let follow = tokio::spawn({
+            let state = Arc::clone(&state);
+            async move { state.feed.follow(&state.store).await }
         });
         sync::spawn_all(Arc::clone(&state));
         tracing::info!(%endpoint, "daemon listening");
@@ -193,6 +202,7 @@ impl Daemon {
 
         tracing::info!("daemon stopping");
         state.watchers.stop_all();
+        follow.abort();
         drop(listener);
         // Releasing the lock last lets a replacement daemon start only after we stopped listening.
         drop(lock);

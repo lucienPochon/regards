@@ -17,7 +17,7 @@ pub mod protocol;
 pub mod token;
 pub mod transport;
 
-pub use client::{Client, ClientError};
+pub use client::{ChangeFeed, Client, ClientError};
 pub use endpoint::Endpoint;
 pub use launcher::{LaunchError, Launcher};
 pub use token::UiToken;

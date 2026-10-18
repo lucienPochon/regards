@@ -28,6 +28,12 @@ Spark achieves this with a core that owns state, validates actions and records u
    - The daemon pushes typed **deltas** (insert, update, remove, move, count change) tagged with the revision.
    - Clients can resume from a revision after reconnecting, or request a snapshot.
    - **No polling.**
+   - **Implementation (Phase 1, first step):** `changes.subscribe` dedicates a connection to `changes` notifications.
+     - **Payload:** `{version, revision}`.
+     - **Version:** moves on every committed write and every sync-status change. Bursts coalesce into one notification.
+     - **Client behaviour:** clients refetch what they show.
+     - **Desktop:** re-emits the notifications to the WebView as `changes` events, and reconnects with backoff.
+     - **Later:** typed per-view deltas build on this channel.
 4. **List engine.**
    - Sections and lists (Smart Inbox sections, folders, Outbox, Snoozed, Set aside, search results) are **materialised memberships** with counts.
    - They are maintained incrementally on each transaction, so opening a list or rendering counts never scans all messages.

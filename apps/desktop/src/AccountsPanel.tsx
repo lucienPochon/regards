@@ -11,6 +11,7 @@ import {
   removeAccount,
   syncAccount,
 } from "./accounts";
+import { useChanges } from "./changes";
 import type { OpenMailbox } from "./MessageList";
 
 type Load =
@@ -35,6 +36,7 @@ export function AccountsPanel({
   }, []);
 
   useEffect(refresh, [refresh]);
+  useChanges(refresh);
 
   const remove = async (account: AccountSummary) => {
     if (!window.confirm(`Remove ${account.email} from Regards? Its saved password is deleted too.`)) {
@@ -275,12 +277,8 @@ function AccountRow({
       .catch((failure: unknown) => setError(String(failure)));
   }, [account.id]);
 
-  // Poll while the first sync runs; the change feed (ADR-0007) replaces this later.
-  useEffect(() => {
-    load();
-    const timer = window.setInterval(load, 2000);
-    return () => window.clearInterval(timer);
-  }, [load]);
+  useEffect(load, [load]);
+  useChanges(load);
 
   const syncNow = async () => {
     setSyncing(true);

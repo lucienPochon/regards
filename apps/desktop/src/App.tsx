@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { AccountsPanel } from "./AccountsPanel";
+import { useChanges } from "./changes";
 import { MessageList, type OpenMailbox } from "./MessageList";
 import { type DaemonStatus, fetchDaemonStatus } from "./daemon";
 
@@ -12,18 +13,24 @@ export function App() {
   const [check, setCheck] = useState<Check>({ state: "checking" });
   const [open, setOpen] = useState<OpenMailbox | null>(null);
 
-  const refresh = useCallback(() => {
-    setCheck({ state: "checking" });
+  // Without "Checking…" in between, so change events do not make the card flicker.
+  const update = useCallback(() => {
     fetchDaemonStatus()
       .then((status) => setCheck({ state: "done", status }))
       .catch((error: unknown) => setCheck({ state: "failed", message: String(error) }));
   }, []);
 
+  const refresh = useCallback(() => {
+    setCheck({ state: "checking" });
+    update();
+  }, [update]);
+
   useEffect(() => {
     refresh();
-    window.addEventListener("focus", refresh);
-    return () => window.removeEventListener("focus", refresh);
-  }, [refresh]);
+    window.addEventListener("focus", update);
+    return () => window.removeEventListener("focus", update);
+  }, [refresh, update]);
+  useChanges(update);
 
   return (
     <main className="shell">

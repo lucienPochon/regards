@@ -4,13 +4,14 @@ use crate::{State, accounts, mail};
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_ipc::framing::{self, FrameError};
 use regards_ipc::protocol::{
-    HealthResult, HelloParams, HelloResult, PROTOCOL_VERSIONS, Principal, Request, Response, RpcError, codes, methods,
-    negotiate,
+    ChangesNotification, HealthResult, HelloParams, HelloResult, JSONRPC, Notification, PROTOCOL_VERSIONS, Principal,
+    Request, Response, RpcError, codes, methods, negotiate, notifications,
 };
 use regards_ipc::transport::Stream;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::watch;
 
 /// A client must say `hello` within this time or the connection is closed.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -18,14 +19,49 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 struct Session {
     state: Arc<State>,
     principal: Option<Principal>,
+    /// Set by `changes.subscribe`: changes to forward as notifications.
+    feed: Option<watch::Receiver<ChangesNotification>>,
+}
+
+/// What woke the session up.
+enum Next {
+    Request(Option<Result<Value, FrameError>>),
+    Change,
+    FeedClosed,
 }
 
 pub(crate) async fn run(stream: Stream, state: Arc<State>) -> Result<(), FrameError> {
     let mut framed = framing::framed(stream);
-    let mut session = Session { state, principal: None };
+    let mut session = Session {
+        state,
+        principal: None,
+        feed: None,
+    };
 
     loop {
-        let incoming = if session.principal.is_none() {
+        let incoming = if let Some(feed) = session.feed.as_mut() {
+            let next = tokio::select! {
+                incoming = framing::recv::<_, Value>(&mut framed) => Next::Request(incoming),
+                changed = feed.changed() => if changed.is_ok() { Next::Change } else { Next::FeedClosed },
+            };
+            match next {
+                Next::Request(incoming) => incoming,
+                Next::Change => {
+                    let change = *feed.borrow_and_update();
+                    let notification = Notification {
+                        jsonrpc: JSONRPC.to_owned(),
+                        method: notifications::CHANGES.to_owned(),
+                        params: to_value(change),
+                    };
+                    framing::send(&mut framed, &notification).await?;
+                    continue;
+                }
+                Next::FeedClosed => {
+                    session.feed = None;
+                    continue;
+                }
+            }
+        } else if session.principal.is_none() {
             match tokio::time::timeout(HANDSHAKE_TIMEOUT, framing::recv::<_, Value>(&mut framed)).await {
                 Ok(incoming) => incoming,
                 Err(_) => {
@@ -126,6 +162,13 @@ impl Session {
             methods::MESSAGE_LIST => {
                 self.require_ui()?;
                 mail::list(&self.state, params(request)?).await
+            }
+            methods::CHANGES_SUBSCRIBE => {
+                self.require_ui()?;
+                let mut feed = self.state.feed.subscribe();
+                let current = *feed.borrow_and_update();
+                self.feed = Some(feed);
+                Ok(to_value(current))
             }
             other => Err(RpcError::new(
                 codes::METHOD_NOT_FOUND,

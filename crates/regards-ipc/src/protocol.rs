@@ -33,6 +33,14 @@ pub mod methods {
     pub const MAILBOX_LIST: &str = "mailbox.list";
     /// A page of a mailbox's messages, newest first. `ui` only for now.
     pub const MESSAGE_LIST: &str = "message.list";
+    /// Dedicate this connection to change notifications (ADR-0007). `ui` only for now.
+    pub const CHANGES_SUBSCRIBE: &str = "changes.subscribe";
+}
+
+/// Notification methods the daemon sends.
+pub mod notifications {
+    /// Something clients may be showing has changed; refetch it. Params: [`ChangesNotification`](super::ChangesNotification).
+    pub const CHANGES: &str = "changes";
 }
 
 /// Error codes. Negative values in -32768..=-32000 are reserved by JSON-RPC;
@@ -308,6 +316,15 @@ pub struct SyncResult {
     pub messages_removed: usize,
     /// Server responses that could not be read and were skipped.
     pub unreadable: usize,
+}
+
+/// Result of [`methods::CHANGES_SUBSCRIBE`] and params of [`notifications::CHANGES`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChangesNotification {
+    /// Increases with every change of any kind, including sync status.
+    pub version: u64,
+    /// The mail database revision.
+    pub revision: i64,
 }
 
 /// Where a page of messages ended; pass it as `before` for the next page.

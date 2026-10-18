@@ -10,6 +10,7 @@
 //! missing HIGHESTMODSEQ is tolerated.
 
 use crate::State;
+use crate::feed::Feed;
 use regards_core::headers;
 use regards_core::mailbox::{Candidate, assign_roles};
 use regards_imap::{FlagUpdate, Flags, ImapError, ImapServer, MessageSet, Selected, Session};
@@ -52,31 +53,44 @@ pub(crate) struct Summary {
     pub unreadable: usize,
 }
 
-/// Sync progress per account, for the UI.
-#[derive(Default)]
+/// Sync progress per account, for the UI. Every change is announced on the feed.
 pub(crate) struct Tracker {
     states: Mutex<HashMap<String, SyncState>>,
+    feed: Arc<Feed>,
 }
 
 impl Tracker {
+    pub(crate) fn new(feed: Arc<Feed>) -> Self {
+        Self {
+            states: Mutex::default(),
+            feed,
+        }
+    }
+
     pub(crate) fn get(&self, account_id: &str) -> SyncState {
         self.lock().get(account_id).cloned().unwrap_or_default()
     }
 
     pub(crate) fn forget(&self, account_id: &str) {
         self.lock().remove(account_id);
+        self.feed.bump();
     }
 
     /// Record whether a push connection is waiting for new mail.
     pub(crate) fn set_push(&self, account_id: &str, active: bool) {
         self.lock().entry(account_id.to_owned()).or_default().push_active = active;
+        self.feed.bump();
     }
 
     /// Mark a sync as started; `false` if one is already running.
     fn start(&self, account_id: &str) -> bool {
-        let mut states = self.lock();
-        let state = states.entry(account_id.to_owned()).or_default();
-        !std::mem::replace(&mut state.running, true)
+        let started = {
+            let mut states = self.lock();
+            let state = states.entry(account_id.to_owned()).or_default();
+            !std::mem::replace(&mut state.running, true)
+        };
+        self.feed.bump();
+        started
     }
 
     fn finish(&self, account_id: &str, outcome: &Result<Summary, SyncError>) {
@@ -90,6 +104,8 @@ impl Tracker {
             }
             Err(error) => state.last_error = Some(error.to_string()),
         }
+        drop(states);
+        self.feed.bump();
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, SyncState>> {

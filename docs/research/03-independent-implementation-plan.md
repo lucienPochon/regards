@@ -157,8 +157,9 @@ flowchart LR
   - **Tests:** CI runs these flows against Dovecot.
   - **Push:** one IDLE connection per account on the inbox, with a catch-up sync before each IDLE, re-IDLE every 25 minutes, and reconnect with backoff. Servers without IDLE are polled every 5 minutes. Measured against Dovecot: about 0.6 s from delivery to the store.
   - **Connections:** addresses are tried "Happy Eyeballs" style (RFC 8305), so a broken IPv6 route costs 250 ms, not seconds.
+  - **Live updates in the UI:** a change feed (ADR-0007) notifies subscribed clients of every committed change and sync-status change. The app refreshes on those events and no longer polls.
 - **Still to come in Phase 1:**
-  - **Live updates in the UI:** a change feed (ADR-0007) to replace polling.
+
   - **Sync:** QRESYNC and backfill of older messages.
   - **Bodies and threading:** message bodies, and References threading.
   - **Operations:** the operation queue for user actions.

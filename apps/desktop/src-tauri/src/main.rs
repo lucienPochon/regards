@@ -21,8 +21,9 @@ use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use tauri::{Manager, RunEvent, State};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 use tokio::sync::Mutex;
 
 /// Overrides where the `regards` program is looked for (development and tests).
@@ -34,6 +35,8 @@ struct Bridge {
     launcher: Result<Launcher, String>,
     /// Token of the daemon this process started, if it is still the one running.
     token: Mutex<Option<UiToken>>,
+    /// Set while the app quits, so nothing starts a new daemon behind it.
+    closing: AtomicBool,
 }
 
 impl Bridge {
@@ -41,6 +44,7 @@ impl Bridge {
         Self {
             launcher: locate().map(|(dirs, program)| Launcher::new(dirs, program)),
             token: Mutex::new(None),
+            closing: AtomicBool::new(false),
         }
     }
 
@@ -105,6 +109,9 @@ impl DaemonStatus {
 impl Bridge {
     /// Connect with desktop access, starting or replacing the daemon as needed.
     async fn connect(&self) -> Result<Connected, String> {
+        if self.closing.load(Ordering::SeqCst) {
+            return Err("Regards is quitting".into());
+        }
         let launcher = self.launcher.as_ref().map_err(Clone::clone)?;
         // Held while connecting, so concurrent calls never start two daemons.
         let mut token = self.token.lock().await;
@@ -232,6 +239,7 @@ async fn message_list(
     bridge: State<'_, Bridge>,
     mailbox_id: i64,
     before: Option<MessageCursor>,
+    limit: Option<u32>,
 ) -> Result<MessageListResult, String> {
     let mut client = bridge.connect().await?.client;
     client
@@ -239,12 +247,42 @@ async fn message_list(
             methods::MESSAGE_LIST,
             MessageListParams {
                 mailbox_id,
-                limit: None,
+                limit,
                 before,
             },
         )
         .await
         .map_err(describe)
+}
+
+/// Keep one subscribed connection to the daemon and re-emit its change
+/// notifications to the WebView as `changes` events (ADR-0007). Reconnects
+/// with backoff when the daemon restarts or is replaced.
+async fn forward_changes(app: AppHandle) {
+    let mut backoff = Duration::from_millis(500);
+    loop {
+        let bridge = app.state::<Bridge>();
+        if bridge.closing.load(Ordering::SeqCst) {
+            return;
+        }
+        let subscribed = match bridge.connect().await {
+            Ok(connected) => connected.client.subscribe_changes().await.map_err(describe),
+            Err(error) => Err(error),
+        };
+        match subscribed {
+            Ok(mut feed) => {
+                backoff = Duration::from_millis(500);
+                // Views may be stale after a reconnect: refresh them once.
+                let _ = app.emit("changes", feed.current());
+                while let Ok(change) = feed.next().await {
+                    let _ = app.emit("changes", change);
+                }
+            }
+            Err(error) => eprintln!("change feed unavailable: {error}"),
+        }
+        tokio::time::sleep(backoff).await;
+        backoff = (backoff * 2).min(Duration::from_secs(30));
+    }
 }
 
 /// Daemon errors carry messages written for people; show those as they are.
@@ -277,6 +315,10 @@ fn main() {
             }
         }))
         .manage(Bridge::new())
+        .setup(|app| {
+            tauri::async_runtime::spawn(forward_changes(app.handle().clone()));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             daemon_status,
             account_list,
@@ -292,6 +334,7 @@ fn main() {
     app.run(|app, event| {
         if let RunEvent::Exit = event {
             let bridge = app.state::<Bridge>();
+            bridge.closing.store(true, Ordering::SeqCst);
             tauri::async_runtime::block_on(async {
                 let _ = tokio::time::timeout(Duration::from_secs(3), bridge.stop_own_daemon()).await;
             });

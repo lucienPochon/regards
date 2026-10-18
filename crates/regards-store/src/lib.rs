@@ -21,7 +21,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
-use tokio::sync::{Semaphore, oneshot};
+use tokio::sync::{Semaphore, oneshot, watch};
 
 /// Read-only connections kept open.
 const READERS: usize = 4;
@@ -68,6 +68,8 @@ struct Inner {
     writer: mpsc::Sender<WriteJob>,
     readers: Mutex<Vec<Connection>>,
     read_permits: Arc<Semaphore>,
+    /// The latest committed revision, for change notifications (ADR-0007).
+    revisions: watch::Sender<i64>,
 }
 
 impl Store {
@@ -99,6 +101,7 @@ impl Store {
             })
             .collect::<Result<Vec<_>, StoreError>>()?;
 
+        let revision: i64 = writer.query_row("SELECT value FROM revision", [], |row| row.get(0))?;
         let (sender, jobs) = mpsc::channel::<WriteJob>();
         std::thread::Builder::new()
             .name("regards-store-writer".into())
@@ -115,6 +118,7 @@ impl Store {
                 writer: sender,
                 readers: Mutex::new(readers),
                 read_permits: Arc::new(Semaphore::new(READERS)),
+                revisions: watch::Sender::new(revision),
             }),
         })
     }
@@ -141,7 +145,21 @@ impl Store {
             let _ = done.send(outcome);
         });
         self.inner.writer.send(job).map_err(|_| StoreError::Closed)?;
-        result.await.map_err(|_| StoreError::Closed)?
+        let committed = result.await.map_err(|_| StoreError::Closed)??;
+        // Writes finish in order, but callers may resume out of order: keep the highest.
+        self.inner.revisions.send_if_modified(|latest| {
+            let newer = committed.revision > *latest;
+            if newer {
+                *latest = committed.revision;
+            }
+            newer
+        });
+        Ok(committed)
+    }
+
+    /// Follow the latest committed revision: the receiver wakes after each commit.
+    pub fn subscribe(&self) -> watch::Receiver<i64> {
+        self.inner.revisions.subscribe()
     }
 
     /// Run `f` on a read-only connection.
@@ -238,6 +256,19 @@ mod tests {
 
         assert_eq!(store.revision().await.unwrap(), 0);
         assert_eq!(store.write(|_| Ok(())).await.unwrap().revision, 1);
+    }
+
+    #[tokio::test]
+    async fn subscribers_see_each_new_revision() {
+        let (_temp, store) = open_temp().await;
+        let mut revisions = store.subscribe();
+        assert_eq!(*revisions.borrow(), 0);
+        store.write(|_| Ok(())).await.unwrap();
+        revisions.changed().await.unwrap();
+        assert_eq!(*revisions.borrow_and_update(), 1);
+        // A failed write commits nothing and wakes nobody.
+        let _ = store.write(|_| Err::<(), _>(StoreError::Conflict("no".into()))).await;
+        assert!(!revisions.has_changed().unwrap());
     }
 
     #[tokio::test]

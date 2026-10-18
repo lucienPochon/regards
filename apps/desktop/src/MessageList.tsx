@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { type MessageCursor, type MessageSummary, listMessages } from "./accounts";
+import { useChanges } from "./changes";
 
 export interface OpenMailbox {
   id: number;
@@ -7,15 +8,21 @@ export interface OpenMailbox {
   account: string;
 }
 
+const PAGE = 50;
+const MAX_PAGE = 500;
+
 export function MessageList({ mailbox }: { mailbox: OpenMailbox }) {
   const [messages, setMessages] = useState<MessageSummary[]>([]);
   const [next, setNext] = useState<MessageCursor | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const shown = useRef(0);
+  shown.current = messages.length;
 
-  // The newest page; also refreshed every few seconds until the change feed (ADR-0007) lands.
-  const loadFirst = useCallback(() => {
-    listMessages(mailbox.id, null)
+  // Re-read the newest messages, as many as are on screen (so "Load more" pages stay).
+  const refresh = useCallback(() => {
+    const limit = Math.min(MAX_PAGE, Math.max(PAGE, shown.current));
+    listMessages(mailbox.id, null, limit)
       .then((page) => {
         setMessages(page.messages);
         setNext(page.next);
@@ -28,10 +35,11 @@ export function MessageList({ mailbox }: { mailbox: OpenMailbox }) {
   useEffect(() => {
     setLoading(true);
     setMessages([]);
-    loadFirst();
-    const timer = window.setInterval(loadFirst, 5000);
-    return () => window.clearInterval(timer);
-  }, [loadFirst]);
+    shown.current = 0;
+    refresh();
+  }, [refresh]);
+
+  useChanges(refresh);
 
   const loadMore = async () => {
     if (!next) {
