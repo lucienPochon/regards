@@ -1,5 +1,5 @@
 import { type CSSProperties, type KeyboardEvent, type PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type MoveResult, type UndoInfo, syncAccount } from "./accounts";
+import { type MarkResult, type MoveResult, type UndoInfo, syncAccount } from "./accounts";
 import { type ActionHost, type Target, messageActions } from "./actions";
 import { BulkPane } from "./BulkPane";
 import { Composer } from "./Composer";
@@ -18,8 +18,20 @@ import { Settings, type SettingsTab } from "./Settings";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { useShortcuts } from "./shortcuts";
 import { Sidebar } from "./Sidebar";
+import { presets } from "./snooze";
+import { TimePicker } from "./TimePicker";
 import { UndoToast } from "./UndoToast";
-import { INBOX, ROLE_ICONS, ROLE_LABELS, type View, depth, leafName, sortFolders, viewKey } from "./views";
+import {
+  INBOX,
+  MARKED_LABELS,
+  ROLE_ICONS,
+  ROLE_LABELS,
+  type View,
+  depth,
+  leafName,
+  sortFolders,
+  viewKey,
+} from "./views";
 import { Welcome } from "./Welcome";
 
 /** How long an error notice stays. */
@@ -39,7 +51,20 @@ function targetOf(items: ListItem[]): Target {
     seen: items.every((item) => item.seen),
     flagged: items.every((item) => item.flagged),
     disposable: items.length > 0 && items.every(trashLike),
+    pinned: items.length > 0 && items.every((item) => item.pinned),
+    aside: items.length > 0 && items.every((item) => item.aside),
+    snoozed: items.length > 0 && items.every((item) => item.snoozed_until !== null),
   };
+}
+
+/** A preset's time beside it: "18:00", or "Thu 08:00" when it is not today. */
+function presetHint(until: number | "someday"): string | undefined {
+  if (until === "someday") return undefined;
+  const date = new Date(until);
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return date.toDateString() === new Date().toDateString()
+    ? time
+    : `${date.toLocaleDateString([], { weekday: "short" })} ${time}`;
 }
 
 export function App() {
@@ -62,6 +87,7 @@ export function App() {
   const [settings, setSettings] = useState<SettingsTab | null>(null);
   const [menu, setMenu] = useState<MenuRequest | null>(null);
   const [asking, setAsking] = useState<{ request: ConfirmRequest; resolve: (ok: boolean) => void } | null>(null);
+  const [picking, setPicking] = useState<((time: number | null) => void) | null>(null);
   const [syncing, setSyncing] = useState(false);
   const closeUndo = useCallback(() => setUndo(null), []);
   const closeQueued = useCallback(() => setQueued(null), []);
@@ -141,9 +167,38 @@ export function App() {
     if (result?.undo) setUndo(result.undo);
   }, []);
 
+  // A mark that keeps the message where it is (pin): only the undo.
+  const marked = useCallback((result: MarkResult) => {
+    if (result.undo) setUndo(result.undo);
+  }, []);
+  const pickSnooze = useCallback(
+    (anchor: Anchor | null) =>
+      new Promise<number | "someday" | null>((resolve) => {
+        setMenu({
+          anchor: anchor ?? { x: window.innerWidth / 2 - 120, y: window.innerHeight / 4 },
+          label: "Snooze until",
+          entries: [
+            ...presets().map((preset) => ({
+              label: preset.label,
+              icon: "clock" as const,
+              hint: presetHint(preset.until),
+              onSelect: () => resolve(preset.until),
+            })),
+            "separator" as const,
+            {
+              label: "Pick a date and time…",
+              onSelect: () => setPicking(() => (time: number | null) => resolve(time)),
+            },
+          ],
+          onDismiss: () => resolve(null),
+        });
+      }),
+    [],
+  );
+
   const host = useMemo<ActionHost>(
-    () => ({ compose, moved, failed, confirm, pickFolder }),
-    [compose, moved, failed, confirm, pickFolder],
+    () => ({ compose, moved, marked, failed, confirm, pickFolder, pickSnooze }),
+    [compose, moved, marked, failed, confirm, pickFolder, pickSnooze],
   );
   const actionsForItems = useCallback((list: ListItem[]) => messageActions(targetOf(list), host), [host]);
   const actionsFor = useCallback((target: Target) => messageActions(target, host), [host]);
@@ -231,7 +286,9 @@ export function App() {
   const title =
     view.kind === "role"
       ? ROLE_LABELS[view.role]
-      : view.kind === "mailbox"
+      : view.kind === "marked"
+        ? MARKED_LABELS[view.mark]
+        : view.kind === "mailbox"
         ? viewMailbox
           ? leafName(viewMailbox)
           : "Folder"
@@ -241,7 +298,7 @@ export function App() {
   const subtitle =
     view.kind === "mailbox"
       ? viewAccount?.account.email
-      : view.kind === "role"
+      : view.kind === "role" || view.kind === "marked"
         ? accounts.length > 1
           ? "All accounts"
           : accounts[0]?.account.email
@@ -251,7 +308,13 @@ export function App() {
   const empty =
     view.kind === "role" && view.role === "inbox"
       ? { title: "You're all caught up", body: "New mail shows here as it arrives." }
-      : { title: "Nothing here", body: "This folder has no messages." };
+      : view.kind === "marked"
+        ? {
+            pinned: { title: "Nothing pinned", body: "Pin a message (p) to keep it in reach here." },
+            snoozed: { title: "Nothing snoozed", body: "Snooze a message (b) and it comes back as new at the time you pick." },
+            aside: { title: "Nothing set aside", body: "Set a message aside (Shift+A) to take it out of the inbox until you need it." },
+          }[view.mark]
+        : { title: "Nothing here", body: "This folder has no messages." };
   const folders = openItem
     ? (accounts.find((entry) => entry.account.id === openItem.accountId)?.mailboxes ?? []).filter((m) => m.selectable)
     : [];
@@ -407,6 +470,17 @@ export function App() {
         />
       )}
       {menu && <Menu request={menu} onClose={() => setMenu(null)} />}
+      {picking && (
+        <TimePicker
+          title="Snooze until"
+          confirm="Snooze"
+          initial={Date.now() + 24 * 3600_000}
+          onAnswer={(time) => {
+            picking(time);
+            setPicking(null);
+          }}
+        />
+      )}
     </div>
   );
 }

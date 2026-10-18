@@ -1,8 +1,11 @@
 import {
+  type MarkResult,
   type MoveResult,
   archiveMessages,
   deleteForever,
   moveMessages,
+  pinMessages,
+  setAside,
   setFlags,
   trashMessages,
 } from "./accounts";
@@ -11,6 +14,7 @@ import type { ConfirmRequest } from "./Confirm";
 import type { IconName } from "./icons";
 import type { Anchor } from "./Menu";
 import type { Shortcuts } from "./shortcuts";
+import { snoozeMessages } from "./snooze";
 
 /** The messages an action applies to, and what they have in common. */
 export interface Target {
@@ -27,6 +31,12 @@ export interface Target {
   flagged: boolean;
   /** All in Trash or Junk, where deleting is for good. */
   disposable: boolean;
+  /** All pinned. */
+  pinned: boolean;
+  /** All set aside. */
+  aside: boolean;
+  /** All snoozed. */
+  snoozed: boolean;
 }
 
 /** What actions need from the app around them. */
@@ -35,13 +45,29 @@ export interface ActionHost {
   compose: (start: Promise<Draft>) => void;
   /** The messages left their folder; `result.undo` reverses it when it can be. */
   moved: (ids: number[], result: MoveResult | null) => void;
+  /** A mark changed (pin) and the messages stay where they are; `result.undo` reverses it. */
+  marked: (result: MarkResult) => void;
   failed: (error: unknown) => void;
   confirm: (request: ConfirmRequest) => Promise<boolean>;
   /** Ask which of the account's folders to move to (other than `current`): its id, or null if cancelled. */
   pickFolder: (accountId: string, current: number | null, anchor: Anchor | null) => Promise<number | null>;
+  /** Ask until when to snooze: a time (Unix ms), "someday", or null if cancelled. */
+  pickSnooze: (anchor: Anchor | null) => Promise<number | "someday" | null>;
 }
 
-export type ActionId = "reply" | "replyAll" | "forward" | "unread" | "read" | "flag" | "archive" | "move" | "delete";
+export type ActionId =
+  | "reply"
+  | "replyAll"
+  | "forward"
+  | "unread"
+  | "read"
+  | "flag"
+  | "pin"
+  | "snooze"
+  | "aside"
+  | "archive"
+  | "move"
+  | "delete";
 
 export interface Action {
   id: ActionId;
@@ -90,6 +116,48 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       keys: ["s"],
       shown: true,
       run: () => flags({ flagged: !target.flagged }),
+    },
+    {
+      id: "pin",
+      label: target.pinned ? "Unpin" : "Pin",
+      icon: target.pinned ? "pinFilled" : "pin",
+      keys: ["p"],
+      shown: true,
+      run: () => {
+        pinMessages(ids, !target.pinned).then(host.marked).catch(host.failed);
+      },
+    },
+    {
+      id: "snooze",
+      label: target.snoozed ? "Unsnooze" : "Snooze…",
+      icon: "clock",
+      keys: ["b"],
+      shown: true,
+      run: (anchor) => {
+        // Snoozed or set aside, a message leaves the inbox: as for a move, the next one opens.
+        const left = (result: MarkResult) => host.moved(ids, { moved: result.changed, undo: result.undo });
+        if (target.snoozed) {
+          snoozeMessages(ids, null).then(host.marked).catch(host.failed);
+          return;
+        }
+        void host.pickSnooze(anchor ?? null).then((until) => {
+          if (until !== null) snoozeMessages(ids, until).then(left).catch(host.failed);
+        });
+      },
+    },
+    {
+      id: "aside",
+      label: target.aside ? "Back to inbox" : "Set aside",
+      icon: "aside",
+      keys: ["Shift+A"],
+      shown: true,
+      run: () => {
+        setAside(ids, !target.aside)
+          .then((result) =>
+            target.aside ? host.marked(result) : host.moved(ids, { moved: result.changed, undo: result.undo }),
+          )
+          .catch(host.failed);
+      },
     },
     { id: "archive", label: "Archive", icon: "archive", keys: ["e"], shown: true, run: () => move(() => archiveMessages(ids)) },
   );

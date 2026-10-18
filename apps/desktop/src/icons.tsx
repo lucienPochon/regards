@@ -192,6 +192,31 @@ const PATHS = {
       <path d="M12 11v5.5M12 7.5h.01" />
     </>
   ),
+  pin: (
+    <>
+      <path d="M9 3.5h6l-.9 5.2 3.4 3.3v1.5h-11V12l3.4-3.3z" />
+      <path d="M12 13.5v7" />
+    </>
+  ),
+  pinFilled: (
+    <>
+      <path d="M9 3.5h6l-.9 5.2 3.4 3.3v1.5h-11V12l3.4-3.3z" fill="currentColor" />
+      <path d="M12 13.5v7" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
+    </>
+  ),
+  aside: (
+    <>
+      <rect x="3.5" y="4" width="17" height="16" rx="2.5" />
+      <path d="M14.5 4v16" />
+      <path d="M8 10.5h3M8 14h3" />
+    </>
+  ),
   logo: (
     <>
       <rect x="4" y="6" width="16" height="12" rx="2.2" />

@@ -1,17 +1,34 @@
-import type { MailboxSummary, Role } from "./accounts";
+import type { MailboxSummary, MessageView, Role } from "./accounts";
 import type { IconName } from "./icons";
 
 /**
  * What the message column shows. A `role` view is that folder in every
  * account at once (all inboxes, all sent mail …); a `mailbox` view is one
  * folder of one account. Drafts and the Outbox are kept by the daemon, not on
- * the server.
+ * the server. A `marked` view is what is pinned, snoozed or set aside, kept on
+ * this device, across accounts.
  */
 export type View =
   | { kind: "role"; role: Role }
   | { kind: "mailbox"; mailboxId: number; accountId: string }
+  | { kind: "marked"; mark: MessageView }
   | { kind: "drafts" }
   | { kind: "outbox" };
+
+export const MARKED_LABELS: Record<MessageView, string> = {
+  pinned: "Pinned",
+  snoozed: "Snoozed",
+  aside: "Set aside",
+};
+
+export const MARKED_ICONS: Record<MessageView, IconName> = {
+  pinned: "pin",
+  snoozed: "clock",
+  aside: "aside",
+};
+
+/** The sidebar order, under the inbox. */
+export const MARKED_VIEWS: MessageView[] = ["pinned", "snoozed", "aside"];
 
 export const INBOX: View = { kind: "role", role: "inbox" };
 
@@ -52,6 +69,8 @@ export function viewKey(view: View): string {
       return `role:${view.role}`;
     case "mailbox":
       return `mailbox:${view.mailboxId}`;
+    case "marked":
+      return `marked:${view.mark}`;
     default:
       return view.kind;
   }

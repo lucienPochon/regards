@@ -49,8 +49,9 @@ export function presets(now: Date = new Date()): Preset[] {
   if (day >= 1 && day <= 4) {
     list.push({ label: "This weekend", until: at(6 - day, MORNING + 1) });
   }
+  // On a Sunday, next Monday morning is already "Tomorrow".
   const toMonday = ((8 - day) % 7) || 7;
-  list.push({ label: "Next week", until: at(toMonday, MORNING) });
+  if (toMonday > 1) list.push({ label: "Next week", until: at(toMonday, MORNING) });
   list.push({ label: "Someday", until: "someday" });
   return list;
 }

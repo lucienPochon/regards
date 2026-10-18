@@ -90,6 +90,8 @@ export interface MessageCursor {
 
 export interface MessageSummary {
   id: number;
+  /** The folder it is in, or on its way to. */
+  mailbox_id: number;
   uid: number;
   subject: string;
   from: Person | null;
@@ -221,6 +223,11 @@ export function setAside(ids: number[], aside: boolean): Promise<MarkResult> {
 export type MessageView = "pinned" | "aside" | "snoozed";
 
 /** An account's pinned, set-aside or snoozed messages, newest first; pass `next` back for more. */
-export function listView(accountId: string, view: MessageView, before: MessageCursor | null): Promise<MessageListResult> {
-  return invoke<MessageListResult>("message_view", { accountId, view, before });
+export function listView(
+  accountId: string,
+  view: MessageView,
+  before: MessageCursor | null,
+  limit: number | null = null,
+): Promise<MessageListResult> {
+  return invoke<MessageListResult>("message_view", { accountId, view, before, limit });
 }

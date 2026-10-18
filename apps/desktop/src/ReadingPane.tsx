@@ -104,6 +104,9 @@ export function ReadingPane({
     seen: message.seen,
     flagged: message.flagged,
     disposable: disposable(folder?.role ?? item.role),
+    pinned: message.pinned,
+    aside: message.aside,
+    snoozed: message.snoozed_until !== null,
   };
   const actions = actionsFor(target);
   useShortcuts({ Escape: onClose, ...(load.state === "ready" ? actionKeys(actions) : {}) });
@@ -128,7 +131,7 @@ export function ReadingPane({
       className={action.danger ? "icon-btn danger" : "icon-btn"}
       title={`${action.label} (${action.keys[0]})`}
       aria-label={action.label}
-      aria-pressed={action.id === "flag" ? message.flagged : undefined}
+      aria-pressed={action.id === "flag" ? message.flagged : action.id === "pin" ? message.pinned : undefined}
       disabled={load.state !== "ready"}
       onClick={(event) => action.run(anchorOf(event.currentTarget))}
     >
@@ -139,9 +142,9 @@ export function ReadingPane({
   return (
     <section className="reader" aria-label="Message">
       <header className="reader-bar" role="toolbar" aria-label="Message actions">
-        {choose(actions, "archive", "move", "delete").map(tool)}
+        {choose(actions, "archive", "snooze", "move", "delete").map(tool)}
         <span className="sep" />
-        {choose(actions, "unread", "read", "flag").map(tool)}
+        {choose(actions, "pin", "aside", "unread", "read", "flag").map(tool)}
         <span className="spacer" />
         {choose(actions, "reply", "replyAll", "forward").map(tool)}
         <span className="sep" />
@@ -251,6 +254,9 @@ function ThreadMessage({
     seen: ready?.message.seen ?? message.seen,
     flagged: ready?.message.flagged ?? message.flagged,
     disposable: disposable(entry.mailbox_role),
+    pinned: ready?.message.pinned ?? message.pinned,
+    aside: ready?.message.aside ?? message.aside,
+    snoozed: (ready?.message.snoozed_until ?? message.snoozed_until) !== null,
   });
   const more = (button: HTMLElement) => {
     const entries: MenuEntry[] = [
@@ -269,7 +275,7 @@ function ThreadMessage({
       });
     }
     entries.push({ label: details ? "Hide details" : "Show details", icon: "info", onSelect: () => setDetails(!details) });
-    for (const action of choose(actions, "unread", "flag")) {
+    for (const action of choose(actions, "unread", "flag", "pin")) {
       entries.push({ label: action.label, icon: action.icon, onSelect: () => action.run(null) });
     }
     onMenu({ anchor: anchorOf(button, "end"), entries, label: "More" });

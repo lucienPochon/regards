@@ -17,7 +17,12 @@ const started = Date.now();
 let messages: FixtureMessage[] = fixtureMessages(started, accounts);
 const drafts: Draft[] = [];
 const outbox: OutboxEntry[] = [];
-const undos = new Map<number, { description: string; restore: Map<number, number> }>();
+const undos = new Map<
+  number,
+  { description: string; restore: Map<number, number>; marks?: Map<number, Pick<FixtureMessage, "pinned" | "aside" | "snoozed_until">> }
+>();
+const SOMEDAY = 32_503_680_000_000;
+const parked = (m: FixtureMessage) => m.aside === true || (m.snoozed_until ?? 0) > Date.now();
 let nextId = 10_000;
 
 if (accounts.length > 0) {
@@ -59,7 +64,25 @@ function summary(message: FixtureMessage): MessageSummary {
     flagged: message.flagged,
     answered: message.answered,
     size: message.text.length,
+    mailbox_id: message.mailboxId,
+    pinned: message.pinned ?? false,
+    aside: message.aside ?? false,
+    snoozed_until: message.snoozed_until ?? null,
   };
+}
+
+/** Change a mark on messages, with an undo entry, as the daemon does. */
+function mark(ids: number[], change: (message: FixtureMessage) => void, description: string) {
+  const marks = new Map<number, Pick<FixtureMessage, "pinned" | "aside" | "snoozed_until">>();
+  for (const id of ids) {
+    const message = byId(id);
+    marks.set(id, { pinned: message.pinned, aside: message.aside, snoozed_until: message.snoozed_until });
+    change(message);
+  }
+  const id = nextId++;
+  undos.set(id, { description, restore: new Map(), marks });
+  changed();
+  return { changed: ids.length, undo: { id, description } };
 }
 
 function moveTo(ids: number[], target: (message: FixtureMessage) => number | undefined, verb: string) {
@@ -153,8 +176,9 @@ function handle(cmd: string, args: Args): unknown {
     case "message_list": {
       const before = args.before as { received_at: number; id: number } | null;
       const limit = (args.limit as number | null) ?? 50;
+      const inbox = mailboxOf(args.mailboxId as number)?.role === "inbox";
       const all = messages
-        .filter((m) => m.mailboxId === args.mailboxId)
+        .filter((m) => m.mailboxId === args.mailboxId && !(inbox && parked(m)))
         .sort((a, b) => b.received_at - a.received_at || b.id - a.id)
         .filter((m) => !before || m.received_at < before.received_at || (m.received_at === before.received_at && m.id < before.id));
       const page = all.slice(0, limit);
@@ -213,16 +237,38 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return { deleted: ids.size };
     }
+    case "message_pin":
+      return mark(args.ids as number[], (m) => (m.pinned = args.pinned as boolean), args.pinned ? "Pinned" : "Unpinned");
+    case "message_set_aside":
+      return mark(args.ids as number[], (m) => (m.aside = args.aside as boolean), args.aside ? "Set aside" : "Back in the inbox");
+    case "message_snooze": {
+      const until = args.someday ? SOMEDAY : ((args.until as number | null) ?? null);
+      return mark(args.ids as number[], (m) => (m.snoozed_until = until), until ? "Snoozed" : "Back in the inbox");
+    }
+    case "message_view": {
+      const owner = accounts.find((a) => a.account.id === args.accountId);
+      const shown = messages
+        .filter((m) => owner?.mailboxes.some((b) => b.id === m.mailboxId))
+        .filter((m) =>
+          args.view === "pinned" ? m.pinned : args.view === "aside" ? m.aside : (m.snoozed_until ?? 0) > Date.now(),
+        )
+        .sort((a, b) => b.received_at - a.received_at || b.id - a.id);
+      return { messages: shown.map(summary), next: null };
+    }
     case "undo_apply": {
       const undo = undos.get(args.id as number);
       if (!undo) throw new Error("It is too late to undo that.");
       undos.delete(args.id as number);
+      for (const [id, before] of undo.marks ?? []) {
+        const message = messages.find((m) => m.id === id);
+        if (message) Object.assign(message, before);
+      }
       for (const [id, mailboxId] of undo.restore) {
         const message = messages.find((m) => m.id === id);
         if (message) message.mailboxId = mailboxId;
       }
       changed();
-      return { undone: undo.restore.size };
+      return { undone: undo.restore.size + (undo.marks?.size ?? 0) };
     }
 
     case "draft_create":

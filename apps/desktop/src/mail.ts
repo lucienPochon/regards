@@ -3,12 +3,14 @@ import {
   type AccountSummary,
   type MailboxSummary,
   type MessageCursor,
+  type MessageListResult,
   type MessageSummary,
   type Role,
   type SyncState,
   listAccounts,
   listMailboxes,
   listMessages,
+  listView,
 } from "./accounts";
 import { useChanges } from "./changes";
 import { type Draft, type OutboxEntry, listDrafts, listOutbox } from "./compose";
@@ -55,23 +57,49 @@ export function useMail(): MailState {
   return mail;
 }
 
-/** A folder to read messages from, and the account it belongs to. */
+/** Where a list reads messages from (a folder, or an account's pinned ones, say), a page at a time. */
 export interface Source {
-  mailboxId: number;
+  /** Tells sources apart, within a view and between views. */
+  key: string;
   accountId: string;
+  /** The folder, when the source is one; otherwise each message says where it is. */
+  mailboxId: number | null;
   role: Role | null;
+  fetch: (before: MessageCursor | null, limit: number | null) => Promise<MessageListResult>;
 }
 
-/** The folders a view reads from: one, or the folder with that role in every account. */
+/**
+ * What a view reads from: one folder, the folder with that role in every
+ * account, or every account's pinned, snoozed or set-aside messages.
+ */
 export function sourcesFor(accounts: AccountMail[], view: View): Source[] {
   const sources: Source[] = [];
   for (const { account, mailboxes } of accounts) {
+    if (view.kind === "marked") {
+      const mark = view.mark;
+      sources.push({
+        key: `marked:${mark}:${account.id}`,
+        accountId: account.id,
+        mailboxId: null,
+        role: null,
+        fetch: (before, limit) => listView(account.id, mark, before, limit),
+      });
+      continue;
+    }
     for (const mailbox of mailboxes) {
       if (!mailbox.selectable) continue;
       const wanted =
         (view.kind === "role" && mailbox.role === view.role) ||
         (view.kind === "mailbox" && mailbox.id === view.mailboxId);
-      if (wanted) sources.push({ mailboxId: mailbox.id, accountId: account.id, role: mailbox.role });
+      if (wanted) {
+        sources.push({
+          key: `mailbox:${mailbox.id}`,
+          accountId: account.id,
+          mailboxId: mailbox.id,
+          role: mailbox.role,
+          fetch: (before, limit) => listMessages(mailbox.id, before, limit),
+        });
+      }
     }
   }
   return sources;
@@ -129,7 +157,7 @@ export interface MessageFeed {
  * one to fetch, so the merged order never changes under the reader's eyes.
  */
 export function useFeed(sources: Source[]): MessageFeed {
-  const key = sources.map((source) => source.mailboxId).join(",");
+  const key = sources.map((source) => source.key).join(",");
   const [state, setState] = useState<{ key: string; feeds: Feed[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const latest = useRef(state);
@@ -146,7 +174,7 @@ export function useFeed(sources: Source[]): MessageFeed {
     Promise.all(
       wanted.current.map((source, index) => {
         const shown = current?.[index]?.messages.length ?? 0;
-        return listMessages(source.mailboxId, null, Math.min(MAX_PAGE, Math.max(PAGE, shown))).then(
+        return source.fetch(null, Math.min(MAX_PAGE, Math.max(PAGE, shown))).then(
           (page): Feed => ({ source, messages: page.messages, next: page.next }),
         );
       }),
@@ -174,7 +202,7 @@ export function useFeed(sources: Source[]): MessageFeed {
     const feed = current.feeds[index];
     const run = generation.current;
     fetching.current = true;
-    listMessages(feed.source.mailboxId, feed.next)
+    feed.source.fetch(feed.next, null)
       .then((page) => {
         if (run !== generation.current) return;
         setState((now) =>
@@ -204,7 +232,7 @@ export function useFeed(sources: Source[]): MessageFeed {
         if (limit && newer(message, limit) > 0) continue;
         items.push({
           ...message,
-          mailboxId: feed.source.mailboxId,
+          mailboxId: feed.source.mailboxId ?? message.mailbox_id,
           accountId: feed.source.accountId,
           role: feed.source.role,
         });

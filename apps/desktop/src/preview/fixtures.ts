@@ -20,6 +20,9 @@ export interface FixtureMessage {
   attachments: Attachment[];
   /** Messages with the same thread key form a conversation. */
   thread: string;
+  pinned?: boolean;
+  aside?: boolean;
+  snoozed_until?: number | null;
 }
 
 export interface FixtureAccount {

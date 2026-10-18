@@ -898,6 +898,18 @@ button.row-avatar:hover .check {
   color: var(--flag);
 }
 
+.row .marks .pinned {
+  color: var(--accent);
+}
+
+/* In the Snoozed view: when it comes back, instead of when it came. */
+.row .date.snoozed {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--accent);
+}
+
 .row-actions {
   position: absolute;
   top: 7px;

@@ -304,6 +304,7 @@ fn summary(m: Message, marks: &HashMap<String, Marks>) -> MessageSummary {
         .copied()
         .unwrap_or_default();
     MessageSummary {
+        mailbox_id: m.moving_to.unwrap_or(m.mailbox_id),
         pinned: mark.pinned_at.is_some(),
         aside: mark.aside_at.is_some(),
         snoozed_until: mark.snoozed_until,

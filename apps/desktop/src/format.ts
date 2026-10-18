@@ -23,6 +23,21 @@ export function peopleFull(people: Person[]): string {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** The date in a list: the time today, the weekday this week, the day this year, else the full date. */
+/** A time still to come, short: "18:00", "Tomorrow 08:00", "Sat 09:00", "2 Nov". */
+export function laterDate(ms: number, now = Date.now()): string {
+  const date = new Date(ms);
+  const today = new Date(now);
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (date.toDateString() === today.toDateString()) return time;
+  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  if (date.toDateString() === tomorrow.toDateString()) return `Tomorrow ${time}`;
+  if (ms < tomorrow.getTime() + 6 * DAY_MS) return `${date.toLocaleDateString([], { weekday: "short" })} ${time}`;
+  if (date.getFullYear() === today.getFullYear()) {
+    return date.toLocaleDateString([], { day: "numeric", month: "short" });
+  }
+  return date.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+}
+
 export function listDate(ms: number, now = Date.now()): string {
   const date = new Date(ms);
   const today = new Date(now);

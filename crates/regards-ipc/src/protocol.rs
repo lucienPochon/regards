@@ -406,6 +406,9 @@ pub struct MessageListParams {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageSummary {
     pub id: i64,
+    /// The folder it is in, or on its way to.
+    #[serde(default)]
+    pub mailbox_id: i64,
     pub uid: u32,
     pub subject: String,
     pub from: Option<Person>,

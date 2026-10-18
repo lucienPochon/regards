@@ -4,7 +4,19 @@ import type { Draft, OutboxEntry } from "./compose";
 import { Icon, type IconName } from "./icons";
 import type { AccountMail, MailState } from "./mail";
 import type { SettingsTab } from "./Settings";
-import { MAIN_ROLES, ROLE_ICONS, ROLE_LABELS, type View, depth, leafName, sameView, sortFolders } from "./views";
+import {
+  MAIN_ROLES,
+  MARKED_ICONS,
+  MARKED_LABELS,
+  MARKED_VIEWS,
+  ROLE_ICONS,
+  ROLE_LABELS,
+  type View,
+  depth,
+  leafName,
+  sameView,
+  sortFolders,
+} from "./views";
 
 /** Roles the main list shows across accounts; an account's own list leaves them out when it is the only one. */
 const SHOWN_ABOVE = new Set<Role>(["inbox", "drafts", ...MAIN_ROLES]);
@@ -70,6 +82,8 @@ export function Sidebar({
       <div className="sidebar-scroll">
         <ul className="nav">
           {item({ kind: "role", role: "inbox" }, "inbox", "Inbox")}
+          {accounts.length > 0 &&
+            MARKED_VIEWS.map((mark) => item({ kind: "marked", mark }, MARKED_ICONS[mark], MARKED_LABELS[mark]))}
           {item({ kind: "drafts" }, "draft", "Drafts", drafts.length)}
           {outbox.length > 0 && item({ kind: "outbox" }, "outbox", "Outbox", outbox.length, troubled)}
           {MAIN_ROLES.filter(has).map((role) => item({ kind: "role", role }, ROLE_ICONS[role], ROLE_LABELS[role]))}

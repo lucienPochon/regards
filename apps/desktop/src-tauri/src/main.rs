@@ -383,6 +383,7 @@ async fn message_view(
     account_id: String,
     view: View,
     before: Option<MessageCursor>,
+    limit: Option<u32>,
 ) -> Result<MessageListResult, String> {
     let mut client = bridge.connect().await?.client;
     client
@@ -391,7 +392,7 @@ async fn message_view(
             ViewParams {
                 account_id,
                 view,
-                limit: None,
+                limit,
                 before,
             },
         )

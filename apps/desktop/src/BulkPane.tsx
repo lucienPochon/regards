@@ -6,7 +6,7 @@ import { useShortcuts } from "./shortcuts";
 /** In place of the reading pane while several messages are selected: what to do with all of them. */
 export function BulkPane({ count, actions, onClear }: { count: number; actions: Action[]; onClear: () => void }) {
   useShortcuts({ Escape: onClear, ...actionKeys(actions) });
-  const buttons = choose(actions, "archive", "move", "read", "unread", "flag", "delete");
+  const buttons = choose(actions, "archive", "snooze", "move", "pin", "aside", "read", "unread", "flag", "delete");
   return (
     <section className="reader bulk" aria-label="Selected messages">
       <div className="empty">

@@ -1,11 +1,14 @@
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef } from "react";
 import { type Action, choose } from "./actions";
 import { Avatar } from "./Avatar";
-import { listDate, personName } from "./format";
+import { laterDate, listDate, personName } from "./format";
 import { Icon } from "./icons";
 import type { ListItem, MessageFeed } from "./mail";
 import type { MenuEntry, MenuRequest } from "./Menu";
 import { useShortcuts } from "./shortcuts";
+
+/** "Someday" in the daemon: no time to come back (regards_store::marks::SOMEDAY). */
+const SOMEDAY = 32_503_680_000_000;
 
 /** The top of the message column: the folder's name, and buttons on the right. */
 export function ListHeader({
@@ -140,6 +143,7 @@ export function MessageList({
     const groups = [
       choose(actions, "reply", "replyAll", "forward"),
       choose(actions, "read", "unread", "flag"),
+      choose(actions, "pin", "snooze", "aside"),
       choose(actions, "archive", "move"),
       choose(actions, "delete"),
     ].filter((group) => group.length > 0);
@@ -177,7 +181,7 @@ export function MessageList({
         <ul className={picked.size > 0 ? "rows picking" : "rows"} aria-label="Messages">
           {items.map((item, index) => {
             const isPicked = picked.has(item.id);
-            const hover = choose(actionsFor([item]), "read", "unread", "flag", "archive", "delete");
+            const hover = choose(actionsFor([item]), "pin", "read", "unread", "snooze", "archive", "delete");
             return (
               <li
                 key={`${item.mailboxId}:${item.id}`}
@@ -205,11 +209,19 @@ export function MessageList({
                 <button type="button" className="row-main" onClick={(event) => click(event, item, index)}>
                   <span className="row-line">
                     <span className="from">{personName(item.from)}</span>
-                    <span className="date">{listDate(item.received_at)}</span>
+                    {item.snoozed_until !== null && item.snoozed_until < SOMEDAY ? (
+                      <span className="date snoozed" title="Comes back then">
+                        <Icon name="clock" size={13} />
+                        {laterDate(item.snoozed_until)}
+                      </span>
+                    ) : (
+                      <span className="date">{listDate(item.received_at)}</span>
+                    )}
                   </span>
                   <span className="row-line">
                     <span className="subject">{item.subject || "(no subject)"}</span>
                     <span className="marks">
+                      {item.pinned && <Icon name="pinFilled" size={14} className="pinned" />}
                       {item.answered && <Icon name="reply" size={14} className="answered" />}
                       {item.flagged && <Icon name="flagFilled" size={14} className="flagged" />}
                     </span>

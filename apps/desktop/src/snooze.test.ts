@@ -30,9 +30,15 @@ describe("snooze presets", () => {
     expect(labels).toEqual(["Tomorrow", "Next week", "Someday"]);
   });
 
+  it("does not offer Monday morning twice on a Sunday", () => {
+    // Sunday 18 October 2026, 23:20.
+    const shown = presets(new Date(2026, 9, 18, 23, 20)).map((p) => `${p.label} ${local(p.until)}`);
+    expect(shown).toEqual(["Tomorrow 2026-10-19 08:00", "Someday someday"]);
+  });
+
   it("keeps wall-clock times across a daylight saving change", () => {
     // In Europe, clocks go back on Sunday 25 October 2026 at 03:00. Tests run
-    // with TZ=Europe/Zurich (see package.json), so this crosses the change.
+    // with TZ=Europe/Zurich (see vitest.config.ts), so this crosses the change.
     const saturday = presets(new Date(2026, 9, 24, 10, 0));
     const tomorrow = saturday.find((p) => p.label === "Tomorrow");
     expect(local(tomorrow!.until)).toBe("2026-10-25 08:00");
