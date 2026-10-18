@@ -12,8 +12,8 @@ use imap_types::flag::{Flag, FlagFetch, StoreResponse, StoreType};
 use imap_types::mailbox::Mailbox;
 use imap_types::response::{Code, Data, StatusKind};
 use imap_types::search::SearchKey;
-use imap_types::sequence::SequenceSet;
-use std::num::NonZeroU64;
+use imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
+use std::num::{NonZeroU32, NonZeroU64};
 
 /// The headers Regards keeps for lists and threading.
 const HEADER_FIELDS: &[&str] = &[
@@ -35,6 +35,29 @@ pub struct Selected {
     /// `None` without CONDSTORE, and sometimes on a new mailbox (Dovecot omits it).
     pub highest_modseq: Option<u64>,
     pub exists: u32,
+}
+
+/// A sync point to ask QRESYNC about: [`Session::select_since`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Since {
+    pub uid_validity: u32,
+    pub modseq: u64,
+    /// The lowest and highest UID the client holds, so the server can limit its answer.
+    pub known: Option<(u32, u32)>,
+}
+
+/// What a QRESYNC SELECT reported.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resynced {
+    pub selected: Selected,
+    /// Whether `changed` and `vanished` are relative to the `Since` asked about.
+    pub resynced: bool,
+    /// Messages whose flags changed since then; may include ones the client has not stored.
+    pub changed: Vec<FlagUpdate>,
+    /// UIDs expunged since then, as inclusive ranges; may include ones never stored.
+    pub vanished: Vec<(u32, u32)>,
+    /// Unreadable responses that were skipped.
+    pub skipped: usize,
 }
 
 /// IMAP system flags plus keywords.
@@ -102,9 +125,78 @@ impl Session {
         } else {
             vec![]
         };
+        Ok(self.select_with(remote_name, parameters).await?.0)
+    }
+
+    /// Open a mailbox and learn, in the same command, what changed since
+    /// `since` (QRESYNC, RFC 7162): changed flags and vanished UIDs. Without
+    /// QRESYNC on this session, or under another UIDVALIDITY, it is a plain
+    /// SELECT and `resynced` is false.
+    pub async fn select_since(&mut self, remote_name: &[u8], since: &Since) -> Result<Resynced, ImapError> {
+        let (Some(uid_validity), Some(modseq)) = (NonZeroU32::new(since.uid_validity), NonZeroU64::new(since.modseq))
+        else {
+            return self.plain(remote_name).await;
+        };
+        if !self.qresync() {
+            return self.plain(remote_name).await;
+        }
+        let known_uids = match since.known {
+            Some((low, high)) if low > 0 && low <= high => Some(sequence_set(&format!("{low}:{high}"))?),
+            _ => None,
+        };
+        let parameters = vec![SelectParameter::QResync {
+            uid_validity,
+            mod_sequence_value: modseq,
+            known_uids,
+            seq_match_data: None,
+        }];
+        let (selected, reply) = self.select_with(remote_name, parameters).await?;
+        // Under another UIDVALIDITY the server ignores the request: nothing it says is relative to `since`.
+        if selected.uid_validity != since.uid_validity {
+            return Ok(Resynced {
+                selected,
+                resynced: false,
+                changed: Vec::new(),
+                vanished: Vec::new(),
+                skipped: reply.skipped,
+            });
+        }
+        let vanished = reply
+            .data
+            .iter()
+            .flat_map(|data| match data {
+                Data::Vanished { known_uids, .. } => uid_ranges(known_uids),
+                _ => Vec::new(),
+            })
+            .collect();
+        Ok(Resynced {
+            selected,
+            resynced: true,
+            changed: flag_updates(&reply.data),
+            vanished,
+            skipped: reply.skipped,
+        })
+    }
+
+    async fn plain(&mut self, remote_name: &[u8]) -> Result<Resynced, ImapError> {
+        Ok(Resynced {
+            selected: self.select(remote_name).await?,
+            resynced: false,
+            changed: Vec::new(),
+            vanished: Vec::new(),
+            skipped: 0,
+        })
+    }
+
+    async fn select_with(
+        &mut self,
+        remote_name: &[u8],
+        parameters: Vec<SelectParameter>,
+    ) -> Result<(Selected, Reply), ImapError> {
+        // A QRESYNC SELECT carries FETCH responses: skip unreadable ones, as FETCH does.
         let reply = self
             .conn
-            .run(CommandBody::Select {
+            .run_skipping(CommandBody::Select {
                 mailbox: mailbox(remote_name)?,
                 parameters,
             })
@@ -123,7 +215,7 @@ impl Session {
                 _ => None,
             })
             .ok_or_else(|| ImapError::Protocol("the server did not report UIDVALIDITY".into()))?;
-        Ok(Selected {
+        let selected = Selected {
             uid_validity,
             uid_next: codes().find_map(|code| match code {
                 Code::UidNext(v) => Some(v.get()),
@@ -141,7 +233,8 @@ impl Session {
                     _ => None,
                 })
                 .unwrap_or(0),
-        })
+        };
+        Ok((selected, reply))
     }
 
     /// Every UID in the selected mailbox. Only a completed command counts, so
@@ -308,33 +401,8 @@ impl Session {
             })
             .await?;
         ok(&reply, "FETCH")?;
-        let updates = reply
-            .data
-            .iter()
-            .filter_map(|data| {
-                let Data::Fetch { items, .. } = data else { return None };
-                let mut update = FlagUpdate {
-                    uid: 0,
-                    flags: Flags::default(),
-                    modseq: None,
-                };
-                let mut has_flags = false;
-                for item in items.as_ref() {
-                    match item {
-                        MessageDataItem::Uid(uid) => update.uid = uid.get(),
-                        MessageDataItem::Flags(flags) => {
-                            has_flags = true;
-                            update.flags = flags_of(flags);
-                        }
-                        MessageDataItem::ModSeq(modseq) => update.modseq = Some(modseq.get()),
-                        _ => {}
-                    }
-                }
-                (update.uid != 0 && has_flags).then_some(update)
-            })
-            .collect();
         Ok(Fetched {
-            items: updates,
+            items: flag_updates(&reply.data),
             skipped: reply.skipped,
         })
     }
@@ -486,6 +554,49 @@ fn ok(reply: &Reply, command: &str) -> Result<(), ImapError> {
 
 fn mailbox(remote_name: &[u8]) -> Result<Mailbox<'static>, ImapError> {
     Mailbox::try_from(remote_name.to_vec()).map_err(|_| ImapError::Protocol("invalid mailbox name".into()))
+}
+
+/// The UID, flags and modseq of each FETCH response that has UID and flags.
+fn flag_updates(data: &[Data<'_>]) -> Vec<FlagUpdate> {
+    data.iter()
+        .filter_map(|data| {
+            let Data::Fetch { items, .. } = data else { return None };
+            let mut update = FlagUpdate {
+                uid: 0,
+                flags: Flags::default(),
+                modseq: None,
+            };
+            let mut has_flags = false;
+            for item in items.as_ref() {
+                match item {
+                    MessageDataItem::Uid(uid) => update.uid = uid.get(),
+                    MessageDataItem::Flags(flags) => {
+                        has_flags = true;
+                        update.flags = flags_of(flags);
+                    }
+                    MessageDataItem::ModSeq(modseq) => update.modseq = Some(modseq.get()),
+                    _ => {}
+                }
+            }
+            (update.uid != 0 && has_flags).then_some(update)
+        })
+        .collect()
+}
+
+/// A UID set as inclusive ranges, never expanded: a server may say `1:4294967295`.
+fn uid_ranges(set: &SequenceSet) -> Vec<(u32, u32)> {
+    let value = |v: &SeqOrUid| match v {
+        SeqOrUid::Value(n) => n.get(),
+        SeqOrUid::Asterisk => u32::MAX,
+    };
+    set.0
+        .as_ref()
+        .iter()
+        .map(|sequence| match sequence {
+            Sequence::Single(v) => (value(v), value(v)),
+            Sequence::Range(a, b) => (value(a).min(value(b)), value(a).max(value(b))),
+        })
+        .collect()
 }
 
 fn sequence_set(set: &str) -> Result<SequenceSet, ImapError> {

@@ -5,7 +5,7 @@ mod fake_imap;
 
 use fake_imap::{PASSWORD, Pki, fake_server, pki};
 use regards_core::secret::Secret;
-use regards_imap::{ImapError, ImapServer, MessageSet, Session, SystemFlag, TlsOptions, verify_login};
+use regards_imap::{ImapError, ImapServer, MessageSet, Session, Since, SystemFlag, TlsOptions, verify_login};
 use tokio::net::TcpListener;
 
 fn trusting(pki: &Pki) -> TlsOptions {
@@ -397,5 +397,78 @@ async fn live_server_deletes_exactly_the_messages_asked_for() {
         .unwrap();
     session.delete_messages(&uids[0].to_string()).await.unwrap();
     assert_eq!(session.uid_search_all().await.unwrap(), &uids[1..]);
+    session.logout().await;
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_server_reports_changes_since_a_modseq_in_the_select() {
+    let address = std::env::var("REGARDS_TEST_IMAP").unwrap();
+    let (host, port) = address.rsplit_once(':').unwrap();
+    let ca = std::fs::read(std::env::var("REGARDS_TEST_IMAP_CA").unwrap()).unwrap();
+    let tls = TlsOptions::platform().with_extra_roots_pem(&ca).unwrap();
+    let server = ImapServer {
+        host: host.into(),
+        port: port.parse().unwrap(),
+    };
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .subsec_nanos();
+    let user = format!("qresync-{}-{nanos}", std::process::id());
+    let password = Secret::new(std::env::var("REGARDS_TEST_IMAP_PASSWORD").unwrap_or_else(|_| "pass".into()));
+    let mut session = Session::login(&server, &user, &password, &tls).await.unwrap();
+    assert!(session.qresync(), "Dovecot has QRESYNC and enables it");
+    for n in 1..=4 {
+        session
+            .append(b"INBOX", &[], format!("Subject: m{n}\r\n\r\nbody\r\n").as_bytes())
+            .await
+            .unwrap();
+    }
+    let first = session.select(b"INBOX").await.unwrap();
+    let uids = session.uid_search_all().await.unwrap();
+    // The sync point: what a sync would have stored now.
+    let flags = session.fetch_flags("1:*", None).await.unwrap();
+    let modseq = flags.items.iter().filter_map(|u| u.modseq).max().unwrap();
+
+    // Meanwhile, elsewhere: one message read, one deleted.
+    let mut other = Session::login(&server, &user, &password, &tls).await.unwrap();
+    other.select(b"INBOX").await.unwrap();
+    other
+        .store_flags(&uids[1].to_string(), true, &[SystemFlag::Seen])
+        .await
+        .unwrap();
+    other.delete_messages(&uids[2].to_string()).await.unwrap();
+    other.logout().await;
+
+    let since = Since {
+        uid_validity: first.uid_validity,
+        modseq,
+        known: Some((uids[0], uids[3])),
+    };
+    let resynced = session.select_since(b"INBOX", &since).await.unwrap();
+    assert!(resynced.resynced);
+    assert!(
+        resynced
+            .vanished
+            .iter()
+            .any(|(low, high)| (*low..=*high).contains(&uids[2])),
+        "{:?}",
+        resynced.vanished
+    );
+    let changed: Vec<u32> = resynced.changed.iter().map(|u| u.uid).collect();
+    assert!(changed.contains(&uids[1]), "{changed:?}");
+    assert!(resynced.changed.iter().find(|u| u.uid == uids[1]).unwrap().flags.seen);
+    assert!(
+        !changed.contains(&uids[0]),
+        "unchanged messages are not reported: {changed:?}"
+    );
+
+    // Under another UIDVALIDITY, nothing is relative to the old point.
+    let stale = Since {
+        uid_validity: first.uid_validity.wrapping_add(1).max(1),
+        ..since
+    };
+    assert!(!session.select_since(b"INBOX", &stale).await.unwrap().resynced);
     session.logout().await;
 }

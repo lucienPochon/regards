@@ -12,7 +12,9 @@ mod messages;
 mod tls;
 pub mod utf7;
 
-pub use messages::{Fetched, FetchedHeaders, FlagUpdate, Flags, MessageSet, Moved, Selected, SystemFlag};
+pub use messages::{
+    Fetched, FetchedHeaders, FlagUpdate, Flags, MessageSet, Moved, Resynced, Selected, Since, SystemFlag,
+};
 
 pub use conn::IdleEnd;
 pub use tls::TlsOptions;
@@ -20,6 +22,8 @@ pub use tls::TlsOptions;
 use conn::{Conn, Reply};
 use imap_next::stream::Stream;
 use imap_types::command::CommandBody;
+use imap_types::core::Vec1;
+use imap_types::extensions::enable::CapabilityEnable;
 use imap_types::mailbox::Mailbox;
 use imap_types::response::{Capability, Code, Data, GreetingKind, StatusBody, StatusKind};
 use regards_core::secret::Secret;
@@ -89,6 +93,26 @@ pub struct ListedMailbox {
 pub struct Session {
     conn: Conn,
     capabilities: Vec<String>,
+    qresync: bool,
+}
+
+/// `ENABLE QRESYNC`. A refusal is not an error: the session goes on without it.
+async fn enable_qresync(conn: &mut Conn) -> Result<bool, ImapError> {
+    let Ok(name) = CapabilityEnable::try_from("QRESYNC") else {
+        return Ok(false);
+    };
+    let reply = conn
+        .run(CommandBody::Enable {
+            capabilities: Vec1::from(name),
+        })
+        .await?;
+    Ok(reply.done.kind == StatusKind::Ok
+        && reply.data.iter().any(|data| match data {
+            Data::Enabled { capabilities } => capabilities
+                .iter()
+                .any(|enabled| enabled.to_string().eq_ignore_ascii_case("QRESYNC")),
+            _ => false,
+        }))
 }
 
 impl Session {
@@ -131,7 +155,18 @@ impl Session {
             None => names_from(&conn.run(CommandBody::Capability).await?),
         };
 
-        Ok(Self { conn, capabilities })
+        let qresync = has(&capabilities, "QRESYNC") && enable_qresync(&mut conn).await?;
+        Ok(Self {
+            conn,
+            capabilities,
+            qresync,
+        })
+    }
+
+    /// Whether QRESYNC (RFC 7162) is on for this session: a SELECT can then
+    /// report what changed and vanished since a known modseq.
+    pub fn qresync(&self) -> bool {
+        self.qresync
     }
 
     /// Capabilities advertised after login.

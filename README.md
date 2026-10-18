@@ -2,12 +2,15 @@
 
 Regards is a local-first, open-source email client for **Windows, macOS and Linux**. It offers a calm, sectioned inbox, done / pin / set aside, snooze, reminders, send later, undo everywhere, and a safe interface for AI agents. It is built with a Rust core, Tauri 2 and React.
 
-> **Status: pre-alpha (Phase 0, foundation).** No mail features yet. What exists today:
-> - the background service (daemon) and its local API
-> - the `regards` CLI
-> - a minimal desktop window that starts the service, adds IMAP accounts (sign-in checked, password in the OS credential store) and shows their folders and message lists, kept in sync with the server
+> **Status: pre-alpha (Phase 1, sync).** You can read and organise mail, but not write it yet. What works today:
+> - **Accounts:** IMAP with a password (sign-in checked, password in the OS credential store). OAuth comes later.
+> - **Sync:** folders and messages, newest first and then older mail in the background. New mail arrives by push (IMAP IDLE) in under a second against Dovecot, and QRESYNC is used where the server has it.
+> - **Reading:** HTML mail in a sandboxed frame, with remote images blocked until you allow them; links open in your browser.
+> - **Conversations** across folders.
+> - **Actions:** read/unread, flag, archive, delete, move and delete for good. They show at once, work offline, and moves can be undone.
+> - **Keyboard shortcuts:** press `?` in the app.
 >
-> See the [plan](docs/research/03-independent-implementation-plan.md).
+> Not yet: writing and sending, search, the smart inbox, snooze and send later. See the [plan](docs/research/03-independent-implementation-plan.md).
 
 ## How it is built
 
@@ -50,6 +53,8 @@ npm run tauri dev
 ```
 
 `tauri dev` builds the `regards` CLI first. The app starts the daemon from the `regards` program next to its own executable, which is also where installers will put it. Set `REGARDS_DAEMON_BIN` to use a different program.
+
+Actions in the app change your real mailbox, and "Delete forever" is permanent. To try things safely, use the Dovecot container from [`spikes/imap-trial`](spikes/imap-trial/README.md): start the app with `REGARDS_DEV_EXTRA_CA=/path/to/ca.pem` (development builds only), then add an account on `localhost`, port `31993`, with any user name and the password `pass`.
 
 ## Try the daemon
 

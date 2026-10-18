@@ -150,8 +150,8 @@ flowchart LR
   - **First sync of a mailbox:** headers of the newest 2,000 messages. Older ones are then fetched in the background, newest first, 500 at a time, until every folder is complete; a batch is only stored under the UIDVALIDITY it was fetched with.
   - **Later syncs:**
     - **New messages:** by UID.
-    - **Flag changes:** `CHANGEDSINCE` with CONDSTORE, otherwise by re-reading the stored range.
-    - **Deletions:** only from a completed `UID SEARCH`.
+    - **Flag changes and deletions with QRESYNC:** one `SELECT (QRESYNC …)` reports changed flags and vanished UIDs since the last sync, so there is no extra FETCH and no full `UID SEARCH`.
+    - **Without QRESYNC:** flags by `CHANGEDSINCE` with CONDSTORE, otherwise by re-reading the stored range; deletions only from a completed `UID SEARCH`.
     - **UIDVALIDITY changes:** rebuild the mailbox.
   - **Header parsing:** headers are fetched as literals and parsed with `mail-parser` (encoded words, legacy charsets).
   - **Tests:** CI runs these flows against Dovecot.
@@ -165,7 +165,8 @@ flowchart LR
   - **Actions:** read/unread, flag, archive, delete (to Trash), move, and delete for good (from Trash or Junk) go through the operation queue. They show at once, reach the server in the background, are retried while offline, and moves can be undone.
   - **Keyboard:** Gmail-style shortcuts (`j`/`k`, `e`, `#`, `s`, `Shift+U`/`Shift+I`, `z` to undo, `Esc`), with `?` for the list. Customisable sets come with settings.
 - **Still to come in Phase 1:**
-  - **Sync:** QRESYNC.
+  - **Sign-in:** OAuth (XOAUTH2) for Microsoft, and Google behind a flag until approved; this needs the app registrations (Phase 0 paperwork).
+  - **Live tests on real providers:** Microsoft 365, Outlook.com, Gmail, Infomaniak and iCloud.
 - **Capability-aware:** incremental flag sync with CONDSTORE/QRESYNC; efficient UID-range sync plus periodic flag resync without them (Infomaniak advertises neither before login; recheck after login). MOVE, or UIDPLUS COPY + `\Deleted` + UID EXPUNGE.
 - Gmail X-GM-EXT-1 labels and thread IDs when present.
 - **Accepted when:** the fault-injection suite passes with no panics on malformed input, and IDLE delivers new mail in under 5 s.

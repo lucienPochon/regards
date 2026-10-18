@@ -13,7 +13,7 @@ use crate::State;
 use crate::feed::Feed;
 use regards_core::headers;
 use regards_core::mailbox::{Candidate, assign_roles};
-use regards_imap::{FlagUpdate, Flags, ImapError, ImapServer, MessageSet, Selected, Session};
+use regards_imap::{FlagUpdate, Flags, ImapError, ImapServer, MessageSet, Selected, Session, Since};
 use regards_ipc::protocol::SyncState;
 use regards_store::StoreError;
 use regards_store::accounts;
@@ -321,7 +321,6 @@ pub(crate) async fn sync_mailbox(
     session: &mut Session,
     mailbox: &Mailbox,
 ) -> Result<Changes, SyncError> {
-    let selected = session.select(&mailbox.remote_name).await?;
     let mailbox_id = mailbox.id;
     let known_uids = state.store.read(move |conn| messages::uids(conn, mailbox_id)).await?;
     let stored = Stored {
@@ -330,13 +329,37 @@ pub(crate) async fn sync_mailbox(
         highest_modseq: mailbox.highest_modseq.map(|v| v as u64),
         known: known_uids.first().copied().zip(known_uids.last().copied()),
     };
-    let plan = plan(
+    // With QRESYNC the SELECT itself says what changed and vanished since the
+    // last sync; otherwise (or on a first sync) it is a plain SELECT.
+    let since = Since {
+        uid_validity: stored.uid_validity.unwrap_or(0),
+        modseq: stored.highest_modseq.unwrap_or(0),
+        known: stored.known,
+    };
+    let resynced = session.select_since(&mailbox.remote_name, &since).await?;
+    let selected = resynced.selected.clone();
+    let mut plan = plan(
         &stored,
         &selected,
         session.has_capability("CONDSTORE"),
         state.limits.initial_window,
     );
-    let mut changes = Changes::default();
+    let mut changes = Changes {
+        unreadable: resynced.skipped,
+        ..Changes::default()
+    };
+    let mut flag_updates: Vec<FlagUpdate> = Vec::new();
+    let mut removed: Vec<u32> = Vec::new();
+    if resynced.resynced && !plan.reset {
+        plan.flags = None;
+        plan.check_deletions = false;
+        flag_updates = resynced.changed;
+        removed = known_uids
+            .iter()
+            .copied()
+            .filter(|uid| resynced.vanished.iter().any(|(low, high)| (*low..=*high).contains(uid)))
+            .collect();
+    }
 
     let mut new = Vec::new();
     if let Some(set) = plan.new.clone() {
@@ -349,7 +372,6 @@ pub(crate) async fn sync_mailbox(
             .collect::<Vec<_>>();
     }
 
-    let mut flag_updates: Vec<FlagUpdate> = Vec::new();
     if let Some(check) = &plan.flags {
         let fetched = match check {
             FlagCheck::ChangedSince(modseq) => session.fetch_flags("1:*", Some(*modseq)).await?,
@@ -359,7 +381,6 @@ pub(crate) async fn sync_mailbox(
         flag_updates = fetched.items;
     }
 
-    let mut removed: Vec<u32> = Vec::new();
     if plan.check_deletions {
         let present: BTreeSet<u32> = session.uid_search_all().await?.into_iter().collect();
         let known: BTreeSet<u32> = if plan.reset {
