@@ -358,7 +358,7 @@ function handle(cmd: string, args: Args): unknown {
                 : (m.snoozed_until ?? 0) > Date.now(),
         )
         .sort((a, b) => b.received_at - a.received_at || b.id - a.id);
-      return { messages: shown.map(summary), next: null };
+      return { messages: shown.map((m) => summary(m)), next: null };
     }
     case "undo_apply": {
       const undo = undos.get(args.id as number);

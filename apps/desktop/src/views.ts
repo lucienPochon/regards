@@ -18,17 +18,19 @@ export type View =
 export const MARKED_LABELS: Record<MessageView, string> = {
   pinned: "Pinned",
   snoozed: "Snoozed",
+  reminders: "Reminders",
   aside: "Set aside",
 };
 
 export const MARKED_ICONS: Record<MessageView, IconName> = {
   pinned: "pin",
   snoozed: "clock",
+  reminders: "bell",
   aside: "aside",
 };
 
 /** The sidebar order, under the inbox. */
-export const MARKED_VIEWS: MessageView[] = ["pinned", "snoozed", "aside"];
+export const MARKED_VIEWS: MessageView[] = ["pinned", "snoozed", "reminders", "aside"];
 
 export const INBOX: View = { kind: "role", role: "inbox" };
 

@@ -93,6 +93,7 @@ export const SHORTCUTS: { keys: string; action: string }[] = [
   { keys: "s", action: "Flag or unflag" },
   { keys: "p", action: "Pin or unpin" },
   { keys: "b", action: "Snooze, or bring back a snoozed message" },
+  { keys: "Shift+R", action: "Remind me if nobody replies, or remove the reminder" },
   { keys: "Shift+A", action: "Set aside, or bring back to the inbox" },
   { keys: "v", action: "Move to a folder" },
   { keys: "Shift+U", action: "Mark unread" },

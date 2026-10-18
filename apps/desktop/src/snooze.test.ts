@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
-const { presets } = await import("./snooze");
+const { presets, reminderPresets } = await import("./snooze");
 
 const local = (until: number | "someday") => {
   if (until === "someday") return "someday";
@@ -47,5 +47,18 @@ describe("snooze presets", () => {
     // 25 hours separate Saturday 08:00 from Sunday 08:00 that night.
     const sameTimeSaturday = new Date(2026, 9, 24, 8, 0).getTime();
     expect((tomorrow!.until as number) - sameTimeSaturday).toBe(25 * 3600_000);
+  });
+});
+
+describe("reminder presets", () => {
+  it("offers mornings from tomorrow to a week away, across a clock change", () => {
+    // Saturday 24 October 2026, 21:00; clocks go back that night.
+    const shown = reminderPresets(new Date(2026, 9, 24, 21, 0)).map((p) => `${p.label} ${local(p.until)}`);
+    expect(shown).toEqual([
+      "Tomorrow 2026-10-25 08:00",
+      "In 2 days 2026-10-26 08:00",
+      "In 3 days 2026-10-27 08:00",
+      "In a week 2026-10-31 08:00",
+    ]);
   });
 });

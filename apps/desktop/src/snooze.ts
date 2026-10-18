@@ -55,3 +55,18 @@ export function presets(now: Date = new Date()): Preset[] {
   list.push({ label: "Someday", until: "someday" });
   return list;
 }
+
+/**
+ * When to be reminded if nobody has replied: mornings, a day to a week
+ * away. Built from calendar dates, so 08:00 stays 08:00 across DST.
+ */
+export function reminderPresets(now: Date = new Date()): Preset[] {
+  const at = (days: number) =>
+    new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, MORNING, 0, 0, 0).getTime();
+  return [
+    { label: "Tomorrow", until: at(1) },
+    { label: "In 2 days", until: at(2) },
+    { label: "In 3 days", until: at(3) },
+    { label: "In a week", until: at(7) },
+  ];
+}

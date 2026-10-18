@@ -210,6 +210,13 @@ const PATHS = {
       <path d="M12 7.5V12l3 2" />
     </>
   ),
+  // A reminder: a bell.
+  bell: (
+    <>
+      <path d="M6.5 16.5v-5a5.5 5.5 0 0 1 11 0v5l1.5 1.5H5z" />
+      <path d="M10 20.5a2 2 0 0 0 4 0" />
+    </>
+  ),
   aside: (
     <>
       <rect x="3.5" y="4" width="17" height="16" rx="2.5" />

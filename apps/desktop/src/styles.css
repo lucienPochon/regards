@@ -1251,6 +1251,15 @@ button.list-title:hover {
   color: var(--flag);
 }
 
+/* A reminder: waiting (muted), or come due with no reply (accent). */
+.row .marks .reminder {
+  display: inline-flex;
+}
+
+.row .marks .reminder.due {
+  color: var(--accent);
+}
+
 /* The round check in the gutter: on hover, while selecting, and when picked. */
 .row-check {
   position: absolute;

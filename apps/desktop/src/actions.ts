@@ -5,6 +5,7 @@ import {
   deleteForever,
   moveMessages,
   pinMessages,
+  remindMessages,
   setAside,
   setFlags,
   trashMessages,
@@ -37,6 +38,10 @@ export interface Target {
   aside: boolean;
   /** All snoozed. */
   snoozed: boolean;
+  /** All waiting for a reply, with a reminder set. */
+  reminding: boolean;
+  /** Some are reminders that came due, shown in the inbox. */
+  reminded: boolean;
 }
 
 /** What actions need from the app around them. */
@@ -53,6 +58,8 @@ export interface ActionHost {
   pickFolder: (accountId: string, current: number | null, anchor: Anchor | null) => Promise<number | null>;
   /** Ask until when to snooze: a time (Unix ms), "someday", or null if cancelled. */
   pickSnooze: (anchor: Anchor | null) => Promise<number | "someday" | null>;
+  /** Ask when to be reminded if nobody replies: a time (Unix ms), or null if cancelled. */
+  pickReminder: (anchor: Anchor | null) => Promise<number | null>;
 }
 
 export type ActionId =
@@ -64,6 +71,7 @@ export type ActionId =
   | "flag"
   | "pin"
   | "snooze"
+  | "remind"
   | "aside"
   | "archive"
   | "move"
@@ -142,6 +150,25 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
         }
         void host.pickSnooze(anchor ?? null).then((until) => {
           if (until !== null) snoozeMessages(ids, until).then(left).catch(host.failed);
+        });
+      },
+    },
+    {
+      id: "remind",
+      label: target.reminding ? "No reminder" : "Remind me…",
+      icon: "bell",
+      keys: ["Shift+R"],
+      shown: true,
+      run: (anchor) => {
+        if (target.reminding) {
+          remindMessages(ids, null).then(host.marked).catch(host.failed);
+          return;
+        }
+        // A reminder that came due leaves the inbox again until the new time.
+        const after = (result: MarkResult) =>
+          target.reminded ? host.moved(ids, { moved: result.changed, undo: result.undo }) : host.marked(result);
+        void host.pickReminder(anchor ?? null).then((at) => {
+          if (at !== null) remindMessages(ids, at).then(after).catch(host.failed);
         });
       },
     },

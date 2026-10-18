@@ -119,6 +119,8 @@ export function ReadingPane({
     pinned: message.pinned,
     aside: message.aside,
     snoozed: message.snoozed_until !== null,
+    reminding: message.remind_at !== null,
+    reminded: message.reminded,
   };
   const actions = actionsFor(target);
   const done = choose(actions, "archive")[0];
@@ -206,7 +208,7 @@ export function ReadingPane({
           {message.subject || "(no subject)"}
         </h1>
         <div className="reader-tools">
-          {choose(actions, "aside", "flag", "unread", "read", "pin", "delete", "snooze", "move").map(tool)}
+          {choose(actions, "aside", "flag", "unread", "read", "pin", "delete", "snooze", "remind", "move").map(tool)}
           <button type="button" className="icon-btn" title="More" aria-label="More" onClick={(event) => more(event.currentTarget)}>
             <Icon name="more" />
           </button>
@@ -298,6 +300,8 @@ function ThreadMessage({
     pinned: ready?.message.pinned ?? message.pinned,
     aside: ready?.message.aside ?? message.aside,
     snoozed: (ready?.message.snoozed_until ?? message.snoozed_until) !== null,
+    reminding: (ready?.message.remind_at ?? message.remind_at) !== null,
+    reminded: ready?.message.reminded ?? message.reminded,
   });
   const more = (button: HTMLElement) => {
     const entries: MenuEntry[] = [];

@@ -210,7 +210,7 @@ export function MessageList({
     const groups = [
       choose(actions, "reply", "replyAll", "forward"),
       choose(actions, "read", "unread", "flag"),
-      choose(actions, "pin", "snooze", "aside"),
+      choose(actions, "pin", "snooze", "remind", "aside"),
       choose(actions, "archive", "move"),
       choose(actions, "delete"),
     ].filter((group) => group.length > 0);
@@ -233,10 +233,11 @@ export function MessageList({
     onMenu({ anchor: at, entries: menuEntries(actionsFor(targets), at), label: targets.length > 1 ? `${targets.length} messages` : "Message" });
   };
 
-  // Group by day: Today, Yesterday, this week …
+  // Group by day: Today, Yesterday, this week … by place in the list, so what
+  // came back to the inbox (a snooze that ended, a reminder) is under the day it did.
   const sections: { label: string; items: ListItem[] }[] = [];
   for (const item of items) {
-    const label = dateSection(item.received_at);
+    const label = dateSection(item.listed_at);
     const last = sections[sections.length - 1];
     if (last?.label === label) last.items.push(item);
     else sections.push({ label, items: [item] });
@@ -353,6 +354,18 @@ export function MessageList({
                             {item.subject || "(no subject)"}
                           </span>
                           <span className="marks">
+                            {(item.reminded || item.remind_at !== null) && (
+                              <span
+                                className={item.reminded ? "reminder due" : "reminder"}
+                                title={
+                                  item.reminded
+                                    ? "No reply yet"
+                                    : `Reminds you ${laterDate(item.remind_at ?? 0)} if nobody replies`
+                                }
+                              >
+                                <Icon name="bell" size={14} />
+                              </span>
+                            )}
                             {item.answered && <Icon name="reply" size={14} className="answered" />}
                             {item.flagged && <Icon name="flagFilled" size={14} className="flagged" />}
                           </span>
@@ -473,7 +486,7 @@ function SelectionBar({
       </button>
       <span className="selection-count">{count} selected</span>
       <div className="list-tools">
-        {choose(actions, "aside", "flag", "archive", "read", "unread", "pin", "move", "delete", "snooze").map((action) => (
+        {choose(actions, "aside", "flag", "archive", "read", "unread", "pin", "move", "delete", "snooze", "remind").map((action) => (
           <button
             key={action.id}
             type="button"

@@ -18,7 +18,7 @@ import { Settings, type SettingsTab } from "./Settings";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { Sidebar } from "./Sidebar";
-import { presets } from "./snooze";
+import { presets, reminderPresets } from "./snooze";
 import { applyTheme } from "./theme";
 import { TimePicker } from "./TimePicker";
 import { UndoToast } from "./UndoToast";
@@ -58,6 +58,8 @@ function targetOf(items: ListItem[]): Target {
     pinned: items.length > 0 && items.every((item) => item.pinned),
     aside: items.length > 0 && items.every((item) => item.aside),
     snoozed: items.length > 0 && items.every((item) => item.snoozed_until !== null),
+    reminding: items.length > 0 && items.every((item) => item.remind_at !== null),
+    reminded: items.some((item) => item.reminded),
   };
 }
 
@@ -227,14 +229,21 @@ export function App() {
     [],
   );
   const pickSnooze = useCallback(() => pickTime("Snooze until", "Snooze", presets()), [pickTime]);
+  const pickReminder = useCallback(
+    () =>
+      pickTime("Remind me if no reply by", "Remind me", reminderPresets()).then((time) =>
+        typeof time === "number" ? time : null,
+      ),
+    [pickTime],
+  );
   const pickSendTime = useCallback(
     () => pickTime("Send at", "Schedule", sendPresets()).then((time) => (typeof time === "number" ? time : null)),
     [pickTime],
   );
 
   const host = useMemo<ActionHost>(
-    () => ({ compose, moved, marked, failed, confirm, pickFolder, pickSnooze }),
-    [compose, moved, marked, failed, confirm, pickFolder, pickSnooze],
+    () => ({ compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder }),
+    [compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder],
   );
   const actionsForItems = useCallback((list: ListItem[]) => messageActions(targetOf(list), host), [host]);
   const actionsFor = useCallback((target: Target) => messageActions(target, host), [host]);
@@ -404,6 +413,10 @@ export function App() {
         ? {
             pinned: { title: "Nothing pinned", body: "Pin a message (p) to keep it in reach here." },
             snoozed: { title: "Nothing snoozed", body: "Snooze a message (b) and it comes back as new at the time you pick." },
+            reminders: {
+              title: "No reminders",
+              body: "Remind yourself (Shift+R) about a message you sent: if nobody replies by then, it comes back to the inbox.",
+            },
             aside: { title: "Nothing set aside", body: "Set a message aside (Shift+A) to take it out of the inbox until you need it." },
           }[view.mark]
         : { title: "Nothing here", body: "This folder has no messages." };
