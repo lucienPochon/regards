@@ -1,0 +1,22 @@
+# Rust
+/target/
+**/target/
+
+# Node / frontend
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Tauri generated files
+apps/desktop/src-tauri/gen/
+
+# Local environment and logs
+.env
+.env.*
+*.log
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+*.swp

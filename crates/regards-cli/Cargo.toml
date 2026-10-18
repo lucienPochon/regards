@@ -1,0 +1,26 @@
+[package]
+name = "regards-cli"
+description = "The regards command-line tool: daemon control now, mail and agent commands later"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "regards"
+path = "src/main.rs"
+
+[dependencies]
+regards-core.workspace = true
+regards-daemon.workspace = true
+regards-ipc.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

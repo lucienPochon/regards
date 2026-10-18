@@ -1,0 +1,17 @@
+[package]
+name = "regards-core"
+description = "Regards core: product identity, build information and per-user data locations"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+dirs.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
