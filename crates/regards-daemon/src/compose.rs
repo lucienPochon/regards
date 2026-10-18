@@ -7,9 +7,9 @@ use crate::State;
 use regards_core::compose::{self, Outgoing};
 use regards_core::headers::{self, Person};
 use regards_ipc::protocol::{
-    DraftCreateParams, DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult,
-    DraftUpdateParams, DraftView, MessageRef, OutboxEntryView, OutboxListResult, OutboxRef, OutboxState,
-    OutboxUndoResult, RpcError, codes,
+    DraftAttachFileParams, DraftAttachment, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult,
+    DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MessageRef,
+    OutboxEntryView, OutboxListResult, OutboxRef, OutboxState, OutboxUndoResult, RpcError, codes,
 };
 use regards_store::drafts::{self, Content, Draft, Edit};
 use regards_store::outbox::{self, Entry, NewEntry, State as EntryState};
@@ -26,6 +26,8 @@ const MAX_UNDO_SECONDS: u32 = 30;
 const MAX_RECIPIENTS: usize = 100;
 /// Bodies larger than this are not a typed message.
 const MAX_BODY: usize = 2 * 1024 * 1024;
+/// Most mail servers take messages up to about 25 MB (attachments grow by a third in transit).
+const MAX_ATTACHMENTS: u64 = 25 * 1024 * 1024;
 
 pub(crate) async fn create(state: &State, params: DraftCreateParams) -> Result<Value, RpcError> {
     check_content(&params.to, &params.cc, &params.bcc, &params.body)?;
@@ -141,15 +143,20 @@ pub(crate) async fn list(state: &State, params: DraftListParams) -> Result<Value
                 .iter()
                 .map(|account| (account.id.clone(), sender(account)))
                 .collect();
-            Ok((drafts::list(conn, account_id.as_deref())?, senders))
+            let mut drafts = Vec::new();
+            for draft in drafts::list(conn, account_id.as_deref())? {
+                let files = drafts::attachments(conn, draft.id)?;
+                drafts.push((draft, files));
+            }
+            Ok((drafts, senders))
         })
         .await
         .map_err(crate::session::internal)?;
     let drafts = drafts
         .into_iter()
-        .filter_map(|draft| {
+        .filter_map(|(draft, files)| {
             let from = senders.get(&draft.account_id)?.clone();
-            Some(draft_view(draft, from))
+            Some(draft_view(draft, from, files))
         })
         .collect();
     Ok(json!(DraftListResult { drafts }))
@@ -191,6 +198,72 @@ pub(crate) async fn delete(state: &State, params: DraftRef) -> Result<Value, Rpc
     Ok(json!({ "deleted": true }))
 }
 
+/// Attach a file the user chose. The daemon reads it once into `blobs/`;
+/// after that the draft no longer depends on the file.
+pub(crate) async fn attach_file(state: &State, params: DraftAttachFileParams) -> Result<Value, RpcError> {
+    let path = std::path::PathBuf::from(&params.path);
+    if !path.is_absolute() {
+        return Err(RpcError::new(codes::INVALID_PARAMS, "give the file's full path"));
+    }
+    let draft_id = params.draft_id;
+    let current: u64 = state
+        .store
+        .read(move |conn| Ok(drafts::attachments(conn, draft_id)?.iter().map(|a| a.size).sum()))
+        .await
+        .map_err(crate::session::internal)?;
+    let blobs = state.blobs.clone();
+    let read = tokio::task::spawn_blocking(move || -> Result<(String, String, u64), RpcError> {
+        let metadata = std::fs::metadata(&path)
+            .map_err(|error| RpcError::new(codes::NOT_FOUND, format!("cannot open the file: {error}")))?;
+        if !metadata.is_file() {
+            return Err(RpcError::new(codes::INVALID_PARAMS, "that is not a file"));
+        }
+        if current + metadata.len() > MAX_ATTACHMENTS {
+            return Err(RpcError::new(
+                codes::TOO_LARGE,
+                format!(
+                    "attachments are limited to {} MB per message, which most mail servers accept",
+                    MAX_ATTACHMENTS / 1024 / 1024
+                ),
+            ));
+        }
+        let data = std::fs::read(&path)
+            .map_err(|error| RpcError::new(codes::NOT_FOUND, format!("cannot read the file: {error}")))?;
+        let hash = blobs.put(&data).map_err(crate::session::internal)?;
+        let name = compose::file_name(
+            &path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        );
+        Ok((hash, name, data.len() as u64))
+    })
+    .await
+    .map_err(crate::session::internal)??;
+    let (hash, name, size) = read;
+    let mime = compose::guess_mime(&name).to_owned();
+    state
+        .store
+        .write(move |tx| drafts::attach(tx, draft_id, &hash, &name, &mime, size))
+        .await
+        .map_err(conflict)?;
+    view(state, draft_id).await
+}
+
+pub(crate) async fn detach(state: &State, params: DraftDetachParams) -> Result<Value, RpcError> {
+    let (draft_id, attachment_id) = (params.draft_id, params.attachment_id);
+    let removed = state
+        .store
+        .write(move |tx| drafts::detach(tx, draft_id, attachment_id))
+        .await
+        .map_err(conflict)?
+        .value;
+    if !removed {
+        return Err(RpcError::new(codes::NOT_FOUND, "no such attachment"));
+    }
+    view(state, draft_id).await
+}
+
 /// Freeze the draft's exact bytes into the outbox. It goes once the undo
 /// window is over; until then [`undo`] takes it back.
 pub(crate) async fn send(state: &Arc<State>, params: DraftSendParams) -> Result<Value, RpcError> {
@@ -204,6 +277,38 @@ pub(crate) async fn send(state: &Arc<State>, params: DraftSendParams) -> Result<
     let id = params.id;
     let now = now_ms();
     let undo_until = now + i64::from(undo_seconds) * 1000;
+    // The files are read before the write, so the writer does not wait on the disk.
+    let listed = state
+        .store
+        .read(move |conn| {
+            let Some(draft) = drafts::get(conn, id)? else {
+                return Ok(None);
+            };
+            Ok(Some((draft.updated_at, drafts::attachments(conn, id)?)))
+        })
+        .await
+        .map_err(crate::session::internal)?;
+    let (seen_version, listed) = listed.ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such draft"))?;
+    let mut files = Vec::with_capacity(listed.len());
+    for attachment in listed {
+        let blobs = state.blobs.clone();
+        let hash = attachment.blob_hash.clone();
+        let data = tokio::task::spawn_blocking(move || blobs.get(&hash))
+            .await
+            .map_err(crate::session::internal)?
+            .map_err(crate::session::internal)?
+            .ok_or_else(|| {
+                RpcError::new(
+                    codes::CONFLICT,
+                    format!("the attached file {} is missing; attach it again", attachment.name),
+                )
+            })?;
+        files.push(compose::Attachment {
+            name: attachment.name,
+            mime: attachment.mime,
+            data,
+        });
+    }
     let outbox_id = state
         .store
         .write(move |tx| {
@@ -211,9 +316,16 @@ pub(crate) async fn send(state: &Arc<State>, params: DraftSendParams) -> Result<
             if draft.sending {
                 return Err(StoreError::Conflict("this message is already being sent".into()));
             }
+            // What is frozen must be what was shown: a change since the files were read stops it.
+            if draft.updated_at != seen_version {
+                return Err(StoreError::Conflict(
+                    "the draft changed while it was being sent; send it again".into(),
+                ));
+            }
             let account =
                 accounts::get(tx, &draft.account_id)?.ok_or_else(|| StoreError::Conflict("no such account".into()))?;
             let outgoing = Outgoing {
+                attachments: files,
                 from: sender(&account),
                 to: draft.to.clone(),
                 cc: draft.cc.clone(),
@@ -318,12 +430,13 @@ async fn view(state: &State, id: i64) -> Result<Value, RpcError> {
                 return Ok(None);
             };
             let account = accounts::get(conn, &draft.account_id)?;
-            Ok(account.map(|account| (draft, sender(&account))))
+            let files = drafts::attachments(conn, id)?;
+            Ok(account.map(|account| (draft, sender(&account), files)))
         })
         .await
         .map_err(crate::session::internal)?;
-    let (draft, from) = found.ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such draft"))?;
-    Ok(json!(draft_view(draft, from)))
+    let (draft, from, files) = found.ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such draft"))?;
+    Ok(json!(draft_view(draft, from, files)))
 }
 
 /// Who an account's messages come from: its name (when it is not just the address) and address.
@@ -334,8 +447,17 @@ fn sender(account: &accounts::Account) -> Person {
     }
 }
 
-fn draft_view(draft: Draft, from: Person) -> DraftView {
+fn draft_view(draft: Draft, from: Person, files: Vec<drafts::Attachment>) -> DraftView {
     DraftView {
+        attachments: files
+            .into_iter()
+            .map(|file| DraftAttachment {
+                id: file.id,
+                name: file.name,
+                mime: file.mime,
+                size: file.size,
+            })
+            .collect(),
         id: draft.id,
         account_id: draft.account_id,
         from,

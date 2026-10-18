@@ -66,6 +66,10 @@ pub mod methods {
     /// Save what the draft says (autosave). Refused while it is being sent.
     pub const DRAFT_UPDATE: &str = "draft.update";
     pub const DRAFT_DELETE: &str = "draft.delete";
+    /// Attach a file the user chose, by path; the daemon reads and keeps it. `ui`
+    /// only: an agent must never make the daemon read and send local files.
+    pub const DRAFT_ATTACH_FILE: &str = "draft.attach_file";
+    pub const DRAFT_DETACH: &str = "draft.detach";
     /// Freeze the draft into the outbox; it goes once the undo window is over.
     pub const DRAFT_SEND: &str = "draft.send";
     /// What is waiting to be sent, failed or may not have gone.
@@ -527,8 +531,35 @@ pub struct DraftView {
     pub replying_to: Option<i64>,
     /// Unix time in milliseconds.
     pub updated_at: i64,
+    /// Files going with it, in the order attached.
+    #[serde(default)]
+    pub attachments: Vec<DraftAttachment>,
     /// It is in the outbox: take it back before changing it.
     pub sending: bool,
+}
+
+/// A file attached to a draft.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftAttachment {
+    pub id: i64,
+    pub name: String,
+    pub mime: String,
+    pub size: u64,
+}
+
+/// Parameters of [`methods::DRAFT_ATTACH_FILE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftAttachFileParams {
+    pub draft_id: i64,
+    /// An absolute path to a file the user chose.
+    pub path: String,
+}
+
+/// Parameters of [`methods::DRAFT_DETACH`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftDetachParams {
+    pub draft_id: i64,
+    pub attachment_id: i64,
 }
 
 /// Parameters of [`methods::DRAFT_LIST`].

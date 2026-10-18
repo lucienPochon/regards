@@ -29,6 +29,15 @@ pub struct Outgoing {
     pub references: Vec<String>,
     /// Unix time in milliseconds.
     pub date: i64,
+    pub attachments: Vec<Attachment>,
+}
+
+/// A file going with the message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Attachment {
+    pub name: String,
+    pub mime: String,
+    pub data: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -82,7 +91,64 @@ impl Outgoing {
         if !self.references.is_empty() {
             builder = builder.references(self.references.clone());
         }
+        for attachment in &self.attachments {
+            builder = builder.attachment(
+                attachment.mime.as_str(),
+                file_name(&attachment.name),
+                attachment.data.as_slice(),
+            );
+        }
         Ok(builder.write_to_vec().expect("writing to memory cannot fail"))
+    }
+}
+
+/// A file's name as it may travel: no folders, no control characters, not empty.
+pub fn file_name(name: &str) -> String {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    let clean: String = base.chars().filter(|c| !c.is_control()).collect();
+    let clean = clean.trim().trim_matches('.').trim();
+    if clean.is_empty() {
+        "attachment".to_owned()
+    } else {
+        clean.chars().take(200).collect()
+    }
+}
+
+/// The media type for a file name, from its extension; `application/octet-stream` when unknown.
+pub fn guess_mime(name: &str) -> &'static str {
+    let extension = name
+        .rsplit_once('.')
+        .map(|(_, extension)| extension.to_ascii_lowercase())
+        .unwrap_or_default();
+    match extension.as_str() {
+        "pdf" => "application/pdf",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "heic" => "image/heic",
+        "svg" => "image/svg+xml",
+        "txt" | "log" | "md" => "text/plain",
+        "csv" => "text/csv",
+        "html" | "htm" => "text/html",
+        "ics" => "text/calendar",
+        "vcf" => "text/vcard",
+        "eml" => "message/rfc822",
+        "zip" => "application/zip",
+        "json" => "application/json",
+        "xml" => "application/xml",
+        "doc" => "application/msword",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xls" => "application/vnd.ms-excel",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "ppt" => "application/vnd.ms-powerpoint",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "odt" => "application/vnd.oasis.opendocument.text",
+        "ods" => "application/vnd.oasis.opendocument.spreadsheet",
+        "mp3" => "audio/mpeg",
+        "mp4" => "video/mp4",
+        "mov" => "video/quicktime",
+        _ => "application/octet-stream",
     }
 }
 
@@ -302,6 +368,7 @@ mod tests {
             in_reply_to: Some("parent@example.test".into()),
             references: vec!["root@example.test".into(), "parent@example.test".into()],
             date: 1_792_317_900_000,
+            attachments: vec![],
         }
     }
 
@@ -334,6 +401,52 @@ mod tests {
             outgoing().recipients(),
             ["bob@example.test", "carol@example.test", "secret@example.test"]
         );
+    }
+
+    #[test]
+    fn attachments_travel_with_their_names_and_types() {
+        let mut message = outgoing();
+        message.attachments = vec![
+            Attachment {
+                name: "C:\\Users\\ada\\Rapport été.pdf".into(),
+                mime: guess_mime("Rapport été.pdf").into(),
+                data: b"%PDF-1.4 binary \x00\xff".to_vec(),
+            },
+            Attachment {
+                name: "notes.txt".into(),
+                mime: guess_mime("notes.txt").into(),
+                data: b"plain notes".to_vec(),
+            },
+        ];
+        let mime = message.build().unwrap();
+        let body = crate::body::parse(&mime);
+        assert_eq!(
+            body.text.replace("\r\n", "\n").trim_end().lines().next(),
+            Some("Hello Bob,")
+        );
+        let files: Vec<(Option<&str>, &str, usize)> = body
+            .attachments
+            .iter()
+            .map(|a| (a.name.as_deref(), a.mime.as_str(), a.size))
+            .collect();
+        assert_eq!(
+            files,
+            [
+                (Some("Rapport été.pdf"), "application/pdf", 18),
+                (Some("notes.txt"), "text/plain", 11)
+            ]
+        );
+    }
+
+    #[test]
+    fn file_names_and_types() {
+        assert_eq!(file_name("/home/ada/report.pdf"), "report.pdf");
+        assert_eq!(file_name("C:\\x\\..\\bad\u{0}name.txt"), "badname.txt");
+        assert_eq!(file_name("  "), "attachment");
+        assert_eq!(file_name(".."), "attachment");
+        assert_eq!(guess_mime("Photo.JPG"), "image/jpeg");
+        assert_eq!(guess_mime("archive"), "application/octet-stream");
+        assert_eq!(guess_mime("x.unknown"), "application/octet-stream");
     }
 
     #[test]

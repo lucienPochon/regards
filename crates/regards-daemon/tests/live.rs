@@ -9,12 +9,12 @@ use regards_core::secret::Secret;
 use regards_daemon::{Daemon, SyncLimits};
 use regards_imap::{ImapServer, Session, SystemFlag, TlsOptions};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountRef, AccountSummary, ClientKind, ConnectionSecurity, DeleteResult, DraftCreateParams,
-    DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams,
-    DraftView, MailboxListResult, MessageDetail, MessageHtml, MessageHtmlParams, MessageIds, MessageListParams,
-    MessageListResult, MessageRef, MoveResult, OutboxEntryView, OutboxListResult, OutboxRef, OutboxState,
-    OutboxUndoResult, ServerSettings, SetFlagsParams, SetFlagsResult, SyncResult, ThreadView, UndoParams, UndoResult,
-    methods,
+    AccountAddParams, AccountRef, AccountSummary, ClientKind, ConnectionSecurity, DeleteResult, DraftAttachFileParams,
+    DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult, DraftRef, DraftReplyParams,
+    DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MailboxListResult, MessageDetail, MessageHtml,
+    MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveResult, OutboxEntryView,
+    OutboxListResult, OutboxRef, OutboxState, OutboxUndoResult, ServerSettings, SetFlagsParams, SetFlagsResult,
+    SyncResult, ThreadView, UndoParams, UndoResult, methods,
 };
 use regards_ipc::{Client, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -1266,5 +1266,94 @@ async fn live_a_message_that_may_have_gone_is_never_resent_by_itself() {
         .unwrap();
     assert!(!editable.sending);
 
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_attached_files_go_out_with_the_message() {
+    let live = live();
+    let script = fake_smtp::Script::new(fake_smtp::Mode::StartTls {
+        offer: true,
+        inject: false,
+    });
+    let ((temp, mut desktop, account, _inbox, handle), mut sent) = daemon_sending_through(&live, script).await;
+    let files = tempfile::tempdir().unwrap();
+    let report = files.path().join("Rapport été.pdf");
+    std::fs::write(&report, b"%PDF-1.4 \x00\x01\x02 binary").unwrap();
+    let extra = files.path().join("extra.txt");
+    std::fs::write(&extra, b"not wanted").unwrap();
+    let huge = files.path().join("huge.bin");
+    std::fs::File::create(&huge).unwrap().set_len(26 * 1024 * 1024).unwrap();
+
+    let draft: DraftView = desktop
+        .call(
+            methods::DRAFT_CREATE,
+            DraftCreateParams {
+                account_id: account.id.clone(),
+                to: vec![person("bob@example.test")],
+                subject: "The report".into(),
+                body: "Attached.".into(),
+                ..DraftCreateParams::default()
+            },
+        )
+        .await
+        .unwrap();
+    let attach = |path: &std::path::Path| DraftAttachFileParams {
+        draft_id: draft.id,
+        path: path.to_string_lossy().into_owned(),
+    };
+    let _: DraftView = desktop.call(methods::DRAFT_ATTACH_FILE, attach(&report)).await.unwrap();
+    let with_both: DraftView = desktop.call(methods::DRAFT_ATTACH_FILE, attach(&extra)).await.unwrap();
+    assert_eq!(with_both.attachments.len(), 2);
+    assert_eq!(with_both.attachments[0].name, "Rapport été.pdf");
+    assert_eq!(with_both.attachments[0].mime, "application/pdf");
+    let too_big = desktop
+        .call::<_, Value>(methods::DRAFT_ATTACH_FILE, attach(&huge))
+        .await;
+    assert!(too_big.is_err(), "over the size limit");
+    let relative = desktop
+        .call::<_, Value>(
+            methods::DRAFT_ATTACH_FILE,
+            DraftAttachFileParams {
+                draft_id: draft.id,
+                path: "relative.txt".into(),
+            },
+        )
+        .await;
+    assert!(relative.is_err(), "only full paths");
+    let one: DraftView = desktop
+        .call(
+            methods::DRAFT_DETACH,
+            DraftDetachParams {
+                draft_id: draft.id,
+                attachment_id: with_both.attachments[1].id,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(one.attachments.len(), 1);
+
+    // The file is kept by the daemon: deleting the original changes nothing.
+    std::fs::remove_file(&report).unwrap();
+    let _: DraftSendResult = desktop
+        .call(
+            methods::DRAFT_SEND,
+            DraftSendParams {
+                id: draft.id,
+                undo_seconds: Some(0),
+            },
+        )
+        .await
+        .unwrap();
+    let delivered = tokio::time::timeout(Duration::from_secs(20), sent.next())
+        .await
+        .expect("the message reached the SMTP server");
+    let body = regards_core::body::parse(&delivered.data.unwrap());
+    assert_eq!(body.attachments.len(), 1);
+    assert_eq!(body.attachments[0].name.as_deref(), Some("Rapport été.pdf"));
+    assert_eq!(body.attachments[0].mime, "application/pdf");
+    assert_eq!(body.attachments[0].size, b"%PDF-1.4 \x00\x01\x02 binary".len());
+    drop(temp);
     handle.abort();
 }

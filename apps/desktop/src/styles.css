@@ -676,3 +676,21 @@ button.link {
 .drafts .draft.current {
   background: var(--bg);
 }
+
+.attachment-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.attachment-chips li {
+  display: flex;
+  align-items: center;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}

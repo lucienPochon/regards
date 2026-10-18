@@ -59,6 +59,10 @@ Loopback TCP is reachable by every local user and, through DNS-rebinding mistake
        - **The token:** it is random, new at each launch, and appears only in rewritten links. An image or other resource in a message cannot trigger the opener; only a click on one of its links can.
        - **Logging:** URLs are not logged.
        - **Not yet:** `mailto:` links wait for the composer.
+   - **Attaching files (Phase 2):**
+     - **Picking:** the system file dialog is opened from Rust (`tauri-plugin-dialog`'s Rust API). The WebView is granted none of the plugin's commands and never sees a path.
+     - **Reading:** the bridge hands the chosen paths to the daemon's `draft.attach_file`, which reads each file once into `blobs/` (at most 25 MB per message).
+     - **Agents:** that method is `ui` only and must stay so. An agent able to name a path could make the daemon read and send any local file.
 5. **Deep links:** a custom URL scheme (`regards://thread/<id>`, `…/draft/<id>`) is registered by the desktop app. Handlers only navigate; they never perform actions.
 
 ## Threat model and limits

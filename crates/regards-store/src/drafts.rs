@@ -132,6 +132,82 @@ pub fn delete(tx: &Transaction<'_>, id: i64) -> Result<bool, StoreError> {
     Ok(tx.execute("DELETE FROM drafts WHERE id = ?1", [id])? > 0)
 }
 
+/// A file attached to a draft; its bytes are the blob `blob_hash`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Attachment {
+    pub id: i64,
+    pub blob_hash: String,
+    pub name: String,
+    pub mime: String,
+    pub size: u64,
+}
+
+/// Attach a stored blob. Refused while the draft is being sent.
+pub fn attach(
+    tx: &Transaction<'_>,
+    draft_id: i64,
+    blob_hash: &str,
+    name: &str,
+    mime: &str,
+    size: u64,
+) -> Result<i64, StoreError> {
+    editable(tx, draft_id)?;
+    tx.execute(
+        "INSERT INTO draft_attachments (draft_id, blob_hash, name, mime, size) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![draft_id, blob_hash, name, mime, size as i64],
+    )?;
+    tx.execute(
+        "UPDATE drafts SET updated_at = updated_at + 1 WHERE id = ?1",
+        [draft_id],
+    )?;
+    Ok(tx.last_insert_rowid())
+}
+
+/// Take a file off a draft. Refused while the draft is being sent.
+pub fn detach(tx: &Transaction<'_>, draft_id: i64, attachment_id: i64) -> Result<bool, StoreError> {
+    editable(tx, draft_id)?;
+    let removed = tx.execute(
+        "DELETE FROM draft_attachments WHERE id = ?1 AND draft_id = ?2",
+        params![attachment_id, draft_id],
+    )? > 0;
+    if removed {
+        tx.execute(
+            "UPDATE drafts SET updated_at = updated_at + 1 WHERE id = ?1",
+            [draft_id],
+        )?;
+    }
+    Ok(removed)
+}
+
+/// A draft's files, in the order they were attached.
+pub fn attachments(conn: &Connection, draft_id: i64) -> Result<Vec<Attachment>, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT id, blob_hash, name, mime, size FROM draft_attachments WHERE draft_id = ?1 ORDER BY id",
+    )?;
+    let rows = statement
+        .query_map([draft_id], |row| {
+            Ok(Attachment {
+                id: row.get(0)?,
+                blob_hash: row.get(1)?,
+                name: row.get(2)?,
+                mime: row.get(3)?,
+                size: row.get::<_, i64>(4)? as u64,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+fn editable(tx: &Transaction<'_>, draft_id: i64) -> Result<(), StoreError> {
+    match get(tx, draft_id)? {
+        None => Err(StoreError::Conflict("no such draft".into())),
+        Some(draft) if draft.sending => Err(StoreError::Conflict(
+            "this message is being sent; undo or cancel it first".into(),
+        )),
+        Some(_) => Ok(()),
+    }
+}
+
 fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Draft, StoreError>> {
     let texts: [String; 4] = [row.get(2)?, row.get(3)?, row.get(4)?, row.get(8)?];
     let parse = || -> Result<Draft, StoreError> {

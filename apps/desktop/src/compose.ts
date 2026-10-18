@@ -16,6 +16,14 @@ export interface Draft {
   updated_at: number;
   /** In the outbox: take it back before changing it. */
   sending: boolean;
+  attachments: DraftAttachment[];
+}
+
+export interface DraftAttachment {
+  id: number;
+  name: string;
+  mime: string;
+  size: number;
 }
 
 export type OutboxState = "queued" | "sending" | "failed" | "uncertain";
@@ -44,6 +52,10 @@ export const replyDraft = (messageId: number, all: boolean) => invoke<Draft>("dr
 export const forwardDraft = (messageId: number) => invoke<Draft>("draft_forward", { messageId });
 export const listDrafts = () => invoke<{ drafts: Draft[] }>("draft_list");
 export const getDraft = (id: number) => invoke<Draft>("draft_get", { id });
+/** Pick files with the system dialog and attach them; `null` if cancelled. */
+export const attachFiles = (draftId: number) => invoke<Draft | null>("draft_attach_files", { draftId });
+export const detachFile = (draftId: number, attachmentId: number) =>
+  invoke<Draft>("draft_detach", { draftId, attachmentId });
 export const deleteDraft = (id: number) => invoke("draft_delete", { id });
 
 export function saveDraft(draft: Pick<Draft, "id" | "to" | "cc" | "bcc" | "subject" | "body">): Promise<Draft> {

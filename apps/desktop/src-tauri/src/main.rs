@@ -16,10 +16,11 @@ use regards_core::secret::Secret;
 use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity, DeleteResult,
-    DraftCreateParams, DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult,
-    DraftUpdateParams, DraftView, MailboxListResult, MessageCursor, MessageDetail, MessageIds, MessageListParams,
-    MessageListResult, MessageRef, MoveParams, MoveResult, OutboxListResult, OutboxRef, OutboxUndoResult, Principal,
-    ServerSettings, SetFlagsParams, SetFlagsResult, SyncResult, ThreadView, UndoParams, UndoResult, methods,
+    DraftAttachFileParams, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult, DraftRef,
+    DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MailboxListResult, MessageCursor,
+    MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult,
+    OutboxListResult, OutboxRef, OutboxUndoResult, Principal, ServerSettings, SetFlagsParams, SetFlagsResult,
+    SyncResult, ThreadView, UndoParams, UndoResult, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -381,6 +382,55 @@ async fn draft_get(bridge: State<'_, Bridge>, id: i64) -> Result<DraftView, Stri
     client.call(methods::DRAFT_GET, DraftRef { id }).await.map_err(describe)
 }
 
+/// Pick files with the system's file dialog and attach them. The WebView
+/// never sees a path: the dialog runs here and the daemon reads the files.
+/// `None` if the person cancelled.
+#[tauri::command]
+async fn draft_attach_files(
+    app: AppHandle,
+    bridge: State<'_, Bridge>,
+    draft_id: i64,
+) -> Result<Option<DraftView>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let picker = app.dialog().file().set_title("Attach files");
+    let picked = tauri::async_runtime::spawn_blocking(move || picker.blocking_pick_files())
+        .await
+        .map_err(|error| error.to_string())?;
+    let Some(paths) = picked else { return Ok(None) };
+    let mut client = bridge.connect().await?.client;
+    let mut latest = None;
+    for path in paths {
+        let path = path.into_path().map_err(|error| error.to_string())?;
+        let draft: DraftView = client
+            .call(
+                methods::DRAFT_ATTACH_FILE,
+                DraftAttachFileParams {
+                    draft_id,
+                    path: path.to_string_lossy().into_owned(),
+                },
+            )
+            .await
+            .map_err(describe)?;
+        latest = Some(draft);
+    }
+    Ok(latest)
+}
+
+#[tauri::command]
+async fn draft_detach(bridge: State<'_, Bridge>, draft_id: i64, attachment_id: i64) -> Result<DraftView, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::DRAFT_DETACH,
+            DraftDetachParams {
+                draft_id,
+                attachment_id,
+            },
+        )
+        .await
+        .map_err(describe)
+}
+
 /// Drafts being written, of every account.
 #[tauri::command]
 async fn draft_list(bridge: State<'_, Bridge>) -> Result<DraftListResult, String> {
@@ -503,6 +553,7 @@ fn explain(error: LaunchError) -> String {
 fn main() {
     let app = tauri::Builder::default()
         // Must come first: a second app instance would replace this one's daemon.
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
@@ -537,6 +588,8 @@ fn main() {
             draft_forward,
             draft_get,
             draft_list,
+            draft_attach_files,
+            draft_detach,
             draft_update,
             draft_delete,
             draft_send,

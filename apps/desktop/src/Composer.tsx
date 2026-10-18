@@ -2,7 +2,9 @@ import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "re
 import {
   type Draft,
   type Queued,
+  attachFiles,
   deleteDraft,
+  detachFile,
   formatRecipients,
   getDraft,
   invalidAddresses,
@@ -155,6 +157,26 @@ export function Composer({
     }
   };
 
+  const attach = async () => {
+    if (!draft) return;
+    setError(null);
+    try {
+      const updated = await attachFiles(draft.id);
+      if (updated) setDraft(updated);
+    } catch (failure) {
+      setError(String(failure));
+    }
+  };
+
+  const detach = async (attachmentId: number) => {
+    if (!draft) return;
+    try {
+      setDraft(await detachFile(draft.id, attachmentId));
+    } catch (failure) {
+      setError(String(failure));
+    }
+  };
+
   const discard = async () => {
     if (!draft) return;
     window.clearTimeout(timer.current);
@@ -223,6 +245,24 @@ export function Composer({
                 value={fields.body}
                 onChange={change("body")}
               />
+              {draft && draft.attachments.length > 0 && (
+                <ul className="attachment-chips" aria-label="Attachments">
+                  {draft.attachments.map((file) => (
+                    <li key={file.id}>
+                      <span>{file.name}</span>
+                      <span className="muted"> · {fileSize(file.size)}</span>
+                      <button
+                        type="button"
+                        className="link"
+                        aria-label={`Remove ${file.name}`}
+                        onClick={() => void detach(file.id)}
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </fieldset>
             {askSubject && (
               <p className="small">
@@ -233,6 +273,9 @@ export function Composer({
             <div className="actions-bar">
               <button type="button" onClick={() => void send()} disabled={draft?.sending || busy}>
                 Send
+              </button>
+              <button type="button" onClick={() => void attach()} disabled={draft?.sending || busy}>
+                Attach files
               </button>
               <button type="button" onClick={() => void close()}>
                 Close
@@ -247,4 +290,10 @@ export function Composer({
       </section>
     </div>
   );
+}
+
+function fileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }

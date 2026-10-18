@@ -203,6 +203,14 @@ impl Session {
                 self.require_ui()?;
                 compose::delete(&self.state, params(request)?).await
             }
+            methods::DRAFT_ATTACH_FILE => {
+                self.require_ui()?;
+                compose::attach_file(&self.state, params(request)?).await
+            }
+            methods::DRAFT_DETACH => {
+                self.require_ui()?;
+                compose::detach(&self.state, params(request)?).await
+            }
             methods::DRAFT_SEND => {
                 self.require_ui()?;
                 compose::send(&self.state, params(request)?).await
