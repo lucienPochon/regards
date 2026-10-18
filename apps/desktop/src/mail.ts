@@ -5,6 +5,7 @@ import {
   type MessageCursor,
   type MessageListResult,
   type MessageSummary,
+  type MessageView,
   type Role,
   type SyncState,
   listAccounts,
@@ -250,6 +251,36 @@ export function useFeed(sources: Source[]): MessageFeed {
     loadMore,
   };
 }
+
+/**
+ * Every account's pinned or set-aside messages, newest first: the first page
+ * of each, enough for the inbox's group row and bubble to show who and how many.
+ */
+export function useMarked(accounts: AccountMail[], mark: MessageView, enabled: boolean): MessageSummary[] {
+  const [messages, setMessages] = useState<MessageSummary[]>([]);
+  const ids = accounts.map((entry) => entry.account.id).join(",");
+  const generation = useRef(0);
+  const refresh = useCallback(() => {
+    const run = ++generation.current;
+    if (!enabled || !ids) {
+      setMessages([]);
+      return;
+    }
+    Promise.all(
+      ids.split(",").map((id) =>
+        listView(id, mark, null, MARKED_PAGE).then(
+          (page) => page.messages,
+          () => [] as MessageSummary[],
+        ),
+      ),
+    ).then((pages) => run === generation.current && setMessages(pages.flat().sort(newer)));
+  }, [ids, mark, enabled]);
+  useEffect(refresh, [refresh]);
+  useChanges(refresh);
+  return messages;
+}
+
+const MARKED_PAGE = 100;
 
 /** Messages being written, newest change first. */
 export function useDrafts(): Draft[] {

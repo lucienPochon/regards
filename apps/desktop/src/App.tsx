@@ -1,34 +1,38 @@
 import { type CSSProperties, type KeyboardEvent, type PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type MarkResult, type MoveResult, type UndoInfo, syncAccount } from "./accounts";
-import { type ActionHost, type Target, messageActions } from "./actions";
-import { BulkPane } from "./BulkPane";
+import { type ActionHost, type Target, choose, messageActions } from "./actions";
+import { Avatar } from "./Avatar";
 import { Composer } from "./Composer";
 import { type Draft, type Queued, newDraft } from "./compose";
 import { Confirm, type ConfirmRequest } from "./Confirm";
 import { DraftsList } from "./DraftsList";
-import { Icon } from "./icons";
-import { LIST_MAX, LIST_MIN, clampList, useLayout, useMediaQuery } from "./layout";
-import { type ListItem, sourcesFor, useDrafts, useFeed, useMail, useOutbox, useService } from "./mail";
-import { type Anchor, Menu, type MenuRequest } from "./Menu";
+import { Icon, type IconName } from "./icons";
+import { LIST_MAX, LIST_MIN, clampList, useLayout } from "./layout";
+import { type ListItem, sourcesFor, useDrafts, useFeed, useMail, useMarked, useOutbox, useService } from "./mail";
+import { type Anchor, Menu, type MenuEntry, type MenuRequest } from "./Menu";
 import { ListHeader, MessageList } from "./MessageList";
 import { OutboxList } from "./OutboxList";
 import { ReadingPane } from "./ReadingPane";
 import { SendToast } from "./SendToast";
 import { Settings, type SettingsTab } from "./Settings";
 import { ShortcutHelp } from "./ShortcutHelp";
-import { useShortcuts } from "./shortcuts";
+import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { Sidebar } from "./Sidebar";
 import { presets } from "./snooze";
+import { applyTheme } from "./theme";
 import { TimePicker } from "./TimePicker";
 import { UndoToast } from "./UndoToast";
 import {
   INBOX,
+  MARKED_ICONS,
   MARKED_LABELS,
+  MARKED_VIEWS,
   ROLE_ICONS,
   ROLE_LABELS,
   type View,
   depth,
   leafName,
+
   sortFolders,
   viewKey,
 } from "./views";
@@ -57,8 +61,8 @@ function targetOf(items: ListItem[]): Target {
   };
 }
 
-/** A preset's time beside it: "18:00", or "Thu 08:00" when it is not today. */
-function presetHint(until: number | "someday"): string | undefined {
+/** A time beside its preset: "18:00", or "Thu 08:00" when it is not today. */
+function timeHint(until: number | "someday"): string | undefined {
   if (until === "someday") return undefined;
   const date = new Date(until);
   const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -67,19 +71,35 @@ function presetHint(until: number | "someday"): string | undefined {
     : `${date.toLocaleDateString([], { weekday: "short" })} ${time}`;
 }
 
+/** When to send later: built from calendar days and hours, so 08:00 stays 08:00 across a clock change. */
+function sendPresets(now = new Date()): { label: string; until: number }[] {
+  const at = (days: number, hour: number) =>
+    new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, hour, 0, 0, 0).getTime();
+  const list: { label: string; until: number }[] = [];
+  const later = new Date(now.getTime() + 3 * 3600_000);
+  later.setMinutes(Math.ceil(later.getMinutes() / 15) * 15, 0, 0);
+  if (later.getDate() === now.getDate() && later.getHours() < 21) list.push({ label: "Later today", until: later.getTime() });
+  if (now.getHours() < 17) list.push({ label: "This evening", until: at(0, 18) });
+  list.push({ label: "Tomorrow morning", until: at(1, 8) });
+  const toMonday = ((8 - now.getDay()) % 7) || 7;
+  if (toMonday > 1) list.push({ label: "Monday morning", until: at(toMonday, 8) });
+  return list;
+}
+
+type Picking = { title: string; confirm: string; initial: number; resolve: (time: number | null) => void };
+
 export function App() {
   const { check, recheck } = useService();
   const mail = useMail();
   const drafts = useDrafts();
   const outbox = useOutbox();
   const [layout, setLayout] = useLayout();
-  const narrow = useMediaQuery("(max-width: 1080px)");
-  const rail = layout.rail ?? narrow;
+  const [overlay, setOverlay] = useState(false);
 
   const [view, setView] = useState<View>(INBOX);
   const [open, setOpen] = useState<ListItem | null>(null);
   const [picked, setPicked] = useState<Set<number>>(() => new Set());
-  const [composing, setComposing] = useState<number | null>(null);
+  const [composer, setComposer] = useState<{ id: number; mode: "full" | "panel" } | null>(null);
   const [queued, setQueued] = useState<Queued | null>(null);
   const [undo, setUndo] = useState<UndoInfo | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -87,7 +107,7 @@ export function App() {
   const [settings, setSettings] = useState<SettingsTab | null>(null);
   const [menu, setMenu] = useState<MenuRequest | null>(null);
   const [asking, setAsking] = useState<{ request: ConfirmRequest; resolve: (ok: boolean) => void } | null>(null);
-  const [picking, setPicking] = useState<((time: number | null) => void) | null>(null);
+  const [picking, setPicking] = useState<Picking | null>(null);
   const [syncing, setSyncing] = useState(false);
   const closeUndo = useCallback(() => setUndo(null), []);
   const closeQueued = useCallback(() => setQueued(null), []);
@@ -95,6 +115,9 @@ export function App() {
   const accounts = useMemo(() => (mail.state === "ready" ? mail.accounts : []), [mail]);
   const sources = useMemo(() => sourcesFor(accounts, view), [accounts, view]);
   const feed = useFeed(sources);
+  const inInbox = view.kind === "role" && view.role === "inbox";
+  const pinned = useMarked(accounts, "pinned", inInbox);
+  const aside = useMarked(accounts, "aside", inInbox);
   const items = useRef(feed.items);
   items.current = feed.items;
   // The list's copy is fresher (flags change); fall back to the one opened.
@@ -116,12 +139,15 @@ export function App() {
   }, [notice]);
 
   const failed = useCallback((error: unknown) => setNotice(String(error)), []);
-  const compose = useCallback(
-    (start: Promise<Draft>) => {
-      start.then((draft) => setComposing(draft.id)).catch(failed);
+  /** Replies and forwards open in a panel over the conversation; new messages take the whole pane. */
+  const startDraft = useCallback(
+    (start: Promise<Draft>, mode: "full" | "panel") => {
+      start.then((draft) => setComposer({ id: draft.id, mode })).catch(failed);
     },
     [failed],
   );
+  const compose = useCallback((start: Promise<Draft>) => startDraft(start, "panel"), [startDraft]);
+  const editDraft = useCallback((id: number) => setComposer({ id, mode: "full" }), []);
   const confirm = useCallback(
     (request: ConfirmRequest) => new Promise<boolean>((resolve) => setAsking({ request, resolve })),
     [],
@@ -171,29 +197,39 @@ export function App() {
   const marked = useCallback((result: MarkResult) => {
     if (result.undo) setUndo(result.undo);
   }, []);
-  const pickSnooze = useCallback(
-    (anchor: Anchor | null) =>
+  /** The palette of times, with a way to pick any date. */
+  const pickTime = useCallback(
+    (title: string, confirmLabel: string, choices: { label: string; until: number | "someday" }[]) =>
       new Promise<number | "someday" | null>((resolve) => {
         setMenu({
-          anchor: anchor ?? { x: window.innerWidth / 2 - 120, y: window.innerHeight / 4 },
-          label: "Snooze until",
+          anchor: { x: 0, y: 0 },
+          variant: "palette",
+          title,
+          label: title,
           entries: [
-            ...presets().map((preset) => ({
-              label: preset.label,
+            ...choices.map((choice) => ({
+              label: choice.label,
               icon: "clock" as const,
-              hint: presetHint(preset.until),
-              onSelect: () => resolve(preset.until),
+              hint: timeHint(choice.until),
+              onSelect: () => resolve(choice.until),
             })),
             "separator" as const,
             {
               label: "Pick a date and time…",
-              onSelect: () => setPicking(() => (time: number | null) => resolve(time)),
+              icon: "plus" as const,
+              onSelect: () =>
+                setPicking({ title, confirm: confirmLabel, initial: Date.now() + 24 * 3600_000, resolve: (time) => resolve(time) }),
             },
           ],
           onDismiss: () => resolve(null),
         });
       }),
     [],
+  );
+  const pickSnooze = useCallback(() => pickTime("Snooze until", "Snooze", presets()), [pickTime]);
+  const pickSendTime = useCallback(
+    () => pickTime("Send at", "Schedule", sendPresets()).then((time) => (typeof time === "number" ? time : null)),
+    [pickTime],
   );
 
   const host = useMemo<ActionHost>(
@@ -207,29 +243,85 @@ export function App() {
     setView(next);
     setOpen(null);
     setPicked(new Set());
+    setOverlay(false);
   };
 
   const composeFrom =
     openItem?.accountId ?? (view.kind === "mailbox" ? view.accountId : accounts[0]?.account.id) ?? null;
   const writeNew = () => {
-    if (composeFrom) compose(newDraft(composeFrom));
+    if (composeFrom) startDraft(newDraft(composeFrom), "full");
   };
-  useShortcuts({ "?": () => setHelp(true), c: writeNew, "Mod+,": () => setSettings("accounts") });
 
   // The folders being shown, synced now.
   const viewAccounts = [...new Set(sources.map((source) => source.accountId))];
-  const busy = syncing || accounts.some((entry) => viewAccounts.includes(entry.account.id) && entry.sync?.running);
+  const syncAccounts = viewAccounts.length > 0 ? viewAccounts : accounts.map((entry) => entry.account.id);
+  const busy = syncing || accounts.some((entry) => entry.sync?.running);
   const syncNow = () => {
     setSyncing(true);
-    Promise.all(viewAccounts.map((id) => syncAccount(id)))
+    Promise.all(syncAccounts.map((id) => syncAccount(id)))
       .catch(failed)
       .finally(() => setSyncing(false));
   };
 
-  // Dragging the column edge sets the width directly; it is remembered on release.
-  const app = useRef<HTMLDivElement>(null);
+  const toggleSidebar = () => {
+    if (layout.locked) setLayout({ locked: false });
+    else setOverlay((now) => !now);
+  };
+
+  const step = (by: number) => {
+    const list = items.current;
+    const index = list.findIndex((item) => item.id === open?.id);
+    const next = list[index + by];
+    if (index !== -1 && next) setOpen(next);
+  };
+
+  const palette = () => {
+    const entries: MenuEntry[] = [];
+    if (openItem) {
+      const message = actionsForItems([openItem]);
+      for (const action of choose(message, "reply", "replyAll", "forward", "archive", "snooze", "pin", "aside", "flag", "read", "unread", "move", "delete")) {
+        entries.push({ label: action.label, icon: action.icon, hint: action.keys[0], danger: action.danger, onSelect: () => action.run(null) });
+      }
+      entries.push("separator");
+    }
+    entries.push({ label: "New message", icon: "compose", hint: "c", onSelect: writeNew });
+    entries.push({ label: "Check for new mail", icon: "refresh", onSelect: syncNow });
+    const go = (target: View, label: string, icon: IconName) =>
+      entries.push({ label: `Go to ${label}`, icon, onSelect: () => changeView(target) });
+    go(INBOX, "Inbox", "inbox");
+    for (const mark of MARKED_VIEWS) go({ kind: "marked", mark }, MARKED_LABELS[mark], MARKED_ICONS[mark]);
+    go({ kind: "drafts" }, "Drafts", "draft");
+    for (const role of ["sent", "archive", "junk", "trash"] as const) go({ kind: "role", role }, ROLE_LABELS[role], ROLE_ICONS[role]);
+    if (outbox.length > 0) go({ kind: "outbox" }, "Outbox", "outbox");
+    entries.push(
+      {
+        label: layout.mode === "split" ? "Open messages in place of the list" : "Open messages beside the list",
+        icon: layout.mode === "split" ? "single" : "split",
+        onSelect: () => setLayout({ mode: layout.mode === "split" ? "single" : "split" }),
+      },
+      { label: layout.locked ? "Fold the sidebar" : "Show the sidebar", icon: "sidebar", hint: "/", onSelect: toggleSidebar },
+      { label: "Light theme", icon: "sun", onSelect: () => applyTheme("light", true) },
+      { label: "Dark theme", icon: "moon", onSelect: () => applyTheme("dark", true) },
+      { label: "Theme as the system", icon: "sun", onSelect: () => applyTheme("system", true) },
+      { label: "Settings", icon: "settings", hint: `${MOD_KEY}+,`, onSelect: () => setSettings("accounts") },
+      { label: "Keyboard shortcuts", icon: "keyboard", hint: "?", onSelect: () => setHelp(true) },
+    );
+    setMenu({ anchor: { x: 0, y: 0 }, variant: "palette", filter: "Type a command or a folder", label: "Commands", entries });
+  };
+
+  useShortcuts({
+    "?": () => setHelp(true),
+    c: writeNew,
+    "Mod+,": () => setSettings("accounts"),
+    "Mod+k": palette,
+    "/": toggleSidebar,
+    ...(overlay ? { Escape: () => setOverlay(false) } : {}),
+  });
+
+  // Dragging the list's edge sets the width directly; it is remembered on release.
+  const content = useRef<HTMLElement>(null);
   const drag = useRef<{ x: number; width: number } | null>(null);
-  const resize = (width: number) => app.current?.style.setProperty("--list-w", `${clampList(width)}px`);
+  const resize = (width: number) => content.current?.style.setProperty("--list-w", `${clampList(width)}px`);
   const splitter = {
     onPointerDown: (event: PointerEvent<HTMLDivElement>) => {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -289,12 +381,12 @@ export function App() {
       : view.kind === "marked"
         ? MARKED_LABELS[view.mark]
         : view.kind === "mailbox"
-        ? viewMailbox
-          ? leafName(viewMailbox)
-          : "Folder"
-        : view.kind === "drafts"
-          ? "Drafts"
-          : "Outbox";
+          ? viewMailbox
+            ? leafName(viewMailbox)
+            : "Folder"
+          : view.kind === "drafts"
+            ? "Drafts"
+            : "Outbox";
   const subtitle =
     view.kind === "mailbox"
       ? viewAccount?.account.email
@@ -318,59 +410,93 @@ export function App() {
   const folders = openItem
     ? (accounts.find((entry) => entry.account.id === openItem.accountId)?.mailboxes ?? []).filter((m) => m.selectable)
     : [];
-  const pickedItems = feed.items.filter((item) => picked.has(item.id));
 
-  return (
-    <div
-      className={rail ? "app rail" : "app"}
-      ref={app}
-      style={{ "--list-w": `${layout.listWidth}px` } as CSSProperties}
-    >
-      {banner}
-      <Sidebar
-        mail={mail}
-        drafts={drafts}
-        outbox={outbox}
-        view={view}
-        onView={changeView}
-        rail={rail}
+  // With several accounts, the title chooses between all of them and one.
+  const role = view.kind === "role" ? view.role : (viewMailbox?.role ?? null);
+  const onTitle =
+    accounts.length > 1 && role
+      ? (anchor: Anchor) =>
+          setMenu({
+            anchor,
+            label: "Accounts",
+            entries: [
+              { label: "All accounts", icon: "inbox", onSelect: () => changeView({ kind: "role", role }) },
+              "separator",
+              ...accounts.flatMap((entry) => {
+                const mailbox = entry.mailboxes.find((m) => m.role === role && m.selectable);
+                return mailbox
+                  ? [
+                      {
+                        label: entry.account.email,
+                        icon: "user" as const,
+                        onSelect: () => changeView({ kind: "mailbox", mailboxId: mailbox.id, accountId: entry.account.id }),
+                      },
+                    ]
+                  : [];
+              }),
+            ],
+          })
+      : undefined;
+
+  const listPane =
+    view.kind === "drafts" ? (
+      <section className="list-pane" aria-label="Drafts">
+        <ListHeader title={title} subtitle={subtitle}>
+          <button type="button" className="icon-btn" title="New message (c)" aria-label="New message" onClick={writeNew}>
+            <Icon name="compose" />
+          </button>
+        </ListHeader>
+        <DraftsList drafts={drafts} open={composer?.id ?? null} onOpen={editDraft} onFailed={failed} />
+      </section>
+    ) : view.kind === "outbox" ? (
+      <section className="list-pane" aria-label="Outbox">
+        <ListHeader title={title} subtitle={subtitle} />
+        <OutboxList entries={outbox} onEdit={editDraft} onFailed={failed} />
+      </section>
+    ) : (
+      <MessageList
+        key={viewKey(view)}
+        title={title}
+        subtitle={subtitle}
+        onTitle={onTitle}
         onCompose={writeNew}
         canCompose={composeFrom !== null}
-        onSettings={setSettings}
-        onHelp={() => setHelp(true)}
+        feed={feed}
+        mode={layout.mode}
+        openId={openItem?.id ?? null}
+        picked={picked}
+        onOpen={setOpen}
+        onPick={setPicked}
+        actionsFor={actionsForItems}
+        onMenu={setMenu}
+        empty={empty}
+        bundle={inInbox ? { label: "Pinned", icon: "pin", messages: pinned, onOpen: () => changeView({ kind: "marked", mark: "pinned" }) } : null}
+        onSplit={layout.mode === "single" ? () => setLayout({ mode: "split" }) : undefined}
       />
-      <section className="list-column" aria-label={title}>
-        <ListHeader title={title} subtitle={subtitle} rail={rail} onToggleRail={() => setLayout({ rail: !rail })}>
-          {(view.kind === "role" || view.kind === "mailbox") && (
-            <button
-              type="button"
-              className={busy ? "icon-btn spinning" : "icon-btn"}
-              title="Check for new mail"
-              aria-label="Check for new mail"
-              onClick={syncNow}
-              disabled={busy || viewAccounts.length === 0}
-            >
-              <Icon name="refresh" />
-            </button>
-          )}
-        </ListHeader>
-        {view.kind === "drafts" ? (
-          <DraftsList drafts={drafts} open={composing} onOpen={setComposing} onFailed={failed} />
-        ) : view.kind === "outbox" ? (
-          <OutboxList entries={outbox} onEdit={setComposing} onFailed={failed} />
-        ) : (
-          <MessageList
-            key={viewKey(view)}
-            feed={feed}
-            openId={openItem?.id ?? null}
-            picked={picked}
-            onOpen={setOpen}
-            onPick={setPicked}
-            actionsFor={actionsForItems}
-            onMenu={setMenu}
-            empty={empty}
-          />
-        )}
+    );
+
+  const reader = openItem && (
+    <ReadingPane
+      key={openItem.id}
+      item={openItem}
+      folders={folders}
+      mode={layout.mode}
+      actionsFor={actionsFor}
+      onMenu={setMenu}
+      onClose={() => setOpen(null)}
+      onStep={layout.mode === "single" ? step : undefined}
+    />
+  );
+
+  let body;
+  if (composer?.mode === "full") {
+    body = null;
+  } else if (layout.mode === "single") {
+    body = reader && picked.size === 0 ? reader : listPane;
+  } else {
+    body = (
+      <>
+        {listPane}
         <div
           className="splitter"
           role="separator"
@@ -382,71 +508,141 @@ export function App() {
           tabIndex={0}
           {...splitter}
         />
-      </section>
-      <section className="reader-column">
-        {pickedItems.length > 0 ? (
-          <BulkPane count={pickedItems.length} actions={actionsForItems(pickedItems)} onClear={() => setPicked(new Set())} />
-        ) : openItem ? (
-          <ReadingPane
-            key={openItem.id}
-            item={openItem}
-            folders={folders}
-            actionsFor={actionsFor}
-            onMenu={setMenu}
-            onClose={() => setOpen(null)}
-          />
-        ) : (
-          <div className="empty reader-empty">
-            <span className="app-mark large">
-              <Icon name="logo" size={38} />
-            </span>
-            <h2>{view.kind === "drafts" ? "Pick a draft to keep writing" : "No message open"}</h2>
-            <p>
-              {view.kind === "drafts" ? (
-                "Drafts are saved as you type."
-              ) : (
-                <>
+        <div className="reader-column">
+          {picked.size > 0 ? (
+            <div className="empty">
+              <div className="stack" aria-hidden="true">
+                <span />
+                <span />
+                <span>{picked.size}</span>
+              </div>
+              <h2>{picked.size === 1 ? "1 message selected" : `${picked.size} messages selected`}</h2>
+              <p>The actions at the top of the list apply to all of them.</p>
+            </div>
+          ) : (
+            (reader ?? (
+              <div className="empty">
+                <span className="zero-mark" aria-hidden="true">
+                  <Icon name="mail" size={30} />
+                </span>
+                <h2>{view.kind === "drafts" ? "Pick a draft to keep writing" : "No message open"}</h2>
+                <p>
                   Choose a message to read it here. <kbd>j</kbd> and <kbd>k</kbd> move through the list.
-                </>
-              )}
-            </p>
-          </div>
-        )}
-      </section>
+                </p>
+              </div>
+            ))
+          )}
+        </div>
+      </>
+    );
+  }
 
-      <div className="toasts">
-        {notice && (
-          <div className="toast error" role="alert">
-            <Icon name="alert" size={16} />
-            <span>{notice}</span>
-            <button type="button" onClick={() => setNotice(null)}>
-              Dismiss
-            </button>
-          </div>
-        )}
-        {undo && <UndoToast undo={undo} onDone={closeUndo} />}
-        {queued && (
-          <SendToast
-            key={queued.outbox_id}
-            queued={queued}
-            onDone={closeQueued}
-            onUndone={(draftId) => {
-              setQueued(null);
-              if (draftId !== null) setComposing(draftId);
+  const showBubble = inInbox && aside.length > 0 && !openItem && composer?.mode !== "full";
+  const asideFaces = aside.slice(0, 3);
+
+  return (
+    <div className={layout.locked ? "app locked" : "app"}>
+      {banner}
+      <Sidebar
+        mail={mail}
+        drafts={drafts}
+        outbox={outbox}
+        view={view}
+        onView={changeView}
+        expanded={layout.locked}
+        locked={layout.locked}
+        onToggleLock={() => setLayout({ locked: !layout.locked })}
+        onExpand={() => setOverlay(true)}
+        onSettings={setSettings}
+        onHelp={() => setHelp(true)}
+        onSync={syncNow}
+        syncing={busy}
+      />
+      <main
+        className={`content ${layout.mode}`}
+        ref={content}
+        style={{ "--list-w": `${layout.listWidth}px` } as CSSProperties}
+      >
+        {body}
+        {composer && (
+          <Composer
+            key={composer.id}
+            draftId={composer.id}
+            mode={composer.mode}
+            onMode={(mode) => setComposer({ ...composer, mode })}
+            onClose={() => setComposer(null)}
+            onQueued={(result) => {
+              setComposer(null);
+              setQueued(result);
             }}
+            pickSendTime={pickSendTime}
           />
         )}
-      </div>
-      {composing !== null && (
-        <Composer
-          key={composing}
-          draftId={composing}
-          onClose={() => setComposing(null)}
-          onQueued={(result) => {
-            setComposing(null);
-            setQueued(result);
-          }}
-        />
+        <div className="dock">
+          {notice && (
+            <div className="toast error" role="alert">
+              <Icon name="alert" size={16} />
+              <span>{notice}</span>
+              <button type="button" onClick={() => setNotice(null)}>
+                Dismiss
+              </button>
+            </div>
+          )}
+          {undo && <UndoToast undo={undo} onDone={closeUndo} />}
+          {queued && (
+            <SendToast
+              key={queued.outbox_id}
+              queued={queued}
+              onDone={closeQueued}
+              onUndone={(draftId) => {
+                setQueued(null);
+                if (draftId !== null) editDraft(draftId);
+              }}
+            />
+          )}
+          {showBubble && (
+            <button
+              type="button"
+              className="aside-bubble"
+              title="Set aside (Shift+A to add)"
+              onClick={() => changeView({ kind: "marked", mark: "aside" })}
+            >
+              <span className="faces">
+                {asideFaces.map((message) => (
+                  <Avatar key={message.id} person={message.from} size="xs" />
+                ))}
+              </span>
+              {aside.length} set aside
+            </button>
+          )}
+        </div>
+      </main>
+      {overlay && !layout.locked && (
+        <>
+          <div className="scrim" onMouseDown={() => setOverlay(false)} />
+          <Sidebar
+            mail={mail}
+            drafts={drafts}
+            outbox={outbox}
+            view={view}
+            onView={changeView}
+            expanded
+            overlay
+            locked={false}
+            onToggleLock={() => {
+              setOverlay(false);
+              setLayout({ locked: true });
+            }}
+            onExpand={() => {}}
+            onSettings={(tab) => {
+              setOverlay(false);
+              setSettings(tab);
+            }}
+            onHelp={() => setHelp(true)}
+            onSync={syncNow}
+            syncing={busy}
+          />
+        </>
       )}
       {help && <ShortcutHelp onClose={() => setHelp(false)} />}
       {settings && (
@@ -456,6 +652,8 @@ export function App() {
           mail={mail}
           service={check}
           onRecheck={recheck}
+          layout={layout}
+          onLayout={setLayout}
           confirm={confirm}
           onClose={() => setSettings(null)}
         />
@@ -472,11 +670,11 @@ export function App() {
       {menu && <Menu request={menu} onClose={() => setMenu(null)} />}
       {picking && (
         <TimePicker
-          title="Snooze until"
-          confirm="Snooze"
-          initial={Date.now() + 24 * 3600_000}
+          title={picking.title}
+          confirm={picking.confirm}
+          initial={picking.initial}
           onAnswer={(time) => {
-            picking(time);
+            picking.resolve(time);
             setPicking(null);
           }}
         />
@@ -484,3 +682,4 @@ export function App() {
     </div>
   );
 }
+

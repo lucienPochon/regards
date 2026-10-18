@@ -29,10 +29,18 @@ export function hue(person: Person | null): number {
   return (hash >>> 0) % HUES;
 }
 
-/** A coloured circle with initials; Regards does not fetch pictures of people. */
-export function Avatar({ person, size = "md" }: { person: Person | null; size?: "sm" | "md" | "lg" }) {
+/** A coloured circle with initials, optionally ringed; Regards does not fetch pictures of people. */
+export function Avatar({
+  person,
+  size = "md",
+  ring = false,
+}: {
+  person: Person | null;
+  size?: "xs" | "sm" | "md" | "lg";
+  ring?: boolean;
+}) {
   return (
-    <span className={`avatar ${size} hue-${hue(person)}`} aria-hidden="true">
+    <span className={`avatar ${size} hue-${hue(person)}${ring ? " ring" : ""}`} aria-hidden="true">
       {initials(person)}
     </span>
   );

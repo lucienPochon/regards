@@ -1,20 +1,24 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { removeAccount, syncAccount } from "./accounts";
 import { AccountForm } from "./AccountForm";
 import { Avatar } from "./Avatar";
 import type { ConfirmRequest } from "./Confirm";
 import { Icon, type IconName } from "./icons";
+import type { Layout } from "./layout";
 import type { AccountMail, MailState, ServiceCheck } from "./mail";
 import { SHORTCUTS, useShortcuts } from "./shortcuts";
 import { type Theme, applyTheme, savedTheme } from "./theme";
 
 export type SettingsTab = "accounts" | "appearance" | "shortcuts" | "about";
 
-const TABS: { id: SettingsTab; label: string; icon: IconName }[] = [
-  { id: "accounts", label: "Accounts", icon: "user" },
-  { id: "appearance", label: "Appearance", icon: "sun" },
-  { id: "shortcuts", label: "Shortcuts", icon: "keyboard" },
-  { id: "about", label: "About", icon: "info" },
+/** Grouped as in the nav; each item has its own colour. */
+const GROUPS: { id: SettingsTab; label: string; icon: IconName; tone: string }[][] = [
+  [{ id: "accounts", label: "Accounts", icon: "user", tone: "tone-blue" }],
+  [
+    { id: "appearance", label: "Appearance", icon: "sun", tone: "tone-violet" },
+    { id: "shortcuts", label: "Shortcuts", icon: "keyboard", tone: "tone-amber" },
+  ],
+  [{ id: "about", label: "About", icon: "info", tone: "tone-green" }],
 ];
 
 export function Settings({
@@ -23,6 +27,8 @@ export function Settings({
   mail,
   service,
   onRecheck,
+  layout,
+  onLayout,
   confirm,
   onClose,
 }: {
@@ -31,10 +37,13 @@ export function Settings({
   mail: MailState;
   service: ServiceCheck;
   onRecheck: () => void;
+  layout: Layout;
+  onLayout: (change: Partial<Layout>) => void;
   confirm: (request: ConfirmRequest) => Promise<boolean>;
   onClose: () => void;
 }) {
   useShortcuts({ Escape: onClose }, { modal: true });
+  const me = mail.state === "ready" ? mail.accounts[0]?.account : undefined;
   return (
     <div className="backdrop" onMouseDown={onClose}>
       <section
@@ -45,18 +54,30 @@ export function Settings({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <nav className="settings-nav" aria-label="Settings">
-          <h2>Settings</h2>
-          {TABS.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              className={entry.id === tab ? "nav-item active" : "nav-item"}
-              aria-current={entry.id === tab ? "page" : undefined}
-              onClick={() => onTab(entry.id)}
-            >
-              <Icon name={entry.icon} />
-              <span className="label">{entry.label}</span>
-            </button>
+          <div className="settings-me">
+            {me ? <Avatar person={{ name: me.display_name, address: me.email }} size="md" /> : <Icon name="user" />}
+            <span>
+              <strong>{me?.display_name || "Regards"}</strong>
+              {me && <span className="muted">{me.email}</span>}
+            </span>
+          </div>
+          {GROUPS.map((group, index) => (
+            <div key={index} className="settings-group">
+              {group.map((entry) => (
+                <button
+                  key={entry.id}
+                  type="button"
+                  className={entry.id === tab ? "settings-item active" : "settings-item"}
+                  aria-current={entry.id === tab ? "page" : undefined}
+                  onClick={() => onTab(entry.id)}
+                >
+                  <span className={`settings-icon ${entry.tone}`}>
+                    <Icon name={entry.icon} size={18} />
+                  </span>
+                  {entry.label}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="settings-pane">
@@ -64,12 +85,57 @@ export function Settings({
             <Icon name="close" />
           </button>
           {tab === "accounts" && <AccountsTab mail={mail} confirm={confirm} />}
-          {tab === "appearance" && <AppearanceTab />}
+          {tab === "appearance" && <AppearanceTab layout={layout} onLayout={onLayout} />}
           {tab === "shortcuts" && <ShortcutsTab />}
           {tab === "about" && <AboutTab service={service} onRecheck={onRecheck} />}
         </div>
       </section>
     </div>
+  );
+}
+
+/** A setting: what it is on the left, the control on the right. */
+function Option({ icon, label, description, children }: { icon: IconName; label: string; description?: string; children: ReactNode }) {
+  return (
+    <div className="option">
+      <span className="option-icon">
+        <Icon name={icon} size={18} />
+      </span>
+      <span className="option-text">
+        <strong>{label}</strong>
+        {description && <span>{description}</span>}
+      </span>
+      <span className="option-control">{children}</span>
+    </div>
+  );
+}
+
+function Choice<T extends string>({
+  value,
+  options,
+  onChange,
+  label,
+}: {
+  value: T;
+  options: { id: T; label: string }[];
+  onChange: (value: T) => void;
+  label: string;
+}) {
+  return (
+    <span className="choice" role="radiogroup" aria-label={label}>
+      {options.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          role="radio"
+          aria-checked={value === option.id}
+          className={value === option.id ? "chosen" : undefined}
+          onClick={() => onChange(option.id)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </span>
   );
 }
 
@@ -147,7 +213,7 @@ function AccountRow({ entry, confirm }: { entry: AccountMail; confirm: (request:
 
   return (
     <li className="account-row">
-      <Avatar person={{ name: account.display_name, address: account.email }} size="lg" />
+      <Avatar person={{ name: account.display_name, address: account.email }} size="lg" ring />
       <div className="account-text">
         <strong>{account.display_name || account.email}</strong>
         <span className="muted">{account.email}</span>
@@ -166,38 +232,52 @@ function AccountRow({ entry, confirm }: { entry: AccountMail; confirm: (request:
   );
 }
 
-function AppearanceTab() {
+function AppearanceTab({ layout, onLayout }: { layout: Layout; onLayout: (change: Partial<Layout>) => void }) {
   const [theme, setTheme] = useState<Theme>(savedTheme);
-  const choose = (next: Theme) => {
-    setTheme(next);
-    applyTheme(next, true);
-  };
-  const options: { id: Theme; label: string }[] = [
-    { id: "system", label: "As the system" },
-    { id: "light", label: "Light" },
-    { id: "dark", label: "Dark" },
-  ];
   return (
     <>
       <h3>Appearance</h3>
-      <div className="theme-choice" role="radiogroup" aria-label="Theme">
-        {options.map((option) => (
-          <button
-            key={option.id}
-            type="button"
-            role="radio"
-            aria-checked={theme === option.id}
-            className={theme === option.id ? "theme-option chosen" : "theme-option"}
-            onClick={() => choose(option.id)}
-          >
-            <span className={`theme-swatch ${option.id}`} aria-hidden="true">
-              <span />
-              <span />
-            </span>
-            {option.label}
-          </button>
-        ))}
-      </div>
+      <Option icon="sun" label="Theme" description="Light, dark, or as this computer is set.">
+        <Choice
+          label="Theme"
+          value={theme}
+          options={[
+            { id: "system", label: "System" },
+            { id: "light", label: "Light" },
+            { id: "dark", label: "Dark" },
+          ]}
+          onChange={(next) => {
+            setTheme(next);
+            applyTheme(next, true);
+          }}
+        />
+      </Option>
+      <Option
+        icon={layout.mode === "split" ? "split" : "single"}
+        label="Layout"
+        description="A message opens in place of the list, or beside it."
+      >
+        <Choice
+          label="Layout"
+          value={layout.mode}
+          options={[
+            { id: "single", label: "In place" },
+            { id: "split", label: "Split view" },
+          ]}
+          onChange={(mode) => onLayout({ mode })}
+        />
+      </Option>
+      <Option icon="sidebar" label="Sidebar" description="Keep the folders open beside the mail, or fold them to icons (/).">
+        <Choice
+          label="Sidebar"
+          value={layout.locked ? "open" : "icons"}
+          options={[
+            { id: "icons", label: "Icons" },
+            { id: "open", label: "Open" },
+          ]}
+          onChange={(value) => onLayout({ locked: value === "open" })}
+        />
+      </Option>
     </>
   );
 }

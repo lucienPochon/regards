@@ -2,16 +2,18 @@ import { useEffect, useState } from "react";
 
 /** The window's layout, remembered on this computer. */
 export interface Layout {
-  /** Folder names hidden (icons only); null follows the window's width. */
-  rail: boolean | null;
-  /** The message column's width in pixels. */
+  /** "single": a message opens in place of the list; "split": the list and the message side by side. */
+  mode: "single" | "split";
+  /** The sidebar kept open beside the content; otherwise it is a rail of icons that opens over the content. */
+  locked: boolean;
+  /** The message list's width in split view, in pixels. */
   listWidth: number;
 }
 
 const KEY = "regards.layout";
-export const LIST_MIN = 300;
-export const LIST_MAX = 620;
-const DEFAULT: Layout = { rail: null, listWidth: 380 };
+export const LIST_MIN = 320;
+export const LIST_MAX = 640;
+const DEFAULT: Layout = { mode: "single", locked: false, listWidth: 420 };
 
 export const clampList = (width: number) => Math.round(Math.min(LIST_MAX, Math.max(LIST_MIN, width)));
 
@@ -19,7 +21,8 @@ function load(): Layout {
   try {
     const saved = JSON.parse(window.localStorage.getItem(KEY) ?? "null") as Partial<Layout> | null;
     return {
-      rail: typeof saved?.rail === "boolean" ? saved.rail : null,
+      mode: saved?.mode === "split" ? "split" : "single",
+      locked: saved?.locked === true,
       listWidth: typeof saved?.listWidth === "number" ? clampList(saved.listWidth) : DEFAULT.listWidth,
     };
   } catch {
@@ -37,16 +40,4 @@ export function useLayout(): [Layout, (change: Partial<Layout>) => void] {
     }
   }, [layout]);
   return [layout, (change) => setLayout((current) => ({ ...current, ...change }))];
-}
-
-export function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const list = window.matchMedia(query);
-    const update = () => setMatches(list.matches);
-    update();
-    list.addEventListener("change", update);
-    return () => list.removeEventListener("change", update);
-  }, [query]);
-  return matches;
 }

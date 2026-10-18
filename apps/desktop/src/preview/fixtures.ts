@@ -154,6 +154,8 @@ interface Spec {
   remote?: number;
   files?: Attachment[];
   thread?: string;
+  pinned?: boolean;
+  aside?: boolean;
 }
 
 const SPECS: Spec[] = [
@@ -200,6 +202,7 @@ const SPECS: Spec[] = [
     ago: 5 * HOUR,
     from: priya,
     subject: "Dinner on Thursday?",
+    pinned: true,
     text: "Hi Sam,\n\nAre you free on Thursday evening? We're trying the new place by the river around 19:30. Bring Lena if she's around!\n\nPriya",
     flagged: true,
     answered: true,
@@ -225,6 +228,7 @@ const SPECS: Spec[] = [
     ago: 29 * HOUR,
     from: tomas,
     subject: "Re: Quote for the bathroom tiles",
+    pinned: true,
     text: "Hello Sam,\n\nAs promised, the quote for the tiles and the labour is attached. The matte grey you liked is in stock until the end of the month.\n\nBest regards,\nTomás Herrera",
     seen: false,
     flagged: true,
@@ -246,7 +250,7 @@ const SPECS: Spec[] = [
     subject: "Your parcel is out for delivery",
     text: "Your parcel 3S-88213 will be delivered today between 10:00 and 13:00.",
   },
-  { mailbox: 1, ago: 4 * DAY, from: pool, subject: "Winter opening hours", text: "From 2 November the pool opens at 07:00 on weekdays." },
+  { mailbox: 1, ago: 4 * DAY, from: pool, subject: "Winter opening hours", aside: true, text: "From 2 November the pool opens at 07:00 on weekdays." },
   {
     mailbox: 1,
     ago: 5 * DAY,
@@ -255,7 +259,7 @@ const SPECS: Spec[] = [
     text: "We're throwing Anna a surprise party on the 14th. Not a word to her! Details to follow.",
     seen: false,
   },
-  { mailbox: 1, ago: 6 * DAY, from: kiln, subject: "Your pottery class is confirmed", text: "See you on Wednesday at 19:00. Wear clothes that can get muddy." },
+  { mailbox: 1, ago: 6 * DAY, from: kiln, subject: "Your pottery class is confirmed", aside: true, text: "See you on Wednesday at 19:00. Wear clothes that can get muddy." },
   { mailbox: 1, ago: 8 * DAY, from: daniel, subject: "Bike for sale — still available?", text: "Hi, is the city bike still for sale? I could come by on the weekend." },
   {
     mailbox: 1,
@@ -384,5 +388,7 @@ export function fixtureMessages(now: number, accounts: FixtureAccount[]): Fixtur
       remote_images: spec.remote ?? 0,
       attachments: spec.files ?? [],
       thread: spec.thread ?? `single-${index}`,
+      pinned: spec.pinned ?? false,
+      aside: spec.aside ?? false,
     }));
 }

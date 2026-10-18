@@ -13,12 +13,11 @@ import {
 import { type Action, type Target, actionKeys, choose } from "./actions";
 import { Avatar } from "./Avatar";
 import { useChanges } from "./changes";
-import { fileKind, fileSize, fullDate, peopleFull, peopleShort, personName } from "./format";
+import { fileKind, fileSize, fullDate, peopleFull, personName } from "./format";
 import { Icon } from "./icons";
 import type { ListItem } from "./mail";
 import { type MenuEntry, type MenuRequest, anchorOf } from "./Menu";
 import { useShortcuts } from "./shortcuts";
-import { leafName } from "./views";
 
 type Load = { state: "loading" } | { state: "ready"; detail: MessageDetail } | { state: "failed"; message: string };
 
@@ -48,23 +47,36 @@ function useDetail(id: number, enabled: boolean): Load {
   return load;
 }
 
+/** Up to two names, then "+N": "Ada, Bob +3". */
+function recipients(people: Person[]): string {
+  if (people.length === 0) return "";
+  const names = people.slice(0, 2).map((person) => personName(person));
+  return people.length > 2 ? `${names.join(", ")} +${people.length - 2}` : names.join(", ");
+}
+
 /**
- * The open message and the rest of its conversation, oldest first. The open
- * one is expanded; the others are a line each until clicked.
+ * The open message and the rest of its conversation, oldest first, as cards.
+ * The open one is expanded; the others are one line each until clicked.
  */
 export function ReadingPane({
   item,
   folders,
+  mode,
   actionsFor,
   onMenu,
   onClose,
+  onStep,
 }: {
   item: ListItem;
   /** The folders of the message's account. */
   folders: MailboxSummary[];
+  /** "single": the message is shown in place of the list, with a way back. */
+  mode: "single" | "split";
   actionsFor: (target: Target) => Action[];
   onMenu: (request: MenuRequest) => void;
   onClose: () => void;
+  /** The next (1) or previous (-1) message of the list, when the list is not beside it. */
+  onStep?: (by: number) => void;
 }) {
   const load = useDetail(item.id, true);
   const [thread, setThread] = useState<ThreadEntry[]>([]);
@@ -109,7 +121,12 @@ export function ReadingPane({
     snoozed: message.snoozed_until !== null,
   };
   const actions = actionsFor(target);
-  useShortcuts({ Escape: onClose, ...(load.state === "ready" ? actionKeys(actions) : {}) });
+  const done = choose(actions, "archive")[0];
+  useShortcuts({
+    Escape: onClose,
+    ...(onStep ? { j: () => onStep(1), k: () => onStep(-1) } : {}),
+    ...(load.state === "ready" ? actionKeys(actions) : {}),
+  });
 
   const entries: ThreadEntry[] =
     thread.length > 0 && thread.some((entry) => entry.message.id === item.id)
@@ -133,38 +150,71 @@ export function ReadingPane({
       aria-label={action.label}
       aria-pressed={action.id === "flag" ? message.flagged : action.id === "pin" ? message.pinned : undefined}
       disabled={load.state !== "ready"}
-      onClick={(event) => action.run(anchorOf(event.currentTarget))}
+      onClick={(event) => action.run(anchorOf(event.currentTarget, "end"))}
     >
       <Icon name={action.icon} />
     </button>
   );
+  const more = (button: HTMLElement) => {
+    const at = anchorOf(button, "end");
+    onMenu({
+      anchor: at,
+      label: "More",
+      entries: [
+        ...choose(actions, "reply", "replyAll", "forward").map((action) => ({
+          label: action.label,
+          icon: action.icon,
+          hint: action.keys[0],
+          onSelect: () => action.run(at),
+        })),
+        "separator",
+        ...choose(actions, "archive").map((action) => ({
+          label: action.label,
+          icon: action.icon,
+          hint: action.keys[0],
+          onSelect: () => action.run(at),
+        })),
+      ],
+    });
+  };
 
   return (
-    <section className="reader" aria-label="Message">
+    <section className={`reader ${mode}`} aria-label="Message">
       <header className="reader-bar" role="toolbar" aria-label="Message actions">
-        {choose(actions, "archive", "snooze", "move", "delete").map(tool)}
-        <span className="sep" />
-        {choose(actions, "pin", "aside", "unread", "read", "flag").map(tool)}
-        <span className="spacer" />
-        {choose(actions, "reply", "replyAll", "forward").map(tool)}
-        <span className="sep" />
-        <button type="button" className="icon-btn" title="Close (Esc)" aria-label="Close" onClick={onClose}>
-          <Icon name="close" />
-        </button>
+        <div className="segmented">
+          <button
+            type="button"
+            title={mode === "single" ? "Back to the list (Esc)" : "Close (Esc)"}
+            aria-label={mode === "single" ? "Back to the list" : "Close"}
+            onClick={onClose}
+          >
+            <Icon name={mode === "single" ? "back" : "close"} size={16} />
+          </button>
+          {done && (
+            <button
+              type="button"
+              title={`${done.label} (${done.keys[0]})`}
+              aria-label={done.label}
+              disabled={load.state !== "ready"}
+              onClick={() => done.run(null)}
+            >
+              <Icon name="check" size={16} />
+            </button>
+          )}
+        </div>
+        <h1 className="reader-subject" title={message.subject}>
+          {message.subject || "(no subject)"}
+        </h1>
+        <div className="reader-tools">
+          {choose(actions, "aside", "flag", "unread", "read", "pin", "delete", "snooze", "move").map(tool)}
+          <button type="button" className="icon-btn" title="More" aria-label="More" onClick={(event) => more(event.currentTarget)}>
+            <Icon name="more" />
+          </button>
+        </div>
       </header>
       <div className="reader-scroll">
-        <h1 className="reader-subject">{message.subject || "(no subject)"}</h1>
-        <div className="reader-meta">
-          {folder && (
-            <span className="chip">
-              <Icon name="folder" size={13} />
-              {leafName(folder)}
-            </span>
-          )}
-          {entries.length > 1 && <span className="chip">{entries.length} messages</span>}
-        </div>
         {load.state === "failed" ? (
-          <p className="error">{load.message}</p>
+          <p className="error reader-error">{load.message}</p>
         ) : (
           <ol className="thread">
             {entries.map((entry) => {
@@ -185,16 +235,6 @@ export function ReadingPane({
               );
             })}
           </ol>
-        )}
-        {load.state === "ready" && (
-          <div className="reply-row">
-            {choose(actions, "reply", "replyAll", "forward").map((action) => (
-              <button key={action.id} type="button" className="pill" onClick={() => action.run(null)}>
-                <Icon name={action.icon} size={16} />
-                {action.label}
-              </button>
-            ))}
-          </div>
         )}
       </div>
     </section>
@@ -232,15 +272,16 @@ function ThreadMessage({
   const [details, setDetails] = useState(false);
   const { message } = entry;
   const ready = load.state === "ready" ? load.detail : null;
+  const when = fullDate(message.sent_at ?? message.received_at);
 
   if (!expanded) {
     return (
       <li className="mail-card collapsed" ref={ref}>
         <button type="button" className="mail-line" onClick={onToggle ?? undefined}>
-          <Avatar person={message.from} size="sm" />
+          <Avatar person={message.from} size="sm" ring />
           <span className={message.seen ? "who" : "who unread"}>{personName(message.from)}</span>
           {otherFolder && entry.mailbox_name && <span className="chip">{entry.mailbox_name}</span>}
-          <span className="when">{fullDate(message.sent_at ?? message.received_at)}</span>
+          <span className="when">{when}</span>
         </button>
       </li>
     );
@@ -259,65 +300,53 @@ function ThreadMessage({
     snoozed: (ready?.message.snoozed_until ?? message.snoozed_until) !== null,
   });
   const more = (button: HTMLElement) => {
-    const entries: MenuEntry[] = [
-      ...choose(actions, "replyAll", "forward").map((action) => ({
-        label: action.label,
-        icon: action.icon,
-        onSelect: () => action.run(null),
-      })),
-      "separator",
-    ];
+    const entries: MenuEntry[] = [];
     if (ready?.has_html) {
-      entries.push({
-        label: showText ? "Show formatted" : "Show plain text",
-        icon: "text",
-        onSelect: () => setShowText(!showText),
-      });
+      entries.push({ label: showText ? "Show formatted" : "Show plain text", icon: "text", onSelect: () => setShowText(!showText) });
     }
     entries.push({ label: details ? "Hide details" : "Show details", icon: "info", onSelect: () => setDetails(!details) });
+    entries.push("separator");
     for (const action of choose(actions, "unread", "flag", "pin")) {
-      entries.push({ label: action.label, icon: action.icon, onSelect: () => action.run(null) });
+      entries.push({ label: action.label, icon: action.icon, hint: action.keys[0], onSelect: () => action.run(null) });
     }
     onMenu({ anchor: anchorOf(button, "end"), entries, label: "More" });
   };
-  const reply = choose(actions, "reply")[0];
   const to = ready?.to ?? [];
   const cc = ready?.cc ?? [];
   const attachments = ready?.attachments.filter((a) => !a.inline) ?? [];
+  const total = attachments.reduce((sum, a) => sum + a.size, 0);
 
   return (
     <li className="mail-card" ref={ref}>
       <div className="mail-head">
-        <Avatar person={message.from} size="lg" />
+        <Avatar person={message.from} size="md" ring />
         <button
           type="button"
           className="mail-who"
           onClick={onToggle ?? (() => setDetails(!details))}
-          aria-expanded={onToggle ? true : details}
+          title={message.from?.address ?? undefined}
         >
-          <span className="mail-from">
-            <strong>{personName(message.from)}</strong>
-            {message.from?.name && message.from.address && <span className="addr">{message.from.address}</span>}
-          </span>
-          <span className="mail-to">
-            {to.length > 0 ? `to ${peopleShort(to)}` : ready ? "to undisclosed recipients" : " "}
-            {cc.length > 0 && `, cc ${peopleShort(cc)}`}
-          </span>
+          <strong>{personName(message.from)}</strong>
+          {ready && (
+            <span className="mail-to">
+              {to.length > 0 ? (
+                <>
+                  to <span className="people">{recipients(to)}</span>
+                </>
+              ) : (
+                "to undisclosed recipients"
+              )}
+              {cc.length > 0 && (
+                <>
+                  , cc <span className="people">{recipients(cc)}</span>
+                </>
+              )}
+            </span>
+          )}
         </button>
-        <time className="when">{fullDate(message.sent_at ?? message.received_at)}</time>
-        {reply && (
-          <button type="button" className="icon-btn" title="Reply" aria-label="Reply" onClick={() => reply.run(null)}>
-            <Icon name="reply" />
-          </button>
-        )}
-        <button
-          type="button"
-          className="icon-btn"
-          title="More"
-          aria-label="More"
-          onClick={(event) => more(event.currentTarget)}
-        >
-          <Icon name="more" />
+        <time className="when">{when}</time>
+        <button type="button" className="icon-btn small" title="More" aria-label="More" onClick={(event) => more(event.currentTarget)}>
+          <Icon name="more" size={16} />
         </button>
       </div>
       {details && ready && <Details detail={ready} />}
@@ -351,21 +380,48 @@ function ThreadMessage({
               <pre className="text-body">{ready.text.trim() || "(no text)"}</pre>
             )}
             {attachments.length > 0 && (
-              <ul className="attachments" aria-label="Attachments">
-                {attachments.map((attachment, index) => (
-                  <li key={`${index}-${attachment.name ?? ""}`} className="attachment">
-                    <span className="file-kind">{fileKind(attachment.name, attachment.mime)}</span>
-                    <span className="file-text">
-                      <span className="file-name">{attachment.name ?? "(unnamed)"}</span>
-                      <span className="file-size">{fileSize(attachment.size)}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <div className="attachments">
+                <p className="attachments-head">
+                  <Icon name="paperclip" size={15} />
+                  <strong>
+                    {attachments.length} {attachments.length === 1 ? "attachment" : "attachments"}
+                  </strong>
+                  <span className="muted">{fileSize(total)}</span>
+                </p>
+                <ul className="tiles">
+                  {attachments.map((attachment, index) => (
+                    <li key={`${index}-${attachment.name ?? ""}`} className="tile">
+                      <span className="tile-face">{fileKind(attachment.name, attachment.mime)}</span>
+                      <span className="tile-name" title={attachment.name ?? undefined}>
+                        {attachment.name ?? "(unnamed)"}
+                      </span>
+                      <span className="tile-size">
+                        {fileKind(attachment.name, attachment.mime)} · {fileSize(attachment.size)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </>
         )}
       </div>
+      {ready && (
+        <div className="mail-foot">
+          {choose(actions, "reply", "replyAll", "forward").map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              className="icon-btn"
+              title={`${action.label} (${action.keys[0]})`}
+              aria-label={action.label}
+              onClick={() => action.run(null)}
+            >
+              <Icon name={action.icon} />
+            </button>
+          ))}
+        </div>
+      )}
     </li>
   );
 }
