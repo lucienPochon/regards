@@ -176,6 +176,16 @@ where
                 _ => format!("{tag} OK Done\r\n"),
             },
             Some("FETCH") => format!("{tag} OK Fetch completed\r\n"),
+            // Nothing ever changes here: wait for DONE, then complete.
+            Some("IDLE") => {
+                if write.write_all(b"+ idling\r\n").await.is_err() {
+                    break;
+                }
+                if read_command(&mut read, &mut write).await.is_none() {
+                    break;
+                }
+                format!("{tag} OK Idle completed\r\n")
+            }
             Some("LOGOUT") => {
                 let _ = write
                     .write_all(format!("* BYE Logging out\r\n{tag} OK Logout completed\r\n").as_bytes())

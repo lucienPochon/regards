@@ -60,6 +60,8 @@ export interface SyncState {
   running: boolean;
   last_success_at: number | null;
   last_error: string | null;
+  /** A push connection is waiting for new mail. */
+  push_active: boolean;
 }
 
 export interface MailboxListResult {

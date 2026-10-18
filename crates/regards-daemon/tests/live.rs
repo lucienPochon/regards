@@ -187,9 +187,32 @@ async fn live_sync_follows_new_flagged_expunged_and_reset_mailboxes() {
     assert_eq!(reunion.from.as_ref().unwrap().name.as_deref(), Some("Renée"));
     assert_eq!(messages(&mut desktop, projects).await.messages.len(), 1);
 
+    // Push: new mail shows up without asking for a sync (Phase 1 exit criterion: under 5 s).
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !folders(&mut desktop, &account.id).await.sync.push_active {
+        assert!(Instant::now() < deadline, "the push connection did not start");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let sent = Instant::now();
+    seed.append(b"INBOX", &[], &message(8, "Pushed", "eve@example.test"))
+        .await
+        .unwrap();
+    loop {
+        let page = messages(&mut desktop, inbox).await;
+        if page.messages.iter().any(|m| m.subject == "Pushed") {
+            break;
+        }
+        assert!(
+            sent.elapsed() < Duration::from_secs(5),
+            "new mail did not arrive by push within 5 s"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    println!("push latency: {:?}", sent.elapsed());
+
     // Change things on the server.
     let selected = seed.select(b"INBOX").await.unwrap();
-    assert_eq!(selected.exists, 3);
+    assert_eq!(selected.exists, 4);
     let uids = seed.uid_search_all().await.unwrap();
     seed.store_flags(&uids[0].to_string(), true, &[SystemFlag::Flagged])
         .await
@@ -212,14 +235,13 @@ async fn live_sync_follows_new_flagged_expunged_and_reset_mailboxes() {
         .unwrap();
 
     let result = sync(&mut desktop, &account.id).await;
-    assert_eq!(result.messages_removed, 1, "{result:?}");
-    assert!(result.flag_changes >= 1, "{result:?}");
+    // Push may already have applied the inbox changes, so check the result, not the counts.
     assert_eq!(result.unreadable, 0);
 
     let page = messages(&mut desktop, inbox).await;
     let subjects: Vec<&str> = page.messages.iter().map(|m| m.subject.as_str()).collect();
-    assert_eq!(subjects, ["Fresh", "Réunion", "Plain"]);
-    assert!(page.messages[2].flagged, "the flag set on the server arrived");
+    assert_eq!(subjects, ["Fresh", "Pushed", "Réunion", "Plain"]);
+    assert!(page.messages[3].flagged, "the flag set on the server arrived");
 
     let projects = folders(&mut desktop, &account.id)
         .await
@@ -264,7 +286,7 @@ async fn live_sync_follows_new_flagged_expunged_and_reset_mailboxes() {
         )
         .await
         .unwrap();
-    assert_eq!(rest.messages.len(), 1);
+    assert_eq!(rest.messages.len(), 2);
     assert!(rest.next.is_none());
 
     seed.logout().await;

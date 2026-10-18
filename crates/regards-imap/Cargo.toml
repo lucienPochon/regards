@@ -18,6 +18,7 @@ imap-types = "=2.0.0-alpha.7"
 # `alloc` items, so it does not build on its own (spike 07 §5 item 1).
 nom = { version = "7", default-features = false, features = ["alloc"] }
 rustls-platform-verifier = "0.7"
+futures-util.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-rustls.workspace = true

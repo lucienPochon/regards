@@ -6,6 +6,7 @@
 
 mod accounts;
 mod mail;
+mod push;
 mod session;
 mod sync;
 
@@ -52,6 +53,8 @@ pub(crate) struct State {
     pub(crate) imap_tls: TlsOptions,
     /// Sync progress per account.
     pub(crate) sync: sync::Tracker,
+    /// The IDLE connections, one per account.
+    pub(crate) watchers: push::Watchers,
 }
 
 /// A daemon that holds its data-directory lock and is listening, but not yet serving.
@@ -161,6 +164,7 @@ impl Daemon {
             vault: OnceCell::new_with(vault.map(Ok)),
             imap_tls,
             sync: sync::Tracker::default(),
+            watchers: push::Watchers::default(),
         });
         sync::spawn_all(Arc::clone(&state));
         tracing::info!(%endpoint, "daemon listening");
@@ -188,6 +192,7 @@ impl Daemon {
         }
 
         tracing::info!("daemon stopping");
+        state.watchers.stop_all();
         drop(listener);
         // Releasing the lock last lets a replacement daemon start only after we stopped listening.
         drop(lock);

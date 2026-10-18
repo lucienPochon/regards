@@ -272,6 +272,9 @@ pub struct SyncState {
     pub last_success_at: Option<i64>,
     /// Why the last sync failed, if it did.
     pub last_error: Option<String>,
+    /// A push connection is waiting for new mail (IMAP IDLE), so changes arrive within seconds.
+    #[serde(default)]
+    pub push_active: bool,
 }
 
 /// A mailbox as clients see it.

@@ -299,9 +299,11 @@ function AccountRow({
     ? "Syncing…"
     : sync?.last_error
       ? `Sync failed: ${sync.last_error}`
-      : sync?.last_success_at
-        ? `Synced at ${new Date(sync.last_success_at).toLocaleTimeString()}`
-        : "Not synced yet";
+      : sync?.push_active
+        ? "Live: new mail arrives as it comes in"
+        : sync?.last_success_at
+          ? `Synced at ${new Date(sync.last_success_at).toLocaleTimeString()}`
+          : "Not synced yet";
 
   return (
     <li className="account">

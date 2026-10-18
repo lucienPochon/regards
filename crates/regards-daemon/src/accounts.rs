@@ -94,6 +94,7 @@ pub(crate) async fn remove(state: &State, params: AccountRemoveParams) -> Result
         Err(error) => tracing::warn!(account = %id, ?error, "account removed, but the credential store is unavailable"),
     }
     state.sync.forget(&id);
+    state.watchers.stop(&id);
     tracing::info!(account = %id, "account removed");
     Ok(json!({ "removed": true }))
 }

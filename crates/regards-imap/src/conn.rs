@@ -6,6 +6,7 @@ use imap_next::stream::{Error as StreamError, Stream};
 use imap_types::command::{Command, CommandBody};
 use imap_types::core::{Tag, TagGenerator};
 use imap_types::response::{Data, Greeting, Status, StatusBody, Tagged};
+use std::future::Future;
 use std::time::Duration;
 
 /// How long one command may take before the connection is considered stuck.
@@ -113,6 +114,76 @@ impl Conn {
             }
         }
     }
+}
+
+/// Why an IDLE ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdleEnd {
+    /// The server reported new, changed or removed messages.
+    Changed,
+    /// The time limit passed without changes; IDLE again to keep the session alive.
+    Timeout,
+    /// The caller asked to stop.
+    Stopped,
+}
+
+impl Conn {
+    /// Wait in IDLE (RFC 2177) until the server reports a change, `max`
+    /// passes, or `stop` completes; then end IDLE cleanly.
+    pub(crate) async fn idle(&mut self, max: Duration, stop: impl Future<Output = ()>) -> Result<IdleEnd, ImapError> {
+        let tag = self.tags.generate();
+        self.client.enqueue_command(Command {
+            tag: tag.clone(),
+            body: CommandBody::Idle,
+        });
+        tokio::time::timeout(COMMAND_TIMEOUT, async {
+            loop {
+                match self.stream.next(&mut self.client).await.map_err(stream_error)? {
+                    Event::IdleAccepted { .. } => return Ok(()),
+                    Event::IdleRejected { status, .. } => {
+                        return Err(ImapError::Protocol(format!("the server refused IDLE: {status:?}")));
+                    }
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .map_err(|_| ImapError::Timeout("starting IDLE"))??;
+
+        tokio::pin!(stop);
+        let deadline = tokio::time::sleep(max);
+        tokio::pin!(deadline);
+        let end = loop {
+            // Dropping an in-flight `next()` is safe: imap-next keeps its state
+            // in `client` (verified in spike 07, "IDLE cancel").
+            tokio::select! {
+                event = self.stream.next(&mut self.client) => match event.map_err(stream_error)? {
+                    Event::DataReceived { data } if is_change(&data) => break IdleEnd::Changed,
+                    Event::StatusReceived { status: Status::Bye(_) } => {
+                        return Err(ImapError::Protocol("the server ended the connection".into()));
+                    }
+                    _ => {}
+                },
+                () = &mut deadline => break IdleEnd::Timeout,
+                () = &mut stop => break IdleEnd::Stopped,
+            }
+        };
+        self.client.set_idle_done();
+        let reply = tokio::time::timeout(COMMAND_TIMEOUT, self.finish(&tag, false))
+            .await
+            .map_err(|_| ImapError::Timeout("ending IDLE"))??;
+        if reply.done.kind != imap_types::response::StatusKind::Ok {
+            return Err(ImapError::Protocol("IDLE did not end cleanly".into()));
+        }
+        Ok(end)
+    }
+}
+
+fn is_change(data: &Data<'_>) -> bool {
+    matches!(
+        data,
+        Data::Exists(_) | Data::Expunge(_) | Data::Fetch { .. } | Data::Vanished { .. }
+    )
 }
 
 fn stream_error(error: StreamError<imap_next::client::Error>) -> ImapError {

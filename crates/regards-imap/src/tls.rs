@@ -61,7 +61,7 @@ pub(crate) async fn connect(host: &str, port: u16, options: &TlsOptions) -> Resu
         .map_err(|_| ImapError::Connect(format!("{host:?} is not a valid server name")))?;
     let connector = TlsConnector::from(options.client_config()?);
     let handshake = async {
-        let tcp = TcpStream::connect((host, port))
+        let tcp = connect_tcp(host, port)
             .await
             .map_err(|error| ImapError::Connect(format!("cannot reach {host}:{port}: {error}")))?;
         tcp.set_nodelay(true).ok();
@@ -79,4 +79,107 @@ pub(crate) async fn connect(host: &str, port: u16, options: &TlsOptions) -> Resu
     tokio::time::timeout(CONNECT_TIMEOUT, handshake)
         .await
         .map_err(|_| ImapError::Timeout("connecting"))?
+}
+
+/// Delay before also trying the next address while earlier attempts are pending (RFC 8305 §5).
+const ATTEMPT_DELAY: Duration = Duration::from_millis(250);
+
+/// Connect to the first address that answers ("Happy Eyeballs", RFC 8305):
+/// addresses alternate between IPv6 and IPv4, and a new attempt starts every
+/// 250 ms until one succeeds, so a broken IPv6 route costs 250 ms, not seconds.
+async fn connect_tcp(host: &str, port: u16) -> std::io::Result<TcpStream> {
+    use futures_util::stream::{FuturesUnordered, StreamExt};
+
+    let addresses = interleave(tokio::net::lookup_host((host, port)).await?.collect());
+    let mut remaining = addresses.into_iter();
+    let Some(first) = remaining.next() else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "the name has no addresses",
+        ));
+    };
+    let mut attempts = FuturesUnordered::new();
+    attempts.push(TcpStream::connect(first));
+    loop {
+        let more = remaining.len() > 0;
+        tokio::select! {
+            Some(result) = attempts.next() => match result {
+                Ok(stream) => return Ok(stream),
+                Err(error) => {
+                    if attempts.is_empty() {
+                        match remaining.next() {
+                            Some(next) => attempts.push(TcpStream::connect(next)),
+                            None => return Err(error),
+                        }
+                    }
+                }
+            },
+            () = tokio::time::sleep(ATTEMPT_DELAY), if more => {
+                if let Some(next) = remaining.next() {
+                    attempts.push(TcpStream::connect(next));
+                }
+            }
+        }
+    }
+}
+
+/// Alternate address families, starting with the resolver's first choice.
+fn interleave(addresses: Vec<std::net::SocketAddr>) -> Vec<std::net::SocketAddr> {
+    let Some(first) = addresses.first() else {
+        return addresses;
+    };
+    let first_is_v6 = first.is_ipv6();
+    let (mut preferred, mut other): (Vec<_>, Vec<_>) = addresses
+        .iter()
+        .copied()
+        .partition(|address| address.is_ipv6() == first_is_v6);
+    let mut ordered = Vec::with_capacity(addresses.len());
+    preferred.reverse();
+    other.reverse();
+    while let Some(address) = preferred.pop() {
+        ordered.push(address);
+        if let Some(address) = other.pop() {
+            ordered.push(address);
+        }
+    }
+    ordered.extend(other.into_iter().rev());
+    ordered
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::SocketAddr;
+
+    #[test]
+    fn families_alternate_from_the_first_choice() {
+        let parse = |list: &[&str]| {
+            list.iter()
+                .map(|a| a.parse::<SocketAddr>().unwrap())
+                .collect::<Vec<_>>()
+        };
+        let input = parse(&["[::1]:993", "[::2]:993", "[::3]:993", "127.0.0.1:993", "127.0.0.2:993"]);
+        let expected = parse(&["[::1]:993", "127.0.0.1:993", "[::2]:993", "127.0.0.2:993", "[::3]:993"]);
+        assert_eq!(interleave(input), expected);
+        let v4_first = parse(&["127.0.0.1:993", "[::1]:993", "[::2]:993"]);
+        assert_eq!(
+            interleave(v4_first.clone()),
+            parse(&["127.0.0.1:993", "[::1]:993", "[::2]:993"])
+        );
+        assert!(interleave(vec![]).is_empty());
+    }
+
+    #[tokio::test]
+    async fn localhost_connects_quickly_when_only_ipv4_listens() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let started = std::time::Instant::now();
+        connect_tcp("localhost", port).await.unwrap();
+        // Sequential connects take about 2 s on Windows when ::1 is tried first.
+        assert!(
+            started.elapsed() < Duration::from_millis(1500),
+            "{:?}",
+            started.elapsed()
+        );
+    }
 }

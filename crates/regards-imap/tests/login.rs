@@ -271,3 +271,57 @@ async fn live_server_message_operations() {
     assert_eq!(session.uid_search_all().await.unwrap(), &uids[..2]);
     session.logout().await;
 }
+
+/// IDLE push and clean stop against a real server.
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_server_idle_reports_new_mail_and_stops_cleanly() {
+    let address = std::env::var("REGARDS_TEST_IMAP").unwrap();
+    let (host, port) = address.rsplit_once(':').unwrap();
+    let ca = std::fs::read(std::env::var("REGARDS_TEST_IMAP_CA").unwrap()).unwrap();
+    let tls = TlsOptions::platform().with_extra_roots_pem(&ca).unwrap();
+    let server = ImapServer {
+        host: host.into(),
+        port: port.parse().unwrap(),
+    };
+    let user = format!("idle-{}", std::process::id());
+    let password = Secret::new(std::env::var("REGARDS_TEST_IMAP_PASSWORD").unwrap_or_else(|_| "pass".into()));
+    let mut watcher = Session::login(&server, &user, &password, &tls).await.unwrap();
+    watcher.select(b"INBOX").await.unwrap();
+
+    let mut sender = Session::login(&server, &user, &password, &tls).await.unwrap();
+    let appended = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let at = std::time::Instant::now();
+        sender
+            .append(b"INBOX", &[], b"Subject: ping\r\nFrom: a@example.test\r\n\r\nhi\r\n")
+            .await
+            .unwrap();
+        sender.logout().await;
+        at
+    });
+    let end = watcher
+        .idle(std::time::Duration::from_secs(20), std::future::pending())
+        .await
+        .unwrap();
+    let latency = appended.await.unwrap().elapsed();
+    assert_eq!(end, regards_imap::IdleEnd::Changed);
+    assert!(latency < std::time::Duration::from_secs(5), "push took {latency:?}");
+
+    let started = std::time::Instant::now();
+    let end = watcher
+        .idle(
+            std::time::Duration::from_secs(60),
+            tokio::time::sleep(std::time::Duration::from_millis(200)),
+        )
+        .await
+        .unwrap();
+    assert_eq!(end, regards_imap::IdleEnd::Stopped);
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    assert_eq!(
+        watcher.uid_search_all().await.unwrap().len(),
+        1,
+        "the session still works after DONE"
+    );
+    watcher.logout().await;
+}

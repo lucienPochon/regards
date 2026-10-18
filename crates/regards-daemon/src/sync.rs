@@ -67,6 +67,11 @@ impl Tracker {
         self.lock().remove(account_id);
     }
 
+    /// Record whether a push connection is waiting for new mail.
+    pub(crate) fn set_push(&self, account_id: &str, active: bool) {
+        self.lock().entry(account_id.to_owned()).or_default().push_active = active;
+    }
+
     /// Mark a sync as started; `false` if one is already running.
     fn start(&self, account_id: &str) -> bool {
         let mut states = self.lock();
@@ -119,13 +124,18 @@ pub(crate) fn spawn_all(state: Arc<State>) {
     });
 }
 
+/// Sync an account in the background; once a sync succeeds, keep a push
+/// connection open for it.
 pub(crate) fn spawn_one(state: Arc<State>, account_id: String) {
     tokio::spawn(async move {
-        sync_account(&state, &account_id).await;
+        if let Some(Ok(_)) = sync_account(&state, &account_id).await {
+            state.watchers.start(&state, &account_id);
+        }
     });
 }
 
-async fn run(state: &State, account_id: &str) -> Result<Summary, SyncError> {
+/// Sign in to an account's IMAP server with its stored password.
+pub(crate) async fn login(state: &State, account_id: &str) -> Result<Session, SyncError> {
     let id = account_id.to_owned();
     let account = state
         .store
@@ -145,8 +155,12 @@ async fn run(state: &State, account_id: &str) -> Result<Summary, SyncError> {
         host: account.imap.host.clone(),
         port: account.imap.port,
     };
-    let mut session = Session::login(&server, &account.username, &password, &state.imap_tls).await?;
-    let outcome = sync_with(state, &mut session, &account.id).await;
+    Ok(Session::login(&server, &account.username, &password, &state.imap_tls).await?)
+}
+
+async fn run(state: &State, account_id: &str) -> Result<Summary, SyncError> {
+    let mut session = login(state, account_id).await?;
+    let outcome = sync_with(state, &mut session, account_id).await;
     session.logout().await;
     outcome
 }
@@ -273,14 +287,18 @@ pub(crate) fn plan(stored: &Stored, selected: &Selected, condstore: bool) -> Pla
 
 /// What syncing one mailbox changed.
 #[derive(Debug, Clone, Copy, Default)]
-struct Changes {
-    messages_added: usize,
-    flag_changes: usize,
-    messages_removed: usize,
-    unreadable: usize,
+pub(crate) struct Changes {
+    pub(crate) messages_added: usize,
+    pub(crate) flag_changes: usize,
+    pub(crate) messages_removed: usize,
+    pub(crate) unreadable: usize,
 }
 
-async fn sync_mailbox(state: &State, session: &mut Session, mailbox: &Mailbox) -> Result<Changes, SyncError> {
+pub(crate) async fn sync_mailbox(
+    state: &State,
+    session: &mut Session,
+    mailbox: &Mailbox,
+) -> Result<Changes, SyncError> {
     let selected = session.select(&mailbox.remote_name).await?;
     let mailbox_id = mailbox.id;
     let known_uids = state.store.read(move |conn| messages::uids(conn, mailbox_id)).await?;

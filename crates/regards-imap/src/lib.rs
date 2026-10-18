@@ -14,6 +14,7 @@ pub mod utf7;
 
 pub use messages::{Fetched, FetchedHeaders, FlagUpdate, Flags, MessageSet, Selected, SystemFlag};
 
+pub use conn::IdleEnd;
 pub use tls::TlsOptions;
 
 use conn::{Conn, Reply};
@@ -22,6 +23,8 @@ use imap_types::command::CommandBody;
 use imap_types::mailbox::Mailbox;
 use imap_types::response::{Capability, Code, Data, GreetingKind, StatusBody, StatusKind};
 use regards_core::secret::Secret;
+use std::future::Future;
+use std::time::Duration;
 
 /// Errors connecting or signing in, phrased for the person setting up the account.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -173,6 +176,12 @@ impl Session {
                 _ => None,
             })
             .collect())
+    }
+
+    /// Wait in IDLE on the selected mailbox until something changes, `max`
+    /// passes (re-IDLE about every 25 minutes, RFC 2177) or `stop` completes.
+    pub async fn idle(&mut self, max: Duration, stop: impl Future<Output = ()>) -> Result<IdleEnd, ImapError> {
+        self.conn.idle(max, stop).await
     }
 
     /// Sign out. Failures are ignored: the connection closes either way.
