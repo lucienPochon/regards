@@ -7,6 +7,7 @@ Read-only investigation of the locally installed **Spark Desktop** email client 
 | [03-independent-implementation-plan.md](03-independent-implementation-plan.md) | Clean-room architecture and phased plan for Regards |
 | [04-alice-compatibility-assessment.md](04-alice-compatibility-assessment.md) | Fit of Alice (get-alice/alice) as the foundation, gap analysis and recommendation |
 | [06-costs-and-business-model.md](06-costs-and-business-model.md) | Cost inventory (fixed, hosted, per-user), break-even sketch and the open-source freemium model |
+| [07-imap-library-spike.md](07-imap-library-spike.md) | Phase-0 spike: async-imap vs imap-next against Dovecot and a hostile server; decision for ADR-0009 |
 
 **Private notes:** the detailed Spark investigation (01 technical investigation, 02 feature and interaction inventory, 05 evidence ledger) is **not published**. It is kept outside this repository, under the clean-room rule ([ADR-0001](../adr/0001-clean-room-policy.md)): no Spark internals or identifiers in the repository or within reach of coding agents. References to it in public documents read "(private research notes)".
 

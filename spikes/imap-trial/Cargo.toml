@@ -1,0 +1,23 @@
+# Phase-0 spike (ADR-0009): compare async-imap and imap-next against a real
+# Dovecot server. Deliberately its own workspace so its dependencies (including
+# imap-codec 2.0 alphas) never enter the product build or its licence checks.
+[workspace]
+
+[package]
+name = "imap-trial"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0 OR MIT"
+publish = false
+
+[dependencies]
+anyhow = "1"
+futures = "0.3"
+tokio = { version = "1.53", features = ["full"] }
+tokio-rustls = "0.26"
+async-imap = { version = "0.12", default-features = false, features = ["runtime-tokio"] }
+imap-next = { version = "0.3", features = ["ext_condstore_qresync", "tag_generator"] }
+# imap-codec 2.0.0-alpha.9 turns off nom's default features but uses its
+# `alloc` items, so it does not build on its own. Enabling the feature here
+# works around that.
+nom = { version = "7", default-features = false, features = ["alloc"] }

@@ -7,6 +7,8 @@ members = [
     "crates/regards-cli",
     "apps/desktop/src-tauri",
 ]
+# Throwaway Phase-0 experiments; each has its own workspace and lockfile.
+exclude = ["spikes"]
 
 [workspace.package]
 version = "0.1.0"

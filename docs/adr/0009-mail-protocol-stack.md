@@ -1,6 +1,6 @@
 # ADR-0009: Mail protocol stack and provider abstraction
 
-- **Status:** Accepted. The IMAP crate choice is pending the Phase-0 spike. **Adapter order and timing are amended by [ADR-0018](0018-modern-minimal-v1.md):** 1.0 syncs through IMAP/SMTP only, with OAuth sign-in for Microsoft and Google (Google once approved) and app passwords elsewhere. The Gmail API and Graph serve only as **send-only** paths in the Send Service; full Gmail API / Graph sync adapters come after 1.0. The engine must also run efficiently on servers **without** CONDSTORE, QRESYNC or MOVE (Infomaniak's capabilities, ADR-0018).
+- **Status:** Accepted. **IMAP library chosen by the Phase-0 spike (2026-10-18): `imap-next` + `imap-codec`**, under the conditions in §3 ([spike report](../research/07-imap-library-spike.md)). **Adapter order and timing are amended by [ADR-0018](0018-modern-minimal-v1.md):** 1.0 syncs through IMAP/SMTP only, with OAuth sign-in for Microsoft and Google (Google once approved) and app passwords elsewhere. The Gmail API and Graph serve only as **send-only** paths in the Send Service; full Gmail API / Graph sync adapters come after 1.0. The engine must also run efficiently on servers **without** CONDSTORE, QRESYNC or MOVE (Infomaniak's capabilities, ADR-0018).
 - **Date:** 2026-10-18
 - **Deciders:** Project owner
 
@@ -33,7 +33,26 @@ We must support generic IMAP/SMTP, Gmail and Microsoft 365/Outlook. Tenants may 
    3. **Gmail API** (Phase 7). History-based sync, native labels and threads, and drafts, for performance and label fidelity at scale.
    4. **JMAP** (later). An open standard; Fastmail and others support it.
 3. **Libraries:** all permissive, with versions current on crates.io on 2026-10-18.
-   - **IMAP:** a Phase-0 spike picks between `async-imap` (0.12, MIT/Apache) and `imap-next` + `imap-codec` (MIT/Apache, sans-I/O, strong extension coverage). Criteria: IDLE cancellation, QRESYNC/VANISHED, COPYUID, X-GM attributes, robustness to malformed server responses (**no panics on bad input**), and maintenance activity.
+   - **IMAP: `imap-next` 0.3 + `imap-codec` 2.0 (MIT/Apache, typed, sans-I/O).** It was chosen over `async-imap` 0.12 by the [Phase-0 spike](../research/07-imap-library-spike.md).
+     - **Rejecting async-imap:** it silently dropped 60 of 151 QRESYNC changes, reported a dropped connection as a complete FETCH, and was killed by a stack overflow from a hostile server.
+     - **imap-next in the same tests:** it delivered every change, skipped malformed responses and carried on, and survived every hostile-server case.
+
+     Conditions:
+     - **Isolation:** only the `regards-imap` crate depends on imap-next/imap-types, and it exposes Regards types.
+     - **Pins:** exact versions, each update reviewed.
+     - **Upstream fixes first:**
+       - the codec's `nom` feature
+       - the final bytes lost before a TLS close
+       - a Gmail `X-GM-*` extension, required before Gmail-over-IMAP acceptance in Phase 1
+       - an 8-bit quoted-string quirk
+
+       Until merged, these are carried in a fork through `[patch.crates-io]`, allowed by name in `deny.toml`.
+     - **Engine rules:**
+       - skip and re-fetch a malformed response
+       - never infer deletions from an incomplete response
+       - fetch headers as literals (`BODY.PEEK[HEADER.FIELDS …]`)
+       - download large bodies in chunks
+       - tolerate a missing HIGHESTMODSEQ (observed on Dovecot 2.4.5)
    - **SMTP:** `lettre` (MIT), async with rustls.
    - **MIME:** `mail-parser` (Apache-2.0 OR MIT) for parsing; `mail-builder` (Apache-2.0 OR MIT) for building `multipart/alternative` + `related` + attachments.
    - **TLS:** `rustls` with the platform certificate verifier. Certificate validation is always on, with no "accept invalid certs" option in the UI.
@@ -45,12 +64,17 @@ We must support generic IMAP/SMTP, Gmail and Microsoft 365/Outlook. Tenants may 
 ## Alternatives considered
 
 - **Blocking `imap` 2.x (Alice).** Unmaintained parser, panics on bad input, IDLE cannot be cancelled. Rejected.
+- **`async-imap` 0.12** (more widely used: Delta Chat, about 35× the downloads). Rejected after the spike.
+  - **Defects:** silent loss of unsolicited responses over a 100-entry buffer; EOF treated as success; a stack overflow and a 60 s+ stall on hostile input; string-built commands; no APPENDUID.
+  - **Cost of fixing:** forking both async-imap and imap-proto.
 - **Binding MailCore2/libetpan (Spark's choice) via FFI.** Brings C/C++ into the build on every OS, contrary to ADR-0002. Rejected.
 - **EWS.** Microsoft is retiring EWS for Exchange Online in favour of Graph. Rejected.
 
 ## Consequences
 
-- Phase 1 is the largest phase (sync correctness is hard). We need containerised Dovecot/Postfix fixtures plus a fault-injection proxy (dropped connections, UIDVALIDITY changes, malformed responses).
+- Phase 1 is the largest phase (sync correctness is hard). We need containerised Dovecot/Postfix fixtures plus a fault-injection proxy (dropped connections, UIDVALIDITY changes, malformed responses). The spike's hostile-server cases and fuzzer are the starting point.
+- **Dependence on an alpha codec with a small user base.** We take on reviewing its updates and contributing fixes upstream. If upstream stalls, we maintain the fork; the `regards-imap` boundary keeps that contained.
+- **Open question [U]:** whether Gmail, Microsoft, Infomaniak or iCloud send raw 8-bit bytes in quoted strings. Phase-1 live tests answer it.
 - Google and Microsoft OAuth app registrations and verification are required (costs and timeline in [06](../research/06-costs-and-business-model.md)).
 - Users may bring their own OAuth client ID as a documented advanced option.
 
