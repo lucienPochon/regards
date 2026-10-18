@@ -1357,3 +1357,71 @@ async fn live_attached_files_go_out_with_the_message() {
     drop(temp);
     handle.abort();
 }
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_a_forward_carries_the_original_files() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let report = b"From: Ada <ada@example.test>\r\nTo: Bob <bob@example.test>\r\nSubject: Report\r\n\
+        Date: Sun, 18 Oct 2026 11:00:00 +0000\r\nMIME-Version: 1.0\r\n\
+        Content-Type: multipart/mixed; boundary=\"b\"\r\n\r\n\
+        --b\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nPlease find the report attached.\r\n\
+        --b\r\nContent-Type: application/pdf; name=\"report.pdf\"\r\n\
+        Content-Disposition: attachment; filename=\"report.pdf\"\r\nContent-Transfer-Encoding: base64\r\n\r\n\
+        JVBERi0xLjQK\r\n--b--\r\n";
+    seed.append(b"INBOX", &[], report).await.unwrap();
+    let script = fake_smtp::Script::new(fake_smtp::Mode::StartTls {
+        offer: true,
+        inject: false,
+    });
+    let ((_temp, mut desktop, _account, inbox, handle), mut sent) = daemon_sending_through(&live, script).await;
+    let original = messages(&mut desktop, inbox).await.messages[0].id;
+
+    let draft: DraftView = desktop
+        .call(methods::DRAFT_FORWARD, MessageRef { id: original })
+        .await
+        .unwrap();
+    assert_eq!(draft.subject, "Fwd: Report");
+    assert!(draft.body.contains("Please find the report attached."));
+    assert_eq!(draft.attachments.len(), 1);
+    assert_eq!(draft.attachments[0].name, "report.pdf");
+    assert_eq!(draft.attachments[0].size, 9);
+
+    let _: DraftView = desktop
+        .call(
+            methods::DRAFT_UPDATE,
+            DraftUpdateParams {
+                id: draft.id,
+                to: vec![person("carol@example.test")],
+                cc: vec![],
+                bcc: vec![],
+                subject: draft.subject.clone(),
+                body: draft.body.clone(),
+            },
+        )
+        .await
+        .unwrap();
+    let _: DraftSendResult = desktop
+        .call(
+            methods::DRAFT_SEND,
+            DraftSendParams {
+                id: draft.id,
+                undo_seconds: Some(0),
+            },
+        )
+        .await
+        .unwrap();
+    let delivered = tokio::time::timeout(Duration::from_secs(20), sent.next())
+        .await
+        .expect("the forward reached the SMTP server");
+    let files = regards_core::body::files(&delivered.data.unwrap());
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].name, "report.pdf");
+    assert_eq!(files[0].data, b"%PDF-1.4\n");
+
+    seed.logout().await;
+    handle.abort();
+}

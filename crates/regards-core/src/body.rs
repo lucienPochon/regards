@@ -35,22 +35,11 @@ pub fn parse(raw: &[u8]) -> Body {
     let has_html = message.html_part(0).is_some_and(|part| part.is_text_html());
     let attachments = message
         .attachments()
-        .map(|part| {
-            let mime = part.content_type().map_or_else(
-                || "application/octet-stream".to_owned(),
-                |ct| match ct.subtype() {
-                    Some(subtype) => format!("{}/{}", ct.ctype(), subtype),
-                    None => ct.ctype().to_owned(),
-                },
-            );
-            let inline = part.content_disposition().is_some_and(|cd| cd.is_inline())
-                || (part.content_id().is_some() && part.content_disposition().is_none_or(|cd| !cd.is_attachment()));
-            Attachment {
-                name: part.attachment_name().map(str::to_owned),
-                mime: mime.to_ascii_lowercase(),
-                size: part.len(),
-                inline,
-            }
+        .map(|part| Attachment {
+            name: part.attachment_name().map(str::to_owned),
+            mime: mime_of(part),
+            size: part.len(),
+            inline: is_inline(part),
         })
         .collect();
     Body {
@@ -58,6 +47,58 @@ pub fn parse(raw: &[u8]) -> Body {
         has_html,
         attachments,
     }
+}
+
+/// A file a message carries, with its bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct File {
+    pub name: String,
+    pub mime: String,
+    pub data: Vec<u8>,
+}
+
+/// The files attached to a message (not those shown inside it), for
+/// forwarding. Unnamed ones get a name from their type.
+pub fn files(raw: &[u8]) -> Vec<File> {
+    let Some(message) = MessageParser::default().parse(raw) else {
+        return Vec::new();
+    };
+    message
+        .attachments()
+        .filter(|part| !is_inline(part))
+        .map(|part| {
+            let mime = mime_of(part);
+            let name = part
+                .attachment_name()
+                .map(str::to_owned)
+                .unwrap_or_else(|| match mime.as_str() {
+                    "message/rfc822" => "message.eml".to_owned(),
+                    _ => "attachment".to_owned(),
+                });
+            File {
+                name,
+                mime,
+                data: part.contents().to_vec(),
+            }
+        })
+        .collect()
+}
+
+fn mime_of(part: &mail_parser::MessagePart<'_>) -> String {
+    part.content_type()
+        .map_or_else(
+            || "application/octet-stream".to_owned(),
+            |ct| match ct.subtype() {
+                Some(subtype) => format!("{}/{}", ct.ctype(), subtype),
+                None => ct.ctype().to_owned(),
+            },
+        )
+        .to_ascii_lowercase()
+}
+
+fn is_inline(part: &mail_parser::MessagePart<'_>) -> bool {
+    part.content_disposition().is_some_and(|cd| cd.is_inline())
+        || (part.content_id().is_some() && part.content_disposition().is_none_or(|cd| !cd.is_attachment()))
 }
 
 #[cfg(test)]
@@ -104,6 +145,23 @@ mod tests {
                 inline: false,
             }]
         );
+        assert_eq!(
+            files(raw),
+            [File {
+                name: "report.pdf".into(),
+                mime: "application/pdf".into(),
+                data: b"%PDF-1.4\n".to_vec(),
+            }]
+        );
+    }
+
+    #[test]
+    fn inline_images_are_not_files_to_forward() {
+        let raw = b"MIME-Version: 1.0\r\nContent-Type: multipart/related; boundary=\"r\"\r\n\r\n\
+            --r\r\nContent-Type: text/html\r\n\r\n<img src=\"cid:logo@x\">\r\n\
+            --r\r\nContent-Type: image/png\r\nContent-ID: <logo@x>\r\nContent-Transfer-Encoding: base64\r\n\r\niVBORw0KGgo=\r\n\
+            --r--\r\n";
+        assert!(files(raw).is_empty());
     }
 
     #[test]

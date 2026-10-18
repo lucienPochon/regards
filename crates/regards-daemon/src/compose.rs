@@ -104,7 +104,25 @@ pub(crate) async fn forward(state: &State, params: MessageRef) -> Result<Value, 
         .map_err(crate::session::internal)?
         .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "the message's account no longer exists"))?;
     let original = headers::parse(&source);
-    let text = regards_core::body::parse(&source).text;
+    let blobs = state.blobs.clone();
+    // The original's files go too, kept in blobs/ like attached ones (up to the usual limit).
+    let (text, files) = tokio::task::spawn_blocking(move || -> std::io::Result<_> {
+        let text = regards_core::body::parse(&source).text;
+        let mut total = 0u64;
+        let mut kept = Vec::new();
+        for file in regards_core::body::files(&source) {
+            total += file.data.len() as u64;
+            if total > MAX_ATTACHMENTS {
+                break;
+            }
+            let hash = blobs.put(&file.data)?;
+            kept.push((hash, compose::file_name(&file.name), file.mime, file.data.len() as u64));
+        }
+        Ok((text, kept))
+    })
+    .await
+    .map_err(crate::session::internal)?
+    .map_err(crate::session::internal)?;
     let content = Content {
         subject: compose::forward_subject(&original.subject),
         body: compose::forwarded(
@@ -116,7 +134,20 @@ pub(crate) async fn forward(state: &State, params: MessageRef) -> Result<Value, 
         ),
         ..Content::default()
     };
-    store_new(state, account_id, content).await
+    let now = now_ms();
+    let id = state
+        .store
+        .write(move |tx| {
+            let id = drafts::create(tx, &account_id, &content, now)?;
+            for (hash, name, mime, size) in &files {
+                drafts::attach(tx, id, hash, name, mime, *size)?;
+            }
+            Ok(id)
+        })
+        .await
+        .map_err(conflict)?
+        .value;
+    view(state, id).await
 }
 
 async fn store_new(state: &State, account_id: String, content: Content) -> Result<Value, RpcError> {

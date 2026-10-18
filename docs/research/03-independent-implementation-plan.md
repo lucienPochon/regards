@@ -249,9 +249,9 @@ flowchart LR
   - **Drafts:** stored in the daemon. A new message, reply and reply all (Reply-To honoured, my own addresses left out) and forward start addressed and quoted. A reply's References are kept to 20 (the root and the latest).
   - **Outbox:** frozen MIME, undo send (10 s by default, 0–30 s), retry with backoff, `failed` and `uncertain` states, the Sent copy, and `\Answered` on the original (ADR-0010 §3–4).
   - **The composer in the app:** new message, reply, reply all and forward; Cc/Bcc; autosave; a list of drafts; undo send; the Outbox with its actions.
-  - **Attachments:** picked with the system dialog and read by the daemon (ADR-0006 §4), at most 25 MB per message, frozen into the MIME at send.
+  - **Attachments:** picked with the system dialog and read by the daemon (ADR-0006 §4), at most 25 MB per message, frozen into the MIME at send. A forward carries the original's files (not its inline images).
   - **Plain text** for now.
-- **Still to come in Phase 2:** the HTML editor, forwarding with the original's attachments, identities and signatures, templates, IMAP draft sync, and dropping files onto the composer.
+- **Still to come in Phase 2:** the HTML editor, identities and signatures, templates, IMAP draft sync, and dropping files onto the composer.
 
 ### 5.10 Search (P0 keyword, P2 semantic, 1.0)
 
