@@ -81,9 +81,13 @@ function typing(target: EventTarget | null): boolean {
 
 /** For the help panel. */
 export const SHORTCUTS: { keys: string; action: string }[] = [
+  { keys: `${MOD_KEY}+K`, action: "Commands: everything, by name" },
   { keys: "j / ↓", action: "Next message" },
   { keys: "k / ↑", action: "Previous message" },
-  { keys: "Esc", action: "Close the message" },
+  { keys: "Enter", action: "Open the highlighted message" },
+  { keys: "Esc", action: "Back to the list, or close the message" },
+  { keys: "/", action: "Show or fold the sidebar" },
+  { keys: `${MOD_KEY}+F`, action: "Search the list" },
   { keys: "e", action: "Archive" },
   { keys: "# / Delete", action: "Delete (in Trash or Junk: for good, after confirming)" },
   { keys: "s", action: "Flag or unflag" },

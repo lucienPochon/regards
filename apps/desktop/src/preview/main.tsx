@@ -8,8 +8,18 @@ import { App } from "../App";
 import { type Theme, applyTheme, savedTheme } from "../theme";
 import "../styles.css";
 
-const theme = new URLSearchParams(window.location.search).get("theme");
+const params = new URLSearchParams(window.location.search);
+const theme = params.get("theme");
 applyTheme(theme === "dark" || theme === "light" ? (theme as Theme) : savedTheme());
+// `?layout=split` and `?sidebar=open` start from that layout; without them, from the default.
+if (params.has("layout") || params.has("sidebar")) {
+  window.localStorage.setItem(
+    "regards.layout",
+    JSON.stringify({ mode: params.get("layout") === "split" ? "split" : "single", locked: params.get("sidebar") === "open" }),
+  );
+} else if (params.has("fresh")) {
+  window.localStorage.removeItem("regards.layout");
+}
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root element");

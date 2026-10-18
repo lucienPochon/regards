@@ -177,12 +177,31 @@ flowchart LR
 - **Scope:** unified and per-account inboxes, system mailboxes, folders/labels, Outbox, Snoozed, Set aside, Recently seen; split layouts; keyboard-first navigation; context menus.
 - **Accepted when:** 10k-thread lists scroll at 60 fps, every action is keyboard-reachable, and the layout persists per window.
 - **Built so far:**
-  - **Layout:** three columns: folders, message list and reading pane. The list's width is set by dragging (or with the arrow keys), the folder column can shrink to icons, and both are remembered. Light, dark or as the system.
-  - **Folders:** Inbox, Sent, Archive, Junk and Trash show every account at once; each list is merged from the accounts' folders, newest first. Then Drafts, the Outbox when it has something, and each account's own folders as a tree.
-  - **The list:** pages load as you scroll. Hovering a message shows read/unread, flag, archive and delete; right-clicking gives every action. Ctrl/⌘-click, Shift-click, `x` and Ctrl/⌘+A select several, and the actions then apply to all of them.
-  - **Reading:** the whole conversation, oldest first, with the open message expanded and the others one line each. After archiving or deleting, the next message opens.
-  - **Actions** come from one list, which feeds the toolbar, hover buttons, right-click menu and shortcuts. Moving opens a folder picker you can type into.
-  - **Still to come:** unread counts, a preview line in the list, one row per conversation, a virtualised list for 10k rows, and the Phase 3 views (Pinned, Set aside, Snoozed).
+  - **Layout:**
+    - A dark rail of folder icons beside one content pane.
+    - The rail opens out into a full sidebar (`/`), either over the content or kept open beside it.
+    - A message opens in place of the list, with a way back. Split view puts the list and the message side by side, and the list's width can be dragged.
+    - All of this, and the theme (light, dark or as the system), is remembered.
+  - **Folders:**
+    - Inbox, Pinned, Snoozed, Set aside, Sent, Archive, Junk and Trash show every account at once, each merged from the accounts' folders, newest first.
+    - Then Drafts, and the Outbox when it has something.
+    - With several accounts, the inbox can be opened per account, from the sidebar or from the list's title.
+  - **The list:**
+    - Grouped by day, with one line per message when the list is alone and two in split view.
+    - The inbox starts with a row for the pinned messages and keeps set-aside ones in a bubble at the bottom.
+    - Hovering a message highlights it, shows a select check in the margin, and puts its actions in place of the date. Right-clicking gives every action.
+    - Several can be selected: by the check, Ctrl/⌘-click, Shift-click, `x` or Ctrl/⌘+A. A bar at the top then acts on all of them.
+    - Single-key shortcuts act on the selection, else the message under the pointer, else the highlighted one.
+    - The search field filters the loaded list by sender and subject until full search arrives (§5.10).
+  - **Reading:** the conversation as cards, oldest first, with the open message expanded and the others one line each. Reply and forward sit at the bottom of each card, and after archiving or deleting the next message opens.
+  - **Writing:** a new message takes the whole pane, with a large subject field. A reply opens in a panel over the conversation, which can be made full size.
+  - **Actions** come from one list, which feeds the toolbar, hover buttons, right-click menu, selection bar, shortcuts and the command palette (Ctrl/⌘+K). Moving opens a folder picker you can type into. Snoozing and sending later pick from preset times.
+  - **Still to come:**
+    - unread counts
+    - a preview line and attachment marks in the list
+    - one row per conversation
+    - a virtualised list for 10k rows
+    - the window's own title bar (the system one is still used)
 
 ### 5.4 Smart Inbox (P1, 1.0)
 

@@ -20,8 +20,8 @@ export function OutboxList({
     return (
       <div className="list-scroll">
         <div className="empty list-empty">
-          <span className="empty-mark">
-            <Icon name="send" size={26} />
+          <span className="zero-mark" aria-hidden="true">
+            <Icon name="send" size={30} />
           </span>
           <h2>Everything has gone out</h2>
           <p>Messages waiting to be sent, or that could not be, show here.</p>
@@ -40,55 +40,56 @@ export function OutboxList({
 
   return (
     <div className="list-scroll">
-      <ul className="rows" aria-label="Outbox">
-        {entries.map((entry) => {
-          const trouble = entry.state === "failed" || entry.state === "uncertain" || entry.state === "held";
-          const waiting = entry.state === "held" || scheduled(entry);
-          return (
-            <li key={entry.id} className="row outbox-row">
-              <span className="row-avatar">
-                <Avatar person={entry.recipients[0] ?? null} />
-              </span>
-              <div className="row-main">
-                <span className="row-line">
+      <div className="rows tall">
+        <ul aria-label="Outbox">
+          {entries.map((entry) => {
+            const trouble = entry.state === "failed" || entry.state === "uncertain" || entry.state === "held";
+            const waiting = entry.state === "held" || scheduled(entry);
+            return (
+              <li key={entry.id} className="row outbox-row">
+                <div className="row-main">
+                  <span className="dot" />
+                  <span className="row-avatar">
+                    <Avatar person={entry.recipients[0] ?? null} size="md" ring />
+                  </span>
                   <span className="from">to {peopleShort(entry.recipients)}</span>
-                </span>
-                <span className="row-line">
                   <span className="subject">{entry.subject || "(no subject)"}</span>
-                </span>
-                <span className={trouble ? "outbox-state bad" : "outbox-state"}>{describe(entry)}</span>
-                <span className="outbox-actions">
-                  {waiting && (
-                    <button type="button" className="btn small" onClick={() => act(() => reschedule(entry.id, null))}>
-                      Send now
-                    </button>
-                  )}
-                  {(waiting || entry.state === "failed" || (entry.state === "queued" && entry.attempts > 0)) && (
-                    <button type="button" className="btn small" onClick={() => edit(entry)}>
-                      Edit
-                    </button>
-                  )}
-                  {entry.state === "failed" && (
-                    <button type="button" className="btn small" onClick={() => act(() => dismissOutbox(entry.id))}>
-                      Discard
-                    </button>
-                  )}
-                  {entry.state === "uncertain" && (
-                    <>
-                      <button type="button" className="btn small" onClick={() => act(() => sendAgain(entry.id))}>
-                        Send again
-                      </button>
-                      <button type="button" className="btn small" onClick={() => act(() => dismissOutbox(entry.id))}>
-                        It was sent
-                      </button>
-                    </>
-                  )}
-                </span>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+                  <span className="row-extra">
+                    <span className={trouble ? "outbox-state bad" : "outbox-state"}>{describe(entry)}</span>
+                    <span className="outbox-actions">
+                      {waiting && (
+                        <button type="button" className="btn small" onClick={() => act(() => reschedule(entry.id, null))}>
+                          Send now
+                        </button>
+                      )}
+                      {(waiting || entry.state === "failed" || (entry.state === "queued" && entry.attempts > 0)) && (
+                        <button type="button" className="btn small" onClick={() => edit(entry)}>
+                          Edit
+                        </button>
+                      )}
+                      {entry.state === "failed" && (
+                        <button type="button" className="btn small" onClick={() => act(() => dismissOutbox(entry.id))}>
+                          Discard
+                        </button>
+                      )}
+                      {entry.state === "uncertain" && (
+                        <>
+                          <button type="button" className="btn small" onClick={() => act(() => sendAgain(entry.id))}>
+                            Send again
+                          </button>
+                          <button type="button" className="btn small" onClick={() => act(() => dismissOutbox(entry.id))}>
+                            It was sent
+                          </button>
+                        </>
+                      )}
+                    </span>
+                  </span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </div>
   );
 }

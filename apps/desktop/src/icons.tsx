@@ -217,6 +217,48 @@ const PATHS = {
       <path d="M8 10.5h3M8 14h3" />
     </>
   ),
+  back: (
+    <>
+      <path d="M19 12H5.5" />
+      <path d="M11 6.5 5.5 12l5.5 5.5" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="M15.5 15.5 20 20" />
+    </>
+  ),
+  menu: <path d="M4 7h16M4 12h16M4 17h16" />,
+  sendLater: (
+    <>
+      <path d="M20 3.5 9.5 14" />
+      <path d="M20 3.5 15.2 15.5M20 3.5 3.5 9.8l6 4.2" />
+      <circle cx="16.5" cy="17.5" r="4" />
+      <path d="M16.5 15.8v1.9l1.2.8" />
+    </>
+  ),
+  expand: (
+    <>
+      <path d="M14 4h6v6M10 20H4v-6" />
+      <path d="M20 4l-6.5 6.5M4 20l6.5-6.5" />
+    </>
+  ),
+  shrink: (
+    <>
+      <path d="M19.5 10h-6v-6M4.5 14h6v6" />
+      <path d="M13.5 10 20 3.5M10.5 14 4 20.5" />
+    </>
+  ),
+  chevronLeft: <path d="M14.5 6.5 9 12l5.5 5.5" />,
+  split: (
+    <>
+      <rect x="3" y="4.5" width="18" height="15" rx="2.5" />
+      <path d="M10 4.5v15" />
+    </>
+  ),
+  single: <rect x="3" y="4.5" width="18" height="15" rx="2.5" />,
+  moon: <path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z" />,
   logo: (
     <>
       <rect x="4" y="6" width="16" height="12" rx="2.2" />

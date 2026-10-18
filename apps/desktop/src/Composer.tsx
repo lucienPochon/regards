@@ -13,6 +13,9 @@ import {
   sendDraft,
   textToHtml,
 } from "./compose";
+import { fileKind, fileSize } from "./format";
+import { Icon } from "./icons";
+import { type Anchor, anchorOf } from "./Menu";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 
 // The editor (Tiptap and ProseMirror) loads when a message is first written.
@@ -31,17 +34,26 @@ interface Fields {
 const AUTOSAVE_MS = 800;
 
 /**
- * Write a message. Everything is saved to the draft as you type; closing keeps
- * the draft, Discard deletes it, Send queues it with a few seconds to undo.
+ * Write a message: across the whole content area ("full"), or in a panel
+ * over the conversation when replying ("panel"). Everything is saved to the
+ * draft as you type; closing keeps the draft, the bin deletes it, Send queues
+ * it with a few seconds to undo, and Send later picks a time.
  */
 export function Composer({
   draftId,
+  mode,
+  onMode,
   onClose,
   onQueued,
+  pickSendTime,
 }: {
   draftId: number;
+  mode: "full" | "panel";
+  onMode: (mode: "full" | "panel") => void;
   onClose: () => void;
   onQueued: (queued: Queued) => void;
+  /** Ask when to send it: Unix ms, or null if cancelled. */
+  pickSendTime: (anchor: Anchor) => Promise<number | null>;
 }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [fields, setFields] = useState<Fields | null>(null);
@@ -132,31 +144,43 @@ export function Composer({
     setFields((current) => (current ? { ...current, [name]: event.target.value } : current));
   };
 
-  const send = async () => {
-    if (!fields || !draft || busy) return;
+  /** Whether it can go: someone to send to, valid addresses, and a subject (or a second press). */
+  const checked = (): boolean => {
+    if (!fields || !draft || busy) return false;
     const everyone = [...parseRecipients(fields.to), ...parseRecipients(fields.cc), ...parseRecipients(fields.bcc)];
     if (everyone.length === 0) {
       setError("Add at least one recipient.");
-      return;
+      return false;
     }
     const invalid = invalidAddresses(everyone);
     if (invalid.length > 0) {
       setError(`Check ${invalid.length === 1 ? "this address" : "these addresses"}: ${invalid.join(", ")}`);
-      return;
+      return false;
     }
     if (!fields.subject.trim() && !askSubject) {
       setAskSubject(true);
-      return;
+      return false;
     }
+    return true;
+  };
+
+  const send = async (sendAt: number | null = null) => {
+    if (!draft || !checked()) return;
     setBusy(true);
     try {
       if (!(await flush())) return;
-      onQueued(await sendDraft(draft.id));
+      onQueued(await sendDraft(draft.id, 10, sendAt));
     } catch (failure) {
       setError(String(failure));
     } finally {
       setBusy(false);
     }
+  };
+
+  const later = async (button: HTMLElement) => {
+    if (!checked()) return;
+    const at = await pickSendTime(anchorOf(button, "end"));
+    if (at !== null) await send(at);
   };
 
   const attach = async () => {
@@ -202,47 +226,108 @@ export function Composer({
     }
   };
 
+  const locked = Boolean(draft?.sending) || busy;
+  const hasRecipients = fields ? `${fields.to}${fields.cc}${fields.bcc}`.trim().length > 0 : false;
+  const total = draft?.attachments.reduce((sum, file) => sum + file.size, 0) ?? 0;
+
+  const tools = (
+    <div className="composer-tools">
+      <span className="composer-status">{status}</span>
+      <button type="button" className="icon-btn" title="Attach files" aria-label="Attach files" onClick={() => void attach()} disabled={locked}>
+        <Icon name="paperclip" />
+      </button>
+      <button
+        type="button"
+        className="icon-btn danger"
+        title="Discard the draft"
+        aria-label="Discard the draft"
+        onClick={() => void discard()}
+        disabled={Boolean(draft?.sending)}
+      >
+        <Icon name="trash" />
+      </button>
+      <button
+        type="button"
+        className="icon-btn"
+        title="Send later"
+        aria-label="Send later"
+        onClick={(event) => void later(event.currentTarget)}
+        disabled={locked || !hasRecipients}
+      >
+        <Icon name="sendLater" />
+      </button>
+      <span className="sep" />
+      {draft && (
+        <span className="composer-from" title={formatRecipients([draft.from])}>
+          {draft.from.address}
+        </span>
+      )}
+      <button
+        type="button"
+        className="send-button"
+        title={`Send (${MOD_KEY}+Enter)`}
+        aria-label="Send"
+        onClick={() => void send()}
+        disabled={locked || !hasRecipients}
+      >
+        <Icon name="send" size={20} />
+      </button>
+    </div>
+  );
+
   return (
-    <div className="help-backdrop">
-      <section className="card composer" role="dialog" aria-modal="true" aria-label="New message" onKeyDown={keys}>
-        {!fields ? (
-          <p className={error ? "error" : "muted"}>{error ?? "Opening…"}</p>
-        ) : (
-          <>
-            {draft?.sending && <p className="error small">This message is being sent. Undo it first to change it.</p>}
-            <fieldset disabled={draft?.sending || busy}>
-              {draft && (
-                <p className="field from">
-                  <span>From</span>
-                  <span>{formatRecipients([draft.from])}</span>
-                </p>
+    <section className={`composer ${mode}`} role="dialog" aria-label={mode === "panel" ? "Reply" : "New message"} onKeyDown={keys}>
+      <div className="composer-top">
+        <div className="segmented">
+          <button type="button" title="Close (Esc). The draft is kept." aria-label="Close" onClick={() => void close()}>
+            <Icon name="close" size={16} />
+          </button>
+          <button
+            type="button"
+            title={mode === "panel" ? "Bigger" : "Smaller"}
+            aria-label={mode === "panel" ? "Bigger" : "Smaller"}
+            onClick={() => onMode(mode === "panel" ? "full" : "panel")}
+          >
+            <Icon name={mode === "panel" ? "expand" : "shrink"} size={15} />
+          </button>
+        </div>
+        {mode === "panel" ? <span className="composer-title">{fields?.subject || "New message"}</span> : tools}
+      </div>
+      {!fields ? (
+        <p className={error ? "composer-note error" : "composer-note muted"}>{error ?? "Opening…"}</p>
+      ) : (
+        <>
+          {draft?.sending && <p className="composer-note error">This message is being sent. Undo it first to change it.</p>}
+          <fieldset className="composer-fields" disabled={locked}>
+            <input
+              className="subject-field"
+              value={fields.subject}
+              onChange={change("subject")}
+              placeholder="Subject"
+              aria-label="Subject"
+            />
+            <label className="address-line">
+              <span>To</span>
+              <input ref={toField} value={fields.to} onChange={change("to")} placeholder="name@example.org, …" />
+              {!copies && (
+                <button type="button" className="link" onClick={() => setCopies(true)}>
+                  Cc Bcc
+                </button>
               )}
-              <label className="field">
-                <span>To</span>
-                <input ref={toField} value={fields.to} onChange={change("to")} placeholder="name@example.org, …" />
-                {!copies && (
-                  <button type="button" className="link" onClick={() => setCopies(true)}>
-                    Cc/Bcc
-                  </button>
-                )}
-              </label>
-              {copies && (
-                <>
-                  <label className="field">
-                    <span>Cc</span>
-                    <input value={fields.cc} onChange={change("cc")} />
-                  </label>
-                  <label className="field">
-                    <span>Bcc</span>
-                    <input value={fields.bcc} onChange={change("bcc")} />
-                  </label>
-                </>
-              )}
-              <label className="field">
-                <span>Subject</span>
-                <input value={fields.subject} onChange={change("subject")} />
-              </label>
-              <Suspense fallback={<p className="muted small">Opening the editor…</p>}>
+            </label>
+            {copies && (
+              <>
+                <label className="address-line">
+                  <span>Cc</span>
+                  <input value={fields.cc} onChange={change("cc")} />
+                </label>
+                <label className="address-line">
+                  <span>Bcc</span>
+                  <input value={fields.bcc} onChange={change("bcc")} />
+                </label>
+              </>
+            )}
+            <Suspense fallback={<p className="muted small">Opening the editor…</p>}>
               <RichEditor
                 initial={fields.html}
                 onChange={(html) => {
@@ -250,59 +335,52 @@ export function Composer({
                   setFields((current) => (current ? { ...current, html } : current));
                 }}
                 onSend={() => void send()}
-                disabled={Boolean(draft?.sending) || busy}
+                disabled={locked}
                 autofocus={!needsAddress}
               />
-              </Suspense>
-              {draft && draft.attachments.length > 0 && (
-                <ul className="attachment-chips" aria-label="Attachments">
+            </Suspense>
+            {draft && draft.attachments.length > 0 && (
+              <div className="attachments">
+                <p className="attachments-head">
+                  <Icon name="paperclip" size={15} />
+                  <strong>
+                    {draft.attachments.length} {draft.attachments.length === 1 ? "attachment" : "attachments"}
+                  </strong>
+                  <span className="muted">{fileSize(total)}</span>
+                </p>
+                <ul className="tiles" aria-label="Attachments">
                   {draft.attachments.map((file) => (
-                    <li key={file.id}>
-                      <span>{file.name}</span>
-                      <span className="muted"> · {fileSize(file.size)}</span>
+                    <li key={file.id} className="tile">
+                      <span className="tile-face">{fileKind(file.name, file.mime)}</span>
+                      <span className="tile-name" title={file.name}>
+                        {file.name}
+                      </span>
+                      <span className="tile-size">{fileSize(file.size)}</span>
                       <button
                         type="button"
-                        className="link"
+                        className="tile-remove"
                         aria-label={`Remove ${file.name}`}
+                        title="Remove"
                         onClick={() => void detach(file.id)}
                       >
-                        ×
+                        <Icon name="close" size={12} />
                       </button>
                     </li>
                   ))}
+                  <li className="tile add">
+                    <button type="button" className="tile-face" aria-label="Attach more files" onClick={() => void attach()}>
+                      <Icon name="plus" size={22} />
+                    </button>
+                  </li>
                 </ul>
-              )}
-            </fieldset>
-            {askSubject && (
-              <p className="small">
-                There is no subject. Press Send again to send it anyway.
-              </p>
+              </div>
             )}
-            {error && <p className="error small">{error}</p>}
-            <div className="actions-bar">
-              <button type="button" className="primary" onClick={() => void send()} disabled={draft?.sending || busy}>
-                Send
-              </button>
-              <button type="button" onClick={() => void attach()} disabled={draft?.sending || busy}>
-                Attach files
-              </button>
-              <button type="button" onClick={() => void close()}>
-                Close
-              </button>
-              <button type="button" className="danger" onClick={() => void discard()} disabled={draft?.sending}>
-                Discard
-              </button>
-              <span className="muted small">{status || `${MOD_KEY}+Enter sends`}</span>
-            </div>
-          </>
-        )}
-      </section>
-    </div>
+          </fieldset>
+          {askSubject && <p className="composer-note">There is no subject. Press Send again to send it anyway.</p>}
+          {error && <p className="composer-note error">{error}</p>}
+          {mode === "panel" && tools}
+        </>
+      )}
+    </section>
   );
-}
-
-function fileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }

@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
 import { type Queued, undoSend } from "./compose";
+import { laterDate } from "./format";
+import { Icon } from "./icons";
 import { useShortcuts } from "./shortcuts";
 
-/** "Sending in 8 s · Undo" until the undo window is over. */
+/** How long a scheduled message's toast stays; it can be taken back from the Outbox after that. */
+const SCHEDULED_SHOW_MS = 10_000;
+
+/** "Sending in 8 s · Undo" until the undo window is over, or "Scheduled for Mon 09:00 · Undo". */
 export function SendToast({
   queued,
   onUndone,
@@ -14,19 +19,23 @@ export function SendToast({
 }) {
   const [now, setNow] = useState(Date.now());
   const [error, setError] = useState<string | null>(null);
+  const [shownAt] = useState(Date.now());
+  const scheduled = queued.send_at !== null && queued.send_at > shownAt;
 
   useEffect(() => {
     const tick = window.setInterval(() => setNow(Date.now()), 250);
     return () => window.clearInterval(tick);
   }, []);
 
-  const left = Math.ceil((queued.undo_until - now) / 1000);
+  const left = scheduled
+    ? Math.ceil((shownAt + SCHEDULED_SHOW_MS - now) / 1000)
+    : Math.ceil((queued.undo_until - now) / 1000);
   useEffect(() => {
     if (left <= 0 && !error) {
-      const timer = window.setTimeout(onDone, 1500);
+      const timer = window.setTimeout(onDone, scheduled ? 0 : 1500);
       return () => window.clearTimeout(timer);
     }
-  }, [left, error, onDone]);
+  }, [left, error, onDone, scheduled]);
 
   const undo = async () => {
     try {
@@ -40,11 +49,12 @@ export function SendToast({
 
   return (
     <div className="toast" role="status">
+      <Icon name={scheduled ? "sendLater" : "send"} size={16} />
       {error ? (
         <span>{error}</span>
       ) : left > 0 ? (
         <>
-          <span>Sending in {left} s</span>
+          <span>{scheduled ? `Scheduled for ${laterDate(queued.send_at as number)}` : `Sending in ${left} s`}</span>
           <button type="button" onClick={undo}>
             Undo
           </button>
