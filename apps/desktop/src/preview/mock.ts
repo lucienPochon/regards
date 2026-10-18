@@ -25,6 +25,64 @@ const SOMEDAY = 32_503_680_000_000;
 const parked = (m: FixtureMessage) => m.aside === true || (m.snoozed_until ?? 0) > Date.now();
 let nextId = 10_000;
 
+/** Like the daemon's runner: it goes once undo is over and its time has come, into Sent. */
+function sendWhenDue(entry: OutboxEntry) {
+  const due = Math.max(entry.undo_until, entry.send_at ?? 0);
+  const meant = entry.send_at;
+  const delay = due - Date.now() + 1500;
+  if (delay > 2 ** 31 - 1) return; // Further than a timer reaches; the preview never gets there.
+  window.setTimeout(() => {
+    // Taken back, held, or moved to another time meanwhile.
+    if (!outbox.includes(entry) || entry.state !== "queued" || entry.send_at !== meant) return;
+    outbox.splice(outbox.indexOf(entry), 1);
+    const draft = drafts.find((d) => d.id === entry.draft_id);
+    if (draft) drafts.splice(drafts.indexOf(draft), 1);
+    const sent = accounts.find((a) => a.account.id === entry.account_id)?.mailboxes.find((m) => m.role === "sent");
+    if (sent && draft) {
+      messages.push({
+        id: nextId++,
+        mailboxId: sent.id,
+        subject: draft.subject,
+        from: draft.from,
+        to: draft.to,
+        cc: draft.cc,
+        received_at: Date.now(),
+        seen: true,
+        flagged: false,
+        answered: false,
+        text: draft.body || (draft.html ?? "").replace(/<[^>]+>/g, " "),
+        html: null,
+        remote_images: 0,
+        attachments: [],
+        thread: `sent-${draft.id}`,
+      });
+    }
+    changed();
+  }, delay);
+}
+
+// `?outbox=1`: one message scheduled for tomorrow morning, and one held after its time passed.
+if (params.get("outbox") === "1" && accounts.length > 0) {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(9, 0, 0, 0);
+  const waiting = (subject: string, sendAt: number, state: "queued" | "held"): OutboxEntry => ({
+    id: nextId++,
+    account_id: accounts[0].account.id,
+    draft_id: null,
+    subject,
+    recipients: [{ name: "Lena Okafor", address: "lena.okafor@example.net" }],
+    state,
+    undo_until: started,
+    send_at: sendAt,
+    next_attempt_at: sendAt,
+    attempts: 0,
+    last_error: null,
+  });
+  outbox.push(waiting("Seed order for spring", tomorrow.getTime(), "queued"));
+  outbox.push(waiting("Monday's rota", started - 3 * 3600_000, "held"));
+}
+
 if (accounts.length > 0) {
   drafts.push({
     id: nextId++,
@@ -318,6 +376,7 @@ function handle(cmd: string, args: Args): unknown {
     case "draft_send": {
       const draft = draftById(args.id as number);
       draft.sending = true;
+      const sendAt = (args.sendAt as number | null | undefined) ?? null;
       const entry: OutboxEntry = {
         id: nextId++,
         account_id: draft.account_id,
@@ -326,41 +385,25 @@ function handle(cmd: string, args: Args): unknown {
         recipients: [...draft.to, ...draft.cc, ...draft.bcc],
         state: "queued",
         undo_until: Date.now() + ((args.undoSeconds as number) ?? 10) * 1000,
-        next_attempt_at: Date.now(),
+        send_at: sendAt,
+        next_attempt_at: sendAt ?? Date.now(),
         attempts: 0,
         last_error: null,
       };
       outbox.push(entry);
-      window.setTimeout(() => {
-        const index = outbox.indexOf(entry);
-        if (index === -1) return;
-        outbox.splice(index, 1);
-        const at = drafts.indexOf(draft);
-        if (at !== -1) drafts.splice(at, 1);
-        const sent = accounts.find((a) => a.account.id === draft.account_id)?.mailboxes.find((m) => m.role === "sent");
-        if (sent) {
-          messages.push({
-            id: nextId++,
-            mailboxId: sent.id,
-            subject: draft.subject,
-            from: draft.from,
-            to: draft.to,
-            cc: draft.cc,
-            received_at: Date.now(),
-            seen: true,
-            flagged: false,
-            answered: false,
-            text: draft.body || (draft.html ?? "").replace(/<[^>]+>/g, " "),
-            html: null,
-            remote_images: 0,
-            attachments: [],
-            thread: `sent-${draft.id}`,
-          });
-        }
-        changed();
-      }, entry.undo_until - Date.now() + 1500);
+      sendWhenDue(entry);
       changed();
-      return { outbox_id: entry.id, undo_until: entry.undo_until };
+      return { outbox_id: entry.id, undo_until: entry.undo_until, send_at: sendAt };
+    }
+    case "outbox_reschedule": {
+      const entry = outbox.find((e) => e.id === args.id);
+      if (!entry || (entry.state !== "queued" && entry.state !== "held")) throw new Error("It has already gone.");
+      entry.state = "queued";
+      entry.send_at = (args.sendAt as number | null | undefined) ?? null;
+      entry.next_attempt_at = entry.send_at ?? Date.now();
+      sendWhenDue(entry);
+      changed();
+      return { rescheduled: true };
     }
     case "outbox_list":
       return { entries: outbox };

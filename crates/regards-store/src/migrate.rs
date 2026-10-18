@@ -21,6 +21,7 @@ const MIGRATIONS: &[M<'static>] = &[
     M::up(include_str!("../migrations/0010_draft_attachments.sql")),
     M::up(include_str!("../migrations/0011_draft_html.sql")),
     M::up(include_str!("../migrations/0012_marks.sql")),
+    M::up(include_str!("../migrations/0013_send_later.sql")),
 ];
 
 /// Backups kept before older ones are deleted.
@@ -118,6 +119,46 @@ mod tests {
             1,
             "a backup of the v1 database"
         );
+    }
+
+    #[test]
+    fn the_outbox_rebuild_keeps_queued_messages() {
+        // Migration 13 rebuilds the outbox; foreign keys are on, as in the store.
+        let temp = tempfile::tempdir().unwrap();
+        let backups = temp.path().join("backups");
+        let mut conn = Connection::open(temp.path().join("mail.db")).unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        run(&Migrations::from_slice(&MIGRATIONS[..12]), &mut conn, &backups).unwrap();
+        conn.execute_batch(
+            "INSERT INTO accounts (id, display_name, email, auth_kind, username, secret_key, imap_host, imap_port, \
+             imap_security, smtp_host, smtp_port, smtp_security, created_at, position) \
+             VALUES ('a', 'Ada', 'ada@example.test', 'password', 'ada', 'a/mail-password', 'h', 993, 'tls', 'h', 587, \
+             'starttls', 0, 0); \
+             INSERT INTO drafts (id, account_id, created_at, updated_at) VALUES (7, 'a', 0, 0); \
+             INSERT INTO outbox (id, account_id, draft_id, message_id, subject, recipients_json, envelope_from, \
+             envelope_to, mime, mime_sha256, state, undo_until, next_attempt_at, attempts, created_at) \
+             VALUES (3, 'a', 7, 'm@example.test', 'Hi', '[]', 'ada@example.test', '[\"b@example.test\"]', \
+             x'00', 'h', 'failed', 5, 6, 2, 1);",
+        )
+        .unwrap();
+
+        to_latest(&mut conn, &backups).unwrap();
+        let row: (i64, Option<i64>, String, Option<i64>, String, i64) = conn
+            .query_row(
+                "SELECT id, draft_id, state, send_at, executor, attempts FROM outbox",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+            )
+            .unwrap();
+        assert_eq!(row, (3, Some(7), "failed".into(), None, "device".into(), 2));
+        let broken: i64 = conn
+            .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(broken, 0);
+        // The rebuilt table's foreign keys act as before.
+        conn.execute("DELETE FROM drafts WHERE id = 7", []).unwrap();
+        let draft: Option<i64> = conn.query_row("SELECT draft_id FROM outbox", [], |r| r.get(0)).unwrap();
+        assert_eq!(draft, None, "ON DELETE SET NULL still holds");
     }
 
     #[test]

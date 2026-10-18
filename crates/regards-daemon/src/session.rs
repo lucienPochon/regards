@@ -223,6 +223,10 @@ impl Session {
                 self.require_ui()?;
                 compose::undo(&self.state, params(request)?).await
             }
+            methods::OUTBOX_RESCHEDULE => {
+                self.require_ui()?;
+                compose::reschedule(&self.state, params(request)?).await
+            }
             methods::OUTBOX_SEND_AGAIN => {
                 self.require_ui()?;
                 compose::send_again(&self.state, params(request)?).await

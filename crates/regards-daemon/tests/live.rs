@@ -1108,6 +1108,7 @@ async fn live_a_reply_can_be_undone_then_goes_out_once_and_lands_in_sent() {
             DraftSendParams {
                 id: draft.id,
                 undo_seconds: Some(10),
+                send_at: None,
             },
         )
         .await
@@ -1132,6 +1133,7 @@ async fn live_a_reply_can_be_undone_then_goes_out_once_and_lands_in_sent() {
             DraftSendParams {
                 id: draft.id,
                 undo_seconds: Some(1),
+                send_at: None,
             },
         )
         .await
@@ -1229,6 +1231,7 @@ async fn live_a_message_that_may_have_gone_is_never_resent_by_itself() {
             DraftSendParams {
                 id: draft.id,
                 undo_seconds: Some(0),
+                send_at: None,
             },
         )
         .await
@@ -1259,6 +1262,7 @@ async fn live_a_message_that_may_have_gone_is_never_resent_by_itself() {
             DraftSendParams {
                 id: draft.id,
                 undo_seconds: Some(0),
+                send_at: None,
             },
         )
         .await
@@ -1360,6 +1364,7 @@ async fn live_attached_files_go_out_with_the_message() {
             DraftSendParams {
                 id: draft.id,
                 undo_seconds: Some(0),
+                send_at: None,
             },
         )
         .await
@@ -1429,6 +1434,7 @@ async fn live_a_forward_carries_the_original_files() {
             DraftSendParams {
                 id: draft.id,
                 undo_seconds: Some(0),
+                send_at: None,
             },
         )
         .await

@@ -76,6 +76,8 @@ pub(crate) struct State {
     /// Brings snoozed messages back when their time comes (ADR-0011).
     pub(crate) scheduler: scheduler::Scheduler,
     pub(crate) limits: SyncLimits,
+    /// A scheduled send found later than this is held for the person.
+    pub(crate) late_send_grace: Duration,
 }
 
 /// How much mail is fetched at a time (ADR-0009).
@@ -107,7 +109,13 @@ pub struct Daemon {
     vault: Option<Vault>,
     tls: TlsOptions,
     limits: SyncLimits,
+    late_send_grace: Duration,
 }
+
+/// A scheduled send found more than this late, because the computer was off
+/// or asleep at its time, waits for the person instead of going out unasked:
+/// a "Monday 9:00" message may no longer fit at 15:00 (ADR-0011 §2).
+pub const DEFAULT_LATE_SEND_GRACE: Duration = Duration::from_secs(60 * 60);
 
 impl Daemon {
     /// Take the data-directory lock and start listening.
@@ -152,6 +160,7 @@ impl Daemon {
             vault: None,
             tls: default_tls(),
             limits: SyncLimits::default(),
+            late_send_grace: DEFAULT_LATE_SEND_GRACE,
         })
     }
 
@@ -180,6 +189,13 @@ impl Daemon {
         self
     }
 
+    /// Hold scheduled sends found later than this, instead of after
+    /// [`DEFAULT_LATE_SEND_GRACE`].
+    pub fn with_late_send_grace(mut self, grace: Duration) -> Self {
+        self.late_send_grace = grace;
+        self
+    }
+
     /// Where clients can reach this daemon.
     pub fn endpoint(&self) -> &Endpoint {
         &self.endpoint
@@ -202,6 +218,7 @@ impl Daemon {
             tls,
             dirs,
             limits,
+            late_send_grace,
         } = self;
         let (stop, mut stopped) = watch::channel(false);
         let feed = Arc::new(feed::Feed::new(*store.subscribe().borrow()));
@@ -221,6 +238,7 @@ impl Daemon {
             outbox: sender::Outbox::default(),
             scheduler: scheduler::Scheduler::default(),
             limits,
+            late_send_grace,
         });
         queue::Queue::wake_all(&state);
         let follow = tokio::spawn({

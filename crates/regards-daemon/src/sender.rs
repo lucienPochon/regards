@@ -1,5 +1,6 @@
 //! The outbox runner (ADR-0010 §3): sends queued messages once their undo
-//! window is over, at most once each.
+//! window is over, or at their time (send later), at most once each. It is the
+//! `device` executor: entries for other executors are not its to send.
 //!
 //! - **Claim first:** an entry becomes `sending` in one guarded write, so an
 //!   undo arriving at the same moment either wins (nothing is sent) or finds
@@ -11,6 +12,11 @@
 //!   goes to the Sent folder unless the provider keeps its own (Gmail,
 //!   Microsoft).
 //! - **At startup**, an entry left `sending` by a crash becomes `uncertain`.
+//! - **Late** (ADR-0011 §2): a scheduled message found more than the grace
+//!   (an hour by default) past its time, because the computer was off or
+//!   asleep, is held for the person instead of going out unasked.
+//! - **Wall clock, checked often:** it naps at most [`MAX_NAP`], so a send is
+//!   on time after the computer sleeps or its clock changes.
 
 use crate::State;
 use crate::compose::now_ms;
@@ -30,6 +36,8 @@ const FIRST_RETRY: Duration = Duration::from_secs(5);
 const MAX_RETRY: Duration = Duration::from_secs(10 * 60);
 /// Copying to Sent is given up after this many tries; the message did go.
 const MAX_COPY_ATTEMPTS: u32 = 10;
+/// Monotonic timers may stop while the computer sleeps; the wall clock does not.
+const MAX_NAP: Duration = Duration::from_secs(30);
 
 #[derive(Default)]
 pub(crate) struct Outbox {
@@ -63,7 +71,7 @@ pub(crate) async fn run(state: Arc<State>) {
             tracing::warn!(%error, "the outbox paused");
         }
         let next = state.store.read(outbox::next_due_at).await.ok().flatten();
-        let wait = next.map(|at| Duration::from_millis(u64::try_from(at - now_ms()).unwrap_or(0)));
+        let wait = next.map(|at| Duration::from_millis(u64::try_from(at - now_ms()).unwrap_or(0)).min(MAX_NAP));
         tokio::select! {
             () = async {
                 match wait {
@@ -79,8 +87,18 @@ pub(crate) async fn run(state: Arc<State>) {
 async fn process(state: &Arc<State>) -> Result<(), StoreError> {
     let now = now_ms();
     let due = state.store.read(move |conn| outbox::due(conn, now)).await?;
+    let grace = i64::try_from(state.late_send_grace.as_millis()).unwrap_or(i64::MAX);
     for entry in due {
         match entry.state {
+            EntryState::Queued if late(entry.send_at, now_ms(), grace) => {
+                let id = entry.id;
+                if state.store.write(move |tx| outbox::hold(tx, id)).await?.value {
+                    tracing::info!(
+                        outbox = id,
+                        "a scheduled message is well past its time; held for the person"
+                    );
+                }
+            }
             EntryState::Queued => send_one(state, &entry).await?,
             EntryState::Sent => copy_to_sent(state, &entry).await?,
             _ => {}
@@ -139,6 +157,11 @@ async fn send_one(state: &Arc<State>, entry: &Entry) -> Result<(), StoreError> {
         }
     }
     Ok(())
+}
+
+/// Scheduled, and found more than `grace` ms past its time.
+fn late(send_at: Option<i64>, now: i64, grace: i64) -> bool {
+    send_at.is_some_and(|at| now.saturating_sub(at) > grace)
 }
 
 /// Hand the frozen bytes to the account's SMTP server.
@@ -267,6 +290,19 @@ async fn copy_to_sent(state: &Arc<State>, entry: &Entry) -> Result<(), StoreErro
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_scheduled_sends_well_past_their_time_are_late() {
+        let hour = 3_600_000;
+        // Sent now, however long it waited (offline, say): never late.
+        assert!(!late(None, 10 * hour, hour));
+        // On time, or a little late after a short sleep: it goes.
+        assert!(!late(Some(5 * hour), 5 * hour, hour));
+        assert!(!late(Some(5 * hour), 6 * hour, hour));
+        // More than the grace: held.
+        assert!(late(Some(5 * hour), 6 * hour + 1, hour));
+        assert!(!late(Some(i64::MIN), i64::MAX, i64::MAX), "no overflow");
+    }
 
     #[test]
     fn providers_that_file_sent_mail_themselves() {

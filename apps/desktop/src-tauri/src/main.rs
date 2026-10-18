@@ -19,8 +19,9 @@ use regards_ipc::protocol::{
     DeleteResult, DraftAttachFileParams, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult,
     DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MailboxListResult,
     MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams,
-    MoveResult, OutboxListResult, OutboxRef, OutboxUndoResult, PinParams, Principal, ServerSettings, SetFlagsParams,
-    SetFlagsResult, SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
+    MoveResult, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal,
+    ServerSettings, SetFlagsParams, SetFlagsResult, SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View,
+    ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -518,10 +519,22 @@ async fn draft_delete(bridge: State<'_, Bridge>, id: i64) -> Result<Value, Strin
 
 /// Queue the draft; it goes once the undo window is over.
 #[tauri::command]
-async fn draft_send(bridge: State<'_, Bridge>, id: i64, undo_seconds: Option<u32>) -> Result<DraftSendResult, String> {
+async fn draft_send(
+    bridge: State<'_, Bridge>,
+    id: i64,
+    undo_seconds: Option<u32>,
+    send_at: Option<i64>,
+) -> Result<DraftSendResult, String> {
     let mut client = bridge.connect().await?.client;
     client
-        .call(methods::DRAFT_SEND, DraftSendParams { id, undo_seconds })
+        .call(
+            methods::DRAFT_SEND,
+            DraftSendParams {
+                id,
+                undo_seconds,
+                send_at,
+            },
+        )
         .await
         .map_err(describe)
 }
@@ -538,6 +551,16 @@ async fn outbox_undo(bridge: State<'_, Bridge>, id: i64) -> Result<OutboxUndoRes
     let mut client = bridge.connect().await?.client;
     client
         .call(methods::OUTBOX_UNDO, OutboxRef { id })
+        .await
+        .map_err(describe)
+}
+
+/// Send a scheduled or held message at another time, or now (`send_at: None`).
+#[tauri::command]
+async fn outbox_reschedule(bridge: State<'_, Bridge>, id: i64, send_at: Option<i64>) -> Result<Value, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::OUTBOX_RESCHEDULE, OutboxRescheduleParams { id, send_at })
         .await
         .map_err(describe)
 }
@@ -658,6 +681,7 @@ fn main() {
             draft_send,
             outbox_list,
             outbox_undo,
+            outbox_reschedule,
             outbox_send_again,
             outbox_dismiss
         ])

@@ -2,8 +2,15 @@
 //! bytes. Each state change is one guarded statement, so an undo and the
 //! runner's claim can never both succeed:
 //!
-//! `queued` → (claim, after `undo_until`) → `sending` → `sent` | `failed` |
-//! `uncertain`, and a retryable failure goes back to `queued` later.
+//! `queued` → (claim, after `undo_until` and `send_at`) → `sending` → `sent` |
+//! `failed` | `uncertain`, and a retryable failure goes back to `queued` later.
+//!
+//! **Send later** (ADR-0011 §2): an entry with a `send_at` waits for it. One
+//! found too late, because the computer was off or asleep then, becomes `held`
+//! and waits for the person, who sends it now, picks a new time or takes it back.
+//!
+//! **Executors** (plan §5.7): this device sends only entries whose executor is
+//! `device`, the one executor in 1.0.
 
 use crate::StoreError;
 use regards_core::headers::Person;
@@ -13,6 +20,8 @@ use sha2::{Digest, Sha256};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum State {
     Queued,
+    /// Scheduled, and found too late: waits for the person.
+    Held,
     Sending,
     Sent,
     Failed,
@@ -23,6 +32,7 @@ impl State {
     fn parse(text: &str) -> Result<Self, StoreError> {
         Ok(match text {
             "queued" => Self::Queued,
+            "held" => Self::Held,
             "sending" => Self::Sending,
             "sent" => Self::Sent,
             "failed" => Self::Failed,
@@ -44,6 +54,8 @@ pub struct NewEntry {
     pub envelope_to: Vec<String>,
     pub mime: Vec<u8>,
     pub undo_until: i64,
+    /// Send later: not before this time (Unix ms).
+    pub send_at: Option<i64>,
     pub answering: Option<i64>,
 }
 
@@ -59,6 +71,7 @@ pub struct Entry {
     pub envelope_to: Vec<String>,
     pub state: State,
     pub undo_until: i64,
+    pub send_at: Option<i64>,
     pub next_attempt_at: i64,
     pub attempts: u32,
     pub last_error: Option<String>,
@@ -68,11 +81,11 @@ pub struct Entry {
 }
 
 pub fn queue(tx: &Transaction<'_>, entry: &NewEntry, now: i64) -> Result<i64, StoreError> {
-    let hash: String = Sha256::digest(&entry.mime).iter().map(|b| format!("{b:02x}")).collect();
+    let hash = sha256_hex(&entry.mime);
     tx.execute(
         "INSERT INTO outbox (account_id, draft_id, message_id, subject, recipients_json, envelope_from, envelope_to, \
-         mime, mime_sha256, state, undo_until, next_attempt_at, answering, created_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'queued', ?10, ?10, ?11, ?12)",
+         mime, mime_sha256, state, undo_until, send_at, next_attempt_at, answering, created_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'queued', ?10, ?13, MAX(?10, COALESCE(?13, ?10)), ?11, ?12)",
         params![
             entry.account_id,
             entry.draft_id,
@@ -86,31 +99,58 @@ pub fn queue(tx: &Transaction<'_>, entry: &NewEntry, now: i64) -> Result<i64, St
             entry.undo_until,
             entry.answering,
             now,
+            entry.send_at,
         ],
     )?;
     Ok(tx.last_insert_rowid())
 }
 
-/// Take an entry back before it is sent (undo send, or "edit" after a
-/// failure); returns its draft. `None` if it is no longer queued or failed:
-/// the runner claimed it first.
+/// Take an entry back before it is sent (undo send, a scheduled message
+/// called back, or "edit" after a failure); returns its draft. `None` if it is
+/// no longer queued, held or failed: the runner claimed it first.
 pub fn take_back(tx: &Transaction<'_>, id: i64) -> Result<Option<Option<i64>>, StoreError> {
     Ok(tx
         .query_row(
-            "DELETE FROM outbox WHERE id = ?1 AND state IN ('queued', 'failed') RETURNING draft_id",
+            "DELETE FROM outbox WHERE id = ?1 AND state IN ('queued', 'held', 'failed') RETURNING draft_id",
             [id],
             |row| row.get(0),
         )
         .optional()?)
 }
 
-/// Claim a due entry for sending. Only one claim can succeed, and only once
-/// its undo window is over.
+/// Claim a due entry for sending from this device. Only one claim can
+/// succeed, and only once its undo window is over and its time has come.
 pub fn claim(tx: &Transaction<'_>, id: i64, now: i64) -> Result<bool, StoreError> {
     Ok(tx.execute(
         "UPDATE outbox SET state = 'sending', attempts = attempts + 1 \
-         WHERE id = ?1 AND state = 'queued' AND undo_until <= ?2 AND next_attempt_at <= ?2",
+         WHERE id = ?1 AND state = 'queued' AND executor = 'device' AND undo_until <= ?2 AND next_attempt_at <= ?2",
         params![id, now],
+    )? == 1)
+}
+
+/// A scheduled entry found too late: hold it for the person. `false` if it
+/// was taken back or claimed meanwhile.
+pub fn hold(tx: &Transaction<'_>, id: i64) -> Result<bool, StoreError> {
+    Ok(tx.execute(
+        "UPDATE outbox SET state = 'held' WHERE id = ?1 AND state = 'queued' AND send_at IS NOT NULL",
+        [id],
+    )? == 1)
+}
+
+/// Send a queued or held entry at another time, or now (`send_at: None`),
+/// with its bytes dated anew (same message, same Message-ID). `false` if it
+/// is no longer waiting.
+pub fn reschedule(
+    tx: &Transaction<'_>,
+    id: i64,
+    send_at: Option<i64>,
+    mime: &[u8],
+    now: i64,
+) -> Result<bool, StoreError> {
+    Ok(tx.execute(
+        "UPDATE outbox SET state = 'queued', send_at = ?2, next_attempt_at = COALESCE(?2, ?3), mime = ?4, \
+         mime_sha256 = ?5 WHERE id = ?1 AND state IN ('queued', 'held') AND executor = 'device'",
+        params![id, send_at, now, mime, sha256_hex(mime)],
     )? == 1)
 }
 
@@ -167,10 +207,11 @@ pub fn recover(tx: &Transaction<'_>) -> Result<usize, StoreError> {
     )?)
 }
 
-/// Send a failed or uncertain entry again, now: the user decided.
+/// Send a failed or uncertain entry again, now: the user decided (so a
+/// scheduled one is no longer "late").
 pub fn send_again(tx: &Transaction<'_>, id: i64, now: i64) -> Result<bool, StoreError> {
     Ok(tx.execute(
-        "UPDATE outbox SET state = 'queued', undo_until = ?2, next_attempt_at = ?2, last_error = NULL \
+        "UPDATE outbox SET state = 'queued', undo_until = ?2, send_at = NULL, next_attempt_at = ?2, last_error = NULL \
          WHERE id = ?1 AND state IN ('failed', 'uncertain')",
         params![id, now],
     )? == 1)
@@ -209,7 +250,7 @@ pub fn finish(tx: &Transaction<'_>, id: i64) -> Result<(), StoreError> {
 }
 
 const COLUMNS: &str = "id, account_id, draft_id, message_id, subject, recipients_json, envelope_from, envelope_to, \
-    state, undo_until, next_attempt_at, attempts, last_error, sent_at, answering, created_at";
+    state, undo_until, next_attempt_at, attempts, last_error, sent_at, answering, created_at, send_at";
 
 pub fn get(conn: &Connection, id: i64) -> Result<Option<Entry>, StoreError> {
     conn.query_row(&format!("SELECT {COLUMNS} FROM outbox WHERE id = ?1"), [id], from_row)
@@ -233,22 +274,23 @@ pub fn list(conn: &Connection) -> Result<Vec<Entry>, StoreError> {
     )
 }
 
-/// Entries to send now, and sent ones whose Sent copy is still to do.
+/// Entries for this device to send now, and sent ones whose Sent copy is still to do.
 pub fn due(conn: &Connection, now: i64) -> Result<Vec<Entry>, StoreError> {
     query(
         conn,
         &format!(
-            "SELECT {COLUMNS} FROM outbox WHERE (state = 'queued' AND undo_until <= ?1 AND next_attempt_at <= ?1) \
-             OR (state = 'sent' AND next_attempt_at <= ?1) ORDER BY id"
+            "SELECT {COLUMNS} FROM outbox WHERE (state = 'queued' AND executor = 'device' AND undo_until <= ?1 \
+             AND next_attempt_at <= ?1) OR (state = 'sent' AND next_attempt_at <= ?1) ORDER BY id"
         ),
         [now],
     )
 }
 
-/// When something will next be due.
+/// When something will next be due on this device.
 pub fn next_due_at(conn: &Connection) -> Result<Option<i64>, StoreError> {
     Ok(conn.query_row(
-        "SELECT MIN(MAX(undo_until, next_attempt_at)) FROM outbox WHERE state IN ('queued', 'sent')",
+        "SELECT MIN(MAX(undo_until, next_attempt_at)) FROM outbox \
+         WHERE (state = 'queued' AND executor = 'device') OR state = 'sent'",
         [],
         |row| row.get(0),
     )?)
@@ -283,6 +325,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Entry, StoreError>> {
             envelope_to: from_json(&envelope_to)?,
             state: State::parse(&state)?,
             undo_until: row.get(9)?,
+            send_at: row.get(16)?,
             next_attempt_at: row.get(10)?,
             attempts: row.get(11)?,
             last_error: row.get(12)?,
@@ -292,6 +335,10 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Entry, StoreError>> {
         })
     };
     Ok(parse())
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn json<T: serde::Serialize + ?Sized>(value: &T) -> String {
@@ -364,6 +411,7 @@ mod tests {
             envelope_to: vec!["b@example.test".into()],
             mime: b"Subject: Hi\r\n\r\nHello\r\n".to_vec(),
             undo_until,
+            send_at: None,
             answering: None,
         }
     }
@@ -436,6 +484,111 @@ mod tests {
         store.write(move |tx| finish(tx, id)).await.unwrap();
         assert!(store.read(move |c| drafts::get(c, draft)).await.unwrap().is_none());
         assert_eq!(store.read(move |c| mime(c, id)).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn scheduled_entries_wait_for_their_time_and_late_ones_wait_for_the_person() {
+        let (_temp, store, account, draft) = store_with_draft().await;
+        let a = account.clone();
+        let id = store
+            .write(move |tx| {
+                let mut scheduled = entry(&a, draft, 10);
+                scheduled.send_at = Some(1_000);
+                queue(tx, &scheduled, 0)
+            })
+            .await
+            .unwrap()
+            .value;
+        // Past its undo window, but not its time.
+        assert!(store.read(move |c| due(c, 999)).await.unwrap().is_empty());
+        assert_eq!(store.read(next_due_at).await.unwrap(), Some(1_000));
+        assert!(!store.write(move |tx| claim(tx, id, 999)).await.unwrap().value);
+        // A new time: the bytes stay, the time moves.
+        assert!(
+            store
+                .write(move |tx| reschedule(tx, id, Some(2_000), b"later", 500))
+                .await
+                .unwrap()
+                .value
+        );
+        assert_eq!(store.read(move |c| mime(c, id)).await.unwrap().unwrap(), b"later");
+        assert!(store.read(move |c| due(c, 1_999)).await.unwrap().is_empty());
+        let got = store.read(move |c| get(c, id)).await.unwrap().unwrap();
+        assert_eq!((got.send_at, got.next_attempt_at), (Some(2_000), 2_000));
+
+        // Found too late: held, never claimed, not due, but still listed.
+        assert!(store.write(move |tx| hold(tx, id)).await.unwrap().value);
+        assert!(!store.write(move |tx| claim(tx, id, 10_000)).await.unwrap().value);
+        assert!(store.read(move |c| due(c, 10_000)).await.unwrap().is_empty());
+        assert_eq!(store.read(next_due_at).await.unwrap(), None);
+        assert_eq!(store.read(list).await.unwrap()[0].state, State::Held);
+
+        // The person sends it now.
+        assert!(
+            store
+                .write(move |tx| reschedule(tx, id, None, b"now", 10_000))
+                .await
+                .unwrap()
+                .value
+        );
+        assert!(store.write(move |tx| claim(tx, id, 10_000)).await.unwrap().value);
+        assert!(
+            !store.write(move |tx| hold(tx, id)).await.unwrap().value,
+            "claimed first"
+        );
+        assert!(
+            !store
+                .write(move |tx| reschedule(tx, id, Some(20_000), b"x", 10_000))
+                .await
+                .unwrap()
+                .value,
+            "too late to move"
+        );
+
+        // Or calls a held one back to its draft.
+        store.write(move |tx| failed(tx, id, "x")).await.unwrap();
+        assert_eq!(
+            store.write(move |tx| take_back(tx, id)).await.unwrap().value,
+            Some(Some(draft))
+        );
+        let a = account.clone();
+        let id = store
+            .write(move |tx| {
+                let mut scheduled = entry(&a, draft, 0);
+                scheduled.send_at = Some(1_000);
+                queue(tx, &scheduled, 0)
+            })
+            .await
+            .unwrap()
+            .value;
+        assert!(store.write(move |tx| hold(tx, id)).await.unwrap().value);
+        assert_eq!(
+            store.write(move |tx| take_back(tx, id)).await.unwrap().value,
+            Some(Some(draft))
+        );
+    }
+
+    #[tokio::test]
+    async fn sending_a_late_failure_again_is_no_longer_late() {
+        let (_temp, store, account, draft) = store_with_draft().await;
+        let id = store
+            .write(move |tx| {
+                let mut scheduled = entry(&account, draft, 0);
+                scheduled.send_at = Some(1_000);
+                queue(tx, &scheduled, 0)
+            })
+            .await
+            .unwrap()
+            .value;
+        assert!(store.write(move |tx| claim(tx, id, 1_000)).await.unwrap().value);
+        store.write(move |tx| failed(tx, id, "mailbox full")).await.unwrap();
+        assert!(store.write(move |tx| send_again(tx, id, 99_000)).await.unwrap().value);
+        let got = store.read(move |c| get(c, id)).await.unwrap().unwrap();
+        assert_eq!((got.state, got.send_at), (State::Queued, None));
+        assert!(
+            !store.write(move |tx| hold(tx, id)).await.unwrap().value,
+            "sent now, not held"
+        );
     }
 
     #[tokio::test]

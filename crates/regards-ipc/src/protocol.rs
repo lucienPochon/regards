@@ -78,12 +78,16 @@ pub mod methods {
     /// only: an agent must never make the daemon read and send local files.
     pub const DRAFT_ATTACH_FILE: &str = "draft.attach_file";
     pub const DRAFT_DETACH: &str = "draft.detach";
-    /// Freeze the draft into the outbox; it goes once the undo window is over.
+    /// Freeze the draft into the outbox; it goes once the undo window is over,
+    /// or at the time asked for (send later).
     pub const DRAFT_SEND: &str = "draft.send";
-    /// What is waiting to be sent, failed or may not have gone.
+    /// What is waiting to be sent, scheduled, held, failed or may not have gone.
     pub const OUTBOX_LIST: &str = "outbox.list";
-    /// Take back a message not yet sent (undo send, or edit after a failure).
+    /// Take back a message not yet sent (undo send, a scheduled or held one, or
+    /// edit after a failure).
     pub const OUTBOX_UNDO: &str = "outbox.undo";
+    /// Send a scheduled or held message at another time, or now.
+    pub const OUTBOX_RESCHEDULE: &str = "outbox.reschedule";
     /// Send a failed or uncertain message again: the user decided.
     pub const OUTBOX_SEND_AGAIN: &str = "outbox.send_again";
     /// Forget a failed or uncertain message (for example: it did go out).
@@ -709,6 +713,12 @@ pub struct DraftSendParams {
     /// Seconds during which the send can be undone: 0 to 30, default 10 (ADR-0010 §4).
     #[serde(default)]
     pub undo_seconds: Option<u32>,
+    /// Send later: when to send it, Unix time in milliseconds, in the future.
+    /// It goes from this device, so the computer must be on then; if it was
+    /// off or asleep and the time is more than an hour past, the message is
+    /// held for the person instead (ADR-0011 §2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub send_at: Option<i64>,
 }
 
 /// Result of [`methods::DRAFT_SEND`].
@@ -716,14 +726,20 @@ pub struct DraftSendParams {
 pub struct DraftSendResult {
     pub outbox_id: i64,
     /// Until when [`methods::OUTBOX_UNDO`] stops it, Unix time in milliseconds.
+    /// A scheduled message can be taken back until it goes.
     pub undo_until: i64,
+    #[serde(default)]
+    pub send_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OutboxState {
-    /// Waiting: for its undo window, or to retry.
+    /// Waiting: for its undo window, its time (send later), or to retry.
     Queued,
+    /// Scheduled, but found well past its time (the computer was off or
+    /// asleep): it waits for the person to send it, move it or take it back.
+    Held,
     Sending,
     /// Not sent; something must change first.
     Failed,
@@ -740,6 +756,9 @@ pub struct OutboxEntryView {
     pub recipients: Vec<Person>,
     pub state: OutboxState,
     pub undo_until: i64,
+    /// Send later: when it is meant to go.
+    #[serde(default)]
+    pub send_at: Option<i64>,
     pub next_attempt_at: i64,
     pub attempts: u32,
     pub last_error: Option<String>,
@@ -755,6 +774,15 @@ pub struct OutboxListResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutboxRef {
     pub id: i64,
+}
+
+/// Parameters of [`methods::OUTBOX_RESCHEDULE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutboxRescheduleParams {
+    pub id: i64,
+    /// The new time, Unix ms in the future; none to send it now.
+    #[serde(default)]
+    pub send_at: Option<i64>,
 }
 
 /// Result of [`methods::OUTBOX_UNDO`]: the draft it came from, to reopen.

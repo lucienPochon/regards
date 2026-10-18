@@ -1,11 +1,11 @@
 import { Avatar } from "./Avatar";
-import { type OutboxEntry, dismissOutbox, sendAgain, undoSend } from "./compose";
-import { peopleShort } from "./format";
+import { type OutboxEntry, dismissOutbox, reschedule, sendAgain, undoSend } from "./compose";
+import { fullDate, peopleShort } from "./format";
 import { Icon } from "./icons";
 
 /**
- * What has not gone out yet: waiting, failed, or perhaps sent. Each entry
- * says what happened and what can be done.
+ * What has not gone out yet: waiting, scheduled, held, failed, or perhaps
+ * sent. Each entry says what happened and what can be done.
  */
 export function OutboxList({
   entries,
@@ -42,7 +42,8 @@ export function OutboxList({
     <div className="list-scroll">
       <ul className="rows" aria-label="Outbox">
         {entries.map((entry) => {
-          const trouble = entry.state === "failed" || entry.state === "uncertain";
+          const trouble = entry.state === "failed" || entry.state === "uncertain" || entry.state === "held";
+          const waiting = entry.state === "held" || scheduled(entry);
           return (
             <li key={entry.id} className="row outbox-row">
               <span className="row-avatar">
@@ -57,7 +58,12 @@ export function OutboxList({
                 </span>
                 <span className={trouble ? "outbox-state bad" : "outbox-state"}>{describe(entry)}</span>
                 <span className="outbox-actions">
-                  {(entry.state === "failed" || (entry.state === "queued" && entry.attempts > 0)) && (
+                  {waiting && (
+                    <button type="button" className="btn small" onClick={() => act(() => reschedule(entry.id, null))}>
+                      Send now
+                    </button>
+                  )}
+                  {(waiting || entry.state === "failed" || (entry.state === "queued" && entry.attempts > 0)) && (
                     <button type="button" className="btn small" onClick={() => edit(entry)}>
                       Edit
                     </button>
@@ -87,6 +93,11 @@ export function OutboxList({
   );
 }
 
+/** Waiting for its time, not yet tried. */
+function scheduled(entry: OutboxEntry): boolean {
+  return entry.state === "queued" && entry.attempts === 0 && entry.send_at !== null && entry.send_at > Date.now();
+}
+
 function describe(entry: OutboxEntry): string {
   switch (entry.state) {
     case "sending":
@@ -95,7 +106,10 @@ function describe(entry: OutboxEntry): string {
       return `Not sent: ${entry.last_error ?? "the server refused it"}`;
     case "uncertain":
       return `It may or may not have been sent: ${entry.last_error ?? ""} Check the recipient or your Sent folder before sending it again.`;
+    case "held":
+      return `Not sent: it was due ${fullDate(entry.send_at ?? entry.next_attempt_at)}, while this computer was off or asleep. Send it now, or edit it.`;
     case "queued":
+      if (scheduled(entry)) return `Sends ${fullDate(entry.send_at!)}. This computer must be on then.`;
       if (entry.attempts === 0) return "Sending soon…";
       return `Not sent yet, trying again at ${new Date(entry.next_attempt_at).toLocaleTimeString()}${
         entry.last_error ? `: ${entry.last_error}` : ""

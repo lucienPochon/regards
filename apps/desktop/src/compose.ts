@@ -28,7 +28,8 @@ export interface DraftAttachment {
   size: number;
 }
 
-export type OutboxState = "queued" | "sending" | "failed" | "uncertain";
+/** `held`: scheduled, but found well past its time (the computer was off); it waits for the person. */
+export type OutboxState = "queued" | "held" | "sending" | "failed" | "uncertain";
 
 export interface OutboxEntry {
   id: number;
@@ -38,6 +39,8 @@ export interface OutboxEntry {
   recipients: Person[];
   state: OutboxState;
   undo_until: number;
+  /** Send later: when it is meant to go, Unix ms. */
+  send_at: number | null;
   next_attempt_at: number;
   attempts: number;
   last_error: string | null;
@@ -47,6 +50,8 @@ export interface Queued {
   outbox_id: number;
   /** Until when the send can be undone, Unix time in milliseconds. */
   undo_until: number;
+  /** Send later: when it goes. Until then it can be taken back. */
+  send_at: number | null;
 }
 
 export const newDraft = (accountId: string) => invoke<Draft>("draft_create", { accountId });
@@ -67,13 +72,20 @@ export function saveDraft(
   return invoke<Draft>("draft_update", { draft: { id, to, cc, bcc, subject, body, html: html ?? null } });
 }
 
-/** Queue it; it goes once the undo window is over. */
-export const sendDraft = (id: number, undoSeconds = 10) => invoke<Queued>("draft_send", { id, undoSeconds });
+/**
+ * Queue it; it goes once the undo window is over, or at `sendAt` (Unix ms,
+ * in the future). A scheduled message goes from this computer, which must be
+ * on then.
+ */
+export const sendDraft = (id: number, undoSeconds = 10, sendAt: number | null = null) =>
+  invoke<Queued>("draft_send", { id, undoSeconds, sendAt });
 
 export const listOutbox = () => invoke<{ entries: OutboxEntry[] }>("outbox_list");
 /** Undo send, or edit a failed message: returns the draft to reopen. */
 export const undoSend = (id: number) => invoke<{ draft_id: number | null }>("outbox_undo", { id });
 export const sendAgain = (id: number) => invoke("outbox_send_again", { id });
+/** A scheduled or held message: at another time, or now (`null`). */
+export const reschedule = (id: number, sendAt: number | null) => invoke("outbox_reschedule", { id, sendAt });
 export const dismissOutbox = (id: number) => invoke("outbox_dismiss", { id });
 
 /**

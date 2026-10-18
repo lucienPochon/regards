@@ -9,11 +9,13 @@ use regards_core::headers::{self, Person};
 use regards_ipc::protocol::{
     DraftAttachFileParams, DraftAttachment, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult,
     DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MessageRef,
-    OutboxEntryView, OutboxListResult, OutboxRef, OutboxState, OutboxUndoResult, RpcError, codes,
+    OutboxEntryView, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxState, OutboxUndoResult, RpcError,
+    codes,
 };
 use regards_store::drafts::{self, Content, Draft, Edit};
 use regards_store::outbox::{self, Entry, NewEntry, State as EntryState};
 use regards_store::{StoreError, accounts, mailboxes};
+use rusqlite::Transaction;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -307,8 +309,12 @@ pub(crate) async fn detach(state: &State, params: DraftDetachParams) -> Result<V
     view(state, draft_id).await
 }
 
+/// Send later: further ahead than this is surely a mistake (seconds read as
+/// milliseconds, say).
+const MAX_SEND_AHEAD_MS: i64 = 5 * 366 * 24 * 3600 * 1000;
+
 /// Freeze the draft's exact bytes into the outbox. It goes once the undo
-/// window is over; until then [`undo`] takes it back.
+/// window is over, or at `send_at`; until then [`undo`] takes it back.
 pub(crate) async fn send(state: &Arc<State>, params: DraftSendParams) -> Result<Value, RpcError> {
     let undo_seconds = params.undo_seconds.unwrap_or(DEFAULT_UNDO_SECONDS);
     if undo_seconds > MAX_UNDO_SECONDS {
@@ -317,10 +323,109 @@ pub(crate) async fn send(state: &Arc<State>, params: DraftSendParams) -> Result<
             format!("undo_seconds must be 0 to {MAX_UNDO_SECONDS}"),
         ));
     }
-    let id = params.id;
+    let (id, send_at) = (params.id, params.send_at);
     let now = now_ms();
+    if let Some(at) = send_at {
+        check_send_at(at, now)?;
+    }
     let undo_until = now + i64::from(undo_seconds) * 1000;
-    // The files are read before the write, so the writer does not wait on the disk.
+    let (seen_version, files) = draft_files(state, id).await?;
+    let outbox_id = state
+        .store
+        .write(move |tx| {
+            let (draft, account) = unchanged_draft(tx, id, seen_version)?;
+            if draft.sending {
+                return Err(StoreError::Conflict("this message is already being sent".into()));
+            }
+            // Dated for when it goes, so a scheduled one does not arrive looking old.
+            let message_id = compose::new_message_id(&account.email);
+            let outgoing = outgoing(&draft, &account, files, message_id, send_at.unwrap_or(now));
+            let mime = outgoing
+                .build()
+                .map_err(|error| StoreError::Conflict(error.to_string()))?;
+            let entry = NewEntry {
+                account_id: account.id.clone(),
+                draft_id: Some(draft.id),
+                message_id: outgoing.message_id.clone(),
+                subject: draft.subject.clone(),
+                recipients: draft.to.iter().chain(&draft.cc).chain(&draft.bcc).cloned().collect(),
+                envelope_from: account.email.clone(),
+                envelope_to: outgoing.recipients(),
+                mime,
+                undo_until,
+                send_at,
+                answering: draft.replying_to,
+            };
+            outbox::queue(tx, &entry, now)
+        })
+        .await
+        .map_err(conflict)?
+        .value;
+    state.outbox.wake();
+    Ok(json!(DraftSendResult {
+        outbox_id,
+        undo_until,
+        send_at,
+    }))
+}
+
+/// Send a scheduled or held message at another time, or now. Its draft is
+/// frozen, so the bytes are built again from it only to date them for when
+/// they go; the Message-ID stays.
+pub(crate) async fn reschedule(state: &Arc<State>, params: OutboxRescheduleParams) -> Result<Value, RpcError> {
+    let (id, send_at) = (params.id, params.send_at);
+    let now = now_ms();
+    if let Some(at) = send_at {
+        check_send_at(at, now)?;
+    }
+    let too_late = || RpcError::new(codes::CONFLICT, "too late: the message is being sent or has gone");
+    let entry = state
+        .store
+        .read(move |conn| outbox::get(conn, id))
+        .await
+        .map_err(crate::session::internal)?
+        .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such message in the outbox"))?;
+    if !matches!(entry.state, EntryState::Queued | EntryState::Held) {
+        return Err(too_late());
+    }
+    let draft_id = entry.draft_id.ok_or_else(too_late)?;
+    let (seen_version, files) = draft_files(state, draft_id).await?;
+    let message_id = entry.message_id;
+    let moved = state
+        .store
+        .write(move |tx| {
+            let (draft, account) = unchanged_draft(tx, draft_id, seen_version)?;
+            let mime = outgoing(&draft, &account, files, message_id, send_at.unwrap_or(now))
+                .build()
+                .map_err(|error| StoreError::Conflict(error.to_string()))?;
+            outbox::reschedule(tx, id, send_at, &mime, now)
+        })
+        .await
+        .map_err(conflict)?
+        .value;
+    if !moved {
+        return Err(too_late());
+    }
+    state.outbox.wake();
+    Ok(json!({ "rescheduled": true }))
+}
+
+fn check_send_at(at: i64, now: i64) -> Result<(), RpcError> {
+    if at <= now {
+        return Err(RpcError::new(codes::INVALID_PARAMS, "that time has passed"));
+    }
+    if at - now > MAX_SEND_AHEAD_MS {
+        return Err(RpcError::new(
+            codes::INVALID_PARAMS,
+            "send_at is more than five years ahead; it is Unix time in milliseconds",
+        ));
+    }
+    Ok(())
+}
+
+/// A draft's version and files, read before the write so the writer does not
+/// wait on the disk.
+async fn draft_files(state: &State, id: i64) -> Result<(i64, Vec<compose::Attachment>), RpcError> {
     let listed = state
         .store
         .read(move |conn| {
@@ -331,7 +436,7 @@ pub(crate) async fn send(state: &Arc<State>, params: DraftSendParams) -> Result<
         })
         .await
         .map_err(crate::session::internal)?;
-    let (seen_version, listed) = listed.ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such draft"))?;
+    let (version, listed) = listed.ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such draft"))?;
     let mut files = Vec::with_capacity(listed.len());
     for attachment in listed {
         let blobs = state.blobs.clone();
@@ -352,57 +457,44 @@ pub(crate) async fn send(state: &Arc<State>, params: DraftSendParams) -> Result<
             data,
         });
     }
-    let outbox_id = state
-        .store
-        .write(move |tx| {
-            let draft = drafts::get(tx, id)?.ok_or_else(|| StoreError::Conflict("no such draft".into()))?;
-            if draft.sending {
-                return Err(StoreError::Conflict("this message is already being sent".into()));
-            }
-            // What is frozen must be what was shown: a change since the files were read stops it.
-            if draft.updated_at != seen_version {
-                return Err(StoreError::Conflict(
-                    "the draft changed while it was being sent; send it again".into(),
-                ));
-            }
-            let account =
-                accounts::get(tx, &draft.account_id)?.ok_or_else(|| StoreError::Conflict("no such account".into()))?;
-            let outgoing = Outgoing {
-                attachments: files,
-                from: sender(&account),
-                to: draft.to.clone(),
-                cc: draft.cc.clone(),
-                bcc: draft.bcc.clone(),
-                subject: draft.subject.clone(),
-                text: draft.body.clone(),
-                html: draft.html.clone(),
-                message_id: compose::new_message_id(&account.email),
-                in_reply_to: draft.in_reply_to.clone(),
-                references: draft.references.clone(),
-                date: now,
-            };
-            let mime = outgoing
-                .build()
-                .map_err(|error| StoreError::Conflict(error.to_string()))?;
-            let entry = NewEntry {
-                account_id: account.id.clone(),
-                draft_id: Some(draft.id),
-                message_id: outgoing.message_id.clone(),
-                subject: draft.subject.clone(),
-                recipients: draft.to.iter().chain(&draft.cc).chain(&draft.bcc).cloned().collect(),
-                envelope_from: account.email.clone(),
-                envelope_to: outgoing.recipients(),
-                mime,
-                undo_until,
-                answering: draft.replying_to,
-            };
-            outbox::queue(tx, &entry, now)
-        })
-        .await
-        .map_err(conflict)?
-        .value;
-    state.outbox.wake();
-    Ok(json!(DraftSendResult { outbox_id, undo_until }))
+    Ok((version, files))
+}
+
+/// The draft and its account, if the draft is as it was when its files were
+/// read: what is frozen must be what was shown.
+fn unchanged_draft(tx: &Transaction<'_>, id: i64, seen_version: i64) -> Result<(Draft, accounts::Account), StoreError> {
+    let draft = drafts::get(tx, id)?.ok_or_else(|| StoreError::Conflict("no such draft".into()))?;
+    if draft.updated_at != seen_version {
+        return Err(StoreError::Conflict(
+            "the draft changed while it was being sent; send it again".into(),
+        ));
+    }
+    let account =
+        accounts::get(tx, &draft.account_id)?.ok_or_else(|| StoreError::Conflict("no such account".into()))?;
+    Ok((draft, account))
+}
+
+fn outgoing(
+    draft: &Draft,
+    account: &accounts::Account,
+    attachments: Vec<compose::Attachment>,
+    message_id: String,
+    date: i64,
+) -> Outgoing {
+    Outgoing {
+        attachments,
+        from: sender(account),
+        to: draft.to.clone(),
+        cc: draft.cc.clone(),
+        bcc: draft.bcc.clone(),
+        subject: draft.subject.clone(),
+        text: draft.body.clone(),
+        html: draft.html.clone(),
+        message_id,
+        in_reply_to: draft.in_reply_to.clone(),
+        references: draft.references.clone(),
+        date,
+    }
 }
 
 pub(crate) async fn outbox_list(state: &State) -> Result<Value, RpcError> {
@@ -526,12 +618,14 @@ fn entry_view(entry: Entry) -> OutboxEntryView {
         recipients: entry.recipients,
         state: match entry.state {
             EntryState::Queued => OutboxState::Queued,
+            EntryState::Held => OutboxState::Held,
             // Sent entries are not listed; a sending one shows as sending.
             EntryState::Sending | EntryState::Sent => OutboxState::Sending,
             EntryState::Failed => OutboxState::Failed,
             EntryState::Uncertain => OutboxState::Uncertain,
         },
         undo_until: entry.undo_until,
+        send_at: entry.send_at,
         next_attempt_at: entry.next_attempt_at,
         attempts: entry.attempts,
         last_error: entry.last_error,

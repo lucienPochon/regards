@@ -234,6 +234,26 @@ flowchart LR
 - **Accepted when:**
   - **1.0:** sends are on time while the computer is on, and catch-up is correct after sleep or shutdown, with no duplicates under fault injection.
   - **1.1:** a scheduled email is delivered on time **with the laptop asleep** for Microsoft, Gmail, Infomaniak, iCloud and self-hosted Dovecot.
+- **Implementation (Phase 3, device executor):**
+  - **Schema (migration 0013):**
+    - The outbox gains `send_at` and `executor` (`device` in 1.0).
+    - It gains a `held` state.
+    - The CHECK constraints already allow the 1.1 executor names and `handed_off`, so 1.1 needs no table rebuild.
+  - **Sending later:**
+    - `draft.send` takes `send_at`: a future time, at most five years ahead.
+    - The bytes are frozen with `Date` set to that time, so the message does not arrive looking old.
+    - The device runner claims only `device` entries, once both the undo window and `send_at` are past.
+    - It naps at most 30 s, so it notices sleep and clock changes.
+  - **Catch-up:** a scheduled entry found more than the grace (1 h, `Daemon::with_late_send_grace`) past its time becomes `held`, never sent unasked. A message sent "now" is never late, however long it waited offline.
+  - **The person's choices:**
+    - `outbox.reschedule` moves a queued or held entry to a new time or to now. It re-freezes the bytes from the frozen draft, re-dated, with the same Message-ID.
+    - `outbox.undo` takes it back to its draft.
+    - "Send again" after a failure clears `send_at`.
+  - **UI:** the Outbox says "Sends Mon 19 Oct, 09:00. This computer must be on then." and, for held entries, offers **Send now** and **Edit**.
+  - **Tests:** `tests/send_later.rs` runs against fake IMAP and SMTP, in CI. It covers:
+    - not before its time, and dated for then
+    - move, send now and take back
+    - a restart after downtime, where the entry well past its time is held and the one a little late goes
 
 ### 5.8 Send Service and Pro (P1, 1.1, ADR-0018/0019)
 
