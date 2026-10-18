@@ -33,6 +33,10 @@ Loopback TCP is reachable by every local user and, through DNS-rebinding mistake
    - The schema is generated from Rust types, so the TypeScript and CLI JSON contracts never drift.
 3. **Principals.** Every connection is labelled by its principal:
    - `ui`: the desktop bridge only. It holds a per-launch secret passed from the daemon to the desktop process through an inherited handle or stdin, never written to disk when the desktop starts the daemon.
+     - **Implementation (Phase 0):**
+       - **Handoff:** the daemon generates 256 random bits and prints them once on its stdout pipe, in the same line that signals it is ready. The desktop presents them as `ui_token` in `hello`.
+       - **Mismatch:** a wrong token is refused (`FORBIDDEN`), not downgraded to `agent`, so a desktop notices that its daemon was replaced.
+       - **Limit:** a same-user process that restarts the daemon itself can obtain a token. That is within the "does not protect against" limit below.
    - `agent`: all CLI and MCP connections, which are subject to per-account access levels (ADR-0012).
    - **Changing access levels, accounts or credentials is allowed only for the `ui` principal.**
 4. **Tauri hardening:**

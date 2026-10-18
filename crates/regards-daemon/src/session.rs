@@ -130,9 +130,20 @@ impl Session {
             tracing::info!(client_build = %params.build_id, "client from a different build connected");
         }
 
-        // Every connection is an agent until the desktop bridge presents its
-        // per-launch secret (ADR-0006); no method requires the UI principal yet.
-        let principal = Principal::Agent;
+        // Only the desktop bridge holds the per-launch secret (ADR-0006). A wrong
+        // token is refused instead of downgraded, so a stale desktop notices
+        // that the daemon was replaced.
+        let principal = match (&params.ui_token, &self.state.ui_token) {
+            (None, _) => Principal::Agent,
+            (Some(offered), Some(expected)) if expected.matches(offered) => Principal::Ui,
+            (Some(_), _) => {
+                tracing::warn!(client_kind = ?params.client_kind, "rejected a connection with an unknown desktop token");
+                return Err(RpcError::new(
+                    codes::FORBIDDEN,
+                    "the desktop access token was not accepted",
+                ));
+            }
+        };
         self.principal = Some(principal);
         tracing::debug!(client_kind = ?params.client_kind, ?principal, "handshake completed");
 

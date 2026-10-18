@@ -23,6 +23,11 @@ Several clients must see the same mail, drafts and state: the desktop UI, the CL
    - On connect, client and daemon exchange a **protocol version and build identity**. A mismatched daemon is asked to shut down and is replaced, so a client never talks to a stale daemon after an update.
    - The daemon keeps running when windows close. The user chooses between quitting with the app (the default) and **background mode**, which starts at login and is required for reliable scheduled work (ADR-0011).
    - `regards daemon status|stop` exist for diagnostics.
+   - **Implementation (Phase 0):**
+     - **Locating the program:** clients start `regards daemon run --ui-handoff` from the `regards` program next to their own executable. Tauri installs sidecars there, and Cargo builds there in development.
+     - **Detaching:** the daemon is detached from the caller's console and process group.
+     - **Logging:** it writes to `logs/daemon.log`.
+     - **Desktop takeover:** the desktop also replaces a running daemon that does not accept its desktop token (ADR-0006). The desktop app is single-instance, so two app windows never replace each other's daemon.
 4. **The core is a library crate** (`core`) with no I/O transport dependencies. The daemon crate wraps it with the IPC server (ADR-0006). Tests run the core in-process.
 5. **Crash isolation.** If the UI crashes, scheduled sends and sync continue. If the daemon crashes, the UI shows a reconnecting state and the next client call restarts the daemon.
 

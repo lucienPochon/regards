@@ -5,7 +5,7 @@ Regards is a local-first, open-source email client for **Windows, macOS and Linu
 > **Status: pre-alpha (Phase 0, foundation).** No mail features yet. What exists today:
 > - the background service (daemon) and its local API
 > - the `regards` CLI
-> - a minimal desktop window that shows the service's status
+> - a minimal desktop window that starts the service and shows its status
 >
 > See the [plan](docs/research/03-independent-implementation-plan.md).
 
@@ -39,14 +39,21 @@ npm install
 npm run tauri dev
 ```
 
+`tauri dev` builds the `regards` CLI first. The app starts the daemon from the `regards` program next to its own executable, which is also where installers will put it. Set `REGARDS_DAEMON_BIN` to use a different program.
+
 ## Try the daemon
 
 ```sh
-regards daemon run        # run the daemon in the foreground (Ctrl+C to stop)
-regards daemon status     # in another terminal; add --json for machine output
+regards daemon start      # start it in the background (no-op if it is running)
+regards daemon run        # or run it in the foreground (Ctrl+C to stop)
+regards daemon status     # add --json for machine output
 regards daemon stop
 regards version
 ```
+
+A daemon started in the background logs to `logs/daemon.log` in the data directory.
+
+**The desktop app owns the daemon it uses.** Only a daemon the app started itself can give it desktop access ([ADR-0006](docs/adr/0006-local-ipc-and-security.md)). When the app finds a daemon started some other way, for example by `regards daemon run`, it replaces it with its own. When the app quits, it stops its daemon.
 
 During development, point Regards at a throwaway data directory so it never touches real data:
 

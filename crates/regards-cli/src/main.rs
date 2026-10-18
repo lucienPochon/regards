@@ -4,8 +4,9 @@ use clap::{Parser, Subcommand};
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_core::paths::DataDirs;
 use regards_daemon::{Daemon, DaemonError};
+use regards_ipc::launcher::Announcement;
 use regards_ipc::protocol::ClientKind;
-use regards_ipc::{Client, ClientError, Endpoint};
+use regards_ipc::{Client, ClientError, Endpoint, Launcher, UiToken};
 use serde_json::json;
 use std::process::ExitCode;
 
@@ -37,7 +38,14 @@ enum Command {
 #[derive(Subcommand)]
 enum DaemonCommand {
     /// Run the daemon in the foreground (Ctrl+C to stop).
-    Run,
+    Run {
+        /// Print one readiness line with a per-launch desktop token on stdout.
+        /// Used by clients that start the daemon in the background.
+        #[arg(long = "ui-handoff", hide = true)]
+        ui_handoff: bool,
+    },
+    /// Start the daemon in the background if it is not already running.
+    Start,
     /// Report whether the daemon is running.
     Status,
     /// Ask the running daemon to stop.
@@ -69,7 +77,8 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
         Command::Daemon(command) => {
             let dirs = DataDirs::resolve()?;
             match command {
-                DaemonCommand::Run => daemon_run(dirs).await,
+                DaemonCommand::Run { ui_handoff } => daemon_run(dirs, ui_handoff).await,
+                DaemonCommand::Start => daemon_start(dirs, cli.json).await,
                 DaemonCommand::Status => daemon_status(&dirs, cli.json).await,
                 DaemonCommand::Stop => daemon_stop(&dirs, cli.json).await,
             }
@@ -77,15 +86,48 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
     }
 }
 
-async fn daemon_run(dirs: DataDirs) -> anyhow::Result<ExitCode> {
+async fn daemon_run(dirs: DataDirs, ui_handoff: bool) -> anyhow::Result<ExitCode> {
     init_logging();
+    // With --ui-handoff, the starting process reads exactly one line from stdout.
+    let announce = |announcement: Announcement| {
+        if ui_handoff {
+            println!("{}", announcement.to_line());
+        }
+    };
     let daemon = match Daemon::bind(dirs).await {
         Ok(daemon) => daemon,
         Err(error @ DaemonError::AlreadyRunning(_)) => {
             eprintln!("{error}");
+            announce(Announcement::AlreadyRunning);
             return Ok(ExitCode::from(EXIT_ALREADY_RUNNING));
         }
-        Err(error) => return Err(error.into()),
+        Err(error) => {
+            announce(Announcement::Failed {
+                message: error.to_string(),
+            });
+            return Err(error.into());
+        }
+    };
+    let daemon = if ui_handoff {
+        let token = match UiToken::generate() {
+            Ok(token) => token,
+            Err(error) => {
+                let message = format!("no secure random numbers available: {error}");
+                announce(Announcement::Failed {
+                    message: message.clone(),
+                });
+                anyhow::bail!(message);
+            }
+        };
+        let daemon = daemon.with_ui_token(token.clone());
+        announce(Announcement::Ready {
+            pid: std::process::id(),
+            build_id: BUILD_ID.to_owned(),
+            ui_token: token,
+        });
+        daemon
+    } else {
+        daemon
     };
     eprintln!(
         "Regards daemon {VERSION} serving {} on {}",
@@ -97,6 +139,34 @@ async fn daemon_run(dirs: DataDirs) -> anyhow::Result<ExitCode> {
             let _ = tokio::signal::ctrl_c().await;
         })
         .await;
+    Ok(ExitCode::SUCCESS)
+}
+
+async fn daemon_start(dirs: DataDirs, as_json: bool) -> anyhow::Result<ExitCode> {
+    let program = std::env::current_exe()?;
+    let launcher = Launcher::new(dirs.clone(), program);
+    let mut connected = launcher.connect_or_start(ClientKind::Cli, None, false).await?;
+    let health = connected.client.health().await?;
+    let started = connected.launched.is_some();
+    if as_json {
+        println!(
+            "{}",
+            json!({
+                "started": started,
+                "replaced": connected.replaced,
+                "pid": health.pid,
+                "endpoint": launcher.endpoint().to_string(),
+            })
+        );
+    } else if started {
+        println!(
+            "Started the Regards daemon (pid {}). Its log is {}.",
+            health.pid,
+            dirs.daemon_log().display()
+        );
+    } else {
+        println!("The Regards daemon is already running (pid {}).", health.pid);
+    }
     Ok(ExitCode::SUCCESS)
 }
 

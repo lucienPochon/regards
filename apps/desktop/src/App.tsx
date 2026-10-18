@@ -48,27 +48,25 @@ function ServiceStatus({ check }: { check: Check }) {
     return <p className="error">Could not check the service: {check.message}</p>;
   }
   const { status } = check;
-  if (status.error) {
-    return <p className="error">{status.error}</p>;
-  }
-  if (!status.running) {
+  if (status.error || !status.running) {
     return (
-      <p>
-        <span className="dot off" aria-hidden="true" /> Not running. Start it with <code>regards daemon run</code>.
+      <p className="error">
+        <span className="dot off" aria-hidden="true" /> The service could not be started.{" "}
+        {status.error}
       </p>
     );
   }
   return (
     <>
       <p>
-        <span className="dot on" aria-hidden="true" /> Running · version {status.version} · up{" "}
-        {status.uptimeSecs ?? 0}s
+        <span className="dot on" aria-hidden="true" /> Running · version {status.version} · pid{" "}
+        {status.pid} · up {status.uptimeSecs ?? 0}s
       </p>
-      {status.sameBuild === false && (
-        <p className="warning">
-          The service is from a different build ({status.buildId}). Restart it to update.
-        </p>
-      )}
+      <p className="muted">
+        {status.desktopAccess ? "This app has desktop access." : "This app has agent access only."}
+        {status.started && " Started by this app just now."}
+        {status.replaced && " An older or separately started service was replaced."}
+      </p>
     </>
   );
 }

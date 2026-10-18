@@ -12,8 +12,12 @@
 pub mod client;
 pub mod endpoint;
 pub mod framing;
+pub mod launcher;
 pub mod protocol;
+pub mod token;
 pub mod transport;
 
 pub use client::{Client, ClientError};
 pub use endpoint::Endpoint;
+pub use launcher::{LaunchError, Launcher};
+pub use token::UiToken;

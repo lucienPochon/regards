@@ -7,6 +7,7 @@
 mod session;
 
 use regards_core::paths::DataDirs;
+use regards_ipc::UiToken;
 use regards_ipc::endpoint::Endpoint;
 use regards_ipc::transport::Listener;
 use std::fs::{File, TryLockError};
@@ -32,6 +33,8 @@ pub enum DaemonError {
 pub(crate) struct State {
     pub(crate) started: Instant,
     pub(crate) stop: watch::Sender<bool>,
+    /// The desktop bridge's per-launch secret, when one was handed off.
+    pub(crate) ui_token: Option<UiToken>,
 }
 
 /// A daemon that holds its data-directory lock and is listening, but not yet serving.
@@ -40,6 +43,7 @@ pub struct Daemon {
     endpoint: Endpoint,
     listener: Listener,
     lock: File,
+    ui_token: Option<UiToken>,
 }
 
 impl Daemon {
@@ -76,7 +80,15 @@ impl Daemon {
             endpoint,
             listener,
             lock,
+            ui_token: None,
         })
+    }
+
+    /// Grant the `ui` principal to connections that present `token` (ADR-0006).
+    /// Without a token, every connection is an `agent`.
+    pub fn with_ui_token(mut self, token: UiToken) -> Self {
+        self.ui_token = Some(token);
+        self
     }
 
     /// Where clients can reach this daemon.
@@ -95,12 +107,14 @@ impl Daemon {
             mut listener,
             lock,
             endpoint,
+            ui_token,
             ..
         } = self;
         let (stop, mut stopped) = watch::channel(false);
         let state = Arc::new(State {
             started: Instant::now(),
             stop,
+            ui_token,
         });
         tracing::info!(%endpoint, "daemon listening");
 

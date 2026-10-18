@@ -12,6 +12,13 @@ ignore = [
     # macro reached only through Tauri's Linux GTK stack (gtk-rs 0.18 / glib-macros).
     # Remove this entry when Tauri moves to a gtk-rs release without it.
     { id = "RUSTSEC-2024-0370", reason = "build-time only, via tauri -> gtk 0.18 -> glib-macros; no maintained alternative in Tauri 2.12" },
+    # zvariant, zvariant_derive and zbus_names were merged into zbus 6 (2026-10-16);
+    # the zbus 5 line still works and is not a vulnerability. Reached only on Linux,
+    # through tauri-plugin-single-instance 2.5 -> zbus 5. Remove these entries when
+    # the plugin moves to zbus 6.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant merged into zbus 6; Linux-only via tauri-plugin-single-instance -> zbus 5" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names merged into zbus 6; Linux-only via tauri-plugin-single-instance -> zbus 5" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive merged into zbus 6; Linux-only via tauri-plugin-single-instance -> zbus 5" },
 ]
 
 [licenses]

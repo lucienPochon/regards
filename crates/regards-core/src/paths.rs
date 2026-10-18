@@ -50,6 +50,12 @@ impl DataDirs {
         self.data.join("run")
     }
 
+    /// Log of a daemon started in the background by a client. It never
+    /// contains message content or secrets.
+    pub fn daemon_log(&self) -> PathBuf {
+        self.data.join("logs").join("daemon.log")
+    }
+
     /// Short identifier derived from the data directory. It names per-instance
     /// resources such as the Windows named pipe; it is not a secret.
     pub fn scope_id(&self) -> String {

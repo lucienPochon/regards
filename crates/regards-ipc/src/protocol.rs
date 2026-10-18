@@ -1,5 +1,6 @@
 //! JSON-RPC 2.0 messages and the typed Regards methods.
 
+use crate::token::UiToken;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -152,6 +153,10 @@ pub struct HelloParams {
     pub protocol_versions: Vec<u32>,
     pub build_id: String,
     pub client_kind: ClientKind,
+    /// The desktop bridge's per-launch secret. A matching token gives the
+    /// `ui` principal; a wrong one is rejected with [`codes::FORBIDDEN`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui_token: Option<UiToken>,
 }
 
 /// Result of [`methods::HELLO`].

@@ -3,8 +3,10 @@
 use crate::endpoint::Endpoint;
 use crate::framing::{self, FrameError};
 use crate::protocol::{
-    ClientKind, HealthResult, HelloParams, HelloResult, PROTOCOL_VERSIONS, Request, RpcError, ServerMessage, methods,
+    ClientKind, HealthResult, HelloParams, HelloResult, PROTOCOL_VERSIONS, Principal, Request, RpcError, ServerMessage,
+    methods,
 };
+use crate::token::UiToken;
 use crate::transport::{self, Stream};
 use regards_core::build_info::BUILD_ID;
 use serde::Serialize;
@@ -36,8 +38,22 @@ pub struct Client {
 }
 
 impl Client {
-    /// Connect and perform the `hello` handshake.
+    /// Connect and perform the `hello` handshake as an `agent` connection.
     pub async fn connect(endpoint: &Endpoint, kind: ClientKind) -> Result<Self, ClientError> {
+        Self::connect_with(endpoint, kind, None).await
+    }
+
+    /// Connect, presenting the desktop bridge's token when there is one.
+    ///
+    /// A token the daemon does not recognise fails with a [`codes::FORBIDDEN`]
+    /// RPC error rather than silently downgrading the connection.
+    ///
+    /// [`codes::FORBIDDEN`]: crate::protocol::codes::FORBIDDEN
+    pub async fn connect_with(
+        endpoint: &Endpoint,
+        kind: ClientKind,
+        ui_token: Option<&UiToken>,
+    ) -> Result<Self, ClientError> {
         let stream = transport::connect(endpoint).await.map_err(|error| {
             if transport::is_not_running(&error) {
                 ClientError::NotRunning {
@@ -58,6 +74,7 @@ impl Client {
                     protocol_versions: PROTOCOL_VERSIONS.to_vec(),
                     build_id: BUILD_ID.to_owned(),
                     client_kind: kind,
+                    ui_token: ui_token.cloned(),
                 },
             )
             .await?;
@@ -72,6 +89,11 @@ impl Client {
     /// Whether the daemon was built from the same source as this client.
     pub fn is_same_build(&self) -> bool {
         self.hello.daemon_build_id == BUILD_ID
+    }
+
+    /// The principal the daemon assigned to this connection.
+    pub fn principal(&self) -> Principal {
+        self.hello.principal
     }
 
     /// Call a method and decode its result.

@@ -19,6 +19,8 @@ regards-core.workspace = true
 regards-ipc.workspace = true
 serde.workspace = true
 tauri = { version = "2.12", features = [] }
+tauri-plugin-single-instance = "2.5"
+tokio.workspace = true
 
 [lints]
 workspace = true
