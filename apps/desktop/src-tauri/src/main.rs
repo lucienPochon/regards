@@ -5,10 +5,13 @@
 //!
 //! The app starts the daemon itself (ADR-0005) and keeps the per-launch token
 //! the daemon hands it, which is what gives this process the `ui` principal.
+//! In background mode, on by default, it starts at login and stays in the
+//! tray when its window closes ([`background`]).
 
 // Release builds on Windows have no console window.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod background;
 mod mail_frame;
 
 use regards_core::paths::DataDirs;
@@ -29,7 +32,8 @@ use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
+use tauri_plugin_autostart::MacosLauncher;
 use tokio::sync::Mutex;
 
 /// Overrides where the `regards` program is looked for (development and tests).
@@ -54,8 +58,8 @@ impl Bridge {
         }
     }
 
-    /// Stop the daemon if this process started it; ADR-0005's default of
-    /// quitting with the app until background mode exists.
+    /// Stop the daemon if this process started it: the app is quitting (from
+    /// the tray, or its window closed with background mode off).
     async fn stop_own_daemon(&self) {
         let (Ok(launcher), Some(token)) = (&self.launcher, self.token.lock().await.take()) else {
             return;
@@ -632,25 +636,50 @@ fn explain(error: LaunchError) -> String {
     }
 }
 
+/// Whether Regards keeps running in the background (ADR-0017 §1).
+#[tauri::command]
+fn background_get(background: State<'_, background::Background>) -> bool {
+    background.on()
+}
+
+#[tauri::command]
+fn background_set(app: AppHandle, background: State<'_, background::Background>, on: bool) -> Result<(), String> {
+    background.set(&app, on)
+}
+
 fn main() {
     let app = tauri::Builder::default()
         // Must come first: a second app instance would replace this one's daemon.
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            background::show(app)
         }))
+        // Used from Rust only: the WebView is granted none of its commands.
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec![background::BACKGROUND_ARG]),
+        ))
         .manage(Bridge::new())
+        .manage(background::Background::load(DataDirs::resolve().ok().as_ref()))
         .register_asynchronous_uri_scheme_protocol(mail_frame::SCHEME, mail_frame::handle)
         .setup(|app| {
             tauri::async_runtime::spawn(forward_changes(app.handle().clone()));
+            background::setup(app)?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // In background mode, closing the window leaves Regards in the tray.
+            if let WindowEvent::CloseRequested { api, .. } = event
+                && window.state::<background::Background>().on()
+            {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             daemon_status,
+            background_get,
+            background_set,
             account_list,
             account_add,
             account_remove,
@@ -688,13 +717,17 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("failed to start the Regards desktop app");
 
-    app.run(|app, event| {
-        if let RunEvent::Exit = event {
+    app.run(|app, event| match event {
+        RunEvent::Exit => {
             let bridge = app.state::<Bridge>();
             bridge.closing.store(true, Ordering::SeqCst);
             tauri::async_runtime::block_on(async {
                 let _ = tokio::time::timeout(Duration::from_secs(3), bridge.stop_own_daemon()).await;
             });
         }
+        // The Dock icon, clicked while the window is hidden.
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { .. } => background::show(app),
+        _ => {}
     });
 }

@@ -65,6 +65,11 @@ impl DataDirs {
         self.data.join("backups")
     }
 
+    /// The desktop app's own settings, such as background mode.
+    pub fn desktop_settings(&self) -> PathBuf {
+        self.data.join("desktop.json")
+    }
+
     /// Log of a daemon started in the background by a client. It never
     /// contains message content or secrets.
     pub fn daemon_log(&self) -> PathBuf {

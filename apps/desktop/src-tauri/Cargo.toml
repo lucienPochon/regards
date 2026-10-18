@@ -19,10 +19,12 @@ regards-core.workspace = true
 regards-ipc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tauri = { version = "2.12", features = [] }
+tauri = { version = "2.12", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2.5"
 # The file picker, used from Rust only: the WebView is granted none of its commands.
 tauri-plugin-dialog = "2.8"
+# Start at login for background mode (ADR-0017 §1), used from Rust only.
+tauri-plugin-autostart = "2.7"
 getrandom.workspace = true
 open = "5.4"
 tokio.workspace = true

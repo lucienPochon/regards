@@ -24,6 +24,7 @@ const undos = new Map<
 const SOMEDAY = 32_503_680_000_000;
 const parked = (m: FixtureMessage) => m.aside === true || (m.snoozed_until ?? 0) > Date.now();
 let nextId = 10_000;
+let background = true;
 
 /** Like the daemon's runner: it goes once undo is over and its time has come, into Sent. */
 function sendWhenDue(entry: OutboxEntry) {
@@ -405,6 +406,11 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return { rescheduled: true };
     }
+    case "background_get":
+      return background;
+    case "background_set":
+      background = args.on as boolean;
+      return null;
     case "outbox_list":
       return { entries: outbox };
     case "outbox_undo": {

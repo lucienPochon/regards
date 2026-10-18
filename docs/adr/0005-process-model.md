@@ -28,6 +28,12 @@ Several clients must see the same mail, drafts and state: the desktop UI, the CL
      - **Detaching:** the daemon is detached from the caller's console and process group.
      - **Logging:** it writes to `logs/daemon.log`.
      - **Desktop takeover:** the desktop also replaces a running daemon that does not accept its desktop token (ADR-0006). The desktop app is single-instance, so two app windows never replace each other's daemon.
+   - **Implementation (Phase 3), background mode (ADR-0017 §1):**
+     - **Default:** on. The setting is `background` in `desktop.json` in the data directory.
+     - **Closing the window** hides it, and the app stays in the tray with its daemon.
+     - **The tray menu** offers "Open Regards", "Run in the background" (a check mark) and "Quit Regards". Quitting stops the app's own daemon, and with it scheduled work. Clicking the icon, or launching the app again, brings the window back.
+     - **Start at login:** the app is registered to start at login with `--background`, and then shows no window. This uses the autostart plugin: the Run key on Windows, a LaunchAgent on macOS, an XDG autostart entry on Linux. The entry is rewritten at each start, so it follows the app when it moves. Development builds never register themselves.
+     - **Off:** closing the window quits, as in Phase 0, and the login item is removed.
 4. **The core is a library crate** (`core`) with no I/O transport dependencies. The daemon crate wraps it with the IPC server (ADR-0006). Tests run the core in-process.
 5. **Crash isolation.** If the UI crashes, scheduled sends and sync continue. If the daemon crashes, the UI shows a reconnecting state and the next client call restarts the daemon.
 
