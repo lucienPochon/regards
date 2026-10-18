@@ -1,18 +1,30 @@
-//! Mail sync with each account's server. For now this is the mailbox list:
-//! signed in with the stored password, `LIST`, then reconciled into the store.
-//! Message sync and push (IDLE) build on it.
+//! Mail sync with each account's server (ADR-0009):
+//!
+//! 1. Sign in with the stored password.
+//! 2. `LIST`, assign roles, reconcile the mailboxes.
+//! 3. For every selectable mailbox, inbox first: new messages' headers, flag
+//!    changes of known messages, and deletions.
+//!
+//! Engine rules from spike 07 §7: deletions are inferred only from a
+//! completed `UID SEARCH`; unreadable responses are skipped and counted; a
+//! missing HIGHESTMODSEQ is tolerated.
 
 use crate::State;
+use regards_core::headers;
 use regards_core::mailbox::{Candidate, assign_roles};
-use regards_imap::{ImapError, ImapServer, Session};
+use regards_imap::{FlagUpdate, Flags, ImapError, ImapServer, MessageSet, Selected, Session};
 use regards_ipc::protocol::SyncState;
 use regards_store::StoreError;
 use regards_store::accounts;
-use regards_store::mailboxes::{self, Reconciled, RemoteMailbox};
+use regards_store::mailboxes::{self, Mailbox, Reconciled, RemoteMailbox, SyncPoint};
+use regards_store::messages::{self, FlagChange, MessageFlags, NewMessage};
 use regards_vault::SecretKey;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// The first sync of a mailbox fetches at most this many of its newest messages.
+pub(crate) const INITIAL_WINDOW: u32 = 2000;
 
 /// Why a sync did not complete, in words for the account owner.
 #[derive(Debug, thiserror::Error)]
@@ -27,6 +39,17 @@ pub(crate) enum SyncError {
     Imap(#[from] ImapError),
     #[error("could not save the result: {0}")]
     Store(#[from] StoreError),
+}
+
+/// What one sync of an account changed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct Summary {
+    pub mailboxes: Reconciled,
+    pub messages_added: usize,
+    pub flag_changes: usize,
+    pub messages_removed: usize,
+    /// Server responses that could not be read and were skipped.
+    pub unreadable: usize,
 }
 
 /// Sync progress per account, for the UI.
@@ -51,7 +74,7 @@ impl Tracker {
         !std::mem::replace(&mut state.running, true)
     }
 
-    fn finish(&self, account_id: &str, outcome: &Result<Reconciled, SyncError>) {
+    fn finish(&self, account_id: &str, outcome: &Result<Summary, SyncError>) {
         let mut states = self.lock();
         let state = states.entry(account_id.to_owned()).or_default();
         state.running = false;
@@ -69,16 +92,15 @@ impl Tracker {
     }
 }
 
-/// Sync the mailbox list of one account. Returns `None` if a sync of that
-/// account is already running.
-pub(crate) async fn sync_account(state: &State, account_id: &str) -> Option<Result<Reconciled, SyncError>> {
+/// Sync one account. Returns `None` if a sync of it is already running.
+pub(crate) async fn sync_account(state: &State, account_id: &str) -> Option<Result<Summary, SyncError>> {
     if !state.sync.start(account_id) {
         return None;
     }
-    let outcome = sync_mailboxes(state, account_id).await;
+    let outcome = run(state, account_id).await;
     match &outcome {
-        Ok(changes) => tracing::info!(account = %account_id, ?changes, "mailboxes synced"),
-        Err(error) => tracing::warn!(account = %account_id, %error, "mailbox sync failed"),
+        Ok(summary) => tracing::info!(account = %account_id, ?summary, "account synced"),
+        Err(error) => tracing::warn!(account = %account_id, %error, "account sync failed"),
     }
     state.sync.finish(account_id, &outcome);
     Some(outcome)
@@ -103,7 +125,7 @@ pub(crate) fn spawn_one(state: Arc<State>, account_id: String) {
     });
 }
 
-async fn sync_mailboxes(state: &State, account_id: &str) -> Result<Reconciled, SyncError> {
+async fn run(state: &State, account_id: &str) -> Result<Summary, SyncError> {
     let id = account_id.to_owned();
     let account = state
         .store
@@ -124,10 +146,30 @@ async fn sync_mailboxes(state: &State, account_id: &str) -> Result<Reconciled, S
         port: account.imap.port,
     };
     let mut session = Session::login(&server, &account.username, &password, &state.imap_tls).await?;
-    let listed = session.list_mailboxes().await;
+    let outcome = sync_with(state, &mut session, &account.id).await;
     session.logout().await;
-    let listed = listed?;
+    outcome
+}
 
+async fn sync_with(state: &State, session: &mut Session, account_id: &str) -> Result<Summary, SyncError> {
+    let mut summary = Summary {
+        mailboxes: sync_mailbox_list(state, session, account_id).await?,
+        ..Summary::default()
+    };
+    let id = account_id.to_owned();
+    let mailboxes = state.store.read(move |conn| mailboxes::list(conn, &id)).await?;
+    for mailbox in mailboxes.into_iter().filter(|m| m.selectable) {
+        let changes = sync_mailbox(state, session, &mailbox).await?;
+        summary.messages_added += changes.messages_added;
+        summary.flag_changes += changes.flag_changes;
+        summary.messages_removed += changes.messages_removed;
+        summary.unreadable += changes.unreadable;
+    }
+    Ok(summary)
+}
+
+async fn sync_mailbox_list(state: &State, session: &mut Session, account_id: &str) -> Result<Reconciled, SyncError> {
+    let listed = session.list_mailboxes().await?;
     let candidates: Vec<Candidate<'_>> = listed
         .iter()
         .map(|m| Candidate {
@@ -150,13 +192,218 @@ async fn sync_mailboxes(state: &State, account_id: &str) -> Result<Reconciled, S
             attributes: m.attributes.clone(),
         })
         .collect();
-
-    let id = account.id.clone();
-    let committed = state
+    let id = account_id.to_owned();
+    Ok(state
         .store
         .write(move |tx| mailboxes::reconcile(tx, &id, &remote))
+        .await?
+        .value)
+}
+
+/// What is stored about a mailbox before syncing it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Stored {
+    pub uid_validity: Option<u32>,
+    pub uid_next: Option<u32>,
+    pub highest_modseq: Option<u64>,
+    /// Lowest and highest stored UID.
+    pub known: Option<(u32, u32)>,
+}
+
+/// How to bring a mailbox up to date.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Plan {
+    /// UIDVALIDITY changed: every stored UID is meaningless, start over.
+    pub reset: bool,
+    /// Headers to fetch.
+    pub new: Option<MessageSet>,
+    /// Keep only fetched messages with at least this UID (`n:*` returns the
+    /// last message even when there is none newer).
+    pub new_from: u32,
+    pub flags: Option<FlagCheck>,
+    pub check_deletions: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum FlagCheck {
+    /// CONDSTORE: only messages changed after this modseq.
+    ChangedSince(u64),
+    /// Re-read the flags of the stored UID range.
+    Range(u32, u32),
+}
+
+pub(crate) fn plan(stored: &Stored, selected: &Selected, condstore: bool) -> Plan {
+    let reset = stored.uid_validity.is_some_and(|v| v != selected.uid_validity);
+    let first = reset || stored.uid_validity.is_none() || stored.uid_next.is_none();
+    let known = if reset { None } else { stored.known };
+
+    let (new, new_from) = if selected.exists == 0 {
+        (None, 1)
+    } else if first {
+        let start = selected.exists.saturating_sub(INITIAL_WINDOW) + 1;
+        (Some(MessageSet::Sequence(format!("{start}:*"))), 1)
+    } else {
+        let next = stored.uid_next.unwrap_or(1);
+        let nothing_new = selected.uid_next.is_some_and(|server_next| server_next <= next);
+        if nothing_new {
+            (None, next)
+        } else {
+            (Some(MessageSet::Uids(format!("{next}:*"))), next)
+        }
+    };
+
+    let flags = match (first, known) {
+        (true, _) | (_, None) => None,
+        (false, Some((low, high))) => match (condstore, stored.highest_modseq) {
+            (true, Some(stored_modseq)) => {
+                (selected.highest_modseq != Some(stored_modseq)).then_some(FlagCheck::ChangedSince(stored_modseq))
+            }
+            _ => Some(FlagCheck::Range(low, high)),
+        },
+    };
+
+    Plan {
+        reset,
+        new,
+        new_from,
+        flags,
+        check_deletions: !first && known.is_some(),
+    }
+}
+
+/// What syncing one mailbox changed.
+#[derive(Debug, Clone, Copy, Default)]
+struct Changes {
+    messages_added: usize,
+    flag_changes: usize,
+    messages_removed: usize,
+    unreadable: usize,
+}
+
+async fn sync_mailbox(state: &State, session: &mut Session, mailbox: &Mailbox) -> Result<Changes, SyncError> {
+    let selected = session.select(&mailbox.remote_name).await?;
+    let mailbox_id = mailbox.id;
+    let known_uids = state.store.read(move |conn| messages::uids(conn, mailbox_id)).await?;
+    let stored = Stored {
+        uid_validity: mailbox.uid_validity.map(|v| v as u32),
+        uid_next: mailbox.uid_next.map(|v| v as u32),
+        highest_modseq: mailbox.highest_modseq.map(|v| v as u64),
+        known: known_uids.first().copied().zip(known_uids.last().copied()),
+    };
+    let plan = plan(&stored, &selected, session.has_capability("CONDSTORE"));
+    let mut changes = Changes::default();
+
+    let mut new = Vec::new();
+    if let Some(set) = plan.new.clone() {
+        let fetched = session.fetch_headers(set).await?;
+        changes.unreadable += fetched.skipped;
+        new = fetched
+            .items
+            .into_iter()
+            .filter(|m| m.uid >= plan.new_from)
+            .collect::<Vec<_>>();
+    }
+
+    let mut flag_updates: Vec<FlagUpdate> = Vec::new();
+    if let Some(check) = &plan.flags {
+        let fetched = match check {
+            FlagCheck::ChangedSince(modseq) => session.fetch_flags("1:*", Some(*modseq)).await?,
+            FlagCheck::Range(low, high) => session.fetch_flags(&format!("{low}:{high}"), None).await?,
+        };
+        changes.unreadable += fetched.skipped;
+        flag_updates = fetched.items;
+    }
+
+    let mut removed: Vec<u32> = Vec::new();
+    if plan.check_deletions {
+        let present: BTreeSet<u32> = session.uid_search_all().await?.into_iter().collect();
+        let known: BTreeSet<u32> = if plan.reset {
+            BTreeSet::new()
+        } else {
+            known_uids.iter().copied().collect()
+        };
+        removed = known
+            .iter()
+            .chain(new.iter().map(|m| &m.uid))
+            .filter(|uid| !present.contains(uid))
+            .copied()
+            .collect();
+    }
+
+    let seen_modseq = new
+        .iter()
+        .filter_map(|m| m.modseq)
+        .chain(flag_updates.iter().filter_map(|u| u.modseq))
+        .max();
+    let highest_uid = new.iter().map(|m| m.uid).chain(known_uids.last().copied()).max();
+    let point = SyncPoint {
+        uid_validity: selected.uid_validity,
+        uid_next: selected.uid_next.or(highest_uid.map(|uid| uid + 1)),
+        // Dovecot can omit HIGHESTMODSEQ on a new mailbox (spike 07 §6).
+        highest_modseq: selected.highest_modseq.or(seen_modseq).or(if plan.reset {
+            None
+        } else {
+            stored.highest_modseq
+        }),
+        synced_at: now_ms(),
+    };
+
+    let records: Vec<NewMessage> = new
+        .into_iter()
+        .map(|m| NewMessage {
+            uid: m.uid,
+            modseq: m.modseq,
+            flags: message_flags(m.flags),
+            received_at: m.internal_date,
+            size: m.size,
+            headers: headers::parse(&m.header),
+        })
+        .collect();
+    let flag_changes: Vec<FlagChange> = flag_updates
+        .into_iter()
+        .map(|u| FlagChange {
+            uid: u.uid,
+            modseq: u.modseq,
+            flags: message_flags(u.flags),
+        })
+        .collect();
+    let reset = plan.reset;
+    let committed = state
+        .store
+        .write(move |tx| {
+            if reset {
+                messages::clear(tx, mailbox_id)?;
+            }
+            let added = messages::upsert(tx, mailbox_id, &records)?;
+            let flagged = messages::apply_flags(tx, mailbox_id, &flag_changes)?;
+            let removed = messages::delete_uids(tx, mailbox_id, &removed)?;
+            mailboxes::set_sync_point(tx, mailbox_id, point)?;
+            Ok((added, flagged, removed))
+        })
         .await?;
-    Ok(committed.value)
+    let (added, flagged, removed) = committed.value;
+    changes.messages_added = added;
+    changes.flag_changes = flagged;
+    changes.messages_removed = removed;
+    if changes.unreadable > 0 {
+        tracing::warn!(
+            mailbox = mailbox_id,
+            unreadable = changes.unreadable,
+            "skipped unreadable server responses"
+        );
+    }
+    Ok(changes)
+}
+
+fn message_flags(flags: Flags) -> MessageFlags {
+    MessageFlags {
+        seen: flags.seen,
+        answered: flags.answered,
+        flagged: flags.flagged,
+        draft: flags.draft,
+        deleted: flags.deleted,
+        keywords: flags.keywords,
+    }
 }
 
 fn now_ms() -> i64 {
@@ -164,4 +411,87 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn selected(uid_validity: u32, uid_next: u32, modseq: Option<u64>, exists: u32) -> Selected {
+        Selected {
+            uid_validity,
+            uid_next: Some(uid_next),
+            highest_modseq: modseq,
+            exists,
+        }
+    }
+
+    const NEVER_SYNCED: Stored = Stored {
+        uid_validity: None,
+        uid_next: None,
+        highest_modseq: None,
+        known: None,
+    };
+
+    #[test]
+    fn a_first_sync_fetches_the_newest_window_and_nothing_else() {
+        let plan = plan(&NEVER_SYNCED, &selected(7, 5001, Some(9), 5000), true);
+        assert_eq!(plan.new, Some(MessageSet::Sequence("3001:*".into())));
+        assert_eq!((plan.flags, plan.check_deletions, plan.reset), (None, false, false));
+
+        let small = super::plan(&NEVER_SYNCED, &selected(7, 4, None, 3), false);
+        assert_eq!(small.new, Some(MessageSet::Sequence("1:*".into())));
+
+        let empty = super::plan(&NEVER_SYNCED, &selected(7, 1, None, 0), false);
+        assert_eq!(empty.new, None);
+    }
+
+    #[test]
+    fn a_later_sync_fetches_new_uids_and_checks_flags_and_deletions() {
+        let stored = Stored {
+            uid_validity: Some(7),
+            uid_next: Some(101),
+            highest_modseq: Some(50),
+            known: Some((1, 100)),
+        };
+        let with_condstore = plan(&stored, &selected(7, 105, Some(60), 104), true);
+        assert_eq!(with_condstore.new, Some(MessageSet::Uids("101:*".into())));
+        assert_eq!(with_condstore.new_from, 101);
+        assert_eq!(with_condstore.flags, Some(FlagCheck::ChangedSince(50)));
+        assert!(with_condstore.check_deletions);
+
+        // Without CONDSTORE (Infomaniak before login), flags are re-read for the stored range.
+        let without = plan(&stored, &selected(7, 105, None, 104), false);
+        assert_eq!(without.flags, Some(FlagCheck::Range(1, 100)));
+    }
+
+    #[test]
+    fn nothing_new_and_an_unchanged_modseq_skip_those_fetches() {
+        let stored = Stored {
+            uid_validity: Some(7),
+            uid_next: Some(101),
+            highest_modseq: Some(50),
+            known: Some((1, 100)),
+        };
+        let plan = plan(&stored, &selected(7, 101, Some(50), 100), true);
+        assert_eq!((plan.new, plan.flags), (None, None));
+        assert!(
+            plan.check_deletions,
+            "expunges do not always change HIGHESTMODSEQ visibly"
+        );
+    }
+
+    #[test]
+    fn a_new_uidvalidity_starts_the_mailbox_over() {
+        let stored = Stored {
+            uid_validity: Some(7),
+            uid_next: Some(101),
+            highest_modseq: Some(50),
+            known: Some((1, 100)),
+        };
+        let plan = plan(&stored, &selected(8, 4, Some(3), 3), true);
+        assert!(plan.reset);
+        assert_eq!(plan.new, Some(MessageSet::Sequence("1:*".into())));
+        assert_eq!((plan.flags, plan.check_deletions), (None, false));
+    }
 }

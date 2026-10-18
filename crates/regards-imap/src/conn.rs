@@ -9,12 +9,16 @@ use imap_types::response::{Data, Greeting, Status, StatusBody, Tagged};
 use std::time::Duration;
 
 /// How long one command may take before the connection is considered stuck.
-const COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Everything the server sent for one command.
 pub(crate) struct Reply {
     pub data: Vec<Data<'static>>,
+    /// Untagged `OK`/`NO` lines, which carry codes such as UIDVALIDITY.
+    pub untagged: Vec<StatusBody<'static>>,
     pub done: StatusBody<'static>,
+    /// Responses that could not be parsed and were skipped (see [`Conn::run_skipping`]).
+    pub skipped: usize,
 }
 
 pub(crate) struct Conn {
@@ -51,23 +55,53 @@ impl Conn {
     }
 
     /// Send one command and collect everything up to its tagged completion.
+    /// A malformed response fails the command.
     pub(crate) async fn run(&mut self, body: CommandBody<'static>) -> Result<Reply, ImapError> {
+        self.run_with(body, false).await
+    }
+
+    /// Like [`Conn::run`], but a malformed response is skipped and counted
+    /// instead of failing the command, so one unreadable message does not stop
+    /// a sync (spike 07 §7).
+    pub(crate) async fn run_skipping(&mut self, body: CommandBody<'static>) -> Result<Reply, ImapError> {
+        self.run_with(body, true).await
+    }
+
+    async fn run_with(&mut self, body: CommandBody<'static>, skip_malformed: bool) -> Result<Reply, ImapError> {
         let tag = self.tags.generate();
         let name = body.name();
         self.client.enqueue_command(Command { tag: tag.clone(), body });
-        tokio::time::timeout(COMMAND_TIMEOUT, self.finish(&tag))
+        tokio::time::timeout(COMMAND_TIMEOUT, self.finish(&tag, skip_malformed))
             .await
             .map_err(|_| ImapError::Timeout(name))?
     }
 
-    async fn finish(&mut self, tag: &Tag<'static>) -> Result<Reply, ImapError> {
-        let mut data = Vec::new();
+    async fn finish(&mut self, tag: &Tag<'static>, skip_malformed: bool) -> Result<Reply, ImapError> {
+        let (mut data, mut untagged, mut skipped) = (Vec::new(), Vec::new(), 0);
         loop {
-            match self.stream.next(&mut self.client).await.map_err(stream_error)? {
+            let event = match self.stream.next(&mut self.client).await {
+                Ok(event) => event,
+                Err(StreamError::State(_)) if skip_malformed => {
+                    skipped += 1;
+                    continue;
+                }
+                Err(error) => return Err(stream_error(error)),
+            };
+            match event {
                 Event::DataReceived { data: item } => data.push(item),
                 Event::StatusReceived {
+                    status: Status::Untagged(body),
+                } => untagged.push(body),
+                Event::StatusReceived {
                     status: Status::Tagged(Tagged { tag: done_tag, body }),
-                } if &done_tag == tag => return Ok(Reply { data, done: body }),
+                } if &done_tag == tag => {
+                    return Ok(Reply {
+                        data,
+                        untagged,
+                        done: body,
+                        skipped,
+                    });
+                }
                 // BYE precedes the tagged OK of LOGOUT; otherwise the stream closes next.
                 Event::StatusReceived { status: Status::Bye(_) } => {}
                 Event::CommandRejected { command, status, .. } if &command.tag == tag => {

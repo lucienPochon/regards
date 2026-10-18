@@ -8,8 +8,11 @@
 //! `regards` CLI does).
 
 mod conn;
+mod messages;
 mod tls;
 pub mod utf7;
+
+pub use messages::{Fetched, FetchedHeaders, FlagUpdate, Flags, MessageSet, Selected, SystemFlag};
 
 pub use tls::TlsOptions;
 
@@ -208,7 +211,7 @@ fn has(capabilities: &[String], name: &str) -> bool {
 }
 
 /// Server text shown to the user: printable, single line, bounded.
-fn clean(text: &str) -> String {
+pub(crate) fn clean(text: &str) -> String {
     let text: String = text.chars().filter(|c| !c.is_control()).take(200).collect();
     if text.is_empty() {
         "no reason given".into()

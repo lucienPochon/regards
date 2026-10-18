@@ -1,6 +1,6 @@
 //! One client connection: handshake, then request dispatch.
 
-use crate::{State, accounts};
+use crate::{State, accounts, mail};
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_ipc::framing::{self, FrameError};
 use regards_ipc::protocol::{
@@ -122,6 +122,10 @@ impl Session {
             methods::MAILBOX_LIST => {
                 self.require_ui()?;
                 accounts::mailboxes(&self.state, params(request)?).await
+            }
+            methods::MESSAGE_LIST => {
+                self.require_ui()?;
+                mail::list(&self.state, params(request)?).await
             }
             other => Err(RpcError::new(
                 codes::METHOD_NOT_FOUND,

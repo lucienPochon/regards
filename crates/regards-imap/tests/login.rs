@@ -5,7 +5,7 @@ mod fake_imap;
 
 use fake_imap::{PASSWORD, Pki, fake_server, pki};
 use regards_core::secret::Secret;
-use regards_imap::{ImapError, ImapServer, Session, TlsOptions, verify_login};
+use regards_imap::{ImapError, ImapServer, MessageSet, Session, SystemFlag, TlsOptions, verify_login};
 use tokio::net::TcpListener;
 
 fn trusting(pki: &Pki) -> TlsOptions {
@@ -198,4 +198,76 @@ async fn live_server_lists_mailboxes() {
         println!("{:?} {:?} {:?}", mailbox.name, mailbox.delimiter, mailbox.attributes);
     }
     assert!(mailboxes.iter().any(|m| m.name == "INBOX"));
+}
+
+/// Message operations against a real server, as a fresh user.
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_server_message_operations() {
+    let address = std::env::var("REGARDS_TEST_IMAP").unwrap();
+    let (host, port) = address.rsplit_once(':').unwrap();
+    let ca = std::fs::read(std::env::var("REGARDS_TEST_IMAP_CA").unwrap()).unwrap();
+    let tls = TlsOptions::platform().with_extra_roots_pem(&ca).unwrap();
+    let server = ImapServer {
+        host: host.into(),
+        port: port.parse().unwrap(),
+    };
+    let user = format!("live-{}", std::process::id());
+    let password = Secret::new(std::env::var("REGARDS_TEST_IMAP_PASSWORD").unwrap_or_else(|_| "pass".into()));
+    let mut session = Session::login(&server, &user, &password, &tls).await.unwrap();
+
+    let message = |n: u32, subject: &str| {
+        format!(
+            "From: Ada <ada@example.test>\r\nTo: Bob <bob@example.test>\r\nSubject: {subject}\r\n\
+             Message-ID: <live-{n}@example.test>\r\nDate: Sun, 18 Oct 2026 10:0{n}:00 +0000\r\n\r\nBody {n}\r\n"
+        )
+    };
+    let first = session
+        .append(b"INBOX", &[], message(1, "Plain").as_bytes())
+        .await
+        .unwrap();
+    session
+        .append(
+            b"INBOX",
+            &[SystemFlag::Seen],
+            message(2, "=?UTF-8?Q?Caf=C3=A9?=").as_bytes(),
+        )
+        .await
+        .unwrap();
+    session
+        .append(b"INBOX", &[], message(3, "Third").as_bytes())
+        .await
+        .unwrap();
+    assert!(first.is_some(), "Dovecot reports APPENDUID");
+
+    let selected = session.select(b"INBOX").await.unwrap();
+    assert_eq!(selected.exists, 3);
+    let fetched = session.fetch_headers(MessageSet::Sequence("1:*".into())).await.unwrap();
+    assert_eq!(fetched.skipped, 0);
+    assert_eq!(fetched.items.len(), 3);
+    let cafe = &fetched.items[1];
+    assert!(cafe.flags.seen);
+    assert!(String::from_utf8_lossy(&cafe.header).contains("Subject: =?UTF-8?Q?Caf=C3=A9?="));
+    assert!(cafe.internal_date.is_some() && cafe.size.is_some());
+
+    let uids: Vec<u32> = fetched.items.iter().map(|m| m.uid).collect();
+    assert_eq!(session.uid_search_all().await.unwrap(), uids);
+
+    // CHANGEDSINCE sees only the message flagged afterwards.
+    let modseq = fetched.items.iter().filter_map(|m| m.modseq).max();
+    session
+        .store_flags(&uids[0].to_string(), true, &[SystemFlag::Flagged])
+        .await
+        .unwrap();
+    let changed = session.fetch_flags("1:*", modseq).await.unwrap();
+    assert_eq!(changed.items.len(), 1);
+    assert!(changed.items[0].flags.flagged);
+
+    session
+        .store_flags(&uids[2].to_string(), true, &[SystemFlag::Deleted])
+        .await
+        .unwrap();
+    session.expunge().await.unwrap();
+    assert_eq!(session.uid_search_all().await.unwrap(), &uids[..2]);
+    session.logout().await;
 }

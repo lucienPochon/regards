@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { AccountsPanel } from "./AccountsPanel";
+import { MessageList, type OpenMailbox } from "./MessageList";
 import { type DaemonStatus, fetchDaemonStatus } from "./daemon";
 
 type Check =
@@ -9,6 +10,7 @@ type Check =
 
 export function App() {
   const [check, setCheck] = useState<Check>({ state: "checking" });
+  const [open, setOpen] = useState<OpenMailbox | null>(null);
 
   const refresh = useCallback(() => {
     setCheck({ state: "checking" });
@@ -38,7 +40,8 @@ export function App() {
         </button>
       </section>
 
-      <AccountsPanel />
+      <AccountsPanel selected={open?.id ?? null} onOpen={setOpen} />
+      {open && <MessageList mailbox={open} />}
     </main>
   );
 }

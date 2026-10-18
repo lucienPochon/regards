@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const MIGRATIONS: &[M<'static>] = &[
     M::up(include_str!("../migrations/0001_accounts.sql")),
     M::up(include_str!("../migrations/0002_mailboxes.sql")),
+    M::up(include_str!("../migrations/0003_messages.sql")),
 ];
 
 /// Backups kept before older ones are deleted.

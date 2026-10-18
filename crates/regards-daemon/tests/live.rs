@@ -1,0 +1,272 @@
+//! Sync against a real IMAP server (Dovecot in Docker; see spikes/imap-trial).
+//! Opt-in: `REGARDS_TEST_IMAP=localhost:31993 REGARDS_TEST_IMAP_CA=ca.pem \
+//! cargo test -p regards-daemon --test live -- --ignored`
+
+use regards_core::mailbox::Role;
+use regards_core::paths::DataDirs;
+use regards_core::secret::Secret;
+use regards_daemon::Daemon;
+use regards_imap::{ImapServer, Session, SystemFlag, TlsOptions};
+use regards_ipc::protocol::{
+    AccountAddParams, AccountRef, AccountSummary, ClientKind, ConnectionSecurity, MailboxListResult, MessageListParams,
+    MessageListResult, ServerSettings, SyncResult, methods,
+};
+use regards_ipc::{Client, UiToken};
+use regards_vault::Vault;
+use std::time::{Duration, Instant};
+
+struct Live {
+    server: ImapServer,
+    tls: TlsOptions,
+    user: String,
+    password: Secret,
+}
+
+fn live() -> Live {
+    let address = std::env::var("REGARDS_TEST_IMAP").expect("REGARDS_TEST_IMAP=host:port");
+    let (host, port) = address.rsplit_once(':').unwrap();
+    let ca = std::fs::read(std::env::var("REGARDS_TEST_IMAP_CA").expect("REGARDS_TEST_IMAP_CA=ca.pem")).unwrap();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    Live {
+        server: ImapServer {
+            host: host.into(),
+            port: port.parse().unwrap(),
+        },
+        tls: TlsOptions::platform().with_extra_roots_pem(&ca).unwrap(),
+        // A fresh user, so the mailbox starts empty.
+        user: format!("sync-{nanos}"),
+        password: Secret::new(std::env::var("REGARDS_TEST_IMAP_PASSWORD").unwrap_or_else(|_| "pass".into())),
+    }
+}
+
+fn message(n: u32, subject: &str, from: &str) -> Vec<u8> {
+    format!(
+        "From: {from}\r\nTo: Bob <bob@example.test>\r\nSubject: {subject}\r\n\
+         Message-ID: <sync-{n}@example.test>\r\nDate: Sun, 18 Oct 2026 10:{n:02}:00 +0000\r\n\r\nBody {n}\r\n"
+    )
+    .into_bytes()
+}
+
+async fn sync(desktop: &mut Client, account_id: &str) -> SyncResult {
+    desktop
+        .call(
+            methods::ACCOUNT_SYNC,
+            AccountRef {
+                account_id: account_id.into(),
+            },
+        )
+        .await
+        .unwrap()
+}
+
+async fn folders(desktop: &mut Client, account_id: &str) -> MailboxListResult {
+    desktop
+        .call(
+            methods::MAILBOX_LIST,
+            AccountRef {
+                account_id: account_id.into(),
+            },
+        )
+        .await
+        .unwrap()
+}
+
+async fn messages(desktop: &mut Client, mailbox_id: i64) -> MessageListResult {
+    desktop
+        .call(
+            methods::MESSAGE_LIST,
+            MessageListParams {
+                mailbox_id,
+                limit: None,
+                before: None,
+            },
+        )
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_sync_follows_new_flagged_expunged_and_reset_mailboxes() {
+    let live = live();
+
+    // Seed the server.
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    seed.append(b"INBOX", &[], &message(1, "Plain", "Ada <ada@example.test>"))
+        .await
+        .unwrap();
+    seed.append(
+        b"INBOX",
+        &[SystemFlag::Seen],
+        &message(
+            2,
+            "=?UTF-8?Q?R=C3=A9union?=",
+            "=?UTF-8?Q?Ren=C3=A9e?= <renee@example.test>",
+        ),
+    )
+    .await
+    .unwrap();
+    seed.append(b"INBOX", &[], &message(3, "Third", "carol@example.test"))
+        .await
+        .unwrap();
+    seed.create_mailbox(b"Projects").await.unwrap();
+    seed.append(b"Projects", &[], &message(4, "Old project", "ada@example.test"))
+        .await
+        .unwrap();
+
+    // A daemon with the account.
+    let temp = tempfile::tempdir().unwrap();
+    let token = UiToken::generate().unwrap();
+    let daemon = Daemon::bind(DataDirs::at(temp.path()))
+        .await
+        .unwrap()
+        .with_ui_token(token.clone())
+        .with_vault(Vault::in_memory())
+        .with_imap_tls(live.tls.clone());
+    let endpoint = daemon.endpoint().clone();
+    let handle = tokio::spawn(daemon.serve(std::future::pending()));
+    let mut desktop = Client::connect_with(&endpoint, ClientKind::Desktop, Some(&token))
+        .await
+        .unwrap();
+    let account: AccountSummary = desktop
+        .call(
+            methods::ACCOUNT_ADD,
+            AccountAddParams {
+                display_name: "Sync test".into(),
+                email: "sync@example.test".into(),
+                username: Some(live.user.clone()),
+                password: live.password.clone(),
+                imap: ServerSettings {
+                    host: live.server.host.clone(),
+                    port: live.server.port,
+                    security: ConnectionSecurity::Tls,
+                },
+                smtp: ServerSettings {
+                    host: live.server.host.clone(),
+                    port: 587,
+                    security: ConnectionSecurity::Starttls,
+                },
+            },
+        )
+        .await
+        .unwrap();
+
+    // The background sync after adding.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let listed = loop {
+        let listed = folders(&mut desktop, &account.id).await;
+        if listed.sync.last_success_at.is_some() {
+            break listed;
+        }
+        assert!(listed.sync.last_error.is_none(), "{:?}", listed.sync.last_error);
+        assert!(Instant::now() < deadline, "the first sync did not finish");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    let inbox = listed
+        .mailboxes
+        .iter()
+        .find(|m| m.role == Some(Role::Inbox))
+        .unwrap()
+        .id;
+    let projects = listed.mailboxes.iter().find(|m| m.name == "Projects").unwrap().id;
+
+    let page = messages(&mut desktop, inbox).await;
+    let subjects: Vec<&str> = page.messages.iter().map(|m| m.subject.as_str()).collect();
+    assert_eq!(
+        subjects,
+        ["Third", "Réunion", "Plain"],
+        "newest first, encoded words decoded"
+    );
+    let reunion = &page.messages[1];
+    assert!(reunion.seen && !page.messages[0].seen);
+    assert_eq!(reunion.from.as_ref().unwrap().name.as_deref(), Some("Renée"));
+    assert_eq!(messages(&mut desktop, projects).await.messages.len(), 1);
+
+    // Change things on the server.
+    let selected = seed.select(b"INBOX").await.unwrap();
+    assert_eq!(selected.exists, 3);
+    let uids = seed.uid_search_all().await.unwrap();
+    seed.store_flags(&uids[0].to_string(), true, &[SystemFlag::Flagged])
+        .await
+        .unwrap();
+    seed.store_flags(&uids[2].to_string(), true, &[SystemFlag::Deleted])
+        .await
+        .unwrap();
+    seed.expunge().await.unwrap();
+    seed.append(b"INBOX", &[], &message(5, "Fresh", "dave@example.test"))
+        .await
+        .unwrap();
+    // Recreating a folder gives it a new UIDVALIDITY.
+    seed.delete_mailbox(b"Projects").await.unwrap();
+    seed.create_mailbox(b"Projects").await.unwrap();
+    seed.append(b"Projects", &[], &message(6, "New project A", "ada@example.test"))
+        .await
+        .unwrap();
+    seed.append(b"Projects", &[], &message(7, "New project B", "ada@example.test"))
+        .await
+        .unwrap();
+
+    let result = sync(&mut desktop, &account.id).await;
+    assert_eq!(result.messages_removed, 1, "{result:?}");
+    assert!(result.flag_changes >= 1, "{result:?}");
+    assert_eq!(result.unreadable, 0);
+
+    let page = messages(&mut desktop, inbox).await;
+    let subjects: Vec<&str> = page.messages.iter().map(|m| m.subject.as_str()).collect();
+    assert_eq!(subjects, ["Fresh", "Réunion", "Plain"]);
+    assert!(page.messages[2].flagged, "the flag set on the server arrived");
+
+    let projects = folders(&mut desktop, &account.id)
+        .await
+        .mailboxes
+        .into_iter()
+        .find(|m| m.name == "Projects")
+        .unwrap()
+        .id;
+    let project_subjects: Vec<String> = messages(&mut desktop, projects)
+        .await
+        .messages
+        .into_iter()
+        .map(|m| m.subject)
+        .collect();
+    assert_eq!(
+        project_subjects,
+        ["New project B", "New project A"],
+        "the old folder's message is gone"
+    );
+
+    // Paging.
+    let first: MessageListResult = desktop
+        .call(
+            methods::MESSAGE_LIST,
+            MessageListParams {
+                mailbox_id: inbox,
+                limit: Some(2),
+                before: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(first.messages.len(), 2);
+    let rest: MessageListResult = desktop
+        .call(
+            methods::MESSAGE_LIST,
+            MessageListParams {
+                mailbox_id: inbox,
+                limit: Some(2),
+                before: first.next,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(rest.messages.len(), 1);
+    assert!(rest.next.is_none());
+
+    seed.logout().await;
+    handle.abort();
+}

@@ -41,7 +41,7 @@ body {
 }
 
 .shell {
-  max-width: 640px;
+  max-width: 900px;
   margin: 0 auto;
   padding: 48px 24px;
 }
@@ -240,4 +240,43 @@ button:disabled {
 
 .account-form .actions button {
   margin-top: 0;
+}
+
+.folders button.folder {
+  margin: 0;
+  padding: 2px 0;
+  border: 0;
+  color: inherit;
+  text-align: left;
+}
+
+.folders button.folder.selected {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.messages {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.messages li {
+  display: grid;
+  grid-template-columns: minmax(0, 10em) minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.messages li > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.messages li.unread .from,
+.messages li.unread .subject {
+  font-weight: 600;
 }

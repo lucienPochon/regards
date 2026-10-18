@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 dirs.workspace = true
+mail-parser.workspace = true
 serde.workspace = true
 zeroize.workspace = true
 

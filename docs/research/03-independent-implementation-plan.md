@@ -145,6 +145,21 @@ flowchart LR
 
 - Async IMAP on rustls, one connection actor per account (an IDLE connection plus a command connection).
 - **Library:** `imap-next` + `imap-codec` behind our own `regards-imap` crate, following the rules from the [spike](07-imap-library-spike.md) §7.
+- **Built so far (Phase 1):**
+  - **Mailboxes:** mailbox list with roles (SPECIAL-USE, then common names in five languages).
+  - **First sync of a mailbox:** headers of the newest 2,000 messages. Older ones are backfilled later.
+  - **Later syncs:**
+    - **New messages:** by UID.
+    - **Flag changes:** `CHANGEDSINCE` with CONDSTORE, otherwise by re-reading the stored range.
+    - **Deletions:** only from a completed `UID SEARCH`.
+    - **UIDVALIDITY changes:** rebuild the mailbox.
+  - **Header parsing:** headers are fetched as literals and parsed with `mail-parser` (encoded words, legacy charsets).
+  - **Tests:** CI runs these flows against Dovecot.
+- **Still to come in Phase 1:**
+  - **Push:** IDLE push on a long-lived connection.
+  - **Sync:** QRESYNC and backfill of older messages.
+  - **Bodies and threading:** message bodies, and References threading.
+  - **Operations:** the operation queue for user actions.
 - **Capability-aware:** incremental flag sync with CONDSTORE/QRESYNC; efficient UID-range sync plus periodic flag resync without them (Infomaniak advertises neither before login; recheck after login). MOVE, or UIDPLUS COPY + `\Deleted` + UID EXPUNGE.
 - Gmail X-GM-EXT-1 labels and thread IDs when present.
 - **Accepted when:** the fault-injection suite passes with no panics on malformed input, and IDLE delivers new mail in under 5 s.

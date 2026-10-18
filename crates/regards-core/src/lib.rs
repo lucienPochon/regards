@@ -5,6 +5,7 @@
 //! data locations.
 
 pub mod build_info;
+pub mod headers;
 pub mod mailbox;
 pub mod paths;
 pub mod secret;

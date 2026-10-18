@@ -14,7 +14,8 @@ use regards_core::secret::Secret;
 use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity,
-    MailboxListResult, Principal, ServerSettings, SyncResult, methods,
+    MailboxListResult, MessageCursor, MessageListParams, MessageListResult, Principal, ServerSettings, SyncResult,
+    methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -225,6 +226,27 @@ async fn account_sync(bridge: State<'_, Bridge>, account_id: String) -> Result<S
         .map_err(describe)
 }
 
+/// A page of a mailbox's messages, newest first.
+#[tauri::command]
+async fn message_list(
+    bridge: State<'_, Bridge>,
+    mailbox_id: i64,
+    before: Option<MessageCursor>,
+) -> Result<MessageListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::MESSAGE_LIST,
+            MessageListParams {
+                mailbox_id,
+                limit: None,
+                before,
+            },
+        )
+        .await
+        .map_err(describe)
+}
+
 /// Daemon errors carry messages written for people; show those as they are.
 fn describe(error: ClientError) -> String {
     match error {
@@ -261,7 +283,8 @@ fn main() {
             account_add,
             account_remove,
             account_sync,
-            mailbox_list
+            mailbox_list,
+            message_list
         ])
         .build(tauri::generate_context!())
         .expect("failed to start the Regards desktop app");

@@ -166,6 +166,16 @@ where
                 }
             }
             Some("LIST") => format!("{}{tag} OK List completed\r\n", script.list),
+            // Every mailbox is empty: enough for a sync to run its course.
+            Some("SELECT" | "EXAMINE") => format!(
+                "* 0 EXISTS\r\n* OK [UIDVALIDITY 1] UIDs valid\r\n* OK [UIDNEXT 1] Predicted next UID\r\n\
+                 {tag} OK [READ-WRITE] Select completed\r\n"
+            ),
+            Some("UID") => match args.get(2).map(|v| v.to_ascii_uppercase()).as_deref() {
+                Some("SEARCH") => format!("* SEARCH\r\n{tag} OK Search completed\r\n"),
+                _ => format!("{tag} OK Done\r\n"),
+            },
+            Some("FETCH") => format!("{tag} OK Fetch completed\r\n"),
             Some("LOGOUT") => {
                 let _ = write
                     .write_all(format!("* BYE Logging out\r\n{tag} OK Logout completed\r\n").as_bytes())

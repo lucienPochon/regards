@@ -12,6 +12,7 @@
 
 pub mod accounts;
 pub mod mailboxes;
+pub mod messages;
 mod migrate;
 
 use regards_core::paths::DataDirs;

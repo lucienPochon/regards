@@ -5,7 +5,7 @@ Regards is a local-first, open-source email client for **Windows, macOS and Linu
 > **Status: pre-alpha (Phase 0, foundation).** No mail features yet. What exists today:
 > - the background service (daemon) and its local API
 > - the `regards` CLI
-> - a minimal desktop window that starts the service, adds IMAP accounts (sign-in checked, password in the OS credential store) and shows their folders
+> - a minimal desktop window that starts the service, adds IMAP accounts (sign-in checked, password in the OS credential store) and shows their folders and message lists, kept in sync with the server
 >
 > See the [plan](docs/research/03-independent-implementation-plan.md).
 
@@ -32,6 +32,13 @@ Requirements:
 ```sh
 cargo build --workspace
 cargo test --workspace
+```
+
+Tests against a real IMAP server are opt-in. They run in CI against Dovecot in Docker; to run them locally, start the container from [`spikes/imap-trial`](spikes/imap-trial/README.md), then:
+
+```sh
+REGARDS_TEST_IMAP=localhost:31993 REGARDS_TEST_IMAP_CA=/path/to/ca.pem \
+  cargo test -p regards-imap -p regards-daemon -- --ignored live_
 ```
 
 Desktop app (development mode with hot reload):

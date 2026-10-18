@@ -75,3 +75,36 @@ export function listMailboxes(accountId: string): Promise<MailboxListResult> {
 export function syncAccount(accountId: string): Promise<unknown> {
   return invoke("account_sync", { accountId });
 }
+
+export interface Person {
+  name: string | null;
+  address: string | null;
+}
+
+export interface MessageCursor {
+  received_at: number;
+  id: number;
+}
+
+export interface MessageSummary {
+  id: number;
+  uid: number;
+  subject: string;
+  from: Person | null;
+  received_at: number;
+  sent_at: number | null;
+  seen: boolean;
+  flagged: boolean;
+  answered: boolean;
+  size: number | null;
+}
+
+export interface MessageListResult {
+  messages: MessageSummary[];
+  next: MessageCursor | null;
+}
+
+/** A page of a mailbox's messages, newest first; pass `next` back for the following page. */
+export function listMessages(mailboxId: number, before: MessageCursor | null): Promise<MessageListResult> {
+  return invoke<MessageListResult>("message_list", { mailboxId, before });
+}

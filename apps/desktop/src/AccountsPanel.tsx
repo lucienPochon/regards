@@ -11,13 +11,20 @@ import {
   removeAccount,
   syncAccount,
 } from "./accounts";
+import type { OpenMailbox } from "./MessageList";
 
 type Load =
   | { state: "loading" }
   | { state: "ready"; accounts: AccountSummary[] }
   | { state: "failed"; message: string };
 
-export function AccountsPanel() {
+export function AccountsPanel({
+  selected,
+  onOpen,
+}: {
+  selected: number | null;
+  onOpen: (mailbox: OpenMailbox) => void;
+}) {
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [adding, setAdding] = useState(false);
 
@@ -52,7 +59,13 @@ export function AccountsPanel() {
       {load.state === "ready" && load.accounts.length > 0 && (
         <ul className="accounts">
           {load.accounts.map((account) => (
-            <AccountRow key={account.id} account={account} onRemove={() => remove(account)} />
+            <AccountRow
+              key={account.id}
+              account={account}
+              selected={selected}
+              onOpen={onOpen}
+              onRemove={() => remove(account)}
+            />
           ))}
         </ul>
       )}
@@ -238,7 +251,17 @@ const ROLE_LABELS: Record<Role, string> = {
   trash: "Trash",
 };
 
-function AccountRow({ account, onRemove }: { account: AccountSummary; onRemove: () => void }) {
+function AccountRow({
+  account,
+  selected,
+  onOpen,
+  onRemove,
+}: {
+  account: AccountSummary;
+  selected: number | null;
+  onOpen: (mailbox: OpenMailbox) => void;
+  onRemove: () => void;
+}) {
   const [folders, setFolders] = useState<MailboxListResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -299,8 +322,24 @@ function AccountRow({ account, onRemove }: { account: AccountSummary; onRemove: 
       {folders && folders.mailboxes.length > 0 && (
         <ul className="folders">
           {folders.mailboxes.map((mailbox) => (
-            <li key={mailbox.id} className={mailbox.selectable ? undefined : "muted"}>
-              {mailbox.role ? ROLE_LABELS[mailbox.role] : mailbox.name}
+            <li key={mailbox.id}>
+              {mailbox.selectable ? (
+                <button
+                  type="button"
+                  className={mailbox.id === selected ? "folder selected" : "folder"}
+                  onClick={() =>
+                    onOpen({
+                      id: mailbox.id,
+                      label: mailbox.role ? ROLE_LABELS[mailbox.role] : mailbox.name,
+                      account: account.email,
+                    })
+                  }
+                >
+                  {mailbox.role ? ROLE_LABELS[mailbox.role] : mailbox.name}
+                </button>
+              ) : (
+                <span className="muted">{mailbox.name}</span>
+              )}
               {mailbox.role && mailbox.name.toLowerCase() !== ROLE_LABELS[mailbox.role].toLowerCase() && (
                 <span className="muted small"> ({mailbox.name})</span>
               )}

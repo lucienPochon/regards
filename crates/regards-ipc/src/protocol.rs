@@ -1,6 +1,7 @@
 //! JSON-RPC 2.0 messages and the typed Regards methods.
 
 use crate::token::UiToken;
+use regards_core::headers::Person;
 use regards_core::mailbox::Role;
 use regards_core::secret::Secret;
 use serde::{Deserialize, Serialize};
@@ -30,6 +31,8 @@ pub mod methods {
     pub const ACCOUNT_SYNC: &str = "account.sync";
     /// The mailboxes of an account and its sync state. `ui` only for now.
     pub const MAILBOX_LIST: &str = "mailbox.list";
+    /// A page of a mailbox's messages, newest first. `ui` only for now.
+    pub const MESSAGE_LIST: &str = "message.list";
 }
 
 /// Error codes. Negative values in -32768..=-32000 are reserved by JSON-RPC;
@@ -297,6 +300,54 @@ pub struct SyncResult {
     pub mailboxes_added: usize,
     pub mailboxes_updated: usize,
     pub mailboxes_removed: usize,
+    pub messages_added: usize,
+    pub flag_changes: usize,
+    pub messages_removed: usize,
+    /// Server responses that could not be read and were skipped.
+    pub unreadable: usize,
+}
+
+/// Where a page of messages ended; pass it as `before` for the next page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageCursor {
+    pub received_at: i64,
+    pub id: i64,
+}
+
+/// Parameters of [`methods::MESSAGE_LIST`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageListParams {
+    pub mailbox_id: i64,
+    /// Page size, 1 to 500; 50 when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<MessageCursor>,
+}
+
+/// A message in a list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageSummary {
+    pub id: i64,
+    pub uid: u32,
+    pub subject: String,
+    pub from: Option<Person>,
+    /// When the server received it, Unix time in milliseconds.
+    pub received_at: i64,
+    /// The Date header, Unix time in milliseconds.
+    pub sent_at: Option<i64>,
+    pub seen: bool,
+    pub flagged: bool,
+    pub answered: bool,
+    pub size: Option<u32>,
+}
+
+/// Result of [`methods::MESSAGE_LIST`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageListResult {
+    pub messages: Vec<MessageSummary>,
+    /// Set when there may be older messages.
+    pub next: Option<MessageCursor>,
 }
 
 /// Why an account check failed: `data.reason` of [`codes::ACCOUNT_CHECK_FAILED`].

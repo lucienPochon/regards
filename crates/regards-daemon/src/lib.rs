@@ -5,6 +5,7 @@
 //! server talk to it over the local API (ADR-0006).
 
 mod accounts;
+mod mail;
 mod session;
 mod sync;
 

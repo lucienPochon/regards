@@ -119,6 +119,41 @@ pub fn list(conn: &Connection, account_id: &str) -> Result<Vec<Mailbox>, StoreEr
     Ok(mailboxes)
 }
 
+pub fn get(conn: &Connection, id: i64) -> Result<Option<Mailbox>, StoreError> {
+    use rusqlite::OptionalExtension;
+    conn.query_row(
+        &format!("SELECT {COLUMNS} FROM mailboxes WHERE id = ?1"),
+        [id],
+        from_row,
+    )
+    .optional()?
+    .transpose()
+}
+
+/// What the last message sync of a mailbox established.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SyncPoint {
+    pub uid_validity: u32,
+    pub uid_next: Option<u32>,
+    pub highest_modseq: Option<u64>,
+    /// Unix time in milliseconds.
+    pub synced_at: i64,
+}
+
+pub fn set_sync_point(tx: &Transaction<'_>, id: i64, point: SyncPoint) -> Result<(), StoreError> {
+    tx.execute(
+        "UPDATE mailboxes SET uid_validity = ?2, uid_next = ?3, highest_modseq = ?4, synced_at = ?5 WHERE id = ?1",
+        params![
+            id,
+            point.uid_validity,
+            point.uid_next,
+            point.highest_modseq.map(|m| m as i64),
+            point.synced_at
+        ],
+    )?;
+    Ok(())
+}
+
 fn role_rank(role: Option<Role>) -> u8 {
     match role {
         Some(Role::Inbox) => 0,
