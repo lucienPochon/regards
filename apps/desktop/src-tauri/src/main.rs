@@ -16,10 +16,10 @@ use regards_core::secret::Secret;
 use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity, DeleteResult,
-    DraftCreateParams, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView,
-    MailboxListResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef,
-    MoveParams, MoveResult, OutboxListResult, OutboxRef, OutboxUndoResult, Principal, ServerSettings, SetFlagsParams,
-    SetFlagsResult, SyncResult, ThreadView, UndoParams, UndoResult, methods,
+    DraftCreateParams, DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult,
+    DraftUpdateParams, DraftView, MailboxListResult, MessageCursor, MessageDetail, MessageIds, MessageListParams,
+    MessageListResult, MessageRef, MoveParams, MoveResult, OutboxListResult, OutboxRef, OutboxUndoResult, Principal,
+    ServerSettings, SetFlagsParams, SetFlagsResult, SyncResult, ThreadView, UndoParams, UndoResult, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -381,6 +381,16 @@ async fn draft_get(bridge: State<'_, Bridge>, id: i64) -> Result<DraftView, Stri
     client.call(methods::DRAFT_GET, DraftRef { id }).await.map_err(describe)
 }
 
+/// Drafts being written, of every account.
+#[tauri::command]
+async fn draft_list(bridge: State<'_, Bridge>) -> Result<DraftListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::DRAFT_LIST, DraftListParams::default())
+        .await
+        .map_err(describe)
+}
+
 /// Autosave: the whole of what the draft says.
 #[tauri::command]
 async fn draft_update(bridge: State<'_, Bridge>, draft: DraftUpdateParams) -> Result<DraftView, String> {
@@ -526,6 +536,7 @@ fn main() {
             draft_reply,
             draft_forward,
             draft_get,
+            draft_list,
             draft_update,
             draft_delete,
             draft_send,

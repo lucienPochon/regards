@@ -107,10 +107,13 @@ pub fn get(conn: &Connection, id: i64) -> Result<Option<Draft>, StoreError> {
     .transpose()
 }
 
-/// An account's drafts, most recently changed first.
-pub fn list(conn: &Connection, account_id: &str) -> Result<Vec<Draft>, StoreError> {
+/// Drafts being written (not those in the outbox), most recently changed
+/// first: one account's, or every account's.
+pub fn list(conn: &Connection, account_id: Option<&str>) -> Result<Vec<Draft>, StoreError> {
     let mut statement = conn.prepare_cached(&format!(
-        "SELECT {COLUMNS} FROM drafts d WHERE d.account_id = ?1 ORDER BY d.updated_at DESC, d.id DESC"
+        "SELECT {COLUMNS} FROM drafts d WHERE (?1 IS NULL OR d.account_id = ?1) \
+         AND NOT EXISTS (SELECT 1 FROM outbox o WHERE o.draft_id = d.id) \
+         ORDER BY d.updated_at DESC, d.id DESC"
     ))?;
     let drafts = statement
         .query_map([account_id], from_row)?

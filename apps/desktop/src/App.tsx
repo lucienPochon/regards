@@ -5,6 +5,7 @@ import { MessageList, type OpenMailbox } from "./MessageList";
 import { ReadingPane } from "./ReadingPane";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { Composer } from "./Composer";
+import { DraftsPanel } from "./DraftsPanel";
 import { OutboxPanel } from "./OutboxPanel";
 import { SendToast } from "./SendToast";
 import { UndoToast } from "./UndoToast";
@@ -96,6 +97,7 @@ export function App() {
             }}
           />
           <OutboxPanel onEdit={setComposing} />
+          <DraftsPanel onOpen={setComposing} open={composing} />
         </div>
         <div className="main">
           {open ? (

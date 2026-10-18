@@ -7,13 +7,15 @@ use crate::State;
 use regards_core::compose::{self, Outgoing};
 use regards_core::headers::{self, Person};
 use regards_ipc::protocol::{
-    DraftCreateParams, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView,
-    MessageRef, OutboxEntryView, OutboxListResult, OutboxRef, OutboxState, OutboxUndoResult, RpcError, codes,
+    DraftCreateParams, DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult,
+    DraftUpdateParams, DraftView, MessageRef, OutboxEntryView, OutboxListResult, OutboxRef, OutboxState,
+    OutboxUndoResult, RpcError, codes,
 };
 use regards_store::drafts::{self, Content, Draft, Edit};
 use regards_store::outbox::{self, Entry, NewEntry, State as EntryState};
 use regards_store::{StoreError, accounts, mailboxes};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -130,14 +132,27 @@ pub(crate) async fn get(state: &State, params: DraftRef) -> Result<Value, RpcErr
     view(state, params.id).await
 }
 
-pub(crate) async fn list(state: &State, params: regards_ipc::protocol::AccountRef) -> Result<Value, RpcError> {
+pub(crate) async fn list(state: &State, params: DraftListParams) -> Result<Value, RpcError> {
     let account_id = params.account_id;
-    let drafts = state
+    let (drafts, senders) = state
         .store
-        .read(move |conn| drafts::list(conn, &account_id))
+        .read(move |conn| {
+            let senders: HashMap<String, Person> = accounts::list(conn)?
+                .iter()
+                .map(|account| (account.id.clone(), sender(account)))
+                .collect();
+            Ok((drafts::list(conn, account_id.as_deref())?, senders))
+        })
         .await
         .map_err(crate::session::internal)?;
-    Ok(json!({ "drafts": drafts.into_iter().map(draft_view).collect::<Vec<_>>() }))
+    let drafts = drafts
+        .into_iter()
+        .filter_map(|draft| {
+            let from = senders.get(&draft.account_id)?.clone();
+            Some(draft_view(draft, from))
+        })
+        .collect();
+    Ok(json!(DraftListResult { drafts }))
 }
 
 /// Autosave: the whole of what the draft says.
@@ -199,10 +214,7 @@ pub(crate) async fn send(state: &Arc<State>, params: DraftSendParams) -> Result<
             let account =
                 accounts::get(tx, &draft.account_id)?.ok_or_else(|| StoreError::Conflict("no such account".into()))?;
             let outgoing = Outgoing {
-                from: Person {
-                    name: Some(account.display_name.clone()).filter(|name| name != &account.email),
-                    address: Some(account.email.clone()),
-                },
+                from: sender(&account),
                 to: draft.to.clone(),
                 cc: draft.cc.clone(),
                 bcc: draft.bcc.clone(),
@@ -299,19 +311,34 @@ pub(crate) async fn dismiss(state: &State, params: OutboxRef) -> Result<Value, R
 }
 
 async fn view(state: &State, id: i64) -> Result<Value, RpcError> {
-    let draft = state
+    let found = state
         .store
-        .read(move |conn| drafts::get(conn, id))
+        .read(move |conn| {
+            let Some(draft) = drafts::get(conn, id)? else {
+                return Ok(None);
+            };
+            let account = accounts::get(conn, &draft.account_id)?;
+            Ok(account.map(|account| (draft, sender(&account))))
+        })
         .await
-        .map_err(crate::session::internal)?
-        .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such draft"))?;
-    Ok(json!(draft_view(draft)))
+        .map_err(crate::session::internal)?;
+    let (draft, from) = found.ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such draft"))?;
+    Ok(json!(draft_view(draft, from)))
 }
 
-fn draft_view(draft: Draft) -> DraftView {
+/// Who an account's messages come from: its name (when it is not just the address) and address.
+fn sender(account: &accounts::Account) -> Person {
+    Person {
+        name: Some(account.display_name.clone()).filter(|name| name != &account.email && !name.trim().is_empty()),
+        address: Some(account.email.clone()),
+    }
+}
+
+fn draft_view(draft: Draft, from: Person) -> DraftView {
     DraftView {
         id: draft.id,
         account_id: draft.account_id,
+        from,
         to: draft.to,
         cc: draft.cc,
         bcc: draft.bcc,

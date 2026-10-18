@@ -61,7 +61,7 @@ pub mod methods {
     /// Start forwarding a stored message.
     pub const DRAFT_FORWARD: &str = "draft.forward";
     pub const DRAFT_GET: &str = "draft.get";
-    /// An account's drafts, most recently changed first.
+    /// Drafts not being sent, most recently changed first; of one account, or all.
     pub const DRAFT_LIST: &str = "draft.list";
     /// Save what the draft says (autosave). Refused while it is being sent.
     pub const DRAFT_UPDATE: &str = "draft.update";
@@ -516,6 +516,8 @@ pub struct UndoResult {
 pub struct DraftView {
     pub id: i64,
     pub account_id: String,
+    /// Who it goes out from: the account's name and address.
+    pub from: Person,
     pub to: Vec<Person>,
     pub cc: Vec<Person>,
     pub bcc: Vec<Person>,
@@ -527,6 +529,20 @@ pub struct DraftView {
     pub updated_at: i64,
     /// It is in the outbox: take it back before changing it.
     pub sending: bool,
+}
+
+/// Parameters of [`methods::DRAFT_LIST`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftListParams {
+    /// Only this account's; all accounts' when absent.
+    #[serde(default)]
+    pub account_id: Option<String>,
+}
+
+/// Result of [`methods::DRAFT_LIST`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftListResult {
+    pub drafts: Vec<DraftView>,
 }
 
 /// Parameters of [`methods::DRAFT_CREATE`]; everything may start empty.

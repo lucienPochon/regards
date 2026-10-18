@@ -185,6 +185,12 @@ export function Composer({
           <>
             {draft?.sending && <p className="error small">This message is being sent. Undo it first to change it.</p>}
             <fieldset disabled={draft?.sending || busy}>
+              {draft && (
+                <p className="field from">
+                  <span>From</span>
+                  <span>{formatRecipients([draft.from])}</span>
+                </p>
+              )}
               <label className="field">
                 <span>To</span>
                 <input ref={toField} value={fields.to} onChange={change("to")} placeholder="name@example.org, …" />

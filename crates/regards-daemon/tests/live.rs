@@ -10,10 +10,11 @@ use regards_daemon::{Daemon, SyncLimits};
 use regards_imap::{ImapServer, Session, SystemFlag, TlsOptions};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountSummary, ClientKind, ConnectionSecurity, DeleteResult, DraftCreateParams,
-    DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MailboxListResult,
-    MessageDetail, MessageHtml, MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef,
-    MoveResult, OutboxEntryView, OutboxListResult, OutboxRef, OutboxState, OutboxUndoResult, ServerSettings,
-    SetFlagsParams, SetFlagsResult, SyncResult, ThreadView, UndoParams, UndoResult, methods,
+    DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams,
+    DraftView, MailboxListResult, MessageDetail, MessageHtml, MessageHtmlParams, MessageIds, MessageListParams,
+    MessageListResult, MessageRef, MoveResult, OutboxEntryView, OutboxListResult, OutboxRef, OutboxState,
+    OutboxUndoResult, ServerSettings, SetFlagsParams, SetFlagsResult, SyncResult, ThreadView, UndoParams, UndoResult,
+    methods,
 };
 use regards_ipc::{Client, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -1077,6 +1078,9 @@ async fn live_a_reply_can_be_undone_then_goes_out_once_and_lands_in_sent() {
     assert_eq!(draft.subject, "Re: Plans");
     assert!(draft.body.contains("Ada wrote:\n> Body 1"), "{}", draft.body);
     assert_eq!(draft.replying_to, Some(original));
+    let me = format!("{}@example.test", live.user);
+    assert_eq!(draft.from.address.as_deref(), Some(me.as_str()));
+    assert_eq!(draft.from.name.as_deref(), Some("Live"));
     let draft: DraftView = desktop
         .call(
             methods::DRAFT_UPDATE,
@@ -1110,6 +1114,11 @@ async fn live_a_reply_can_be_undone_then_goes_out_once_and_lands_in_sent() {
         .unwrap();
     assert_eq!(undone.draft_id, Some(draft.id));
     assert!(outbox(&mut desktop).await.is_empty());
+    let saved: DraftListResult = desktop
+        .call(methods::DRAFT_LIST, DraftListParams::default())
+        .await
+        .unwrap();
+    assert_eq!(saved.drafts.len(), 1, "back among the drafts");
 
     // Send for real, with a 1-second window.
     let _: DraftSendResult = desktop
@@ -1125,7 +1134,6 @@ async fn live_a_reply_can_be_undone_then_goes_out_once_and_lands_in_sent() {
     let delivered = tokio::time::timeout(Duration::from_secs(20), sent.next())
         .await
         .expect("the message reached the SMTP server");
-    let me = format!("{}@example.test", live.user);
     assert_eq!(delivered.from.as_deref(), Some(me.as_str()));
     assert_eq!(delivered.to, ["ada@example.test", "hidden@example.test"]);
     let data = String::from_utf8(delivered.data.unwrap()).unwrap();
@@ -1142,6 +1150,11 @@ async fn live_a_reply_can_be_undone_then_goes_out_once_and_lands_in_sent() {
         .call::<_, Value>(methods::DRAFT_GET, DraftRef { id: draft.id })
         .await;
     assert!(gone.is_err(), "the draft is gone once sent");
+    let saved: DraftListResult = desktop
+        .call(methods::DRAFT_LIST, DraftListParams::default())
+        .await
+        .unwrap();
+    assert!(saved.drafts.is_empty());
     let sent_folder = folders(&mut desktop, &account.id)
         .await
         .mailboxes

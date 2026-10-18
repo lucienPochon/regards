@@ -5,6 +5,8 @@ import type { Person } from "./accounts";
 export interface Draft {
   id: number;
   account_id: string;
+  /** Who it goes out from: the account's name and address. */
+  from: Person;
   to: Person[];
   cc: Person[];
   bcc: Person[];
@@ -40,6 +42,7 @@ export interface Queued {
 export const newDraft = (accountId: string) => invoke<Draft>("draft_create", { accountId });
 export const replyDraft = (messageId: number, all: boolean) => invoke<Draft>("draft_reply", { messageId, all });
 export const forwardDraft = (messageId: number) => invoke<Draft>("draft_forward", { messageId });
+export const listDrafts = () => invoke<{ drafts: Draft[] }>("draft_list");
 export const getDraft = (id: number) => invoke<Draft>("draft_get", { id });
 export const deleteDraft = (id: number) => invoke("draft_delete", { id });
 

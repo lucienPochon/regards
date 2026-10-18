@@ -645,3 +645,34 @@ button.link {
 .outbox p {
   margin: 4px 0;
 }
+
+.composer .field.from {
+  margin: 0;
+}
+
+.drafts ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.drafts .draft {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  margin: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.drafts .draft:hover,
+.drafts .draft.current {
+  background: var(--bg);
+}
