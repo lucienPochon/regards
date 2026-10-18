@@ -128,6 +128,7 @@ function summary(message: FixtureMessage, listedAt = message.received_at): Messa
     uid: message.id,
     subject: message.subject,
     from: message.from,
+    to: [...message.to, ...message.cc].slice(0, 3),
     received_at: message.received_at,
     sent_at: message.received_at,
     seen: message.seen,

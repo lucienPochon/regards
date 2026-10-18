@@ -2,7 +2,7 @@ import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRe
 import type { MessageSummary, Person } from "./accounts";
 import { type Action, choose } from "./actions";
 import { Avatar } from "./Avatar";
-import { dateSection, laterDate, listDate, personName } from "./format";
+import { dateSection, laterDate, listDate, peopleShort, personName } from "./format";
 import { Icon, type IconName } from "./icons";
 import type { ListItem, MessageFeed } from "./mail";
 import { type Anchor, type MenuEntry, type MenuRequest, anchorOf } from "./Menu";
@@ -75,6 +75,7 @@ export function MessageList({
   empty,
   bundle,
   onSplit,
+  own,
 }: {
   title: string;
   subtitle?: string;
@@ -95,6 +96,8 @@ export function MessageList({
   bundle?: Bundle | null;
   /** Show the reading pane beside the list (the handle on the list's edge). */
   onSplit?: () => void;
+  /** The person's own addresses, lowercase: their mail reads "to Lena". */
+  own: ReadonlySet<string>;
 }) {
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
@@ -346,9 +349,9 @@ export function MessageList({
                         <button type="button" className="row-main" onClick={(event) => click(event, item, index)}>
                           <span className="dot" aria-label={item.seen ? undefined : "Unread"} />
                           <span className="row-avatar">
-                            <Avatar person={item.from} size={mode === "single" ? "sm" : "md"} ring />
+                            <Avatar person={correspondent(item, own)} size={mode === "single" ? "sm" : "md"} ring />
                           </span>
-                          <span className="from">{personName(item.from)}</span>
+                          <span className="from">{who(item, own)}</span>
                           <span className="subject">
                             {item.pinned && <Icon name="pinFilled" size={13} className="pinned" />}
                             {item.subject || "(no subject)"}
@@ -555,4 +558,22 @@ function Skeleton({ mode }: { mode: "single" | "split" }) {
       </ul>
     </div>
   );
+}
+
+/** Mail the person sent: from the Sent folder, or from one of their addresses. */
+function mine(item: ListItem, own: ReadonlySet<string>): boolean {
+  const from = item.from?.address?.toLowerCase();
+  return item.role === "sent" || (from !== undefined && own.has(from));
+}
+
+/** Who a row is about: the sender, or for mail one sent, its first recipient. */
+function correspondent(item: ListItem, own: ReadonlySet<string>) {
+  return mine(item, own) && item.to.length > 0 ? item.to[0] : item.from;
+}
+
+/** "Lena Okafor", or for mail one sent, "to Lena Okafor, Bob" (summaries carry the first three). */
+function who(item: ListItem, own: ReadonlySet<string>): string {
+  if (!mine(item, own) || item.to.length === 0) return personName(item.from);
+  const named = peopleShort(item.to.slice(0, 2));
+  return `to ${named}${item.to.length > 2 ? " and others" : ""}`;
 }

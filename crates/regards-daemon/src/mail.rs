@@ -297,6 +297,9 @@ async fn download(state: &State, message: &Message, mailbox: &Mailbox) -> Result
 }
 
 /// A message as lists show it, with its marks (by Message-ID).
+/// Recipients a summary carries: a list row shows two and a count.
+const SUMMARY_RECIPIENTS: usize = 3;
+
 fn summary(m: Message, marks: &HashMap<String, Marks>) -> MessageSummary {
     let mark = m
         .message_id
@@ -315,6 +318,7 @@ fn summary(m: Message, marks: &HashMap<String, Marks>) -> MessageSummary {
         id: m.id,
         uid: m.uid,
         subject: m.subject,
+        to: m.to.into_iter().chain(m.cc).take(SUMMARY_RECIPIENTS).collect(),
         from: m.from,
         received_at: m.received_at,
         sent_at: m.sent_at,

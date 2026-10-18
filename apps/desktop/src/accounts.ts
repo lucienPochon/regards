@@ -95,6 +95,8 @@ export interface MessageSummary {
   uid: number;
   subject: string;
   from: Person | null;
+  /** The first few recipients (To, then Cc). */
+  to: Person[];
   received_at: number;
   sent_at: number | null;
   seen: boolean;

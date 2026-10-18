@@ -115,6 +115,7 @@ export function App() {
   const closeQueued = useCallback(() => setQueued(null), []);
 
   const accounts = useMemo(() => (mail.state === "ready" ? mail.accounts : []), [mail]);
+  const ownAddresses = useMemo(() => new Set(accounts.map((entry) => entry.account.email.toLowerCase())), [accounts]);
   const sources = useMemo(() => sourcesFor(accounts, view), [accounts, view]);
   const feed = useFeed(sources);
   const inInbox = view.kind === "role" && view.role === "inbox";
@@ -485,6 +486,7 @@ export function App() {
         empty={empty}
         bundle={inInbox ? { label: "Pinned", icon: "pin", messages: pinned, onOpen: () => changeView({ kind: "marked", mark: "pinned" }) } : null}
         onSplit={layout.mode === "single" ? () => setLayout({ mode: "split" }) : undefined}
+        own={ownAddresses}
       />
     );
 

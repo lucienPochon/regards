@@ -420,6 +420,10 @@ pub struct MessageSummary {
     pub uid: u32,
     pub subject: String,
     pub from: Option<Person>,
+    /// The first few recipients (To, then Cc): enough to show mail one sent
+    /// as "to Lena, Bob".
+    #[serde(default)]
+    pub to: Vec<Person>,
     /// When the server received it, Unix time in milliseconds.
     pub received_at: i64,
     /// The Date header, Unix time in milliseconds.
