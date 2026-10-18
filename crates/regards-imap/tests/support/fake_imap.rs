@@ -84,6 +84,9 @@ pub struct Script {
     pub password: &'static str,
     /// Untagged lines sent in reply to LIST.
     pub list: &'static str,
+    /// Answer the first command with this verb ("LIST", "SELECT", "UID", ...) with
+    /// these bytes instead, `{tag}` replaced by its tag, then hang up.
+    pub hostile: Option<(&'static str, &'static [u8])>,
 }
 
 impl Script {
@@ -92,6 +95,7 @@ impl Script {
             greeting: "* OK ready\r\n",
             password,
             list: DEFAULT_LIST,
+            hostile: None,
         }
     }
 }
@@ -153,7 +157,13 @@ where
     while let Some(command) = read_command(&mut read, &mut write).await {
         let args = parse_words(&command);
         let tag = args[0].clone();
-        let reply = match args.get(1).map(|v| v.to_ascii_uppercase()).as_deref() {
+        let verb = args.get(1).map(|v| v.to_ascii_uppercase());
+        if let Some((_, bytes)) = script.hostile.filter(|(on, _)| verb.as_deref() == Some(*on)) {
+            let reply = replace_tag(bytes, tag.as_bytes());
+            let _ = write.write_all(&reply).await;
+            break;
+        }
+        let reply = match verb.as_deref() {
             Some("CAPABILITY") => format!("* CAPABILITY IMAP4rev1 AUTH=PLAIN\r\n{tag} OK done\r\n"),
             Some("LOGIN") => {
                 let attempt = args.get(3).cloned().unwrap_or_default();
@@ -199,6 +209,22 @@ where
         }
     }
     given
+}
+
+/// `bytes` with every `{tag}` replaced by `tag`.
+fn replace_tag(bytes: &[u8], tag: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i..].starts_with(b"{tag}") {
+            out.extend_from_slice(tag);
+            i += 5;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    out
 }
 
 /// Read one command line, following `{n}` literals (sending a continuation for synchronising ones).

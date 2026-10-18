@@ -169,6 +169,7 @@ flowchart LR
 - **Capability-aware:** incremental flag sync with CONDSTORE/QRESYNC; efficient UID-range sync plus periodic flag resync without them (Infomaniak advertises neither before login; recheck after login). MOVE, or UIDPLUS COPY + `\Deleted` + UID EXPUNGE.
 - Gmail X-GM-EXT-1 labels and thread IDs when present.
 - **Accepted when:** the fault-injection suite passes with no panics on malformed input, and IDLE delivers new mail in under 5 s.
+  - **Status:** IDLE delivers in about 0.6 s against Dovecot. A hostile fake server answers every kind of command with 16 kinds of bad replies (noise, a 4 GB literal that never comes, truncation, an endless line, BYE, wrong tags, junk numbers and names), and each call ends in a result or an error within seconds, never a panic or a hang. 3,000 mangled messages and degenerate inputs go through every message parser without a crash. The offline proxy test covers lost connections. Real-provider runs are still to do.
 
 ### 5.3 Inbox and navigation (P0, 1.0)
 

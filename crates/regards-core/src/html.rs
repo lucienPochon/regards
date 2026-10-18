@@ -45,6 +45,20 @@ pub fn render(raw: &[u8], allow_remote: bool, links: Option<&str>) -> Option<Ren
     let message = MessageParser::default().parse(raw)?;
     let part = message.html_part(0).filter(|part| part.is_text_html())?;
     let html = part.text_contents()?;
+    if start_tags(html) > MAX_TAGS {
+        let text = message.body_text(0).unwrap_or_default();
+        return Some(Rendered {
+            html: document(
+                "",
+                &format!(
+                    "<p><em>This message's formatting is too complex to show safely, so here is its text.</em></p>\
+                     <pre style=\"white-space:pre-wrap\">{}</pre>",
+                    escape(&text)
+                ),
+            ),
+            blocked_remote: 0,
+        });
+    }
 
     let mut inline = HashMap::new();
     let mut total = 0;
@@ -67,21 +81,51 @@ pub fn render(raw: &[u8], allow_remote: bool, links: Option<&str>) -> Option<Ren
 
     let (body, blocked_remote) = sanitize(html, allow_remote, &inline, links);
     // The message's own <base> and frames were removed; these are ours.
-    let (base, sink) = if links.is_some() {
-        (
-            format!("<base target=\"{LINK_TARGET}\">"),
-            format!("<iframe name=\"{LINK_TARGET}\" hidden></iframe>"),
+    let html = if links.is_some() {
+        document(
+            &format!("<base target=\"{LINK_TARGET}\">"),
+            &format!("{body}<iframe name=\"{LINK_TARGET}\" hidden></iframe>"),
         )
     } else {
-        (String::new(), String::new())
+        document("", &body)
     };
-    Some(Rendered {
-        html: format!(
-            "<!doctype html><html><head><meta charset=\"utf-8\">{base}<style>{FRAME_STYLE}</style></head>\
-             <body>{body}{sink}</body></html>"
-        ),
-        blocked_remote,
-    })
+    Some(Rendered { html, blocked_remote })
+}
+
+/// A complete frame document around sanitised `body`.
+fn document(head: &str, body: &str) -> String {
+    format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\">{head}<style>{FRAME_STYLE}</style></head>\
+         <body>{body}</body></html>"
+    )
+}
+
+/// More start tags than this and the HTML is not shown. Parsing and
+/// sanitising cost grows with the square of the nesting depth, which a hostile
+/// message can make as large as its tag count: 20,000 nested elements took
+/// 0.7 s, 200,000 (a 1 MB message) would take over a minute. Real mail stays
+/// far below; at this limit the worst case is about 0.4 s.
+const MAX_TAGS: usize = 15_000;
+
+fn start_tags(html: &str) -> usize {
+    html.as_bytes()
+        .windows(2)
+        .filter(|pair| pair[0] == b'<' && pair[1].is_ascii_alphabetic())
+        .count()
+}
+
+fn escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// Sanitise an HTML fragment; returns it and how many remote resources were removed.
@@ -346,6 +390,36 @@ mod tests {
 
         let plain = render(raw, false, None).unwrap().html;
         assert!(!plain.contains("<base") && !plain.contains("<iframe"), "{plain}");
+    }
+
+    #[test]
+    fn hostile_nesting_shows_the_text_instead_and_quickly() {
+        let raw = format!(
+            "Content-Type: multipart/alternative; boundary=\"a\"\r\n\r\n\
+             --a\r\nContent-Type: text/plain\r\n\r\nThe <real> text & more\r\n\
+             --a\r\nContent-Type: text/html\r\n\r\n{}x\r\n--a--\r\n",
+            "<div>".repeat(MAX_TAGS + 1)
+        );
+        let started = std::time::Instant::now();
+        let rendered = render(raw.as_bytes(), false, None).unwrap();
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
+        assert!(rendered.html.contains("too complex to show safely"));
+        assert!(
+            rendered.html.contains("The &lt;real&gt; text &amp; more"),
+            "{}",
+            rendered.html
+        );
+        assert!(!rendered.html.contains("<div>"));
+
+        // Ordinary mail is far below the limit.
+        assert_eq!(
+            start_tags("<table><tr><td><p>Hi <b>there</b></p></td></tr></table> a < b"),
+            5
+        );
     }
 
     #[test]

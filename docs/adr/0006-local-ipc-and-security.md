@@ -50,6 +50,7 @@ Loopback TCP is reachable by every local user and, through DNS-rebinding mistake
           - **Removed:** scripts, event handlers, forms, frames and objects; links other than `http(s)` and `mailto`; and `data:` anywhere except images.
           - **Inline images:** `cid:` images become `data:` URIs, within a size limit.
           - **Remote images:** removed and counted unless allowed.
+          - **Hostile nesting:** sanitising costs grow with the square of the nesting depth. 20,000 nested elements took 0.7 s, and a 1 MB message could take minutes. Above 15,000 start tags (worst case about 0.4 s), the frame shows the message's text with a note instead.
        2. **Its own origin:** the desktop serves the result through the `regards-mail` scheme, to the main window only. The response CSP is `default-src 'none'; style-src 'unsafe-inline'; img-src data:` (plus `https:`/`http:` once remote images are allowed), with `frame-src` limited to the link opener below and `form-action 'none'; base-uri 'none'`.
        3. **The frame:** an `<iframe sandbox="">`, so no scripts, no same-origin access, no popups and no navigation. The app CSP allows framing only `regards-mail`.
      - **Links (Phase 1):** web links open in the default browser.
