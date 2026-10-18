@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 regards-core.workspace = true
+regards-net.workspace = true
 # Pinned exactly: imap-codec is a 2.0 pre-release, and every update is reviewed
 # (docs/research/07-imap-library-spike.md §7).
 imap-next = { version = "=0.3.4", features = ["ext_condstore_qresync", "tag_generator"] }
@@ -17,15 +18,14 @@ imap-types = "=2.0.0-alpha.7"
 # imap-codec 2.0.0-alpha.9 turns off nom's default features but uses its
 # `alloc` items, so it does not build on its own (spike 07 §5 item 1).
 nom = { version = "7", default-features = false, features = ["alloc"] }
-rustls-platform-verifier = "0.7"
-futures-util.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-tokio-rustls.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 rcgen.workspace = true
+# The fake TLS servers in tests/support.
+tokio-rustls.workspace = true
 
 [lints]
 workspace = true

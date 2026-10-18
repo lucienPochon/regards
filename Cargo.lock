@@ -3596,14 +3596,13 @@ dependencies = [
 name = "regards-imap"
 version = "0.1.0"
 dependencies = [
- "futures-util",
  "imap-codec",
  "imap-next",
  "imap-types",
  "nom",
  "rcgen",
  "regards-core",
- "rustls-platform-verifier",
+ "regards-net",
  "thiserror 2.0.21",
  "tokio",
  "tokio-rustls",
@@ -3627,6 +3626,29 @@ dependencies = [
  "tokio-util",
  "tracing",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "regards-net"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "rustls-platform-verifier",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls",
+]
+
+[[package]]
+name = "regards-smtp"
+version = "0.1.0"
+dependencies = [
+ "rcgen",
+ "regards-core",
+ "regards-net",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls",
 ]
 
 [[package]]

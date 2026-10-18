@@ -53,7 +53,11 @@ We must support generic IMAP/SMTP, Gmail and Microsoft 365/Outlook. Tenants may 
        - fetch headers as literals (`BODY.PEEK[HEADER.FIELDS …]`)
        - download large bodies in chunks
        - tolerate a missing HIGHESTMODSEQ (observed on Dovecot 2.4.5)
-   - **SMTP:** `lettre` (MIT), async with rustls.
+   - **SMTP:** ~~`lettre` (MIT), async with rustls.~~ **Amended (Phase 2):** our own small submission client, `regards-smtp`. At-most-once sending (ADR-0010 §3) needs to know whether a failure came before or after the final `.` of DATA, and `lettre`'s errors do not tell.
+     - **Supports:** one message per connection, implicit TLS or required STARTTLS, AUTH PLAIN/LOGIN, SIZE and SMTPUTF8.
+     - **Outcomes:** each failure is classed as *not sent* (with or without retry) or *uncertain*.
+     - **Defences:** plaintext injected ahead of the STARTTLS handshake is refused (CVE-2011-0411), and addresses that could smuggle in commands are refused.
+     - **Shared networking:** `regards-net` holds the connection code (Happy Eyeballs, rustls with the platform verifier) for both IMAP and SMTP.
    - **MIME:** `mail-parser` (Apache-2.0 OR MIT) for parsing; `mail-builder` (Apache-2.0 OR MIT) for building `multipart/alternative` + `related` + attachments.
    - **TLS:** `rustls` with the platform certificate verifier. Certificate validation is always on, with no "accept invalid certs" option in the UI.
      - **Implementation (Phase 1):**

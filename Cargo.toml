@@ -6,6 +6,8 @@ members = [
     "crates/regards-daemon",
     "crates/regards-cli",
     "crates/regards-imap",
+    "crates/regards-net",
+    "crates/regards-smtp",
     "crates/regards-store",
     "crates/regards-vault",
     "apps/desktop/src-tauri",
@@ -25,6 +27,8 @@ regards-core = { path = "crates/regards-core" }
 regards-ipc = { path = "crates/regards-ipc" }
 regards-daemon = { path = "crates/regards-daemon" }
 regards-imap = { path = "crates/regards-imap" }
+regards-net = { path = "crates/regards-net" }
+regards-smtp = { path = "crates/regards-smtp" }
 regards-store = { path = "crates/regards-store" }
 regards-vault = { path = "crates/regards-vault" }
 

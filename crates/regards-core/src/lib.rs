@@ -6,6 +6,7 @@
 
 pub mod body;
 pub mod build_info;
+pub mod encoding;
 pub mod headers;
 pub mod html;
 pub mod mailbox;
