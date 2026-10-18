@@ -1,0 +1,104 @@
+import { Avatar } from "./Avatar";
+import { type OutboxEntry, dismissOutbox, sendAgain, undoSend } from "./compose";
+import { peopleShort } from "./format";
+import { Icon } from "./icons";
+
+/**
+ * What has not gone out yet: waiting, failed, or perhaps sent. Each entry
+ * says what happened and what can be done.
+ */
+export function OutboxList({
+  entries,
+  onEdit,
+  onFailed,
+}: {
+  entries: OutboxEntry[];
+  onEdit: (draftId: number) => void;
+  onFailed: (error: unknown) => void;
+}) {
+  if (entries.length === 0) {
+    return (
+      <div className="list-scroll">
+        <div className="empty list-empty">
+          <span className="empty-mark">
+            <Icon name="send" size={26} />
+          </span>
+          <h2>Everything has gone out</h2>
+          <p>Messages waiting to be sent, or that could not be, show here.</p>
+        </div>
+      </div>
+    );
+  }
+  const act = (action: () => Promise<unknown>) => {
+    action().catch(onFailed);
+  };
+  const edit = (entry: OutboxEntry) =>
+    act(async () => {
+      const { draft_id } = await undoSend(entry.id);
+      if (draft_id !== null) onEdit(draft_id);
+    });
+
+  return (
+    <div className="list-scroll">
+      <ul className="rows" aria-label="Outbox">
+        {entries.map((entry) => {
+          const trouble = entry.state === "failed" || entry.state === "uncertain";
+          return (
+            <li key={entry.id} className="row outbox-row">
+              <span className="row-avatar">
+                <Avatar person={entry.recipients[0] ?? null} />
+              </span>
+              <div className="row-main">
+                <span className="row-line">
+                  <span className="from">to {peopleShort(entry.recipients)}</span>
+                </span>
+                <span className="row-line">
+                  <span className="subject">{entry.subject || "(no subject)"}</span>
+                </span>
+                <span className={trouble ? "outbox-state bad" : "outbox-state"}>{describe(entry)}</span>
+                <span className="outbox-actions">
+                  {(entry.state === "failed" || (entry.state === "queued" && entry.attempts > 0)) && (
+                    <button type="button" className="btn small" onClick={() => edit(entry)}>
+                      Edit
+                    </button>
+                  )}
+                  {entry.state === "failed" && (
+                    <button type="button" className="btn small" onClick={() => act(() => dismissOutbox(entry.id))}>
+                      Discard
+                    </button>
+                  )}
+                  {entry.state === "uncertain" && (
+                    <>
+                      <button type="button" className="btn small" onClick={() => act(() => sendAgain(entry.id))}>
+                        Send again
+                      </button>
+                      <button type="button" className="btn small" onClick={() => act(() => dismissOutbox(entry.id))}>
+                        It was sent
+                      </button>
+                    </>
+                  )}
+                </span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function describe(entry: OutboxEntry): string {
+  switch (entry.state) {
+    case "sending":
+      return "Sending…";
+    case "failed":
+      return `Not sent: ${entry.last_error ?? "the server refused it"}`;
+    case "uncertain":
+      return `It may or may not have been sent: ${entry.last_error ?? ""} Check the recipient or your Sent folder before sending it again.`;
+    case "queued":
+      if (entry.attempts === 0) return "Sending soon…";
+      return `Not sent yet, trying again at ${new Date(entry.next_attempt_at).toLocaleTimeString()}${
+        entry.last_error ? `: ${entry.last_error}` : ""
+      }`;
+  }
+}

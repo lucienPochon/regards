@@ -176,6 +176,13 @@ flowchart LR
 
 - **Scope:** unified and per-account inboxes, system mailboxes, folders/labels, Outbox, Snoozed, Set aside, Recently seen; split layouts; keyboard-first navigation; context menus.
 - **Accepted when:** 10k-thread lists scroll at 60 fps, every action is keyboard-reachable, and the layout persists per window.
+- **Built so far:**
+  - **Layout:** three columns: folders, message list and reading pane. The list's width is set by dragging (or with the arrow keys), the folder column can shrink to icons, and both are remembered. Light, dark or as the system.
+  - **Folders:** Inbox, Sent, Archive, Junk and Trash show every account at once; each list is merged from the accounts' folders, newest first. Then Drafts, the Outbox when it has something, and each account's own folders as a tree.
+  - **The list:** pages load as you scroll. Hovering a message shows read/unread, flag, archive and delete; right-clicking gives every action. Ctrl/⌘-click, Shift-click, `x` and Ctrl/⌘+A select several, and the actions then apply to all of them.
+  - **Reading:** the whole conversation, oldest first, with the open message expanded and the others one line each. After archiving or deleting, the next message opens.
+  - **Actions** come from one list, which feeds the toolbar, hover buttons, right-click menu and shortcuts. Moving opens a folder picker you can type into.
+  - **Still to come:** unread counts, a preview line in the list, one row per conversation, a virtualised list for 10k rows, and the Phase 3 views (Pinned, Set aside, Snoozed).
 
 ### 5.4 Smart Inbox (P1, 1.0)
 

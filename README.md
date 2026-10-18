@@ -54,6 +54,8 @@ npm run tauri dev
 
 `tauri dev` builds the `regards` CLI first. The app starts the daemon from the `regards` program next to its own executable, which is also where installers will put it. Set `REGARDS_DAEMON_BIN` to use a different program.
 
+To work on the interface without a mail server, run `npm run dev` and open <http://localhost:1420/preview.html> in a browser. It shows the app with made-up sample mail, and the actions work on that sample. Add `?accounts=2` for two accounts, `?accounts=0` for the first-run screen, or `?theme=dark`. The preview is not part of the app build.
+
 Actions in the app change your real mailbox, and "Delete forever" is permanent. To try things safely, use the Dovecot container from [`spikes/imap-trial`](spikes/imap-trial/README.md): start the app with `REGARDS_DEV_EXTRA_CA=/path/to/ca.pem` (development builds only), then add an account on `localhost`, port `31993`, with any user name and the password `pass`.
 
 ## Try the daemon
