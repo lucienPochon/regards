@@ -218,6 +218,24 @@ pub fn set_blob(tx: &Transaction<'_>, id: i64, hash: &str) -> Result<(), StoreEr
     Ok(())
 }
 
+/// The page query of [`list`]. A message being moved shows in its target
+/// folder at once; one marked deleted (being deleted for good, or by another
+/// client) is not shown. The two halves, the folder's own messages and those
+/// on their way into it, are separate so that each walks its own index: with
+/// an OR, a 100k-message folder took 55 ms per page instead of well under 1.
+fn list_sql() -> String {
+    format!(
+        "SELECT * FROM (SELECT {COLUMNS} FROM messages \
+             WHERE mailbox_id = ?1 AND moving_to IS NULL AND deleted = 0 AND (received_at, id) < (?2, ?3) \
+             ORDER BY received_at DESC, id DESC LIMIT ?4) \
+         UNION ALL \
+         SELECT * FROM (SELECT {COLUMNS} FROM messages \
+             WHERE moving_to = ?1 AND deleted = 0 AND (received_at, id) < (?2, ?3) \
+             ORDER BY received_at DESC, id DESC LIMIT ?4) \
+         ORDER BY received_at DESC, id DESC LIMIT ?4"
+    )
+}
+
 /// A page of a mailbox's messages, newest first, older than `before` if given.
 pub fn list(
     conn: &Connection,
@@ -226,14 +244,7 @@ pub fn list(
     before: Option<Cursor>,
 ) -> Result<Vec<Message>, StoreError> {
     let (received_at, id) = before.map_or((i64::MAX, i64::MAX), |c| (c.received_at, c.id));
-    let mut statement = conn.prepare_cached(&format!(
-        // A message being moved shows in its target folder at once. One marked
-        // deleted (being deleted for good, or by another client) is not shown.
-        "SELECT {COLUMNS} FROM messages \
-         WHERE ((mailbox_id = ?1 AND moving_to IS NULL) OR moving_to = ?1) AND deleted = 0 \
-         AND (received_at, id) < (?2, ?3) \
-         ORDER BY received_at DESC, id DESC LIMIT ?4"
-    ))?;
+    let mut statement = conn.prepare_cached(&list_sql())?;
     let messages = statement
         .query_map(params![mailbox_id, received_at, id, limit], from_row)?
         .map(|row| row?)
@@ -322,6 +333,31 @@ mod tests {
     use regards_core::mailbox::Role;
     use regards_core::paths::DataDirs;
 
+    #[tokio::test]
+    async fn pages_walk_indexes_instead_of_scanning_the_mailbox() {
+        let (_temp, store, _inbox) = store_with_inbox().await;
+        let plan: Vec<String> = store
+            .read(|conn| {
+                let mut statement = conn.prepare(&format!("EXPLAIN QUERY PLAN {}", list_sql()))?;
+                let details = statement
+                    .query_map(params![1, i64::MAX, i64::MAX, 50], |row| row.get::<_, String>(3))?
+                    .collect::<Result<_, _>>()?;
+                Ok(details)
+            })
+            .await
+            .unwrap();
+        // With an OR, SQLite reads both indexes ("MULTI-INDEX OR") and sorts the
+        // whole folder for every page: 55 ms at 100k messages (tests/scale.rs).
+        assert!(
+            plan.iter().any(|step| step.contains("USING INDEX messages_by_date"))
+                && plan.iter().any(|step| step.contains("USING INDEX messages_moving_to"))
+                && !plan
+                    .iter()
+                    .any(|step| step.starts_with("SCAN messages") || step.contains("MULTI-INDEX OR")),
+            "{plan:#?}"
+        );
+    }
+
     async fn store_with_inbox() -> (tempfile::TempDir, Store, i64) {
         let temp = tempfile::tempdir().unwrap();
         let store = Store::open(&DataDirs::at(temp.path())).await.unwrap();
@@ -381,6 +417,25 @@ mod tests {
                 ..Headers::default()
             },
         }
+    }
+
+    #[tokio::test]
+    async fn pages_continue_through_messages_that_arrived_in_the_same_second() {
+        let (_temp, store, mailbox) = store_with_inbox().await;
+        let batch: Vec<NewMessage> = (1..=5).map(|uid| message(uid, 7000, &format!("m{uid}"))).collect();
+        store.write(move |tx| upsert(tx, mailbox, &batch)).await.unwrap();
+        let mut seen = Vec::new();
+        let mut before = None;
+        loop {
+            let page = store.read(move |conn| list(conn, mailbox, 2, before)).await.unwrap();
+            let Some(last) = page.last() else { break };
+            before = Some(Cursor {
+                received_at: last.received_at,
+                id: last.id,
+            });
+            seen.extend(page.into_iter().map(|m| m.uid));
+        }
+        assert_eq!(seen, [5, 4, 3, 2, 1], "every message once, none skipped");
     }
 
     #[tokio::test]

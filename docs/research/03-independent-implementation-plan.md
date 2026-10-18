@@ -157,6 +157,7 @@ flowchart LR
   - **Tests:** CI runs these flows against Dovecot.
   - **Push:** one IDLE connection per account on the inbox, with a catch-up sync before each IDLE, re-IDLE every 25 minutes, and reconnect with backoff (reset once a connection worked). Servers without IDLE are polled every 5 minutes. Measured against Dovecot: about 0.6 s from delivery to the store.
   - **Offline:** a fault-injection proxy test cuts the line. Actions taken offline show at once, and when push reconnects the waiting actions go out at once (about 5 s after the line returns, against 9 s or more on the retry schedule).
+  - **Scale:** a 100k-message fixture (`cargo test -p regards-store --release --test scale -- --ignored --nocapture`). Storing it: 2.7 s, at most 80 ms per batch of 2,000. Afterwards, any page of the list: about 0.3 ms (12 ms cold); a conversation or a message row: under 0.2 ms; a 50-message action: 0.2 ms; reopening the store: 7 ms cold.
   - **Connections:** addresses are tried "Happy Eyeballs" style (RFC 8305), so a broken IPv6 route costs 250 ms, not seconds.
   - **Live updates in the UI:** a change feed (ADR-0007) notifies subscribed clients of every committed change and sync-status change. The app refreshes on those events and no longer polls.
   - **Conversations:** References threading across folders (ADR-0009 §5). The reading pane lists the other messages of the conversation, wherever they are, and opens them.
