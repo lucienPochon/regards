@@ -6,6 +6,7 @@ use crate::{ImapError, Session, clean};
 use imap_types::command::{CommandBody, FetchModifier, SelectParameter};
 use imap_types::core::{AString, Literal, Vec1};
 use imap_types::extensions::binary::LiteralOrLiteral8;
+use imap_types::extensions::uidplus::{UidElement, UidSet};
 use imap_types::fetch::{MessageDataItem, MessageDataItemName, Section};
 use imap_types::flag::{Flag, FlagFetch, StoreResponse, StoreType};
 use imap_types::mailbox::Mailbox;
@@ -379,6 +380,53 @@ impl Session {
         ok(&reply, "STORE")
     }
 
+    /// Move `uids` from the selected mailbox to `target`.
+    ///
+    /// With MOVE (RFC 6851) in one command; otherwise COPY, `\Deleted` and
+    /// UID EXPUNGE, which needs UIDPLUS so that only these messages are
+    /// expunged. Without either, nothing is done: a plain EXPUNGE could remove
+    /// other messages the user marked deleted.
+    ///
+    /// Returns where the messages ended up when the server reports it (COPYUID).
+    pub async fn move_messages(&mut self, uids: &str, target: &[u8]) -> Result<Option<Moved>, ImapError> {
+        if self.has_capability("MOVE") {
+            let reply = self
+                .conn
+                .run(CommandBody::Move {
+                    sequence_set: sequence_set(uids)?,
+                    mailbox: mailbox(target)?,
+                    uid: true,
+                })
+                .await?;
+            ok(&reply, "MOVE")?;
+            return Ok(copy_uid(&reply));
+        }
+        if !self.has_capability("UIDPLUS") {
+            return Err(ImapError::Protocol(
+                "this server cannot move messages safely (it has neither MOVE nor UIDPLUS)".into(),
+            ));
+        }
+        let reply = self
+            .conn
+            .run(CommandBody::Copy {
+                sequence_set: sequence_set(uids)?,
+                mailbox: mailbox(target)?,
+                uid: true,
+            })
+            .await?;
+        ok(&reply, "COPY")?;
+        let moved = copy_uid(&reply);
+        self.store_flags(uids, true, &[SystemFlag::Deleted]).await?;
+        let reply = self
+            .conn
+            .run(CommandBody::ExpungeUid {
+                sequence_set: sequence_set(uids)?,
+            })
+            .await?;
+        ok(&reply, "UID EXPUNGE")?;
+        Ok(moved)
+    }
+
     /// Remove messages flagged `\Deleted` from the selected mailbox.
     pub async fn expunge(&mut self) -> Result<(), ImapError> {
         let reply = self.conn.run(CommandBody::Expunge).await?;
@@ -449,4 +497,50 @@ fn system_flag(flag: SystemFlag) -> Flag<'static> {
         SystemFlag::Deleted => Flag::Deleted,
         SystemFlag::Draft => Flag::Draft,
     }
+}
+
+/// Where moved messages ended up, as the server reported it (UIDPLUS COPYUID).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Moved {
+    /// UIDVALIDITY of the target mailbox.
+    pub uid_validity: u32,
+    /// Pairs of (UID in the source mailbox, UID in the target mailbox).
+    pub uids: Vec<(u32, u32)>,
+}
+
+fn copy_uid(reply: &Reply) -> Option<Moved> {
+    reply
+        .untagged
+        .iter()
+        .chain([&reply.done])
+        .find_map(|status| match &status.code {
+            Some(Code::CopyUid {
+                uid_validity,
+                source,
+                destination,
+            }) => {
+                let (source, destination) = (expand(source), expand(destination));
+                (source.len() == destination.len()).then(|| Moved {
+                    uid_validity: uid_validity.get(),
+                    uids: source.into_iter().zip(destination).collect(),
+                })
+            }
+            _ => None,
+        })
+}
+
+/// The UIDs of a UID set, in the order listed (RFC 4315: source and
+/// destination sets correspond element by element).
+fn expand(set: &UidSet) -> Vec<u32> {
+    let mut uids = Vec::new();
+    for element in set.0.as_ref() {
+        match element {
+            UidElement::Single(uid) => uids.push(uid.get()),
+            UidElement::Range(a, b) => {
+                let (low, high) = (a.get().min(b.get()), a.get().max(b.get()));
+                uids.extend(low..=high);
+            }
+        }
+    }
+    uids
 }

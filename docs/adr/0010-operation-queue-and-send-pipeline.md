@@ -28,6 +28,12 @@ Undo send and send later (ADR-0011) both need an outbox.
        - **Refusals:** a server refusal, or a UIDVALIDITY change, drops the operation and resyncs the mailbox, which is the revert. The reason shows in the account status.
      - **Sync:** sync re-applies pending operations after writing server flags (§2), and drops those from another UIDVALIDITY.
      - **Not yet:** coalescing of opposite operations.
+   - **Moves (archive, trash, move to):**
+     - **Instant:** a moving message keeps its row but records `moving_to`, so lists show it in the target at once.
+     - **Runner:** uses `UID MOVE`, or COPY + `\Deleted` + `UID EXPUNGE` with UIDPLUS. It refuses servers with neither, never running a plain EXPUNGE.
+     - **New UIDs:** with COPYUID, the row moves in place and keeps its id. Without it, the row is removed and the next sync of the target brings it back.
+     - **Re-reading:** the runner re-reads each operation before sending it, so an undo that withdrew it is honoured.
+     - **Giving up:** a dropped move shows the messages where they still are on the server.
 2. **Reconciliation:**
    - Server state wins for fields with no pending local operation.
    - Pending local operations are re-applied on top of fresh server state.

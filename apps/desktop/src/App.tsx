@@ -3,6 +3,8 @@ import { AccountsPanel } from "./AccountsPanel";
 import { useChanges } from "./changes";
 import { MessageList, type OpenMailbox } from "./MessageList";
 import { ReadingPane } from "./ReadingPane";
+import { UndoToast } from "./UndoToast";
+import type { UndoInfo } from "./accounts";
 import { type DaemonStatus, fetchDaemonStatus } from "./daemon";
 
 type Check =
@@ -14,6 +16,8 @@ export function App() {
   const [check, setCheck] = useState<Check>({ state: "checking" });
   const [open, setOpen] = useState<OpenMailbox | null>(null);
   const [reading, setReading] = useState<number | null>(null);
+  const [toast, setToast] = useState<UndoInfo | null>(null);
+  const closeToast = useCallback(() => setToast(null), []);
 
   // Without "Checking…" in between, so change events do not make the card flicker.
   const update = useCallback(() => {
@@ -67,9 +71,19 @@ export function App() {
               <p className="muted">Choose a folder to see its messages.</p>
             </section>
           )}
-          {reading !== null && <ReadingPane messageId={reading} />}
+          {reading !== null && open && (
+            <ReadingPane
+              messageId={reading}
+              accountId={open.accountId}
+              onMoved={(undo) => {
+                setReading(null);
+                setToast(undo);
+              }}
+            />
+          )}
         </div>
       </div>
+      {toast && <UndoToast undo={toast} onDone={closeToast} />}
     </main>
   );
 }

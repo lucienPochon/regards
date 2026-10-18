@@ -9,11 +9,12 @@ use regards_daemon::Daemon;
 use regards_imap::{ImapServer, Session, SystemFlag, TlsOptions};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountSummary, ClientKind, ConnectionSecurity, MailboxListResult, MessageDetail,
-    MessageHtml, MessageHtmlParams, MessageListParams, MessageListResult, MessageRef, ServerSettings, SetFlagsParams,
-    SetFlagsResult, SyncResult, methods,
+    MessageHtml, MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveResult,
+    ServerSettings, SetFlagsParams, SetFlagsResult, SyncResult, UndoParams, UndoResult, methods,
 };
 use regards_ipc::{Client, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
+use serde_json::Value;
 use std::time::{Duration, Instant};
 
 /// Tests run in parallel and the clock can repeat: number the users too.
@@ -540,6 +541,117 @@ async fn live_flag_actions_apply_at_once_and_reach_the_server() {
     let _ = sync(&mut desktop, &_account.id).await;
     let local = messages(&mut desktop, inbox).await.messages;
     assert!(local.iter().all(|m| m.flagged && !m.seen), "{local:?}");
+
+    seed.logout().await;
+    handle.abort();
+}
+
+/// UIDs on the server in `mailbox`.
+async fn server_uids(seed: &mut Session, mailbox: &[u8]) -> Vec<u32> {
+    seed.select(mailbox).await.unwrap();
+    seed.uid_search_all().await.unwrap()
+}
+
+/// Wait until `mailbox` on the server holds `count` messages.
+async fn server_count_becomes(seed: &mut Session, mailbox: &[u8], count: usize) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let uids = server_uids(seed, mailbox).await;
+        if uids.len() == count {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "{} holds {} messages on the server, expected {count}",
+            String::from_utf8_lossy(mailbox),
+            uids.len()
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_archive_trash_and_undo_move_at_once_and_on_the_server() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    seed.create_mailbox(b"Archive").await.unwrap();
+    for (n, subject) in [(1, "One"), (2, "Two"), (3, "Three")] {
+        seed.append(b"INBOX", &[], &message(n, subject, "ada@example.test"))
+            .await
+            .unwrap();
+    }
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
+    let listed = folders(&mut desktop, &account.id).await;
+    let archive = listed
+        .mailboxes
+        .iter()
+        .find(|m| m.role == Some(Role::Archive))
+        .unwrap()
+        .id;
+    let subjects = |page: MessageListResult| page.messages.into_iter().map(|m| m.subject).collect::<Vec<_>>();
+    let ids: Vec<(String, i64)> = messages(&mut desktop, inbox)
+        .await
+        .messages
+        .into_iter()
+        .map(|m| (m.subject, m.id))
+        .collect();
+    let id = |subject: &str| ids.iter().find(|(s, _)| s == subject).unwrap().1;
+
+    // Archive: gone from the inbox and in the archive at once, then on the server.
+    let archived: MoveResult = desktop
+        .call(methods::MESSAGE_ARCHIVE, MessageIds { ids: vec![id("One")] })
+        .await
+        .unwrap();
+    assert_eq!(archived.moved, 1);
+    let undo = archived.undo.expect("archiving can be undone");
+    assert_eq!(undo.description, "Archived");
+    assert_eq!(subjects(messages(&mut desktop, inbox).await), ["Three", "Two"]);
+    assert_eq!(subjects(messages(&mut desktop, archive).await), ["One"]);
+    server_count_becomes(&mut seed, b"Archive", 1).await;
+    server_count_becomes(&mut seed, b"INBOX", 2).await;
+
+    // Undo after the server moved it: the same message comes back, there too.
+    let undone: UndoResult = desktop
+        .call(methods::UNDO_APPLY, UndoParams { id: undo.id })
+        .await
+        .unwrap();
+    assert_eq!(undone.undone, 1);
+    assert_eq!(subjects(messages(&mut desktop, inbox).await), ["Three", "Two", "One"]);
+    server_count_becomes(&mut seed, b"INBOX", 3).await;
+    server_count_becomes(&mut seed, b"Archive", 0).await;
+    let again = desktop
+        .call::<_, Value>(methods::UNDO_APPLY, UndoParams { id: undo.id })
+        .await;
+    assert!(again.is_err(), "an undo works once");
+
+    // Trash.
+    let trashed: MoveResult = desktop
+        .call(methods::MESSAGE_TRASH, MessageIds { ids: vec![id("Two")] })
+        .await
+        .unwrap();
+    assert_eq!(trashed.undo.unwrap().description, "Moved to Trash");
+    server_count_becomes(&mut seed, b"Trash", 1).await;
+
+    // Archive and undo at once: nothing should be lost, whichever reached the server first.
+    let quick: MoveResult = desktop
+        .call(methods::MESSAGE_ARCHIVE, MessageIds { ids: vec![id("Three")] })
+        .await
+        .unwrap();
+    let _: UndoResult = desktop
+        .call(
+            methods::UNDO_APPLY,
+            UndoParams {
+                id: quick.undo.unwrap().id,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(subjects(messages(&mut desktop, inbox).await).contains(&"Three".to_owned()));
+    server_count_becomes(&mut seed, b"INBOX", 2).await; // One and Three
+    server_count_becomes(&mut seed, b"Archive", 0).await;
 
     seed.logout().await;
     handle.abort();

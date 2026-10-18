@@ -34,6 +34,8 @@ impl FlagName {
 pub enum OperationKind {
     AddFlags,
     RemoveFlags,
+    /// Move the messages to `target_mailbox_id`.
+    Move,
 }
 
 impl OperationKind {
@@ -41,6 +43,7 @@ impl OperationKind {
         match self {
             Self::AddFlags => "add_flags",
             Self::RemoveFlags => "remove_flags",
+            Self::Move => "move",
         }
     }
 }
@@ -52,6 +55,8 @@ pub struct NewOperation {
     pub kind: OperationKind,
     pub uids: Vec<u32>,
     pub flags: Vec<FlagName>,
+    /// For moves.
+    pub target_mailbox_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +67,7 @@ pub struct Operation {
     pub kind: OperationKind,
     pub uids: Vec<u32>,
     pub flags: Vec<FlagName>,
+    pub target_mailbox_id: Option<i64>,
     pub attempts: u32,
     pub next_attempt_at: i64,
     pub last_error: Option<String>,
@@ -90,22 +96,23 @@ pub fn apply_locally(
 
 pub fn enqueue(tx: &Transaction<'_>, operation: &NewOperation, now: i64) -> Result<i64, StoreError> {
     tx.execute(
-        "INSERT INTO operations (mailbox_id, uid_validity, kind, uids, flags, created_at, next_attempt_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+        "INSERT INTO operations (mailbox_id, uid_validity, kind, uids, flags, target_mailbox_id, created_at, \
+         next_attempt_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
         params![
             operation.mailbox_id,
             operation.uid_validity,
             operation.kind.as_str(),
             json(&operation.uids),
             json(&operation.flags),
+            operation.target_mailbox_id,
             now,
         ],
     )?;
     Ok(tx.last_insert_rowid())
 }
 
-const COLUMNS: &str =
-    "o.id, o.mailbox_id, o.uid_validity, o.kind, o.uids, o.flags, o.attempts, o.next_attempt_at, o.last_error";
+const COLUMNS: &str = "o.id, o.mailbox_id, o.uid_validity, o.kind, o.uids, o.flags, o.attempts, o.next_attempt_at, \
+    o.last_error, o.target_mailbox_id";
 
 /// Operations of an account that are due at `now`, oldest first.
 pub fn due(conn: &Connection, account_id: &str, now: i64) -> Result<Vec<Operation>, StoreError> {
@@ -126,6 +133,16 @@ pub fn pending(conn: &Connection, mailbox_id: i64) -> Result<Vec<Operation>, Sto
         &format!("SELECT {COLUMNS} FROM operations o WHERE o.mailbox_id = ?1 ORDER BY o.id"),
         params![mailbox_id],
     )
+}
+
+pub fn get(conn: &Connection, id: i64) -> Result<Option<Operation>, StoreError> {
+    Ok(query(
+        conn,
+        &format!("SELECT {COLUMNS} FROM operations o WHERE o.id = ?1"),
+        params![id],
+    )?
+    .into_iter()
+    .next())
 }
 
 /// When the next operation of an account is due, if any is pending.
@@ -170,10 +187,39 @@ pub fn reapply_pending(tx: &Transaction<'_>, mailbox_id: i64, uid_validity: u32)
             remove(tx, operation.id)?;
             continue;
         }
-        let value = operation.kind == OperationKind::AddFlags;
-        apply_locally(tx, mailbox_id, &operation.uids, &operation.flags, value)?;
+        match operation.kind {
+            OperationKind::AddFlags | OperationKind::RemoveFlags => {
+                let value = operation.kind == OperationKind::AddFlags;
+                apply_locally(tx, mailbox_id, &operation.uids, &operation.flags, value)?;
+            }
+            OperationKind::Move => {
+                crate::messages::set_moving_to(tx, mailbox_id, &operation.uids, operation.target_mailbox_id)?;
+            }
+        }
     }
     Ok(())
+}
+
+/// Take `uid` out of any pending move from `mailbox_id`, dropping moves left
+/// empty. Returns whether one was pending (undo before the server was told).
+pub fn withdraw_move(tx: &Transaction<'_>, mailbox_id: i64, uid: u32) -> Result<bool, StoreError> {
+    let mut withdrew = false;
+    for operation in pending(tx, mailbox_id)? {
+        if operation.kind != OperationKind::Move || !operation.uids.contains(&uid) {
+            continue;
+        }
+        withdrew = true;
+        let rest: Vec<u32> = operation.uids.iter().copied().filter(|u| *u != uid).collect();
+        if rest.is_empty() {
+            remove(tx, operation.id)?;
+        } else {
+            tx.execute(
+                "UPDATE operations SET uids = ?2 WHERE id = ?1",
+                params![operation.id, json(&rest)],
+            )?;
+        }
+    }
+    Ok(withdrew)
 }
 
 fn query(conn: &Connection, sql: &str, params: impl rusqlite::Params) -> Result<Vec<Operation>, StoreError> {
@@ -194,6 +240,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Operation, StoreError>> {
             kind: match kind.as_str() {
                 "add_flags" => OperationKind::AddFlags,
                 "remove_flags" => OperationKind::RemoveFlags,
+                "move" => OperationKind::Move,
                 other => return Err(StoreError::Corrupt(format!("unknown operation {other:?}"))),
             },
             uids: serde_json::from_str(&uids).map_err(|e| StoreError::Corrupt(format!("operation uids: {e}")))?,
@@ -201,6 +248,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Operation, StoreError>> {
             attempts: row.get(6)?,
             next_attempt_at: row.get(7)?,
             last_error: row.get(8)?,
+            target_mailbox_id: row.get(9)?,
         })
     })();
     Ok(operation)
@@ -280,6 +328,108 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn moves_show_in_the_target_at_once_and_complete_in_place() {
+        let (_temp, store, account, inbox) = store_with_messages().await;
+        let a = account.clone();
+        let archive = store
+            .write(move |tx| {
+                let mut listed: Vec<RemoteMailbox> = mailboxes::list(tx, &a)?
+                    .into_iter()
+                    .map(|m| RemoteMailbox {
+                        remote_name: m.remote_name,
+                        name: m.name,
+                        delimiter: m.delimiter,
+                        role: m.role,
+                        selectable: true,
+                        attributes: vec![],
+                    })
+                    .collect();
+                listed.push(RemoteMailbox {
+                    remote_name: b"Archive".to_vec(),
+                    name: "Archive".into(),
+                    delimiter: None,
+                    role: Some(Role::Archive),
+                    selectable: true,
+                    attributes: vec![],
+                });
+                mailboxes::reconcile(tx, &a, &listed)?;
+                Ok(mailboxes::list(tx, &a)?
+                    .into_iter()
+                    .find(|m| m.name == "Archive")
+                    .unwrap()
+                    .id)
+            })
+            .await
+            .unwrap()
+            .value;
+        let ids = |list: Vec<messages::Message>| list.into_iter().map(|m| m.uid).collect::<Vec<_>>();
+
+        store
+            .write(move |tx| {
+                messages::set_moving_to(tx, inbox, &[1, 2], Some(archive))?;
+                enqueue(
+                    tx,
+                    &NewOperation {
+                        mailbox_id: inbox,
+                        uid_validity: 7,
+                        kind: OperationKind::Move,
+                        uids: vec![1, 2],
+                        flags: vec![],
+                        target_mailbox_id: Some(archive),
+                    },
+                    0,
+                )
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            ids(store.read(move |c| messages::list(c, inbox, 10, None)).await.unwrap()),
+            [3]
+        );
+        assert_eq!(
+            ids(store.read(move |c| messages::list(c, archive, 10, None)).await.unwrap()),
+            [2, 1]
+        );
+
+        // Undo before the server was told: message 2 goes back.
+        store
+            .write(move |tx| {
+                assert!(withdraw_move(tx, inbox, 2)?);
+                messages::set_moving_to(tx, inbox, &[2], None)
+            })
+            .await
+            .unwrap();
+        let still = store.read(move |c| pending(c, inbox)).await.unwrap();
+        assert_eq!(still[0].uids, [1], "message 2 left the pending move");
+
+        // The server moved message 1 and said it is UID 40 there: same row, new place.
+        let before = store.read(move |c| messages::list(c, archive, 10, None)).await.unwrap()[0].id;
+        store
+            .write(move |tx| messages::complete_move(tx, inbox, archive, &[1], Some(&[(1, 40)])))
+            .await
+            .unwrap();
+        let moved = store.read(move |c| messages::list(c, archive, 10, None)).await.unwrap();
+        assert_eq!((moved[0].id, moved[0].uid, moved[0].moving_to), (before, 40, None));
+        assert_eq!(
+            ids(store.read(move |c| messages::list(c, inbox, 10, None)).await.unwrap()),
+            [3, 2]
+        );
+
+        // Without COPYUID the row goes; the next sync of the target brings it back.
+        store
+            .write(move |tx| {
+                messages::set_moving_to(tx, inbox, &[3], Some(archive))?;
+                messages::complete_move(tx, inbox, archive, &[3], None)
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            ids(store.read(move |c| messages::list(c, inbox, 10, None)).await.unwrap()),
+            [2]
+        );
+    }
+
+    #[tokio::test]
     async fn enqueue_due_retry_and_remove() {
         let (_temp, store, account, mailbox) = store_with_messages().await;
         let operation = NewOperation {
@@ -288,6 +438,7 @@ mod tests {
             kind: OperationKind::AddFlags,
             uids: vec![1, 2],
             flags: vec![FlagName::Seen],
+            target_mailbox_id: None,
         };
         let id = store.write(move |tx| enqueue(tx, &operation, 100)).await.unwrap().value;
 
@@ -330,6 +481,7 @@ mod tests {
                         kind: OperationKind::AddFlags,
                         uids: vec![1],
                         flags: vec![FlagName::Seen],
+                        target_mailbox_id: None,
                     },
                     0,
                 )

@@ -3,9 +3,14 @@
 //! the account's queue runner. The UI updates at once, online or not.
 
 use crate::State;
-use regards_ipc::protocol::{RpcError, SetFlagsParams, SetFlagsResult, codes};
+use regards_core::mailbox::Role;
+use regards_ipc::protocol::{
+    MessageIds, MoveParams, MoveResult, RpcError, SetFlagsParams, SetFlagsResult, UndoInfo, UndoParams, UndoResult,
+    codes,
+};
 use regards_store::operations::{self, FlagName, NewOperation, OperationKind};
-use regards_store::{StoreError, mailboxes, messages};
+use regards_store::{StoreError, mailboxes, messages, undo};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -75,6 +80,7 @@ pub(crate) async fn set_flags(state: &Arc<State>, params: SetFlagsParams) -> Res
                         },
                         uids: uids.clone(),
                         flags: vec![flag],
+                        target_mailbox_id: None,
                     },
                     now,
                 )?;
@@ -101,4 +107,231 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or_default()
+}
+
+/// Undo entries last this long; the app offers undo for the first seconds.
+const UNDO_FOR_MS: i64 = 10 * 60 * 1000;
+
+/// What reverses a set of moves: put each message (id) back where it was seen (folder id).
+#[derive(Debug, Serialize, Deserialize)]
+struct Inverse {
+    moves: Vec<(i64, i64)>,
+}
+
+pub(crate) async fn move_to(state: &Arc<State>, params: MoveParams) -> Result<Value, RpcError> {
+    check_count(&params.ids)?;
+    let target = params.mailbox_id;
+    let found = state
+        .store
+        .read(move |conn| mailboxes::get(conn, target))
+        .await
+        .map_err(crate::session::internal)?;
+    let name = found
+        .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such folder"))?
+        .name;
+    let requests = params.ids.iter().map(|id| (*id, target)).collect();
+    run_moves(state, requests, &format!("Moved to {name}")).await
+}
+
+pub(crate) async fn archive(state: &Arc<State>, params: MessageIds) -> Result<Value, RpcError> {
+    to_role(
+        state,
+        params,
+        Role::Archive,
+        "Archived",
+        "This account has no Archive folder",
+    )
+    .await
+}
+
+pub(crate) async fn trash(state: &Arc<State>, params: MessageIds) -> Result<Value, RpcError> {
+    to_role(
+        state,
+        params,
+        Role::Trash,
+        "Moved to Trash",
+        "This account has no Trash folder",
+    )
+    .await
+}
+
+/// Move each message to the folder with `role` in its own account.
+async fn to_role(
+    state: &Arc<State>,
+    params: MessageIds,
+    role: Role,
+    done: &str,
+    missing: &str,
+) -> Result<Value, RpcError> {
+    check_count(&params.ids)?;
+    let ids = params.ids;
+    let missing = missing.to_owned();
+    let requests = state
+        .store
+        .read(move |conn| {
+            let mut requests = Vec::new();
+            for id in ids {
+                let message =
+                    messages::get(conn, id)?.ok_or_else(|| StoreError::Conflict(format!("no message {id}")))?;
+                let mailbox = mailboxes::get(conn, message.mailbox_id)?
+                    .ok_or_else(|| StoreError::Conflict("the folder no longer exists".into()))?;
+                let target = mailboxes::list(conn, &mailbox.account_id)?
+                    .into_iter()
+                    .find(|m| m.role == Some(role))
+                    .ok_or_else(|| StoreError::Conflict(missing.clone()))?;
+                requests.push((id, target.id));
+            }
+            Ok(requests)
+        })
+        .await
+        .map_err(conflict)?;
+    run_moves(state, requests, done).await
+}
+
+async fn run_moves(state: &Arc<State>, requests: Vec<(i64, i64)>, done: &str) -> Result<Value, RpcError> {
+    let now = now_ms();
+    let done = done.to_owned();
+    let committed = state
+        .store
+        .write(move |tx| {
+            let (moved, inverse, accounts) = plan_moves(tx, &requests, now)?;
+            let undo = if moved > 0 {
+                let description = if moved == 1 {
+                    done.clone()
+                } else {
+                    format!("{done} ({moved} messages)")
+                };
+                let inverse = serde_json::to_string(&Inverse { moves: inverse }).expect("plain data serializes");
+                let id = undo::record(tx, &description, &inverse, now, now + UNDO_FOR_MS)?;
+                Some(UndoInfo { id, description })
+            } else {
+                None
+            };
+            Ok((moved, undo, accounts))
+        })
+        .await
+        .map_err(conflict)?;
+    let (moved, undo, accounts) = committed.value;
+    for account in accounts {
+        state.queue.wake(state, &account);
+    }
+    Ok(json!(MoveResult { moved, undo }))
+}
+
+pub(crate) async fn apply_undo(state: &Arc<State>, params: UndoParams) -> Result<Value, RpcError> {
+    let now = now_ms();
+    let id = params.id;
+    let committed = state
+        .store
+        .write(move |tx| {
+            let Some(inverse) = undo::take(tx, id, now)? else {
+                return Err(StoreError::Conflict("this can no longer be undone".into()));
+            };
+            let inverse: Inverse =
+                serde_json::from_str(&inverse).map_err(|error| StoreError::Corrupt(format!("undo entry: {error}")))?;
+            // Messages that have since gone (moved without COPYUID, or deleted) are skipped.
+            let mut present = Vec::new();
+            for (message, folder) in inverse.moves {
+                if messages::get(tx, message)?.is_some() {
+                    present.push((message, folder));
+                }
+            }
+            let (undone, _, accounts) = plan_moves(tx, &present, now)?;
+            Ok((undone, accounts))
+        })
+        .await
+        .map_err(conflict)?;
+    let (undone, accounts) = committed.value;
+    for account in accounts {
+        state.queue.wake(state, &account);
+    }
+    Ok(json!(UndoResult { undone }))
+}
+
+/// What a batch of moves did: how many moved, the inverse, and the accounts to wake.
+type Planned = (usize, Vec<(i64, i64)>, BTreeSet<String>);
+
+/// Apply moves (message id, target folder id) to the local copy and queue
+/// them, in the caller's transaction.
+fn plan_moves(tx: &rusqlite::Transaction<'_>, requests: &[(i64, i64)], now: i64) -> Result<Planned, StoreError> {
+    let mut groups: BTreeMap<(i64, i64), BTreeSet<u32>> = BTreeMap::new();
+    let mut inverse = Vec::new();
+    let mut moved = 0;
+    let mut accounts = BTreeSet::new();
+    for (id, target) in requests {
+        let message = messages::get(tx, *id)?.ok_or_else(|| StoreError::Conflict(format!("no message {id}")))?;
+        let source = mailboxes::get(tx, message.mailbox_id)?
+            .ok_or_else(|| StoreError::Conflict("the folder no longer exists".into()))?;
+        let destination = mailboxes::get(tx, *target)?.ok_or_else(|| StoreError::Conflict("no such folder".into()))?;
+        if destination.account_id != source.account_id {
+            return Err(StoreError::Conflict(
+                "messages can only move within their own account".into(),
+            ));
+        }
+        if !destination.selectable {
+            return Err(StoreError::Conflict(format!(
+                "{} cannot hold messages",
+                destination.name
+            )));
+        }
+        // Where the user sees the message now.
+        let shown_in = message.moving_to.unwrap_or(message.mailbox_id);
+        if shown_in == *target {
+            continue;
+        }
+        inverse.push((*id, shown_in));
+        moved += 1;
+        accounts.insert(source.account_id.clone());
+        if message.moving_to.is_some() {
+            // A change of plan before the server was told: withdraw the pending move.
+            operations::withdraw_move(tx, message.mailbox_id, message.uid)?;
+            if *target == message.mailbox_id {
+                messages::set_moving_to(tx, message.mailbox_id, &[message.uid], None)?;
+                continue;
+            }
+        }
+        groups
+            .entry((message.mailbox_id, *target))
+            .or_default()
+            .insert(message.uid);
+    }
+    for ((source, target), uids) in groups {
+        let mailbox =
+            mailboxes::get(tx, source)?.ok_or_else(|| StoreError::Conflict("the folder no longer exists".into()))?;
+        let uid_validity = mailbox
+            .uid_validity
+            .ok_or_else(|| StoreError::Conflict("the folder has not been synced yet".into()))?;
+        let uids: Vec<u32> = uids.into_iter().collect();
+        messages::set_moving_to(tx, source, &uids, Some(target))?;
+        operations::enqueue(
+            tx,
+            &NewOperation {
+                mailbox_id: source,
+                uid_validity: uid_validity as u32,
+                kind: OperationKind::Move,
+                uids,
+                flags: vec![],
+                target_mailbox_id: Some(target),
+            },
+            now,
+        )?;
+    }
+    Ok((moved, inverse, accounts))
+}
+
+fn check_count(ids: &[i64]) -> Result<(), RpcError> {
+    if ids.is_empty() || ids.len() > MAX_MESSAGES {
+        return Err(RpcError::new(
+            codes::INVALID_PARAMS,
+            format!("give 1 to {MAX_MESSAGES} message ids"),
+        ));
+    }
+    Ok(())
+}
+
+fn conflict(error: StoreError) -> RpcError {
+    match error {
+        StoreError::Conflict(message) => RpcError::new(codes::CONFLICT, message),
+        other => crate::session::internal(other),
+    }
 }

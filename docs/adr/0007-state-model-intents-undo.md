@@ -39,6 +39,13 @@ Spark achieves this with a core that owns state, validates actions and records u
    - They are maintained incrementally on each transaction, so opening a list or rendering counts never scans all messages.
 5. **Generated contracts.** Intents, views and deltas are defined once in Rust; TypeScript types and the JSON schema for CLI/MCP are **generated** (tool chosen in the Phase-0 spike, for example `specta` or `ts-rs`).
 6. **Undo UX.** A toast with Undo for at least 10 seconds after a user action; the undo history is visible in a panel; agent actions are undoable from the audit log (ADR-0012).
+   - **Implementation (Phase 1, moves first):**
+     - **What is recorded:** archive, trash and move record their inverse in `undo_log` ("put each message back where it was seen").
+     - **Lifetime:** each entry is valid for 10 minutes and usable once.
+     - **Applying it:** `undo.apply` runs the inverse as moves.
+       - **Not sent yet:** a move the server has not been told about is just withdrawn locally.
+       - **Already sent:** a sent move is reversed on the server. The row kept its id through COPYUID, so the undo still finds it.
+     - **In the app:** a 10-second toast with Undo.
 
 ## Alternatives considered
 

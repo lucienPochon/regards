@@ -150,3 +150,30 @@ export function messageHtmlUrl(id: number, allowRemote: boolean): string {
 export function setFlags(ids: number[], flags: { seen?: boolean; flagged?: boolean }): Promise<{ changed: number }> {
   return invoke("message_set_flags", { ids, seen: flags.seen ?? null, flagged: flags.flagged ?? null });
 }
+
+export interface UndoInfo {
+  id: number;
+  description: string;
+}
+
+export interface MoveResult {
+  moved: number;
+  undo: UndoInfo | null;
+}
+
+export function archiveMessages(ids: number[]): Promise<MoveResult> {
+  return invoke<MoveResult>("message_archive", { ids });
+}
+
+export function trashMessages(ids: number[]): Promise<MoveResult> {
+  return invoke<MoveResult>("message_trash", { ids });
+}
+
+export function moveMessages(ids: number[], mailboxId: number): Promise<MoveResult> {
+  return invoke<MoveResult>("message_move", { ids, mailboxId });
+}
+
+/** Reverse a recent action. Each undo id works once, for a few minutes. */
+export function applyUndo(id: number): Promise<{ undone: number }> {
+  return invoke("undo_apply", { id });
+}

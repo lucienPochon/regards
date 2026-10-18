@@ -175,6 +175,22 @@ impl Session {
                 self.require_ui()?;
                 actions::set_flags(&self.state, params(request)?).await
             }
+            methods::MESSAGE_MOVE => {
+                self.require_ui()?;
+                actions::move_to(&self.state, params(request)?).await
+            }
+            methods::MESSAGE_ARCHIVE => {
+                self.require_ui()?;
+                actions::archive(&self.state, params(request)?).await
+            }
+            methods::MESSAGE_TRASH => {
+                self.require_ui()?;
+                actions::trash(&self.state, params(request)?).await
+            }
+            methods::UNDO_APPLY => {
+                self.require_ui()?;
+                actions::apply_undo(&self.state, params(request)?).await
+            }
             methods::CHANGES_SUBSCRIBE => {
                 self.require_ui()?;
                 let mut feed = self.state.feed.subscribe();

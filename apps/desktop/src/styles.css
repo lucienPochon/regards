@@ -399,3 +399,34 @@ button:disabled {
 .actions-bar button {
   margin-top: 0;
 }
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: var(--text);
+  color: var(--bg);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 20%);
+}
+
+.toast button {
+  margin-top: 0;
+  border-color: transparent;
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.actions-bar select {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}

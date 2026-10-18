@@ -6,6 +6,7 @@ export interface OpenMailbox {
   id: number;
   label: string;
   account: string;
+  accountId: string;
 }
 
 const PAGE = 50;

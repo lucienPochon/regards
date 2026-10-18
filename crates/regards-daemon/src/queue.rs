@@ -10,8 +10,9 @@
 
 use crate::State;
 use crate::sync::{self, SyncError};
-use regards_imap::{ImapError, Session, SystemFlag};
+use regards_imap::{ImapError, Moved, Session, SystemFlag};
 use regards_store::mailboxes::{self, Mailbox};
+use regards_store::messages;
 use regards_store::operations::{self, FlagName, Operation, OperationKind};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -123,6 +124,23 @@ async fn send(state: &Arc<State>, session: &mut Session, account_id: &str, due: 
             continue;
         };
 
+        // Re-read it: an undo may have withdrawn or shrunk it since the batch was read.
+        let id = operation.id;
+        let Some(operation) = state.store.read(move |conn| operations::get(conn, id)).await? else {
+            continue;
+        };
+        let operation = &operation;
+        let target = match operation.target_mailbox_id {
+            Some(target) => {
+                let found = state.store.read(move |conn| mailboxes::get(conn, target)).await?;
+                let Some(found) = found else {
+                    continue; // The target is gone, and the operation with it (cascade).
+                };
+                Some(found)
+            }
+            None => None,
+        };
+
         let result = async {
             let uid_validity = match selected {
                 Some((id, validity)) if id == mailbox.id => validity,
@@ -133,20 +151,33 @@ async fn send(state: &Arc<State>, session: &mut Session, account_id: &str, due: 
                 }
             };
             if uid_validity != operation.uid_validity {
-                return Ok(false);
+                return Ok(Sent::Void);
             }
             let uids = operation.uids.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
-            let flags: Vec<SystemFlag> = operation.flags.iter().map(|flag| system_flag(*flag)).collect();
-            session
-                .store_flags(&uids, operation.kind == OperationKind::AddFlags, &flags)
-                .await?;
-            Ok::<_, ImapError>(true)
+            match (&operation.kind, &target) {
+                (OperationKind::Move, Some(target)) => {
+                    let moved = session.move_messages(&uids, &target.remote_name).await?;
+                    Ok(Sent::Moved(moved))
+                }
+                (OperationKind::Move, None) => Ok(Sent::Void),
+                (kind, _) => {
+                    let flags: Vec<SystemFlag> = operation.flags.iter().map(|flag| system_flag(*flag)).collect();
+                    session
+                        .store_flags(&uids, *kind == OperationKind::AddFlags, &flags)
+                        .await?;
+                    Ok::<_, ImapError>(Sent::Done)
+                }
+            }
         }
         .await;
 
         match result {
-            Ok(true) => finish(state, operation.id).await?,
-            Ok(false) => {
+            Ok(Sent::Done) => finish(state, operation.id).await?,
+            Ok(Sent::Moved(moved)) => {
+                let target = target.expect("moves have a target");
+                complete_move(state, operation, &target, moved).await?;
+            }
+            Ok(Sent::Void) => {
                 tracing::warn!(account = %account_id, "dropping an action for a mailbox that was rebuilt on the server");
                 give_up(
                     state,
@@ -170,8 +201,40 @@ async fn send(state: &Arc<State>, session: &mut Session, account_id: &str, due: 
     Ok(())
 }
 
+/// What sending one operation achieved.
+enum Sent {
+    Done,
+    /// Moved; where to, when the server said (COPYUID).
+    Moved(Option<Moved>),
+    /// Can never apply (the mailbox was rebuilt, or the target is gone).
+    Void,
+}
+
 async fn finish(state: &State, id: i64) -> Result<(), SyncError> {
     state.store.write(move |tx| operations::remove(tx, id)).await?;
+    Ok(())
+}
+
+/// The server moved the messages: put the local rows where they now are.
+async fn complete_move(
+    state: &State,
+    operation: &Operation,
+    target: &Mailbox,
+    moved: Option<Moved>,
+) -> Result<(), SyncError> {
+    // New UIDs are only meaningful under the target UIDVALIDITY we know (or
+    // will learn on its first sync).
+    let pairs = moved
+        .filter(|moved| target.uid_validity.is_none_or(|v| v == i64::from(moved.uid_validity)))
+        .map(|moved| moved.uids);
+    let (id, source, target, uids) = (operation.id, operation.mailbox_id, target.id, operation.uids.clone());
+    state
+        .store
+        .write(move |tx| {
+            messages::complete_move(tx, source, target, &uids, pairs.as_deref())?;
+            operations::remove(tx, id)
+        })
+        .await?;
     Ok(())
 }
 
@@ -184,7 +247,23 @@ async fn give_up(
     mailbox: &Mailbox,
     reason: &str,
 ) -> Result<(), SyncError> {
-    finish(state, operation.id).await?;
+    let (id, source, uids, is_move) = (
+        operation.id,
+        operation.mailbox_id,
+        operation.uids.clone(),
+        operation.kind == OperationKind::Move,
+    );
+    state
+        .store
+        .write(move |tx| {
+            operations::remove(tx, id)?;
+            if is_move {
+                // Show the messages where they still are on the server.
+                messages::set_moving_to(tx, source, &uids, None)?;
+            }
+            Ok(())
+        })
+        .await?;
     state.sync.note_error(
         account_id,
         &format!("A change could not be made on the server: {reason}"),

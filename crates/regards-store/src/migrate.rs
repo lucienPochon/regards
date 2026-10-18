@@ -14,6 +14,7 @@ const MIGRATIONS: &[M<'static>] = &[
     M::up(include_str!("../migrations/0003_messages.sql")),
     M::up(include_str!("../migrations/0004_message_blobs.sql")),
     M::up(include_str!("../migrations/0005_operations.sql")),
+    M::up(include_str!("../migrations/0006_moves_and_undo.sql")),
 ];
 
 /// Backups kept before older ones are deleted.

@@ -332,6 +332,7 @@ function AccountRow({
                       id: mailbox.id,
                       label: mailbox.role ? ROLE_LABELS[mailbox.role] : mailbox.name,
                       account: account.email,
+                      accountId: account.id,
                     })
                   }
                 >

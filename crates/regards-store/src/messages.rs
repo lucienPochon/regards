@@ -53,6 +53,8 @@ pub struct Message {
     pub message_id: Option<String>,
     /// Hash of the downloaded source in `blobs/`, once it has been fetched.
     pub blob_hash: Option<String>,
+    /// The folder this message is being moved to, until the server has done it.
+    pub moving_to: Option<i64>,
 }
 
 /// Where a page of a message list ends: list strictly older messages next.
@@ -150,13 +152,54 @@ pub fn delete_uids(tx: &Transaction<'_>, mailbox_id: i64, uids: &[u32]) -> Resul
     Ok(removed)
 }
 
+/// Mark `uids` of `mailbox_id` as being moved to `target` (or no longer, with `None`).
+pub fn set_moving_to(
+    tx: &Transaction<'_>,
+    mailbox_id: i64,
+    uids: &[u32],
+    target: Option<i64>,
+) -> Result<(), StoreError> {
+    let mut statement = tx.prepare_cached("UPDATE messages SET moving_to = ?3 WHERE mailbox_id = ?1 AND uid = ?2")?;
+    for uid in uids {
+        statement.execute(params![mailbox_id, uid, target])?;
+    }
+    Ok(())
+}
+
+/// The server moved `uids` from `source` to `target`. With the new UIDs
+/// (COPYUID) the rows move in place and keep their ids, so undo still finds
+/// them; without, they are removed and the next sync of `target` brings them.
+pub fn complete_move(
+    tx: &Transaction<'_>,
+    source: i64,
+    target: i64,
+    uids: &[u32],
+    new_uids: Option<&[(u32, u32)]>,
+) -> Result<(), StoreError> {
+    if let Some(pairs) = new_uids {
+        let mut statement = tx.prepare_cached(
+            "UPDATE OR IGNORE messages SET mailbox_id = ?2, uid = ?4, moving_to = NULL \n             WHERE mailbox_id = ?1 AND uid = ?3 AND moving_to = ?2",
+        )?;
+        for (old, new) in pairs {
+            statement.execute(params![source, target, old, new])?;
+        }
+    }
+    // Whatever did not move in place (no COPYUID, or a sync already fetched it there).
+    let mut statement =
+        tx.prepare_cached("DELETE FROM messages WHERE mailbox_id = ?1 AND uid = ?2 AND moving_to = ?3")?;
+    for uid in uids {
+        statement.execute(params![source, uid, target])?;
+    }
+    Ok(())
+}
+
 /// Remove every message of a mailbox, for example after a UIDVALIDITY change.
 pub fn clear(tx: &Transaction<'_>, mailbox_id: i64) -> Result<usize, StoreError> {
     Ok(tx.execute("DELETE FROM messages WHERE mailbox_id = ?1", [mailbox_id])?)
 }
 
 const COLUMNS: &str = "id, mailbox_id, uid, modseq, seen, answered, flagged, draft, deleted, keywords, \
-    received_at, size, sent_at, subject, from_name, from_address, to_json, cc_json, message_id_header, blob_hash";
+    received_at, size, sent_at, subject, from_name, from_address, to_json, cc_json, message_id_header, blob_hash, moving_to";
 
 /// Record where the downloaded source of message `id` is stored.
 pub fn set_blob(tx: &Transaction<'_>, id: i64, hash: &str) -> Result<(), StoreError> {
@@ -173,7 +216,9 @@ pub fn list(
 ) -> Result<Vec<Message>, StoreError> {
     let (received_at, id) = before.map_or((i64::MAX, i64::MAX), |c| (c.received_at, c.id));
     let mut statement = conn.prepare_cached(&format!(
-        "SELECT {COLUMNS} FROM messages WHERE mailbox_id = ?1 AND (received_at, id) < (?2, ?3) \
+        // A message being moved shows in its target folder at once.
+        "SELECT {COLUMNS} FROM messages \
+         WHERE ((mailbox_id = ?1 AND moving_to IS NULL) OR moving_to = ?1) AND (received_at, id) < (?2, ?3) \
          ORDER BY received_at DESC, id DESC LIMIT ?4"
     ))?;
     let messages = statement
@@ -222,6 +267,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Message, StoreError>> {
             cc: parse_json(&cc, "recipients")?,
             message_id: row.get(18)?,
             blob_hash: row.get(19)?,
+            moving_to: row.get(20)?,
         })
     })();
     Ok(message)

@@ -16,8 +16,9 @@ use regards_core::secret::Secret;
 use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity,
-    MailboxListResult, MessageCursor, MessageDetail, MessageListParams, MessageListResult, MessageRef, Principal,
-    ServerSettings, SetFlagsParams, SetFlagsResult, SyncResult, methods,
+    MailboxListResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef,
+    MoveParams, MoveResult, Principal, ServerSettings, SetFlagsParams, SetFlagsResult, SyncResult, UndoParams,
+    UndoResult, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -282,6 +283,42 @@ async fn message_set_flags(
         .map_err(describe)
 }
 
+#[tauri::command]
+async fn message_archive(bridge: State<'_, Bridge>, ids: Vec<i64>) -> Result<MoveResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_ARCHIVE, MessageIds { ids })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn message_trash(bridge: State<'_, Bridge>, ids: Vec<i64>) -> Result<MoveResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_TRASH, MessageIds { ids })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn message_move(bridge: State<'_, Bridge>, ids: Vec<i64>, mailbox_id: i64) -> Result<MoveResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_MOVE, MoveParams { ids, mailbox_id })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn undo_apply(bridge: State<'_, Bridge>, id: i64) -> Result<UndoResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::UNDO_APPLY, UndoParams { id })
+        .await
+        .map_err(describe)
+}
+
 /// Keep one subscribed connection to the daemon and re-emit its change
 /// notifications to the WebView as `changes` events (ADR-0007). Reconnects
 /// with backoff when the daemon restarts or is replaced.
@@ -356,7 +393,11 @@ fn main() {
             mailbox_list,
             message_list,
             message_get,
-            message_set_flags
+            message_set_flags,
+            message_archive,
+            message_trash,
+            message_move,
+            undo_apply
         ])
         .build(tauri::generate_context!())
         .expect("failed to start the Regards desktop app");

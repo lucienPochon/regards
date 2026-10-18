@@ -41,6 +41,14 @@ pub mod methods {
     /// Mark messages read or unread, flagged or not. Applied at once, sent to the
     /// server by the operation queue (ADR-0010). `ui` only for now.
     pub const MESSAGE_SET_FLAGS: &str = "message.set_flags";
+    /// Move messages to another folder of their account; undoable. `ui` only for now.
+    pub const MESSAGE_MOVE: &str = "message.move";
+    /// Move messages to their account's Archive folder; undoable. `ui` only for now.
+    pub const MESSAGE_ARCHIVE: &str = "message.archive";
+    /// Move messages to their account's Trash folder; undoable. `ui` only for now.
+    pub const MESSAGE_TRASH: &str = "message.trash";
+    /// Reverse a recent action, by the undo id it returned. `ui` only for now.
+    pub const UNDO_APPLY: &str = "undo.apply";
     /// Dedicate this connection to change notifications (ADR-0007). `ui` only for now.
     pub const CHANGES_SUBSCRIBE: &str = "changes.subscribe";
 }
@@ -408,6 +416,49 @@ pub struct SetFlagsParams {
 pub struct SetFlagsResult {
     /// Messages whose flags actually changed.
     pub changed: usize,
+}
+
+/// Parameters of [`methods::MESSAGE_ARCHIVE`] and [`methods::MESSAGE_TRASH`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageIds {
+    pub ids: Vec<i64>,
+}
+
+/// Parameters of [`methods::MESSAGE_MOVE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MoveParams {
+    pub ids: Vec<i64>,
+    /// The folder to move them to.
+    pub mailbox_id: i64,
+}
+
+/// How to reverse an action, for a few minutes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UndoInfo {
+    pub id: i64,
+    /// What was done, for example "Archived 2 messages".
+    pub description: String,
+}
+
+/// Result of the move actions.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MoveResult {
+    pub moved: usize,
+    /// Set when something moved.
+    pub undo: Option<UndoInfo>,
+}
+
+/// Parameters of [`methods::UNDO_APPLY`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UndoParams {
+    pub id: i64,
+}
+
+/// Result of [`methods::UNDO_APPLY`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UndoResult {
+    /// Messages put back.
+    pub undone: usize,
 }
 
 /// Parameters of [`methods::MESSAGE_HTML`].

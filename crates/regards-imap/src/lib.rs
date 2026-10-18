@@ -12,7 +12,7 @@ mod messages;
 mod tls;
 pub mod utf7;
 
-pub use messages::{Fetched, FetchedHeaders, FlagUpdate, Flags, MessageSet, Selected, SystemFlag};
+pub use messages::{Fetched, FetchedHeaders, FlagUpdate, Flags, MessageSet, Moved, Selected, SystemFlag};
 
 pub use conn::IdleEnd;
 pub use tls::TlsOptions;

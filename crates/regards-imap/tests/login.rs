@@ -325,3 +325,41 @@ async fn live_server_idle_reports_new_mail_and_stops_cleanly() {
     );
     watcher.logout().await;
 }
+
+/// MOVE with COPYUID against a real server.
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_server_moves_messages_and_reports_their_new_uids() {
+    let address = std::env::var("REGARDS_TEST_IMAP").unwrap();
+    let (host, port) = address.rsplit_once(':').unwrap();
+    let ca = std::fs::read(std::env::var("REGARDS_TEST_IMAP_CA").unwrap()).unwrap();
+    let tls = TlsOptions::platform().with_extra_roots_pem(&ca).unwrap();
+    let server = ImapServer {
+        host: host.into(),
+        port: port.parse().unwrap(),
+    };
+    let user = format!("move-{}", std::process::id());
+    let password = Secret::new(std::env::var("REGARDS_TEST_IMAP_PASSWORD").unwrap_or_else(|_| "pass".into()));
+    let mut session = Session::login(&server, &user, &password, &tls).await.unwrap();
+    session.create_mailbox(b"Archive").await.unwrap();
+    for n in 1..=2 {
+        session
+            .append(b"INBOX", &[], format!("Subject: m{n}\r\n\r\nbody\r\n").as_bytes())
+            .await
+            .unwrap();
+    }
+    session.select(b"INBOX").await.unwrap();
+    let uids = session.uid_search_all().await.unwrap();
+    let moved = session
+        .move_messages(&uids[0].to_string(), b"Archive")
+        .await
+        .unwrap()
+        .expect("Dovecot reports COPYUID");
+    assert_eq!(moved.uids.len(), 1);
+    assert_eq!(moved.uids[0].0, uids[0]);
+    assert_eq!(session.uid_search_all().await.unwrap(), &uids[1..]);
+    let archive = session.select(b"Archive").await.unwrap();
+    assert_eq!(archive.uid_validity, moved.uid_validity);
+    assert_eq!(session.uid_search_all().await.unwrap(), [moved.uids[0].1]);
+    session.logout().await;
+}

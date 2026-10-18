@@ -1,10 +1,32 @@
 import { useCallback, useEffect, useState } from "react";
-import { type MessageDetail, type Person, getMessage, messageHtmlUrl, setFlags } from "./accounts";
+import {
+  type MailboxSummary,
+  type MessageDetail,
+  type MoveResult,
+  type Person,
+  type UndoInfo,
+  archiveMessages,
+  getMessage,
+  listMailboxes,
+  messageHtmlUrl,
+  moveMessages,
+  setFlags,
+  trashMessages,
+} from "./accounts";
 import { useChanges } from "./changes";
 
 type Load = { state: "loading" } | { state: "ready"; detail: MessageDetail } | { state: "failed"; message: string };
 
-export function ReadingPane({ messageId }: { messageId: number }) {
+export function ReadingPane({
+  messageId,
+  accountId,
+  onMoved,
+}: {
+  messageId: number;
+  accountId: string;
+  onMoved: (undo: UndoInfo | null) => void;
+}) {
+  const [folders, setFolders] = useState<MailboxSummary[]>([]);
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [showText, setShowText] = useState(false);
   const [allowRemote, setAllowRemote] = useState(false);
@@ -39,6 +61,19 @@ export function ReadingPane({ messageId }: { messageId: number }) {
   }, [messageId]);
   useChanges(refresh);
 
+  useEffect(() => {
+    listMailboxes(accountId)
+      .then((result) => setFolders(result.mailboxes.filter((m) => m.selectable)))
+      .catch(() => setFolders([]));
+  }, [accountId]);
+
+  const move = (action: () => Promise<MoveResult>) => {
+    setActionError(null);
+    action()
+      .then((result) => onMoved(result.undo))
+      .catch((error: unknown) => setActionError(String(error)));
+  };
+
   const act = (flags: { seen?: boolean; flagged?: boolean }) => {
     setActionError(null);
     setFlags([messageId], flags).catch((error: unknown) => setActionError(String(error)));
@@ -71,6 +106,27 @@ export function ReadingPane({ messageId }: { messageId: number }) {
         <button type="button" onClick={() => act({ flagged: !message.flagged })} aria-pressed={message.flagged}>
           {message.flagged ? "Unflag" : "Flag"}
         </button>
+        <button type="button" onClick={() => move(() => archiveMessages([messageId]))}>
+          Archive
+        </button>
+        <button type="button" onClick={() => move(() => trashMessages([messageId]))}>
+          Delete
+        </button>
+        <select
+          aria-label="Move to folder"
+          value=""
+          onChange={(event) => {
+            const target = Number(event.target.value);
+            if (target) move(() => moveMessages([messageId], target));
+          }}
+        >
+          <option value="">Move to…</option>
+          {folders.map((folder) => (
+            <option key={folder.id} value={folder.id}>
+              {folder.name}
+            </option>
+          ))}
+        </select>
         {actionError && <span className="error small">{actionError}</span>}
       </div>
       <dl className="headers small">
