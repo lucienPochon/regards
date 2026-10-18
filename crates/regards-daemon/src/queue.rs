@@ -60,6 +60,28 @@ impl Queue {
         });
     }
 
+    /// The account's server answered again: send what waits for a retry now,
+    /// not after its backoff.
+    pub(crate) async fn retry_now(state: &Arc<State>, account_id: &str) {
+        let id = account_id.to_owned();
+        let now = now_ms();
+        // Read first: most reconnects find nothing waiting, and a write would notify every client.
+        match state.store.read(move |conn| operations::next_due_at(conn, &id)).await {
+            Ok(Some(next)) if next > now => {}
+            Ok(_) => return,
+            Err(error) => return tracing::warn!(%error, "cannot read the operation queue"),
+        }
+        let id = account_id.to_owned();
+        match state
+            .store
+            .write(move |tx| operations::retry_all_now(tx, &id, now))
+            .await
+        {
+            Ok(_) => state.queue.wake(state, account_id),
+            Err(error) => tracing::warn!(%error, "cannot reschedule queued actions"),
+        }
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<Notify>>> {
         self.runners.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }

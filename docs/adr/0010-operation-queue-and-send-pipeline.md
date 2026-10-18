@@ -25,6 +25,9 @@ Undo send and send later (ADR-0011) both need an outbox.
      - **Mailbox check:** each operation records the mailbox's UIDVALIDITY.
      - **Runner:** a per-account runner sends operations with `UID STORE … .SILENT`, oldest first.
        - **Connection trouble:** retries with backoff from 5 s to 10 min.
+       - **Back online:** when the account's push connection signs in again, everything waiting for a retry is sent at once, not after its backoff.
+       - **Tested offline:** a fault-injection proxy drops and refuses connections. Actions taken while offline show at once and reach the server within seconds of the line coming back.
+       - **Not yet:** a connection that dies silently (no reset, as on some network changes) is noticed only when IDLE is renewed. OS network-change events would help there.
        - **Refusals:** a server refusal, or a UIDVALIDITY change, drops the operation and resyncs the mailbox, which is the revert. The reason shows in the account status.
      - **Sync:** sync re-applies pending operations after writing server flags (§2), and drops those from another UIDVALIDITY.
      - **Not yet:** coalescing of opposite operations.

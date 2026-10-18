@@ -155,7 +155,8 @@ flowchart LR
     - **UIDVALIDITY changes:** rebuild the mailbox.
   - **Header parsing:** headers are fetched as literals and parsed with `mail-parser` (encoded words, legacy charsets).
   - **Tests:** CI runs these flows against Dovecot.
-  - **Push:** one IDLE connection per account on the inbox, with a catch-up sync before each IDLE, re-IDLE every 25 minutes, and reconnect with backoff. Servers without IDLE are polled every 5 minutes. Measured against Dovecot: about 0.6 s from delivery to the store.
+  - **Push:** one IDLE connection per account on the inbox, with a catch-up sync before each IDLE, re-IDLE every 25 minutes, and reconnect with backoff (reset once a connection worked). Servers without IDLE are polled every 5 minutes. Measured against Dovecot: about 0.6 s from delivery to the store.
+  - **Offline:** a fault-injection proxy test cuts the line. Actions taken offline show at once, and when push reconnects the waiting actions go out at once (about 5 s after the line returns, against 9 s or more on the retry schedule).
   - **Connections:** addresses are tried "Happy Eyeballs" style (RFC 8305), so a broken IPv6 route costs 250 ms, not seconds.
   - **Live updates in the UI:** a change feed (ADR-0007) notifies subscribed clients of every committed change and sync-status change. The app refreshes on those events and no longer polls.
   - **Conversations:** References threading across folders (ADR-0009 §5). The reading pane lists the other messages of the conversation, wherever they are, and opens them.

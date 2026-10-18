@@ -58,13 +58,18 @@ impl Watchers {
     }
 }
 
-async fn run(state: &State, account_id: &str, mut stopped: watch::Receiver<bool>) {
+async fn run(state: &Arc<State>, account_id: &str, mut stopped: watch::Receiver<bool>) {
     let mut backoff = Duration::from_secs(1);
     loop {
-        match watch_once(state, account_id, &mut stopped).await {
+        let mut connected = false;
+        match watch_once(state, account_id, &mut stopped, &mut connected).await {
             Ok(()) => return,
             Err(SyncError::NoAccount) => return,
             Err(error) => {
+                if connected {
+                    // It worked for a while: this is a new problem, not the same one again.
+                    backoff = Duration::from_secs(1);
+                }
                 tracing::warn!(account = %account_id, %error, retry_in = ?backoff, "push connection failed");
                 tokio::select! {
                     () = tokio::time::sleep(backoff) => {}
@@ -76,9 +81,18 @@ async fn run(state: &State, account_id: &str, mut stopped: watch::Receiver<bool>
     }
 }
 
-/// Watch until stopped (`Ok`) or the connection fails (`Err`).
-async fn watch_once(state: &State, account_id: &str, stopped: &mut watch::Receiver<bool>) -> Result<(), SyncError> {
+/// Watch until stopped (`Ok`) or the connection fails (`Err`); `connected`
+/// tells whether it got as far as signing in.
+async fn watch_once(
+    state: &Arc<State>,
+    account_id: &str,
+    stopped: &mut watch::Receiver<bool>,
+    connected: &mut bool,
+) -> Result<(), SyncError> {
     let mut session = sync::login(state, account_id).await?;
+    *connected = true;
+    // The server answers again, perhaps after an outage: send actions that wait for a retry.
+    crate::queue::Queue::retry_now(state, account_id).await;
     let id = account_id.to_owned();
     let inbox = state
         .store

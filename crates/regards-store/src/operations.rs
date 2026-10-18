@@ -181,6 +181,16 @@ pub fn retry_later(tx: &Transaction<'_>, id: i64, error: &str, next_attempt_at: 
     Ok(())
 }
 
+/// Make every operation of an account that waits for a retry due at `now`;
+/// returns how many were waiting.
+pub fn retry_all_now(tx: &Transaction<'_>, account_id: &str, now: i64) -> Result<usize, StoreError> {
+    Ok(tx.execute(
+        "UPDATE operations SET next_attempt_at = ?2 WHERE next_attempt_at > ?2 \
+         AND mailbox_id IN (SELECT id FROM mailboxes WHERE account_id = ?1)",
+        params![account_id, now],
+    )?)
+}
+
 /// After a sync wrote the server's flags: re-apply what the server has not
 /// been told yet, so pending actions do not appear to undo themselves
 /// (ADR-0010 §2). Operations from another UIDVALIDITY are void and dropped.
@@ -466,6 +476,20 @@ mod tests {
         assert_eq!(
             store.read(accounts_with_pending).await.unwrap(),
             std::slice::from_ref(&account)
+        );
+
+        // Back online: what waited is due at once.
+        let a = account.clone();
+        assert_eq!(
+            store.write(move |tx| retry_all_now(tx, &a, 200)).await.unwrap().value,
+            1
+        );
+        let a = account.clone();
+        assert_eq!(store.read(move |conn| next_due_at(conn, &a)).await.unwrap(), Some(200));
+        let a = account.clone();
+        assert_eq!(
+            store.write(move |tx| retry_all_now(tx, &a, 200)).await.unwrap().value,
+            0
         );
 
         store.write(move |tx| remove(tx, id)).await.unwrap();

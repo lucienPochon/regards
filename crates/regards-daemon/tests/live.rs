@@ -18,6 +18,9 @@ use regards_vault::{SecretKey, SecretKind, Vault};
 use serde_json::Value;
 use std::time::{Duration, Instant};
 
+#[path = "support/proxy.rs"]
+mod proxy;
+
 /// Tests run in parallel and the clock can repeat: number the users too.
 static NEXT_USER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
@@ -875,6 +878,100 @@ async fn live_older_mail_is_fetched_in_the_background() {
     // A later sync keeps them (deletions come only from the server's UID list).
     sync(&mut desktop, &account.id).await;
     assert_eq!(subjects(messages(&mut desktop, inbox).await), all);
+
+    seed.logout().await;
+    handle.abort();
+}
+
+/// Wait until the account's push connection is (or is no longer) up.
+async fn push_becomes(desktop: &mut Client, account_id: &str, active: bool) {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while folders(desktop, account_id).await.sync.push_active != active {
+        assert!(Instant::now() < deadline, "push never became active={active}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_actions_taken_offline_reach_the_server_once_it_is_back() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    seed.create_mailbox(b"Archive").await.unwrap();
+    for (n, subject) in [(1, "Read me"), (2, "Archive me")] {
+        seed.append(b"INBOX", &[], &message(n, subject, "ada@example.test"))
+            .await
+            .unwrap();
+    }
+    // The daemon reaches the server only through a proxy that can cut the line.
+    let proxy = proxy::Proxy::start(format!("{}:{}", live.server.host, live.server.port)).await;
+    let via_proxy = Live {
+        server: ImapServer {
+            host: live.server.host.clone(),
+            port: proxy.port,
+        },
+        tls: live.tls.clone(),
+        user: live.user.clone(),
+        password: live.password.clone(),
+    };
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&via_proxy).await;
+    push_becomes(&mut desktop, &account.id, true).await;
+    let archive = folders(&mut desktop, &account.id)
+        .await
+        .mailboxes
+        .iter()
+        .find(|m| m.role == Some(Role::Archive))
+        .unwrap()
+        .id;
+    let listed = messages(&mut desktop, inbox).await.messages;
+    let id = |subject: &str| listed.iter().find(|m| m.subject == subject).unwrap().id;
+
+    // Offline: the push connection drops and nothing gets through.
+    proxy.go_offline();
+    push_becomes(&mut desktop, &account.id, false).await;
+    let _: SetFlagsResult = desktop
+        .call(
+            methods::MESSAGE_SET_FLAGS,
+            SetFlagsParams {
+                ids: vec![id("Read me")],
+                seen: Some(true),
+                flagged: None,
+            },
+        )
+        .await
+        .unwrap();
+    let _: MoveResult = desktop
+        .call(
+            methods::MESSAGE_ARCHIVE,
+            MessageIds {
+                ids: vec![id("Archive me")],
+            },
+        )
+        .await
+        .unwrap();
+
+    // Both show at once.
+    let inbox_now = messages(&mut desktop, inbox).await.messages;
+    assert_eq!(inbox_now.len(), 1);
+    assert!(inbox_now[0].seen);
+    assert_eq!(messages(&mut desktop, archive).await.messages.len(), 1);
+    // The server has heard nothing.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(server_uids(&mut seed, b"INBOX").await.len(), 2);
+
+    // Back online: the push connection returns and the waiting actions go at
+    // once, not after their retry delay (measured: about 5 s with, 9 s without).
+    proxy.go_online();
+    let back = Instant::now();
+    server_count_becomes(&mut seed, b"Archive", 1).await;
+    server_count_becomes(&mut seed, b"INBOX", 1).await;
+    server_flags_become(&mut seed, |flags| flags.len() == 1 && flags[0].flags.seen).await;
+    assert!(back.elapsed() < Duration::from_secs(8), "took {:?}", back.elapsed());
+    // And the app still shows the same.
+    assert!(messages(&mut desktop, inbox).await.messages[0].seen);
+    assert_eq!(messages(&mut desktop, archive).await.messages.len(), 1);
 
     seed.logout().await;
     handle.abort();
