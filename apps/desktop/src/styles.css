@@ -694,3 +694,61 @@ button.link {
   border: 1px solid var(--border);
   border-radius: 999px;
 }
+
+.rich-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.format-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.format-bar button {
+  margin-top: 0;
+  padding: 3px 9px;
+}
+
+.format-bar button[aria-pressed="true"] {
+  background: var(--bg);
+  border-color: var(--accent);
+}
+
+.link-input {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.link-input input {
+  width: 16em;
+}
+
+.compose-body.ProseMirror {
+  min-height: 40vh;
+  outline: none;
+  overflow-wrap: anywhere;
+}
+
+.compose-body.ProseMirror:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.compose-body p {
+  margin: 0 0 0.6em;
+}
+
+.compose-body blockquote {
+  margin: 0 0 0.6em;
+  padding-left: 12px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+.compose-body a {
+  color: var(--accent);
+}

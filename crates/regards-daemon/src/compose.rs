@@ -196,6 +196,17 @@ pub(crate) async fn list(state: &State, params: DraftListParams) -> Result<Value
 /// Autosave: the whole of what the draft says.
 pub(crate) async fn update(state: &State, params: DraftUpdateParams) -> Result<Value, RpcError> {
     check_content(&params.to, &params.cc, &params.bcc, &params.body)?;
+    if params.html.as_ref().is_some_and(|html| html.len() > MAX_BODY) {
+        return Err(RpcError::new(codes::TOO_LARGE, "the message text is too long"));
+    }
+    // Formatted text is sanitised here, once, and its plain version derived from it.
+    let (body, html) = match &params.html {
+        Some(written) => {
+            let clean = regards_core::html::sanitize_outgoing(written);
+            (regards_core::html::to_text(&clean), Some(clean))
+        }
+        None => (params.body.clone(), None),
+    };
     let id = params.id;
     let now = now_ms();
     state
@@ -206,7 +217,8 @@ pub(crate) async fn update(state: &State, params: DraftUpdateParams) -> Result<V
                 cc: &params.cc,
                 bcc: &params.bcc,
                 subject: &params.subject,
-                body: &params.body,
+                body: &body,
+                html: html.as_deref(),
             };
             drafts::update(tx, params.id, &edit, now)
         })
@@ -363,6 +375,7 @@ pub(crate) async fn send(state: &Arc<State>, params: DraftSendParams) -> Result<
                 bcc: draft.bcc.clone(),
                 subject: draft.subject.clone(),
                 text: draft.body.clone(),
+                html: draft.html.clone(),
                 message_id: compose::new_message_id(&account.email),
                 in_reply_to: draft.in_reply_to.clone(),
                 references: draft.references.clone(),
@@ -497,6 +510,7 @@ fn draft_view(draft: Draft, from: Person, files: Vec<drafts::Attachment>) -> Dra
         bcc: draft.bcc,
         subject: draft.subject,
         body: draft.body,
+        html: draft.html,
         replying_to: draft.replying_to,
         updated_at: draft.updated_at,
         sending: draft.sending,

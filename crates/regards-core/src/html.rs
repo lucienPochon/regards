@@ -93,6 +93,46 @@ pub fn render(raw: &[u8], allow_remote: bool, links: Option<&str>) -> Option<Ren
     Some(Rendered { html, blocked_remote })
 }
 
+/// Formatting a message written in Regards may carry: text styles, lists,
+/// quotes, headings and web or mail links. Everything else (scripts, styles,
+/// images, frames, forms, event handlers) is removed before sending.
+pub fn sanitize_outgoing(html: &str) -> String {
+    Builder::empty()
+        .add_tags([
+            "p",
+            "br",
+            "strong",
+            "b",
+            "em",
+            "i",
+            "u",
+            "s",
+            "a",
+            "ul",
+            "ol",
+            "li",
+            "blockquote",
+            "code",
+            "pre",
+            "h1",
+            "h2",
+            "h3",
+            "hr",
+        ])
+        .add_tag_attributes("a", ["href"])
+        .add_url_schemes(["http", "https", "mailto"])
+        .url_relative(UrlRelative::Deny)
+        .link_rel(None)
+        .strip_comments(true)
+        .clean(html)
+        .to_string()
+}
+
+/// The plain-text version of written HTML, for the `text/plain` part.
+pub fn to_text(html: &str) -> String {
+    mail_parser::decoders::html::html_to_text(html)
+}
+
 /// A complete frame document around sanitised `body`.
 fn document(head: &str, body: &str) -> String {
     format!(
@@ -397,6 +437,31 @@ mod tests {
         assert_eq!(
             start_tags("<table><tr><td><p>Hi <b>there</b></p></td></tr></table> a < b"),
             5
+        );
+    }
+
+    #[test]
+    fn written_html_keeps_formatting_and_loses_everything_else() {
+        let written = "<p>Hello <strong>Bob</strong>, <em>see</em> <a href=\"https://example.test\" onclick=\"x()\">this</a> \
+            and <a href=\"javascript:alert(1)\">that</a>.</p><ul><li>one</li></ul><blockquote><p>quoted</p></blockquote>\
+            <script>steal()</script><img src=\"https://t.test/p.gif\"><p style=\"color:red\">styled</p>";
+        let clean = sanitize_outgoing(written);
+        assert!(
+            clean.contains("<strong>Bob</strong>") && clean.contains("<em>see</em>"),
+            "{clean}"
+        );
+        assert!(clean.contains("<a href=\"https://example.test\">this</a>"), "{clean}");
+        assert!(
+            clean.contains("<ul><li>one</li></ul>") && clean.contains("<blockquote>"),
+            "{clean}"
+        );
+        for gone in ["onclick", "javascript", "<script", "steal", "<img", "style="] {
+            assert!(!clean.contains(gone), "{gone} survived: {clean}");
+        }
+        let text = to_text(&clean);
+        assert!(
+            text.contains("Hello Bob") && text.contains("one") && text.contains("quoted"),
+            "{text}"
         );
     }
 

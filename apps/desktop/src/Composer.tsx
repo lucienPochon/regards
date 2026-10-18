@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import {
   type Draft,
   type Queued,
@@ -11,15 +11,20 @@ import {
   parseRecipients,
   saveDraft,
   sendDraft,
+  textToHtml,
 } from "./compose";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
+
+// The editor (Tiptap and ProseMirror) loads when a message is first written.
+const RichEditor = lazy(() => import("./RichEditor").then((module) => ({ default: module.RichEditor })));
 
 interface Fields {
   to: string;
   cc: string;
   bcc: string;
   subject: string;
-  body: string;
+  /** The formatted text, as the editor has it. */
+  html: string;
 }
 
 /** How long typing pauses before the draft is saved. */
@@ -48,7 +53,6 @@ export function Composer({
   const saved = useRef<string>("");
   const timer = useRef<number | undefined>(undefined);
   const toField = useRef<HTMLInputElement>(null);
-  const bodyField = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     let current = true;
@@ -60,7 +64,7 @@ export function Composer({
           cc: formatRecipients(loaded.cc),
           bcc: formatRecipients(loaded.bcc),
           subject: loaded.subject,
-          body: loaded.body,
+          html: loaded.html ?? textToHtml(loaded.body),
         };
         saved.current = JSON.stringify(initial);
         setDraft(loaded);
@@ -73,16 +77,13 @@ export function Composer({
     };
   }, [draftId]);
 
-  // Start where the writing goes: the address for a new message, the text for a reply.
+  // Start where the writing goes: the address for a new message (the editor
+  // takes the focus itself for a reply). Once per draft, not on every change.
+  const draftKey = draft?.id;
+  const needsAddress = draft ? draft.to.length === 0 : false;
   useEffect(() => {
-    if (!draft) return;
-    if (draft.to.length === 0) {
-      toField.current?.focus();
-    } else {
-      bodyField.current?.focus();
-      bodyField.current?.setSelectionRange(0, 0);
-    }
-  }, [draft]);
+    if (draftKey !== undefined && needsAddress) toField.current?.focus();
+  }, [draftKey]);
 
   /** Save now if anything changed since the last save. */
   const flush = useCallback(async (): Promise<boolean> => {
@@ -98,7 +99,8 @@ export function Composer({
         cc: parseRecipients(fields.cc),
         bcc: parseRecipients(fields.bcc),
         subject: fields.subject,
-        body: fields.body,
+        body: "",
+        html: fields.html,
       });
       saved.current = snapshot;
       setStatus("Saved");
@@ -189,6 +191,8 @@ export function Composer({
   };
 
   const keys = (event: KeyboardEvent) => {
+    // The editor handles its own keys (Cmd/Ctrl+Enter sends from there too).
+    if (event.defaultPrevented) return;
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       void send();
@@ -238,13 +242,18 @@ export function Composer({
                 <span>Subject</span>
                 <input value={fields.subject} onChange={change("subject")} />
               </label>
-              <textarea
-                ref={bodyField}
-                className="compose-body"
-                aria-label="Message"
-                value={fields.body}
-                onChange={change("body")}
+              <Suspense fallback={<p className="muted small">Opening the editor…</p>}>
+              <RichEditor
+                initial={fields.html}
+                onChange={(html) => {
+                  setError(null);
+                  setFields((current) => (current ? { ...current, html } : current));
+                }}
+                onSend={() => void send()}
+                disabled={Boolean(draft?.sending) || busy}
+                autofocus={!needsAddress}
               />
+              </Suspense>
               {draft && draft.attachments.length > 0 && (
                 <ul className="attachment-chips" aria-label="Attachments">
                   {draft.attachments.map((file) => (

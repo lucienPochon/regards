@@ -526,7 +526,11 @@ pub struct DraftView {
     pub cc: Vec<Person>,
     pub bcc: Vec<Person>,
     pub subject: String,
+    /// The text; with `html`, its plain-text version.
     pub body: String,
+    /// The formatted version, when it was written with formatting.
+    #[serde(default)]
+    pub html: Option<String>,
     /// The stored message it answers, if any.
     pub replying_to: Option<i64>,
     /// Unix time in milliseconds.
@@ -616,7 +620,11 @@ pub struct DraftUpdateParams {
     pub cc: Vec<Person>,
     pub bcc: Vec<Person>,
     pub subject: String,
+    /// The text. Ignored when `html` is given: the daemon derives it.
     pub body: String,
+    /// The formatted version; the daemon sanitises it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub html: Option<String>,
 }
 
 /// Parameters of [`methods::DRAFT_SEND`].

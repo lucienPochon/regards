@@ -13,7 +13,10 @@ pub struct Draft {
     pub cc: Vec<Person>,
     pub bcc: Vec<Person>,
     pub subject: String,
+    /// The text; with `html`, its plain-text version.
     pub body: String,
+    /// The formatted version, sanitised, if it was written with formatting.
+    pub html: Option<String>,
     /// The Message-ID it answers.
     pub in_reply_to: Option<String>,
     pub references: Vec<String>,
@@ -66,6 +69,7 @@ pub struct Edit<'a> {
     pub bcc: &'a [Person],
     pub subject: &'a str,
     pub body: &'a str,
+    pub html: Option<&'a str>,
 }
 
 /// Change what the draft says. Refused while it is being sent.
@@ -76,6 +80,7 @@ pub fn update(tx: &Transaction<'_>, id: i64, edit: &Edit<'_>, now: i64) -> Resul
         bcc,
         subject,
         body,
+        html,
     } = *edit;
     let Some(draft) = get(tx, id)? else {
         return Err(StoreError::Conflict("no such draft".into()));
@@ -86,16 +91,16 @@ pub fn update(tx: &Transaction<'_>, id: i64, edit: &Edit<'_>, now: i64) -> Resul
         ));
     }
     tx.execute(
-        "UPDATE drafts SET to_json = ?2, cc_json = ?3, bcc_json = ?4, subject = ?5, body = ?6, updated_at = ?7 \
-         WHERE id = ?1",
-        params![id, json(to), json(cc), json(bcc), subject, body, now],
+        "UPDATE drafts SET to_json = ?2, cc_json = ?3, bcc_json = ?4, subject = ?5, body = ?6, updated_at = ?7, \
+         html = ?8 WHERE id = ?1",
+        params![id, json(to), json(cc), json(bcc), subject, body, now, html],
     )?;
     Ok(())
 }
 
 const COLUMNS: &str = "d.id, d.account_id, d.to_json, d.cc_json, d.bcc_json, d.subject, d.body, d.in_reply_to, \
     d.references_json, d.replying_to, d.created_at, d.updated_at, \
-    EXISTS (SELECT 1 FROM outbox o WHERE o.draft_id = d.id)";
+    EXISTS (SELECT 1 FROM outbox o WHERE o.draft_id = d.id), d.html";
 
 pub fn get(conn: &Connection, id: i64) -> Result<Option<Draft>, StoreError> {
     conn.query_row(
@@ -225,6 +230,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Draft, StoreError>> {
             created_at: row.get(10)?,
             updated_at: row.get(11)?,
             sending: row.get(12)?,
+            html: row.get(13)?,
         })
     };
     Ok(parse())

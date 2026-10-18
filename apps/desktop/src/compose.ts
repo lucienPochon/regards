@@ -12,6 +12,8 @@ export interface Draft {
   bcc: Person[];
   subject: string;
   body: string;
+  /** The formatted version, when it was written with formatting. */
+  html: string | null;
   replying_to: number | null;
   updated_at: number;
   /** In the outbox: take it back before changing it. */
@@ -58,9 +60,11 @@ export const detachFile = (draftId: number, attachmentId: number) =>
   invoke<Draft>("draft_detach", { draftId, attachmentId });
 export const deleteDraft = (id: number) => invoke("draft_delete", { id });
 
-export function saveDraft(draft: Pick<Draft, "id" | "to" | "cc" | "bcc" | "subject" | "body">): Promise<Draft> {
-  const { id, to, cc, bcc, subject, body } = draft;
-  return invoke<Draft>("draft_update", { draft: { id, to, cc, bcc, subject, body } });
+export function saveDraft(
+  draft: Pick<Draft, "id" | "to" | "cc" | "bcc" | "subject" | "body"> & { html?: string | null },
+): Promise<Draft> {
+  const { id, to, cc, bcc, subject, body, html } = draft;
+  return invoke<Draft>("draft_update", { draft: { id, to, cc, bcc, subject, body, html: html ?? null } });
 }
 
 /** Queue it; it goes once the undo window is over. */
@@ -122,4 +126,37 @@ export function invalidAddresses(people: Person[]): string[] {
   return people
     .map((person) => person.address ?? "")
     .filter((address) => !/^[^\s@<>,"]+@[^\s@<>,"]+\.[^\s@<>,"]+$/.test(address));
+}
+
+/** A plain-text draft (a new reply's quote, say) as editor HTML: paragraphs, and "> " lines as quotes. */
+export function textToHtml(text: string): string {
+  const escape = (line: string) =>
+    line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const blocks: string[] = [];
+  let paragraph: string[] = [];
+  let quote: string[] = [];
+  const endParagraph = () => {
+    if (paragraph.length) blocks.push(`<p>${paragraph.map(escape).join("<br>")}</p>`);
+    paragraph = [];
+  };
+  const endQuote = () => {
+    if (quote.length) blocks.push(`<blockquote>${textToHtml(quote.join("\n"))}</blockquote>`);
+    quote = [];
+  };
+  for (const line of text.replace(/\r\n?/g, "\n").split("\n")) {
+    if (line.startsWith(">")) {
+      endParagraph();
+      quote.push(line.replace(/^> ?/, ""));
+    } else if (line.trim() === "") {
+      endParagraph();
+      endQuote();
+      if (blocks.length === 0) blocks.push("<p></p>");
+    } else {
+      endQuote();
+      paragraph.push(line);
+    }
+  }
+  endParagraph();
+  endQuote();
+  return blocks.join("") || "<p></p>";
 }

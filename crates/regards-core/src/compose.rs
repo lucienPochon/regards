@@ -29,6 +29,9 @@ pub struct Outgoing {
     pub references: Vec<String>,
     /// Unix time in milliseconds.
     pub date: i64,
+    /// The formatted version, already sanitised ([`crate::html::sanitize_outgoing`]);
+    /// `text` is then its plain-text version.
+    pub html: Option<String>,
     pub attachments: Vec<Attachment>,
 }
 
@@ -79,6 +82,11 @@ impl Outgoing {
             .message_id(self.message_id.as_str())
             .date(self.date.div_euclid(1000))
             .text_body(normalise(&self.text));
+        if let Some(html) = &self.html {
+            builder = builder.html_body(format!(
+                "<!doctype html><html><head><meta charset=\"utf-8\"></head><body>{html}</body></html>"
+            ));
+        }
         if !self.to.is_empty() {
             builder = builder.to(list(&self.to));
         }
@@ -368,6 +376,7 @@ mod tests {
             in_reply_to: Some("parent@example.test".into()),
             references: vec!["root@example.test".into(), "parent@example.test".into()],
             date: 1_792_317_900_000,
+            html: None,
             attachments: vec![],
         }
     }
@@ -436,6 +445,21 @@ mod tests {
                 (Some("notes.txt"), "text/plain", 11)
             ]
         );
+    }
+
+    #[test]
+    fn formatted_messages_carry_text_and_html() {
+        let mut message = outgoing();
+        let html = crate::html::sanitize_outgoing("<p>Hello <strong>Bob</strong></p><ul><li>one</li></ul>");
+        message.text = crate::html::to_text(&html);
+        message.html = Some(html);
+        let mime = message.build().unwrap();
+        let body = crate::body::parse(&mime);
+        assert!(body.has_html);
+        assert!(body.text.contains("Hello Bob"), "{}", body.text);
+        let rendered = crate::html::render(&mime, false, None).unwrap().html;
+        assert!(rendered.contains("<strong>Bob</strong>"), "{rendered}");
+        assert!(String::from_utf8_lossy(&mime).contains("multipart/alternative"));
     }
 
     #[test]

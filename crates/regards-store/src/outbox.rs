@@ -386,6 +386,7 @@ mod tests {
                     bcc: &[],
                     subject: "x",
                     body: "y",
+                    html: None,
                 };
                 drafts::update(tx, draft, &edit, 1)
             })

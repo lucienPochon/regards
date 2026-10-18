@@ -1090,7 +1090,11 @@ async fn live_a_reply_can_be_undone_then_goes_out_once_and_lands_in_sent() {
                 cc: vec![],
                 bcc: vec![person("hidden@example.test")],
                 subject: draft.subject.clone(),
-                body: format!("Thanks!{}", draft.body),
+                body: String::new(),
+                html: Some(format!(
+                    "<p>Thanks! <strong>Bold</strong><script>steal()</script></p><blockquote><p>{}</p></blockquote>",
+                    "Body 1"
+                )),
             },
         )
         .await
@@ -1140,6 +1144,15 @@ async fn live_a_reply_can_be_undone_then_goes_out_once_and_lands_in_sent() {
     assert!(data.contains("Subject: Re: Plans"), "{data}");
     assert!(data.contains("In-Reply-To: <sync-1@example.test>"), "{data}");
     assert!(data.contains("Thanks!"));
+    let delivered_body = regards_core::body::parse(data.as_bytes());
+    assert!(delivered_body.has_html, "sent with its formatting");
+    assert!(delivered_body.text.contains("Thanks! Bold"), "{}", delivered_body.text);
+    let shown = regards_core::html::render(data.as_bytes(), false, None).unwrap().html;
+    assert!(
+        shown.contains("<strong>Bold</strong>") && !shown.contains("steal"),
+        "{shown}"
+    );
+    assert!(!data.contains("<script"), "sanitised before it was stored");
     assert!(!data.contains("hidden@example.test"), "Bcc is not in the message");
 
     // The copy lands in Sent, the original is answered, the outbox and draft are done.
@@ -1400,6 +1413,7 @@ async fn live_a_forward_carries_the_original_files() {
                 bcc: vec![],
                 subject: draft.subject.clone(),
                 body: draft.body.clone(),
+                html: None,
             },
         )
         .await
