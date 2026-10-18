@@ -280,7 +280,7 @@ export function Composer({
             )}
             {error && <p className="error small">{error}</p>}
             <div className="actions-bar">
-              <button type="button" onClick={() => void send()} disabled={draft?.sending || busy}>
+              <button type="button" className="primary" onClick={() => void send()} disabled={draft?.sending || busy}>
                 Send
               </button>
               <button type="button" onClick={() => void attach()} disabled={draft?.sending || busy}>
