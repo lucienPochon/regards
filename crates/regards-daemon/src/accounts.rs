@@ -95,6 +95,7 @@ pub(crate) async fn remove(state: &State, params: AccountRemoveParams) -> Result
     }
     state.sync.forget(&id);
     state.watchers.stop(&id);
+    state.backfills.stop(&id);
     tracing::info!(account = %id, "account removed");
     Ok(json!({ "removed": true }))
 }
@@ -261,9 +262,14 @@ pub(crate) async fn mailboxes(state: &State, params: AccountRef) -> Result<Value
     }))
 }
 
-pub(crate) async fn sync_now(state: &State, params: AccountRef) -> Result<Value, RpcError> {
+pub(crate) async fn sync_now(state: &Arc<State>, params: AccountRef) -> Result<Value, RpcError> {
     ensure_exists(state, &params.account_id).await?;
-    match sync::sync_account(state, &params.account_id).await {
+    let outcome = sync::sync_account(state, &params.account_id).await;
+    if let Some(Ok(_)) = &outcome {
+        // After a folder was rebuilt, only its newest messages are back.
+        state.backfills.start(state, &params.account_id);
+    }
+    match outcome {
         None => Ok(json!(SyncResult {
             already_running: true,
             mailboxes_added: 0,

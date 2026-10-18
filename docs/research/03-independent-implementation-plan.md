@@ -147,7 +147,7 @@ flowchart LR
 - **Library:** `imap-next` + `imap-codec` behind our own `regards-imap` crate, following the rules from the [spike](07-imap-library-spike.md) §7.
 - **Built so far (Phase 1):**
   - **Mailboxes:** mailbox list with roles (SPECIAL-USE, then common names in five languages).
-  - **First sync of a mailbox:** headers of the newest 2,000 messages. Older ones are backfilled later.
+  - **First sync of a mailbox:** headers of the newest 2,000 messages. Older ones are then fetched in the background, newest first, 500 at a time, until every folder is complete; a batch is only stored under the UIDVALIDITY it was fetched with.
   - **Later syncs:**
     - **New messages:** by UID.
     - **Flag changes:** `CHANGEDSINCE` with CONDSTORE, otherwise by re-reading the stored range.
@@ -163,7 +163,7 @@ flowchart LR
   - **Actions:** read/unread, flag, archive, delete (to Trash), move, and delete for good (from Trash or Junk) go through the operation queue. They show at once, reach the server in the background, are retried while offline, and moves can be undone.
   - **Keyboard:** Gmail-style shortcuts (`j`/`k`, `e`, `#`, `s`, `Shift+U`/`Shift+I`, `z` to undo, `Esc`), with `?` for the list. Customisable sets come with settings.
 - **Still to come in Phase 1:**
-  - **Sync:** QRESYNC and backfill of older messages.
+  - **Sync:** QRESYNC.
 - **Capability-aware:** incremental flag sync with CONDSTORE/QRESYNC; efficient UID-range sync plus periodic flag resync without them (Infomaniak advertises neither before login; recheck after login). MOVE, or UIDPLUS COPY + `\Deleted` + UID EXPUNGE.
 - Gmail X-GM-EXT-1 labels and thread IDs when present.
 - **Accepted when:** the fault-injection suite passes with no panics on malformed input, and IDLE delivers new mail in under 5 s.

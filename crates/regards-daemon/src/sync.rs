@@ -25,9 +25,6 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// The first sync of a mailbox fetches at most this many of its newest messages.
-pub(crate) const INITIAL_WINDOW: u32 = 2000;
-
 /// Why a sync did not complete, in words for the account owner.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum SyncError {
@@ -153,6 +150,7 @@ pub(crate) fn spawn_one(state: Arc<State>, account_id: String) {
     tokio::spawn(async move {
         if let Some(Ok(_)) = sync_account(&state, &account_id).await {
             state.watchers.start(&state, &account_id);
+            state.backfills.start(&state, &account_id);
         }
     });
 }
@@ -269,7 +267,8 @@ pub(crate) enum FlagCheck {
     Range(u32, u32),
 }
 
-pub(crate) fn plan(stored: &Stored, selected: &Selected, condstore: bool) -> Plan {
+/// `window`: how many of the newest messages a first sync fetches.
+pub(crate) fn plan(stored: &Stored, selected: &Selected, condstore: bool, window: u32) -> Plan {
     let reset = stored.uid_validity.is_some_and(|v| v != selected.uid_validity);
     let first = reset || stored.uid_validity.is_none() || stored.uid_next.is_none();
     let known = if reset { None } else { stored.known };
@@ -277,7 +276,7 @@ pub(crate) fn plan(stored: &Stored, selected: &Selected, condstore: bool) -> Pla
     let (new, new_from) = if selected.exists == 0 {
         (None, 1)
     } else if first {
-        let start = selected.exists.saturating_sub(INITIAL_WINDOW) + 1;
+        let start = selected.exists.saturating_sub(window) + 1;
         (Some(MessageSet::Sequence(format!("{start}:*"))), 1)
     } else {
         let next = stored.uid_next.unwrap_or(1);
@@ -331,7 +330,12 @@ pub(crate) async fn sync_mailbox(
         highest_modseq: mailbox.highest_modseq.map(|v| v as u64),
         known: known_uids.first().copied().zip(known_uids.last().copied()),
     };
-    let plan = plan(&stored, &selected, session.has_capability("CONDSTORE"));
+    let plan = plan(
+        &stored,
+        &selected,
+        session.has_capability("CONDSTORE"),
+        state.limits.initial_window,
+    );
     let mut changes = Changes::default();
 
     let mut new = Vec::new();
@@ -438,7 +442,7 @@ pub(crate) async fn sync_mailbox(
     Ok(changes)
 }
 
-fn message_flags(flags: Flags) -> MessageFlags {
+pub(crate) fn message_flags(flags: Flags) -> MessageFlags {
     MessageFlags {
         seen: flags.seen,
         answered: flags.answered,
@@ -478,14 +482,14 @@ mod tests {
 
     #[test]
     fn a_first_sync_fetches_the_newest_window_and_nothing_else() {
-        let plan = plan(&NEVER_SYNCED, &selected(7, 5001, Some(9), 5000), true);
+        let plan = plan(&NEVER_SYNCED, &selected(7, 5001, Some(9), 5000), true, 2000);
         assert_eq!(plan.new, Some(MessageSet::Sequence("3001:*".into())));
         assert_eq!((plan.flags, plan.check_deletions, plan.reset), (None, false, false));
 
-        let small = super::plan(&NEVER_SYNCED, &selected(7, 4, None, 3), false);
+        let small = super::plan(&NEVER_SYNCED, &selected(7, 4, None, 3), false, 2000);
         assert_eq!(small.new, Some(MessageSet::Sequence("1:*".into())));
 
-        let empty = super::plan(&NEVER_SYNCED, &selected(7, 1, None, 0), false);
+        let empty = super::plan(&NEVER_SYNCED, &selected(7, 1, None, 0), false, 2000);
         assert_eq!(empty.new, None);
     }
 
@@ -497,14 +501,14 @@ mod tests {
             highest_modseq: Some(50),
             known: Some((1, 100)),
         };
-        let with_condstore = plan(&stored, &selected(7, 105, Some(60), 104), true);
+        let with_condstore = plan(&stored, &selected(7, 105, Some(60), 104), true, 2000);
         assert_eq!(with_condstore.new, Some(MessageSet::Uids("101:*".into())));
         assert_eq!(with_condstore.new_from, 101);
         assert_eq!(with_condstore.flags, Some(FlagCheck::ChangedSince(50)));
         assert!(with_condstore.check_deletions);
 
         // Without CONDSTORE (Infomaniak before login), flags are re-read for the stored range.
-        let without = plan(&stored, &selected(7, 105, None, 104), false);
+        let without = plan(&stored, &selected(7, 105, None, 104), false, 2000);
         assert_eq!(without.flags, Some(FlagCheck::Range(1, 100)));
     }
 
@@ -516,7 +520,7 @@ mod tests {
             highest_modseq: Some(50),
             known: Some((1, 100)),
         };
-        let plan = plan(&stored, &selected(7, 101, Some(50), 100), true);
+        let plan = plan(&stored, &selected(7, 101, Some(50), 100), true, 2000);
         assert_eq!((plan.new, plan.flags), (None, None));
         assert!(
             plan.check_deletions,
@@ -532,7 +536,7 @@ mod tests {
             highest_modseq: Some(50),
             known: Some((1, 100)),
         };
-        let plan = plan(&stored, &selected(8, 4, Some(3), 3), true);
+        let plan = plan(&stored, &selected(8, 4, Some(3), 3), true, 2000);
         assert!(plan.reset);
         assert_eq!(plan.new, Some(MessageSet::Sequence("1:*".into())));
         assert_eq!((plan.flags, plan.check_deletions), (None, false));

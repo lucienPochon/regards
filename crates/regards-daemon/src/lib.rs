@@ -6,6 +6,7 @@
 
 mod accounts;
 mod actions;
+mod backfill;
 mod feed;
 mod mail;
 mod push;
@@ -65,6 +66,27 @@ pub(crate) struct State {
     pub(crate) blobs: Blobs,
     /// Runners sending queued actions to the servers (ADR-0010).
     pub(crate) queue: queue::Queue,
+    /// Tasks fetching older mail, one per account.
+    pub(crate) backfills: backfill::Backfills,
+    pub(crate) limits: SyncLimits,
+}
+
+/// How much mail is fetched at a time (ADR-0009).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SyncLimits {
+    /// The first sync of a folder fetches this many of its newest messages.
+    pub initial_window: u32,
+    /// Older messages are then fetched in the background, this many at a time.
+    pub backfill_batch: u32,
+}
+
+impl Default for SyncLimits {
+    fn default() -> Self {
+        Self {
+            initial_window: 2000,
+            backfill_batch: 500,
+        }
+    }
 }
 
 /// A daemon that holds its data-directory lock and is listening, but not yet serving.
@@ -77,6 +99,7 @@ pub struct Daemon {
     ui_token: Option<UiToken>,
     vault: Option<Vault>,
     imap_tls: TlsOptions,
+    limits: SyncLimits,
 }
 
 impl Daemon {
@@ -121,6 +144,7 @@ impl Daemon {
             ui_token: None,
             vault: None,
             imap_tls: default_imap_tls(),
+            limits: SyncLimits::default(),
         })
     }
 
@@ -140,6 +164,12 @@ impl Daemon {
     /// Trust these certificates for IMAP instead of the defaults (tests).
     pub fn with_imap_tls(mut self, tls: TlsOptions) -> Self {
         self.imap_tls = tls;
+        self
+    }
+
+    /// Fetch mail in other amounts (tests).
+    pub fn with_sync_limits(mut self, limits: SyncLimits) -> Self {
+        self.limits = limits;
         self
     }
 
@@ -164,6 +194,7 @@ impl Daemon {
             vault,
             imap_tls,
             dirs,
+            limits,
         } = self;
         let (stop, mut stopped) = watch::channel(false);
         let feed = Arc::new(feed::Feed::new(*store.subscribe().borrow()));
@@ -179,6 +210,8 @@ impl Daemon {
             feed,
             blobs: Blobs::new(dirs.blobs()),
             queue: queue::Queue::default(),
+            backfills: backfill::Backfills::default(),
+            limits,
         });
         queue::Queue::wake_all(&state);
         let follow = tokio::spawn({
@@ -186,7 +219,7 @@ impl Daemon {
             async move { state.feed.follow(&state.store).await }
         });
         sync::spawn_all(Arc::clone(&state));
-        let backfill = tokio::spawn(mail::thread_backfill(Arc::clone(&state)));
+        let threading = tokio::spawn(mail::thread_backfill(Arc::clone(&state)));
         tracing::info!(%endpoint, "daemon listening");
 
         tokio::pin!(shutdown);
@@ -213,8 +246,9 @@ impl Daemon {
 
         tracing::info!("daemon stopping");
         state.watchers.stop_all();
+        state.backfills.stop_all();
         follow.abort();
-        backfill.abort();
+        threading.abort();
         drop(listener);
         // Releasing the lock last lets a replacement daemon start only after we stopped listening.
         drop(lock);

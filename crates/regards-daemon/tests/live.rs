@@ -5,7 +5,7 @@
 use regards_core::mailbox::Role;
 use regards_core::paths::DataDirs;
 use regards_core::secret::Secret;
-use regards_daemon::Daemon;
+use regards_daemon::{Daemon, SyncLimits};
 use regards_imap::{ImapServer, Session, SystemFlag, TlsOptions};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountSummary, ClientKind, ConnectionSecurity, DeleteResult, MailboxListResult,
@@ -435,15 +435,19 @@ async fn live_message_bodies_download_once_and_stay_unread() {
 }
 
 /// A daemon with one account on the live server, synced once.
-async fn daemon_with_account(
-    live: &Live,
-) -> (
+type WithAccount = (
     tempfile::TempDir,
     Client,
     AccountSummary,
     i64,
     tokio::task::JoinHandle<()>,
-) {
+);
+
+async fn daemon_with_account(live: &Live) -> WithAccount {
+    daemon_with_limits(live, SyncLimits::default()).await
+}
+
+async fn daemon_with_limits(live: &Live, limits: SyncLimits) -> WithAccount {
     let temp = tempfile::tempdir().unwrap();
     let token = UiToken::generate().unwrap();
     let daemon = Daemon::bind(DataDirs::at(temp.path()))
@@ -451,7 +455,8 @@ async fn daemon_with_account(
         .unwrap()
         .with_ui_token(token.clone())
         .with_vault(Vault::in_memory())
-        .with_imap_tls(live.tls.clone());
+        .with_imap_tls(live.tls.clone())
+        .with_sync_limits(limits);
     let endpoint = daemon.endpoint().clone();
     let handle = tokio::spawn(daemon.serve(std::future::pending()));
     let mut desktop = Client::connect_with(&endpoint, ClientKind::Desktop, Some(&token))
@@ -820,6 +825,56 @@ async fn live_messages_in_trash_can_be_deleted_for_good() {
     // A sync afterwards does not bring it back.
     sync(&mut desktop, &account.id).await;
     assert!(messages(&mut desktop, trash).await.messages.is_empty());
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_older_mail_is_fetched_in_the_background() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    for n in 1..=10 {
+        let flags: &[SystemFlag] = if n == 2 { &[SystemFlag::Flagged] } else { &[] };
+        seed.append(b"INBOX", flags, &message(n, &format!("M{n}"), "ada@example.test"))
+            .await
+            .unwrap();
+    }
+    // The first sync takes the newest 3; the rest come 2 at a time.
+    let limits = SyncLimits {
+        initial_window: 3,
+        backfill_batch: 2,
+    };
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_limits(&live, limits).await;
+    // Appended within a second, they share an arrival time: compare them as a set.
+    let subjects = |page: MessageListResult| {
+        page.messages
+            .into_iter()
+            .map(|m| m.subject)
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    let all: std::collections::BTreeSet<String> = (1..=10).map(|n| format!("M{n}")).collect();
+    // Only the newest 3 at first (the backfill may already have begun).
+    assert!(messages(&mut desktop, inbox).await.messages.len() < 10);
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let shown = subjects(messages(&mut desktop, inbox).await);
+        if shown == all {
+            break;
+        }
+        assert!(Instant::now() < deadline, "older mail did not arrive: {shown:?}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let page = messages(&mut desktop, inbox).await;
+    assert!(page.messages.iter().find(|m| m.subject == "M2").unwrap().flagged);
+
+    // A later sync keeps them (deletions come only from the server's UID list).
+    sync(&mut desktop, &account.id).await;
+    assert_eq!(subjects(messages(&mut desktop, inbox).await), all);
 
     seed.logout().await;
     handle.abort();
