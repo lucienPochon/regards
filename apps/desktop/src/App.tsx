@@ -3,7 +3,9 @@ import { AccountsPanel } from "./AccountsPanel";
 import { useChanges } from "./changes";
 import { MessageList, type OpenMailbox } from "./MessageList";
 import { ReadingPane } from "./ReadingPane";
+import { ShortcutHelp } from "./ShortcutHelp";
 import { UndoToast } from "./UndoToast";
+import { useShortcuts } from "./shortcuts";
 import type { UndoInfo } from "./accounts";
 import { type DaemonStatus, fetchDaemonStatus } from "./daemon";
 
@@ -18,6 +20,8 @@ export function App() {
   const [reading, setReading] = useState<number | null>(null);
   const [toast, setToast] = useState<UndoInfo | null>(null);
   const closeToast = useCallback(() => setToast(null), []);
+  const [help, setHelp] = useState(false);
+  useShortcuts({ "?": () => setHelp(true) });
 
   // Without "Checking…" in between, so change events do not make the card flicker.
   const update = useCallback(() => {
@@ -80,11 +84,16 @@ export function App() {
                 setReading(null);
                 setToast(undo);
               }}
+              onClose={() => setReading(null)}
             />
           )}
         </div>
       </div>
       {toast && <UndoToast undo={toast} onDone={closeToast} />}
+      {help && <ShortcutHelp onClose={() => setHelp(false)} />}
+      <p className="muted small hint">
+        Press <kbd>?</kbd> for keyboard shortcuts.
+      </p>
     </main>
   );
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type MessageCursor, type MessageSummary, listMessages } from "./accounts";
 import { useChanges } from "./changes";
+import { useShortcuts } from "./shortcuts";
 
 export interface OpenMailbox {
   id: number;
@@ -50,6 +51,25 @@ export function MessageList({
 
   useChanges(refresh);
 
+  // Next and previous; from nothing open, "next" opens the newest.
+  const step = (by: number) => {
+    const index = messages.findIndex((message) => message.id === selected);
+    const target = index === -1 ? (by > 0 ? 0 : -1) : index + by;
+    const message = messages[target];
+    if (message) onOpen(message.id);
+  };
+  useShortcuts({
+    j: () => step(1),
+    ArrowDown: () => step(1),
+    k: () => step(-1),
+    ArrowUp: () => step(-1),
+  });
+
+  const list = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    list.current?.querySelector(".message.selected")?.scrollIntoView({ block: "nearest" });
+  }, [selected]);
+
   const loadMore = async () => {
     if (!next) {
       return;
@@ -71,7 +91,7 @@ export function MessageList({
       {error && <p className="error">{error}</p>}
       {loading && <p className="muted">Loading…</p>}
       {!loading && messages.length === 0 && !error && <p className="muted">No messages.</p>}
-      <ul className="messages">
+      <ul className="messages" ref={list}>
         {messages.map((message) => (
           <li key={message.id}>
             <button

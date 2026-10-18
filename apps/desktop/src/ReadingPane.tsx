@@ -17,6 +17,7 @@ import {
   trashMessages,
 } from "./accounts";
 import { useChanges } from "./changes";
+import { useShortcuts } from "./shortcuts";
 
 type Load = { state: "loading" } | { state: "ready"; detail: MessageDetail } | { state: "failed"; message: string };
 
@@ -25,11 +26,13 @@ export function ReadingPane({
   accountId,
   onOpenMessage,
   onMoved,
+  onClose,
 }: {
   messageId: number;
   accountId: string;
   onOpenMessage: (id: number) => void;
   onMoved: (undo: UndoInfo | null) => void;
+  onClose: () => void;
 }) {
   const [folders, setFolders] = useState<MailboxSummary[]>([]);
   const [load, setLoad] = useState<Load>({ state: "loading" });
@@ -109,6 +112,26 @@ export function ReadingPane({
       });
   };
 
+  const ready = load.state === "ready" ? load.detail : null;
+  // In Trash or Junk, deleting means for good.
+  const shownIn = ready && folders.find((folder) => folder.id === ready.mailbox_id);
+  const disposable = shownIn?.role === "trash" || shownIn?.role === "junk";
+  const remove = () => (disposable ? setConfirmingDelete(true) : move(() => trashMessages([messageId])));
+
+  useShortcuts({
+    Escape: () => (confirmingDelete ? setConfirmingDelete(false) : onClose()),
+    ...(ready && !confirmingDelete
+      ? {
+          e: () => move(() => archiveMessages([messageId])),
+          "#": remove,
+          Delete: remove,
+          s: () => act({ flagged: !ready.message.flagged }),
+          "Shift+U": () => act({ seen: false }),
+          "Shift+I": () => act({ seen: true }),
+        }
+      : {}),
+  });
+
   if (load.state === "loading") {
     return (
       <section className="card">
@@ -126,9 +149,6 @@ export function ReadingPane({
   const { detail } = load;
   const { message } = detail;
   const attachments = detail.attachments.filter((a) => !a.inline);
-  // In Trash or Junk, deleting means for good.
-  const shownIn = folders.find((folder) => folder.id === detail.mailbox_id);
-  const disposable = shownIn?.role === "trash" || shownIn?.role === "junk";
   return (
     <article className="card reading" aria-labelledby="reading-subject">
       <h2 id="reading-subject">{message.subject || "(no subject)"}</h2>
@@ -142,15 +162,9 @@ export function ReadingPane({
         <button type="button" onClick={() => move(() => archiveMessages([messageId]))}>
           Archive
         </button>
-        {disposable ? (
-          <button type="button" onClick={() => setConfirmingDelete(true)} disabled={confirmingDelete}>
-            Delete forever
-          </button>
-        ) : (
-          <button type="button" onClick={() => move(() => trashMessages([messageId]))}>
-            Delete
-          </button>
-        )}
+        <button type="button" onClick={remove} disabled={confirmingDelete}>
+          {disposable ? "Delete forever" : "Delete"}
+        </button>
         <select
           aria-label="Move to folder"
           value=""
@@ -174,7 +188,8 @@ export function ReadingPane({
           <button type="button" className="danger" onClick={deleteForGood}>
             Delete forever
           </button>
-          <button type="button" onClick={() => setConfirmingDelete(false)}>
+          {/* Focused, so a stray Enter cancels rather than deletes. */}
+          <button type="button" onClick={() => setConfirmingDelete(false)} autoFocus>
             Cancel
           </button>
         </div>

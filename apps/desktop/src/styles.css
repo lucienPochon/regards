@@ -475,6 +475,51 @@ button.danger {
   border-color: var(--error);
 }
 
+kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+  font-size: 0.92em;
+}
+
+.hint {
+  text-align: center;
+}
+
+.help-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 0.35);
+}
+
+.help {
+  width: min(480px, 100%);
+  max-height: 100%;
+  overflow: auto;
+}
+
+.help dl {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+
+.help dl div {
+  display: grid;
+  grid-template-columns: 9em 1fr;
+  gap: 12px;
+}
+
+.help dt,
+.help dd {
+  margin: 0;
+}
+
 .toast {
   position: fixed;
   left: 50%;

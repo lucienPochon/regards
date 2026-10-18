@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { type UndoInfo, applyUndo } from "./accounts";
+import { useShortcuts } from "./shortcuts";
 
 /** How long the toast offers undo (ADR-0007: at least 10 seconds). */
 const SHOW_FOR_MS = 10_000;
@@ -20,6 +21,7 @@ export function UndoToast({ undo, onDone }: { undo: UndoInfo; onDone: () => void
       setError(String(failure));
     }
   };
+  useShortcuts(error ? {} : { z: revert, "Mod+z": revert });
 
   return (
     <div className="toast" role="status">
