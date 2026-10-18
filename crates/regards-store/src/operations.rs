@@ -305,7 +305,10 @@ mod tests {
         assert!(store.read(move |conn| due(conn, &a, 499)).await.unwrap().is_empty());
         let a = account.clone();
         assert_eq!(store.read(move |conn| next_due_at(conn, &a)).await.unwrap(), Some(500));
-        assert_eq!(store.read(accounts_with_pending).await.unwrap(), std::slice::from_ref(&account));
+        assert_eq!(
+            store.read(accounts_with_pending).await.unwrap(),
+            std::slice::from_ref(&account)
+        );
 
         store.write(move |tx| remove(tx, id)).await.unwrap();
         let a = account.clone();
