@@ -17,8 +17,8 @@ use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity,
     MailboxListResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef,
-    MoveParams, MoveResult, Principal, ServerSettings, SetFlagsParams, SetFlagsResult, SyncResult, UndoParams,
-    UndoResult, methods,
+    MoveParams, MoveResult, Principal, ServerSettings, SetFlagsParams, SetFlagsResult, SyncResult, ThreadView,
+    UndoParams, UndoResult, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -268,6 +268,16 @@ async fn message_get(bridge: State<'_, Bridge>, id: i64) -> Result<MessageDetail
         .map_err(describe)
 }
 
+/// The conversation a message belongs to, across folders, oldest first.
+#[tauri::command]
+async fn thread_get(bridge: State<'_, Bridge>, id: i64) -> Result<ThreadView, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::THREAD_GET, MessageRef { id })
+        .await
+        .map_err(describe)
+}
+
 /// Mark messages read or unread, flagged or not; applied at once, sent to the server in the background.
 #[tauri::command]
 async fn message_set_flags(
@@ -393,6 +403,7 @@ fn main() {
             mailbox_list,
             message_list,
             message_get,
+            thread_get,
             message_set_flags,
             message_archive,
             message_trash,

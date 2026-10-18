@@ -10,7 +10,7 @@ use regards_imap::{ImapServer, Session, SystemFlag, TlsOptions};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountSummary, ClientKind, ConnectionSecurity, MailboxListResult, MessageDetail,
     MessageHtml, MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveResult,
-    ServerSettings, SetFlagsParams, SetFlagsResult, SyncResult, UndoParams, UndoResult, methods,
+    ServerSettings, SetFlagsParams, SetFlagsResult, SyncResult, ThreadView, UndoParams, UndoResult, methods,
 };
 use regards_ipc::{Client, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -652,6 +652,92 @@ async fn live_archive_trash_and_undo_move_at_once_and_on_the_server() {
     assert!(subjects(messages(&mut desktop, inbox).await).contains(&"Three".to_owned()));
     server_count_becomes(&mut seed, b"INBOX", 2).await; // One and Three
     server_count_becomes(&mut seed, b"Archive", 0).await;
+
+    seed.logout().await;
+    handle.abort();
+}
+
+fn reply(n: u32, subject: &str, from: &str, parents: &[u32]) -> Vec<u8> {
+    let ids: Vec<String> = parents.iter().map(|p| format!("<sync-{p}@example.test>")).collect();
+    format!(
+        "From: {from}\r\nTo: Ada <ada@example.test>\r\nSubject: {subject}\r\n\
+         Message-ID: <sync-{n}@example.test>\r\nIn-Reply-To: {}\r\nReferences: {}\r\n\
+         Date: Sun, 18 Oct 2026 10:{n:02}:00 +0000\r\n\r\nBody {n}\r\n",
+        ids.last().unwrap(),
+        ids.join(" ")
+    )
+    .into_bytes()
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_conversations_span_folders() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    // Most servers have a Sent folder already; make sure of it.
+    let _ = seed.create_mailbox(b"Sent").await;
+    seed.append(b"INBOX", &[], &message(1, "Plans", "Ada <ada@example.test>"))
+        .await
+        .unwrap();
+    seed.append(b"Sent", &[], &reply(2, "Re: Plans", "Bob <bob@example.test>", &[1]))
+        .await
+        .unwrap();
+    seed.append(b"INBOX", &[], &message(3, "Unrelated", "carol@example.test"))
+        .await
+        .unwrap();
+    seed.append(b"INBOX", &[], &reply(4, "Re: Plans", "Ada <ada@example.test>", &[1, 2]))
+        .await
+        .unwrap();
+    let (_temp, mut desktop, _account, inbox, handle) = daemon_with_account(&live).await;
+
+    let ids: Vec<(String, i64)> = messages(&mut desktop, inbox)
+        .await
+        .messages
+        .into_iter()
+        .map(|m| (m.subject, m.id))
+        .collect();
+    let id = |subject: &str| ids.iter().find(|(s, _)| s == subject).unwrap().1;
+    let thread = |view: ThreadView| {
+        view.messages
+            .into_iter()
+            .map(|e| (e.message.subject, e.mailbox_role))
+            .collect::<Vec<_>>()
+    };
+
+    // The original, the reply in Sent and the answer to it, oldest first.
+    let view: ThreadView = desktop
+        .call(methods::THREAD_GET, MessageRef { id: id("Plans") })
+        .await
+        .unwrap();
+    let plans = [
+        ("Plans".to_owned(), Some(Role::Inbox)),
+        ("Re: Plans".to_owned(), Some(Role::Sent)),
+        ("Re: Plans".to_owned(), Some(Role::Inbox)),
+    ];
+    assert_eq!(thread(view), plans);
+    let from_reply: ThreadView = desktop
+        .call(methods::THREAD_GET, MessageRef { id: id("Re: Plans") })
+        .await
+        .unwrap();
+    assert_eq!(thread(from_reply), plans);
+    let alone: ThreadView = desktop
+        .call(methods::THREAD_GET, MessageRef { id: id("Unrelated") })
+        .await
+        .unwrap();
+    assert_eq!(thread(alone), [("Unrelated".to_owned(), Some(Role::Inbox))]);
+
+    // A message on its way to the trash shows there at once.
+    let _: MoveResult = desktop
+        .call(methods::MESSAGE_TRASH, MessageIds { ids: vec![id("Plans")] })
+        .await
+        .unwrap();
+    let moved: ThreadView = desktop
+        .call(methods::THREAD_GET, MessageRef { id: id("Re: Plans") })
+        .await
+        .unwrap();
+    assert_eq!(thread(moved)[0], ("Plans".to_owned(), Some(Role::Trash)));
 
     seed.logout().await;
     handle.abort();

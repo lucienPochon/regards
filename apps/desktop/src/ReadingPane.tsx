@@ -4,9 +4,11 @@ import {
   type MessageDetail,
   type MoveResult,
   type Person,
+  type ThreadEntry,
   type UndoInfo,
   archiveMessages,
   getMessage,
+  getThread,
   listMailboxes,
   messageHtmlUrl,
   moveMessages,
@@ -20,14 +22,17 @@ type Load = { state: "loading" } | { state: "ready"; detail: MessageDetail } | {
 export function ReadingPane({
   messageId,
   accountId,
+  onOpenMessage,
   onMoved,
 }: {
   messageId: number;
   accountId: string;
+  onOpenMessage: (id: number) => void;
   onMoved: (undo: UndoInfo | null) => void;
 }) {
   const [folders, setFolders] = useState<MailboxSummary[]>([]);
   const [load, setLoad] = useState<Load>({ state: "loading" });
+  const [thread, setThread] = useState<ThreadEntry[]>([]);
   const [showText, setShowText] = useState(false);
   const [allowRemote, setAllowRemote] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -53,12 +58,24 @@ export function ReadingPane({
     };
   }, [messageId]);
 
+  // The rest of the conversation is a nicety: without it, the message still shows.
+  const loadThread = useCallback(() => {
+    getThread(messageId)
+      .then((result) => setThread(result.messages))
+      .catch(() => setThread([]));
+  }, [messageId]);
+  useEffect(() => {
+    setThread([]);
+    loadThread();
+  }, [loadThread]);
+
   // Keep the flags shown here current; the body is cached, so this is cheap.
   const refresh = useCallback(() => {
     getMessage(messageId)
       .then((detail) => setLoad((current) => (current.state === "ready" ? { state: "ready", detail } : current)))
       .catch(() => {});
-  }, [messageId]);
+    loadThread();
+  }, [messageId, loadThread]);
   useChanges(refresh);
 
   useEffect(() => {
@@ -147,6 +164,34 @@ export function ReadingPane({
         <dt>Date</dt>
         <dd>{new Date(message.sent_at ?? message.received_at).toLocaleString()}</dd>
       </dl>
+      {thread.length > 1 && (
+        <nav className="conversation small" aria-label="Conversation">
+          <h3>Conversation · {thread.length} messages</h3>
+          <ol>
+            {thread.map((entry) => {
+              const current = entry.message.id === messageId;
+              const when = new Date(entry.message.sent_at ?? entry.message.received_at).toLocaleString();
+              return (
+                <li key={entry.message.id}>
+                  <button
+                    type="button"
+                    className={current ? "current" : undefined}
+                    aria-current={current ? "true" : undefined}
+                    disabled={current}
+                    onClick={() => onOpenMessage(entry.message.id)}
+                  >
+                    <span className={entry.message.seen ? "who" : "who unread"}>
+                      {entry.message.from?.name ?? entry.message.from?.address ?? "(unknown sender)"}
+                    </span>
+                    <span className="muted"> · {when}</span>
+                    <span className="folder">{entry.mailbox_name}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+      )}
       {detail.has_html && (
         <div className="view-options small">
           <button type="button" onClick={() => setShowText((text) => !text)}>

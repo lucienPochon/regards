@@ -6,12 +6,14 @@ use crate::sync;
 use regards_core::{body, html};
 use regards_ipc::protocol::{
     MessageCursor, MessageDetail, MessageHtml, MessageHtmlParams, MessageListParams, MessageListResult, MessageRef,
-    MessageSummary, RpcError, codes,
+    MessageSummary, RpcError, ThreadEntry, ThreadView, codes,
 };
 use regards_store::mailboxes::Mailbox;
 use regards_store::messages::{self, Cursor, Message};
 use regards_store::{StoreError, mailboxes};
 use serde_json::{Value, json};
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 const DEFAULT_PAGE: u32 = 50;
 const MAX_PAGE: u32 = 500;
@@ -190,5 +192,76 @@ fn summary(m: Message) -> MessageSummary {
         flagged: m.flags.flagged,
         answered: m.flags.answered,
         size: m.size,
+    }
+}
+
+/// The conversation of a message, across folders.
+pub(crate) async fn thread(state: &State, params: MessageRef) -> Result<Value, RpcError> {
+    let id = params.id;
+    let entries = state
+        .store
+        .read(move |conn| {
+            let Some(message) = messages::get(conn, id)? else {
+                return Ok(None);
+            };
+            let rows = match message.thread_id {
+                Some(thread) => messages::in_thread(conn, thread)?,
+                None => vec![message],
+            };
+            let mut folders: HashMap<i64, Option<Mailbox>> = HashMap::new();
+            let mut entries = Vec::new();
+            for row in rows {
+                // A message on its way to another folder is shown there.
+                let shown_in = row.moving_to.unwrap_or(row.mailbox_id);
+                let folder = match folders.entry(shown_in) {
+                    Entry::Occupied(known) => known.into_mut(),
+                    Entry::Vacant(new) => new.insert(mailboxes::get(conn, shown_in)?),
+                };
+                let Some(folder) = folder else {
+                    continue;
+                };
+                entries.push(ThreadEntry {
+                    mailbox_id: folder.id,
+                    mailbox_name: folder.name.clone(),
+                    mailbox_role: folder.role,
+                    message: summary(row),
+                });
+            }
+            Ok(Some(entries))
+        })
+        .await
+        .map_err(store_error)?;
+    let messages = entries.ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such message"))?;
+    Ok(json!(ThreadView { messages }))
+}
+
+/// Thread the messages stored before threading existed, a batch at a time so
+/// other writes are not held up.
+pub(crate) async fn thread_backfill(state: std::sync::Arc<State>) {
+    match state.store.read(regards_store::threads::any_missing).await {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(error) => {
+            tracing::warn!(%error, "checking for unthreaded messages failed");
+            return;
+        }
+    }
+    let mut total = 0;
+    loop {
+        match state
+            .store
+            .write(|tx| regards_store::threads::assign_missing(tx, 500))
+            .await
+        {
+            Ok(done) if done.value == 0 => break,
+            Ok(done) => total += done.value,
+            Err(error) => {
+                tracing::warn!(%error, "threading stored messages failed");
+                return;
+            }
+        }
+    }
+    if total > 0 {
+        tracing::info!(messages = total, "threaded stored messages");
     }
 }

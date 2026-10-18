@@ -158,9 +158,10 @@ flowchart LR
   - **Push:** one IDLE connection per account on the inbox, with a catch-up sync before each IDLE, re-IDLE every 25 minutes, and reconnect with backoff. Servers without IDLE are polled every 5 minutes. Measured against Dovecot: about 0.6 s from delivery to the store.
   - **Connections:** addresses are tried "Happy Eyeballs" style (RFC 8305), so a broken IPv6 route costs 250 ms, not seconds.
   - **Live updates in the UI:** a change feed (ADR-0007) notifies subscribed clients of every committed change and sync-status change. The app refreshes on those events and no longer polls.
+  - **Conversations:** References threading across folders (ADR-0009 §5). The reading pane lists the other messages of the conversation, wherever they are, and opens them.
 - **Still to come in Phase 1:**
   - **Sync:** QRESYNC and backfill of older messages.
-  - **Threading and links:** References threading, and opening links from messages in the browser. Opening a message already shows it: the source is downloaded once (`BODY.PEEK[]`, so it stays unread) and kept in `blobs/`; HTML is sanitised and shown in a sandboxed frame with remote images blocked until allowed.
+  - **Links:** opening links from messages in the browser. Opening a message already shows it: the source is downloaded once (`BODY.PEEK[]`, so it stays unread) and kept in `blobs/`; HTML is sanitised and shown in a sandboxed frame with remote images blocked until allowed.
   - **Actions:** permanent delete from Trash, and keyboard shortcuts. Read/unread, flag, archive, delete (to Trash) and move already go through the operation queue: they show at once, reach the server in the background, are retried while offline, and moves can be undone.
 - **Capability-aware:** incremental flag sync with CONDSTORE/QRESYNC; efficient UID-range sync plus periodic flag resync without them (Infomaniak advertises neither before login; recheck after login). MOVE, or UIDPLUS COPY + `\Deleted` + UID EXPUNGE.
 - Gmail X-GM-EXT-1 labels and thread IDs when present.

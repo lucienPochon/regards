@@ -366,6 +366,61 @@ button:disabled {
   padding-left: 18px;
 }
 
+.conversation {
+  margin: 0 0 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.conversation h3 {
+  margin: 0 0 4px;
+  font-size: inherit;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.conversation ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.conversation button {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 4px;
+  width: 100%;
+  margin: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conversation button:hover:not(:disabled) {
+  background: var(--bg);
+}
+
+.conversation button.current {
+  background: var(--bg);
+  cursor: default;
+  opacity: 1;
+}
+
+.conversation .who.unread {
+  font-weight: 600;
+}
+
+.conversation .folder {
+  margin-left: auto;
+  color: var(--muted);
+}
+
 .view-options {
   display: flex;
   flex-wrap: wrap;

@@ -75,6 +75,7 @@ export function App() {
             <ReadingPane
               messageId={reading}
               accountId={open.accountId}
+              onOpenMessage={setReading}
               onMoved={(undo) => {
                 setReading(null);
                 setToast(undo);

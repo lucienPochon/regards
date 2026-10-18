@@ -38,6 +38,8 @@ pub mod methods {
     pub const MESSAGE_GET: &str = "message.get";
     /// The sanitised HTML version of a message (ADR-0006 §4). `ui` only for now.
     pub const MESSAGE_HTML: &str = "message.html";
+    /// The conversation a message belongs to, across folders. `ui` only for now.
+    pub const THREAD_GET: &str = "thread.get";
     /// Mark messages read or unread, flagged or not. Applied at once, sent to the
     /// server by the operation queue (ADR-0010). `ui` only for now.
     pub const MESSAGE_SET_FLAGS: &str = "message.set_flags";
@@ -416,6 +418,21 @@ pub struct SetFlagsParams {
 pub struct SetFlagsResult {
     /// Messages whose flags actually changed.
     pub changed: usize,
+}
+
+/// One message of a conversation, and where it is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThreadEntry {
+    pub message: MessageSummary,
+    pub mailbox_id: i64,
+    pub mailbox_name: String,
+    pub mailbox_role: Option<Role>,
+}
+
+/// Result of [`methods::THREAD_GET`]: oldest first, one entry per message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThreadView {
+    pub messages: Vec<ThreadEntry>,
 }
 
 /// Parameters of [`methods::MESSAGE_ARCHIVE`] and [`methods::MESSAGE_TRASH`].

@@ -55,6 +55,8 @@ pub struct Message {
     pub blob_hash: Option<String>,
     /// The folder this message is being moved to, until the server has done it.
     pub moving_to: Option<i64>,
+    /// Its conversation (ADR-0009 §5); `None` until threaded.
+    pub thread_id: Option<i64>,
 }
 
 /// Where a page of a message list ends: list strictly older messages next.
@@ -66,6 +68,9 @@ pub struct Cursor {
 
 /// Insert messages, or replace them if a row for the same UID exists.
 pub fn upsert(tx: &Transaction<'_>, mailbox_id: i64, messages: &[NewMessage]) -> Result<usize, StoreError> {
+    let account_id: String = tx.query_row("SELECT account_id FROM mailboxes WHERE id = ?1", [mailbox_id], |r| {
+        r.get(0)
+    })?;
     let mut statement = tx.prepare_cached(
         "INSERT INTO messages (mailbox_id, uid, modseq, seen, answered, flagged, draft, deleted, keywords, \
          received_at, size, sent_at, subject, from_name, from_address, to_json, cc_json, message_id_header, \
@@ -77,33 +82,39 @@ pub fn upsert(tx: &Transaction<'_>, mailbox_id: i64, messages: &[NewMessage]) ->
          size = excluded.size, sent_at = excluded.sent_at, subject = excluded.subject, \
          from_name = excluded.from_name, from_address = excluded.from_address, to_json = excluded.to_json, \
          cc_json = excluded.cc_json, message_id_header = excluded.message_id_header, \
-         in_reply_to = excluded.in_reply_to, references_ids = excluded.references_ids",
+         in_reply_to = excluded.in_reply_to, references_ids = excluded.references_ids RETURNING id",
     )?;
     for message in messages {
         let headers = &message.headers;
         let received_at = message.received_at.or(headers.date).unwrap_or(0);
-        statement.execute(params![
-            mailbox_id,
-            message.uid,
-            message.modseq.map(|m| m as i64),
-            message.flags.seen,
-            message.flags.answered,
-            message.flags.flagged,
-            message.flags.draft,
-            message.flags.deleted,
-            json(&message.flags.keywords),
-            received_at,
-            message.size,
-            headers.date,
-            headers.subject,
-            headers.from.as_ref().and_then(|p| p.name.clone()),
-            headers.from.as_ref().and_then(|p| p.address.clone()),
-            json(&headers.to),
-            json(&headers.cc),
-            headers.message_id,
-            json(&headers.in_reply_to),
-            json(&headers.references),
-        ])?;
+        let row: i64 = statement.query_row(
+            params![
+                mailbox_id,
+                message.uid,
+                message.modseq.map(|m| m as i64),
+                message.flags.seen,
+                message.flags.answered,
+                message.flags.flagged,
+                message.flags.draft,
+                message.flags.deleted,
+                json(&message.flags.keywords),
+                received_at,
+                message.size,
+                headers.date,
+                headers.subject,
+                headers.from.as_ref().and_then(|p| p.name.clone()),
+                headers.from.as_ref().and_then(|p| p.address.clone()),
+                json(&headers.to),
+                json(&headers.cc),
+                headers.message_id,
+                json(&headers.in_reply_to),
+                json(&headers.references),
+            ],
+            |r| r.get(0),
+        )?;
+        let mut references = headers.in_reply_to.clone();
+        references.extend(headers.references.iter().cloned());
+        crate::threads::assign(tx, &account_id, row, headers.message_id.as_deref(), &references)?;
     }
     Ok(messages.len())
 }
@@ -199,7 +210,7 @@ pub fn clear(tx: &Transaction<'_>, mailbox_id: i64) -> Result<usize, StoreError>
 }
 
 const COLUMNS: &str = "id, mailbox_id, uid, modseq, seen, answered, flagged, draft, deleted, keywords, \
-    received_at, size, sent_at, subject, from_name, from_address, to_json, cc_json, message_id_header, blob_hash, moving_to";
+    received_at, size, sent_at, subject, from_name, from_address, to_json, cc_json, message_id_header, blob_hash, moving_to, thread_id";
 
 /// Record where the downloaded source of message `id` is stored.
 pub fn set_blob(tx: &Transaction<'_>, id: i64, hash: &str) -> Result<(), StoreError> {
@@ -226,6 +237,23 @@ pub fn list(
         .map(|row| row?)
         .collect::<Result<Vec<_>, _>>()?;
     Ok(messages)
+}
+
+/// The messages of a conversation, oldest first, one per Message-ID (copies of
+/// one message in several folders are listed once).
+pub fn in_thread(conn: &Connection, thread_id: i64) -> Result<Vec<Message>, StoreError> {
+    let mut statement = conn.prepare_cached(&format!(
+        "SELECT {COLUMNS} FROM messages WHERE thread_id = ?1 ORDER BY COALESCE(sent_at, received_at), id"
+    ))?;
+    let rows = statement
+        .query_map([thread_id], from_row)?
+        .map(|row| row?)
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut seen = std::collections::HashSet::new();
+    Ok(rows
+        .into_iter()
+        .filter(|m| m.message_id.as_ref().is_none_or(|id| seen.insert(id.clone())))
+        .collect())
 }
 
 pub fn get(conn: &Connection, id: i64) -> Result<Option<Message>, StoreError> {
@@ -268,6 +296,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Message, StoreError>> {
             message_id: row.get(18)?,
             blob_hash: row.get(19)?,
             moving_to: row.get(20)?,
+            thread_id: row.get(21)?,
         })
     })();
     Ok(message)

@@ -16,6 +16,7 @@ pub mod mailboxes;
 pub mod messages;
 mod migrate;
 pub mod operations;
+pub mod threads;
 pub mod undo;
 
 use regards_core::paths::DataDirs;

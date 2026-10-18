@@ -138,6 +138,18 @@ export function getMessage(id: number): Promise<MessageDetail> {
   return invoke<MessageDetail>("message_get", { id });
 }
 
+export interface ThreadEntry {
+  message: MessageSummary;
+  mailbox_id: number;
+  mailbox_name: string;
+  mailbox_role: Role | null;
+}
+
+/** The conversation a message belongs to, across folders, oldest first. */
+export function getThread(id: number): Promise<{ messages: ThreadEntry[] }> {
+  return invoke("thread_get", { id });
+}
+
 /**
  * Where the sandboxed reading frame loads a message's sanitised HTML from
  * (the `regards-mail` scheme, served by the desktop bridge with a strict CSP).

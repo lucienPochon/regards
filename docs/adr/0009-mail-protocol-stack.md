@@ -65,6 +65,11 @@ We must support generic IMAP/SMTP, Gmail and Microsoft 365/Outlook. Tenants may 
    - **HTTP:** `reqwest` with rustls (for Graph, the Gmail API and autodiscovery).
 4. **Account setup and autoconfiguration:** in order, Mozilla ISPDB-style autoconfig, the provider's well-known endpoints, DNS SRV (RFC 6186), then manual entry. Our own provider presets are written from public provider documentation.
 5. **Threading:** JWZ-style `References`/`In-Reply-To` threading, with provider thread IDs (Gmail thread ID, Graph `conversationId`) preferred when available and subject fallback only as a last resort.
+   - **Implementation (Phase 1, References first):**
+     - **Grouping:** every Message-ID a message has or refers to (Message-ID, In-Reply-To, References) maps to one thread per account (`thread_ids`). A message joins the thread of any ID it shares, so a reply that arrives before its parent still meets it. A message that links two threads merges them.
+     - **Across folders:** copies in Inbox, Sent and All Mail share a Message-ID and so a thread. `thread.get` returns the conversation oldest first, one entry per message, with the folder it is in (or on its way to).
+     - **When:** each message is threaded as sync stores it. Messages stored before threading existed are threaded in the background at startup, 500 at a time.
+     - **Not yet:** the JWZ parent tree (replies are a flat list), subject fallback, and Gmail thread IDs.
 
 ## Alternatives considered
 

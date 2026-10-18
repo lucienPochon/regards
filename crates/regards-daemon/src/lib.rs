@@ -186,6 +186,7 @@ impl Daemon {
             async move { state.feed.follow(&state.store).await }
         });
         sync::spawn_all(Arc::clone(&state));
+        let backfill = tokio::spawn(mail::thread_backfill(Arc::clone(&state)));
         tracing::info!(%endpoint, "daemon listening");
 
         tokio::pin!(shutdown);
@@ -213,6 +214,7 @@ impl Daemon {
         tracing::info!("daemon stopping");
         state.watchers.stop_all();
         follow.abort();
+        backfill.abort();
         drop(listener);
         // Releasing the lock last lets a replacement daemon start only after we stopped listening.
         drop(lock);
