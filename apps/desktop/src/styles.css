@@ -140,17 +140,33 @@ button:disabled {
   list-style: none;
 }
 
-.accounts li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+.accounts > li {
   padding: 10px 0;
   border-top: 1px solid var(--border);
 }
 
-.accounts li button {
+.account-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.account-head .actions {
+  display: flex;
+  gap: 8px;
+}
+
+.account-head button {
   margin-top: 0;
+}
+
+.folders {
+  margin: 8px 0 0;
+  padding: 0 0 0 12px;
+  list-style: none;
+  columns: 2;
+  font-size: 14px;
 }
 
 .account-form {

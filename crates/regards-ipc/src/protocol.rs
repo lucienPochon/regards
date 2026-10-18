@@ -1,6 +1,7 @@
 //! JSON-RPC 2.0 messages and the typed Regards methods.
 
 use crate::token::UiToken;
+use regards_core::mailbox::Role;
 use regards_core::secret::Secret;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -25,6 +26,10 @@ pub mod methods {
     pub const ACCOUNT_ADD: &str = "account.add";
     /// Remove an account and its stored password. `ui` only (ADR-0006).
     pub const ACCOUNT_REMOVE: &str = "account.remove";
+    /// Sync an account now and wait for the result. `ui` only for now.
+    pub const ACCOUNT_SYNC: &str = "account.sync";
+    /// The mailboxes of an account and its sync state. `ui` only for now.
+    pub const MAILBOX_LIST: &str = "mailbox.list";
 }
 
 /// Error codes. Negative values in -32768..=-32000 are reserved by JSON-RPC;
@@ -50,6 +55,8 @@ pub mod codes {
     pub const ACCOUNT_CHECK_FAILED: i32 = -32010;
     /// The operating system's credential store could not be used.
     pub const CREDENTIAL_STORE: i32 = -32011;
+    /// A sync with the mail server failed; the message says why.
+    pub const SYNC_FAILED: i32 = -32012;
 }
 
 /// A client request.
@@ -246,6 +253,50 @@ pub struct AccountSummary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AccountRemoveParams {
     pub id: String,
+}
+
+/// Parameters naming one account: [`methods::ACCOUNT_SYNC`], [`methods::MAILBOX_LIST`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountRef {
+    pub account_id: String,
+}
+
+/// Where an account's sync stands.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncState {
+    pub running: bool,
+    /// Unix time in milliseconds of the last complete sync since the daemon started.
+    pub last_success_at: Option<i64>,
+    /// Why the last sync failed, if it did.
+    pub last_error: Option<String>,
+}
+
+/// A mailbox as clients see it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MailboxSummary {
+    pub id: i64,
+    pub name: String,
+    pub delimiter: Option<char>,
+    pub role: Option<Role>,
+    pub selectable: bool,
+}
+
+/// Result of [`methods::MAILBOX_LIST`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MailboxListResult {
+    /// Role folders first (inbox, drafts, sent, …), then by name.
+    pub mailboxes: Vec<MailboxSummary>,
+    pub sync: SyncState,
+}
+
+/// Result of [`methods::ACCOUNT_SYNC`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncResult {
+    /// `true` when a sync was already running; nothing else was started.
+    pub already_running: bool,
+    pub mailboxes_added: usize,
+    pub mailboxes_updated: usize,
+    pub mailboxes_removed: usize,
 }
 
 /// Why an account check failed: `data.reason` of [`codes::ACCOUNT_CHECK_FAILED`].

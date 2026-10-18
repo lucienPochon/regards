@@ -13,8 +13,8 @@ use regards_core::paths::DataDirs;
 use regards_core::secret::Secret;
 use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity, Principal, ServerSettings,
-    methods,
+    AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity,
+    MailboxListResult, Principal, ServerSettings, SyncResult, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -206,6 +206,25 @@ async fn account_remove(bridge: State<'_, Bridge>, id: String) -> Result<(), Str
     Ok(())
 }
 
+#[tauri::command]
+async fn mailbox_list(bridge: State<'_, Bridge>, account_id: String) -> Result<MailboxListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MAILBOX_LIST, AccountRef { account_id })
+        .await
+        .map_err(describe)
+}
+
+/// Sync an account now; resolves when the sync is done.
+#[tauri::command]
+async fn account_sync(bridge: State<'_, Bridge>, account_id: String) -> Result<SyncResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::ACCOUNT_SYNC, AccountRef { account_id })
+        .await
+        .map_err(describe)
+}
+
 /// Daemon errors carry messages written for people; show those as they are.
 fn describe(error: ClientError) -> String {
     match error {
@@ -240,7 +259,9 @@ fn main() {
             daemon_status,
             account_list,
             account_add,
-            account_remove
+            account_remove,
+            account_sync,
+            mailbox_list
         ])
         .build(tauri::generate_context!())
         .expect("failed to start the Regards desktop app");

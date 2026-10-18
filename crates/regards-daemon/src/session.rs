@@ -115,6 +115,14 @@ impl Session {
                 self.require_ui()?;
                 accounts::remove(&self.state, params(request)?).await
             }
+            methods::ACCOUNT_SYNC => {
+                self.require_ui()?;
+                accounts::sync_now(&self.state, params(request)?).await
+            }
+            methods::MAILBOX_LIST => {
+                self.require_ui()?;
+                accounts::mailboxes(&self.state, params(request)?).await
+            }
             other => Err(RpcError::new(
                 codes::METHOD_NOT_FOUND,
                 format!("unknown method \"{other}\""),

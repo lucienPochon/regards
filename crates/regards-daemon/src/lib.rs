@@ -6,6 +6,7 @@
 
 mod accounts;
 mod session;
+mod sync;
 
 use regards_core::paths::DataDirs;
 use regards_imap::TlsOptions;
@@ -48,6 +49,8 @@ pub(crate) struct State {
     pub(crate) vault: OnceCell<Result<Vault, String>>,
     /// Which certificates IMAP connections trust.
     pub(crate) imap_tls: TlsOptions,
+    /// Sync progress per account.
+    pub(crate) sync: sync::Tracker,
 }
 
 /// A daemon that holds its data-directory lock and is listening, but not yet serving.
@@ -156,7 +159,9 @@ impl Daemon {
             store,
             vault: OnceCell::new_with(vault.map(Ok)),
             imap_tls,
+            sync: sync::Tracker::default(),
         });
+        sync::spawn_all(Arc::clone(&state));
         tracing::info!(%endpoint, "daemon listening");
 
         tokio::pin!(shutdown);

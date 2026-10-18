@@ -8,7 +8,10 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Every migration, in order. Append only; never edit a merged migration.
-const MIGRATIONS: &[M<'static>] = &[M::up(include_str!("../migrations/0001_accounts.sql"))];
+const MIGRATIONS: &[M<'static>] = &[
+    M::up(include_str!("../migrations/0001_accounts.sql")),
+    M::up(include_str!("../migrations/0002_mailboxes.sql")),
+];
 
 /// Backups kept before older ones are deleted.
 const BACKUPS_KEPT: usize = 3;
@@ -76,6 +79,35 @@ mod tests {
     #[test]
     fn migrations_are_valid() {
         migrations().validate().unwrap();
+    }
+
+    #[test]
+    fn a_version_1_database_upgrades_with_a_backup_and_keeps_its_accounts() {
+        let temp = tempfile::tempdir().unwrap();
+        let backups = temp.path().join("backups");
+        let mut conn = Connection::open(temp.path().join("mail.db")).unwrap();
+        run(&Migrations::from_slice(&MIGRATIONS[..1]), &mut conn, &backups).unwrap();
+        conn.execute(
+            "INSERT INTO accounts (id, display_name, email, auth_kind, username, secret_key, imap_host, imap_port, \
+             imap_security, smtp_host, smtp_port, smtp_security, created_at, position) \
+             VALUES ('a', 'Ada', 'ada@example.test', 'password', 'ada', 'a/mail-password', 'h', 993, 'tls', 'h', 587, \
+             'starttls', 0, 0)",
+            [],
+        )
+        .unwrap();
+
+        to_latest(&mut conn, &backups).unwrap();
+        let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+        assert_eq!(version as usize, MIGRATIONS.len());
+        let accounts: i64 = conn
+            .query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(accounts, 1);
+        assert_eq!(
+            std::fs::read_dir(&backups).unwrap().count(),
+            1,
+            "a backup of the v1 database"
+        );
     }
 
     #[test]

@@ -5,7 +5,7 @@ mod fake_imap;
 
 use fake_imap::{PASSWORD, Pki, fake_server, pki};
 use regards_core::secret::Secret;
-use regards_imap::{ImapError, ImapServer, TlsOptions, verify_login};
+use regards_imap::{ImapError, ImapServer, Session, TlsOptions, verify_login};
 use tokio::net::TcpListener;
 
 fn trusting(pki: &Pki) -> TlsOptions {
@@ -24,12 +24,15 @@ fn localhost(port: u16) -> ImapServer {
 #[tokio::test]
 async fn signs_in_and_reports_the_post_login_capabilities() {
     let pki = pki(&["localhost"]);
-    let (port, password) = fake_server(&pki, "* OK ready\r\n", PASSWORD).await;
+    let (port, mut password) = fake_server(&pki, "* OK ready\r\n", PASSWORD).await;
     let check = verify_login(&localhost(port), "ada", &Secret::new(PASSWORD), &trusting(&pki))
         .await
         .unwrap();
-    assert_eq!(check.capabilities, ["IMAP4REV1", "IDLE", "MOVE", "UIDPLUS"]);
-    assert_eq!(password.await.unwrap().as_deref(), Some(PASSWORD));
+    assert_eq!(
+        check.capabilities,
+        ["IMAP4REV1", "IDLE", "MOVE", "UIDPLUS", "SPECIAL-USE"]
+    );
+    assert_eq!(password.next().await.as_deref(), Some(PASSWORD));
 }
 
 #[tokio::test]
@@ -46,33 +49,33 @@ async fn a_wrong_password_is_reported_with_the_server_text() {
 async fn passwords_with_quotes_backslashes_and_accents_arrive_intact() {
     let pki = pki(&["localhost"]);
     let tricky = "p\"a\\ss wörd 🙂";
-    let (port, received) = fake_server(&pki, "* OK ready\r\n", tricky).await;
+    let (port, mut received) = fake_server(&pki, "* OK ready\r\n", tricky).await;
     verify_login(&localhost(port), "ada", &Secret::new(tricky), &trusting(&pki))
         .await
         .unwrap();
-    assert_eq!(received.await.unwrap().as_deref(), Some(tricky));
+    assert_eq!(received.next().await.as_deref(), Some(tricky));
 }
 
 #[tokio::test]
 async fn a_certificate_from_an_unknown_authority_is_refused() {
     let pki = pki(&["localhost"]);
-    let (port, password) = fake_server(&pki, "* OK ready\r\n", PASSWORD).await;
+    let (port, mut password) = fake_server(&pki, "* OK ready\r\n", PASSWORD).await;
     let error = verify_login(&localhost(port), "ada", &Secret::new(PASSWORD), &TlsOptions::platform())
         .await
         .unwrap_err();
     assert!(matches!(error, ImapError::Tls(_)), "got {error:?}");
-    assert_eq!(password.await.unwrap(), None, "no password may be sent");
+    assert_eq!(password.next().await, None, "no password may be sent");
 }
 
 #[tokio::test]
 async fn a_certificate_for_another_host_is_refused() {
     let pki = pki(&["mail.other.test"]);
-    let (port, password) = fake_server(&pki, "* OK ready\r\n", PASSWORD).await;
+    let (port, mut password) = fake_server(&pki, "* OK ready\r\n", PASSWORD).await;
     let error = verify_login(&localhost(port), "ada", &Secret::new(PASSWORD), &trusting(&pki))
         .await
         .unwrap_err();
     assert!(matches!(error, ImapError::Tls(_)), "got {error:?}");
-    assert_eq!(password.await.unwrap(), None);
+    assert_eq!(password.next().await, None);
 }
 
 #[tokio::test]
@@ -133,4 +136,66 @@ async fn live_server_sign_in() {
         .await
         .unwrap_err();
     assert!(matches!(error, ImapError::AuthFailed(_)), "got {error:?}");
+}
+
+#[tokio::test]
+async fn lists_mailboxes_with_decoded_names_and_attributes() {
+    let pki = pki(&["localhost"]);
+    let (port, _) = fake_server(&pki, "* OK ready\r\n", PASSWORD).await;
+    let mut session = Session::login(&localhost(port), "ada", &Secret::new(PASSWORD), &trusting(&pki))
+        .await
+        .unwrap();
+    assert!(session.has_capability("special-use"));
+    let mailboxes = session.list_mailboxes().await.unwrap();
+    session.logout().await;
+
+    let names: Vec<&str> = mailboxes.iter().map(|m| m.name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "INBOX",
+            "Sent",
+            "Drafts",
+            "Trash",
+            "Spam",
+            "Projects",
+            "Projects/Résumé"
+        ]
+    );
+    let resume = &mailboxes[6];
+    assert_eq!(
+        resume.remote_name, b"Projects/R&AOk-sum&AOk-",
+        "the wire name is kept for commands"
+    );
+    assert_eq!(resume.delimiter, Some('/'));
+    assert!(mailboxes[1].attributes.iter().any(|a| a == r"\Sent"));
+    assert!(
+        mailboxes[5]
+            .attributes
+            .iter()
+            .any(|a| a.eq_ignore_ascii_case(r"\Noselect"))
+    );
+}
+
+/// Folder list of a real server: `REGARDS_TEST_IMAP=… REGARDS_TEST_IMAP_CA=… cargo test -- --ignored`
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_server_lists_mailboxes() {
+    let address = std::env::var("REGARDS_TEST_IMAP").unwrap();
+    let (host, port) = address.rsplit_once(':').unwrap();
+    let ca = std::fs::read(std::env::var("REGARDS_TEST_IMAP_CA").unwrap()).unwrap();
+    let tls = TlsOptions::platform().with_extra_roots_pem(&ca).unwrap();
+    let server = ImapServer {
+        host: host.into(),
+        port: port.parse().unwrap(),
+    };
+    let user = std::env::var("REGARDS_TEST_IMAP_USER").unwrap_or_else(|_| "regards-test".into());
+    let password = Secret::new(std::env::var("REGARDS_TEST_IMAP_PASSWORD").unwrap_or_else(|_| "pass".into()));
+    let mut session = Session::login(&server, &user, &password, &tls).await.unwrap();
+    let mailboxes = session.list_mailboxes().await.unwrap();
+    session.logout().await;
+    for mailbox in &mailboxes {
+        println!("{:?} {:?} {:?}", mailbox.name, mailbox.delimiter, mailbox.attributes);
+    }
+    assert!(mailboxes.iter().any(|m| m.name == "INBOX"));
 }

@@ -5,7 +5,7 @@ Regards is a local-first, open-source email client for **Windows, macOS and Linu
 > **Status: pre-alpha (Phase 0, foundation).** No mail features yet. What exists today:
 > - the background service (daemon) and its local API
 > - the `regards` CLI
-> - a minimal desktop window that starts the service and shows its status
+> - a minimal desktop window that starts the service, adds IMAP accounts (sign-in checked, password in the OS credential store) and shows their folders
 >
 > See the [plan](docs/research/03-independent-implementation-plan.md).
 

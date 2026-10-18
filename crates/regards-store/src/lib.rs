@@ -11,6 +11,7 @@
 //! The daemon is the only process that opens the database (ADR-0005).
 
 pub mod accounts;
+pub mod mailboxes;
 mod migrate;
 
 use regards_core::paths::DataDirs;

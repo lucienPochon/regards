@@ -4,13 +4,14 @@
 mod fake_imap;
 
 use fake_imap::{PASSWORD, fake_server, pki};
+use regards_core::mailbox::Role;
 use regards_core::paths::DataDirs;
 use regards_core::secret::Secret;
 use regards_daemon::Daemon;
 use regards_imap::TlsOptions;
 use regards_ipc::protocol::{
-    AccountAddParams, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity, ServerSettings, codes,
-    methods,
+    AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity,
+    MailboxListResult, ServerSettings, SyncResult, codes, methods,
 };
 use regards_ipc::{Client, ClientError, Endpoint, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -104,7 +105,7 @@ async fn agents_cannot_list_add_or_remove_accounts() {
 #[tokio::test]
 async fn adding_verifies_the_sign_in_then_stores_the_account_and_password() {
     let pki = pki(&["localhost"]);
-    let (port, sent) = fake_server(&pki, "* OK ready\r\n", PASSWORD).await;
+    let (port, mut logins) = fake_server(&pki, "* OK ready\r\n", PASSWORD).await;
     let running = start(
         TlsOptions::platform()
             .with_extra_roots_pem(pki.ca_pem.as_bytes())
@@ -117,13 +118,16 @@ async fn adding_verifies_the_sign_in_then_stores_the_account_and_password() {
         .call(methods::ACCOUNT_ADD, params("  Ada@Example.test ", port, PASSWORD))
         .await
         .unwrap();
-    assert_eq!(sent.await.unwrap().as_deref(), Some(PASSWORD));
+    assert_eq!(logins.next().await.as_deref(), Some(PASSWORD));
     assert_eq!(added.email, "Ada@Example.test");
     assert_eq!(
         added.username, "Ada@Example.test",
         "the user name defaults to the address"
     );
-    assert_eq!(added.imap_capabilities, ["IMAP4REV1", "IDLE", "MOVE", "UIDPLUS"]);
+    assert_eq!(
+        added.imap_capabilities,
+        ["IMAP4REV1", "IDLE", "MOVE", "UIDPLUS", "SPECIAL-USE"]
+    );
 
     let listed: Vec<AccountSummary> = desktop.call(methods::ACCOUNT_LIST, Value::Null).await.unwrap();
     assert_eq!(listed, vec![added.clone()]);
@@ -212,4 +216,172 @@ async fn invalid_input_is_rejected_before_any_network_access() {
         let (code, _) = rpc_error(desktop.call::<_, Value>(methods::ACCOUNT_ADD, bad).await);
         assert_eq!(code, codes::INVALID_PARAMS);
     }
+}
+
+/// Poll `mailbox.list` until the first sync finished (or failed).
+async fn synced_mailboxes(desktop: &mut Client, account_id: &str) -> MailboxListResult {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        let result: MailboxListResult = desktop
+            .call(
+                methods::MAILBOX_LIST,
+                AccountRef {
+                    account_id: account_id.into(),
+                },
+            )
+            .await
+            .unwrap();
+        let done = !result.sync.running && (result.sync.last_success_at.is_some() || result.sync.last_error.is_some());
+        if done {
+            return result;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no sync result in time: {result:?}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+}
+
+#[tokio::test]
+async fn mailboxes_are_synced_after_adding_with_roles_and_on_request() {
+    let pki = pki(&["localhost"]);
+    let (port, _) = fake_server(&pki, "* OK ready\r\n", PASSWORD).await;
+    let running = start(
+        TlsOptions::platform()
+            .with_extra_roots_pem(pki.ca_pem.as_bytes())
+            .unwrap(),
+    )
+    .await;
+    let mut desktop = running.desktop().await;
+    let added: AccountSummary = desktop
+        .call(methods::ACCOUNT_ADD, params("ada@example.test", port, PASSWORD))
+        .await
+        .unwrap();
+
+    let listed = synced_mailboxes(&mut desktop, &added.id).await;
+    assert_eq!(listed.sync.last_error, None);
+    let summary: Vec<(&str, Option<Role>, bool)> = listed
+        .mailboxes
+        .iter()
+        .map(|m| (m.name.as_str(), m.role, m.selectable))
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            ("INBOX", Some(Role::Inbox), true),
+            ("Drafts", Some(Role::Drafts), true),
+            ("Sent", Some(Role::Sent), true),
+            ("Spam", Some(Role::Junk), true),
+            ("Trash", Some(Role::Trash), true),
+            ("Projects", None, false),
+            ("Projects/Résumé", None, true),
+        ]
+    );
+
+    let again: SyncResult = desktop
+        .call(
+            methods::ACCOUNT_SYNC,
+            AccountRef {
+                account_id: added.id.clone(),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        (again.mailboxes_added, again.mailboxes_updated, again.mailboxes_removed),
+        (0, 0, 0)
+    );
+
+    // Without its password, a sync fails with a message the user can act on.
+    running
+        .vault
+        .delete(&SecretKey::new(&added.id, SecretKind::MailPassword))
+        .await
+        .unwrap();
+    let error = desktop
+        .call::<_, Value>(
+            methods::ACCOUNT_SYNC,
+            AccountRef {
+                account_id: added.id.clone(),
+            },
+        )
+        .await
+        .unwrap_err();
+    match error {
+        ClientError::Rpc(error) => {
+            assert_eq!(error.code, codes::SYNC_FAILED);
+            assert!(error.message.contains("password is missing"), "{}", error.message);
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+
+    let (code, _) = rpc_error(
+        desktop
+            .call::<_, Value>(
+                methods::MAILBOX_LIST,
+                AccountRef {
+                    account_id: "no-such-account".into(),
+                },
+            )
+            .await,
+    );
+    assert_eq!(code, codes::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_restarted_daemon_syncs_existing_accounts() {
+    let pki = pki(&["localhost"]);
+    let (port, _) = fake_server(&pki, "* OK ready\r\n", PASSWORD).await;
+    let tls = TlsOptions::platform()
+        .with_extra_roots_pem(pki.ca_pem.as_bytes())
+        .unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let vault = Vault::in_memory();
+    let token = UiToken::generate().unwrap();
+    let start = |tls: TlsOptions| {
+        let (temp, vault, token) = (temp.path().to_owned(), vault.clone(), token.clone());
+        async move {
+            let daemon = Daemon::bind(DataDirs::at(temp))
+                .await
+                .unwrap()
+                .with_ui_token(token)
+                .with_vault(vault)
+                .with_imap_tls(tls);
+            let endpoint = daemon.endpoint().clone();
+            (endpoint, tokio::spawn(daemon.serve(std::future::pending())))
+        }
+    };
+
+    let (endpoint, first) = start(tls.clone()).await;
+    let mut desktop = Client::connect_with(&endpoint, ClientKind::Desktop, Some(&token))
+        .await
+        .unwrap();
+    let added: AccountSummary = desktop
+        .call(methods::ACCOUNT_ADD, params("ada@example.test", port, PASSWORD))
+        .await
+        .unwrap();
+    synced_mailboxes(&mut desktop, &added.id).await;
+    drop(desktop);
+    desktop_shutdown(&endpoint, &token).await;
+    first.await.unwrap();
+
+    let (endpoint, second) = start(tls).await;
+    let mut desktop = Client::connect_with(&endpoint, ClientKind::Desktop, Some(&token))
+        .await
+        .unwrap();
+    let listed = synced_mailboxes(&mut desktop, &added.id).await;
+    assert!(
+        listed.sync.last_success_at.is_some(),
+        "the startup sync ran: {listed:?}"
+    );
+    assert_eq!(listed.mailboxes.len(), 7);
+    second.abort();
+}
+
+async fn desktop_shutdown(endpoint: &Endpoint, token: &UiToken) {
+    let mut client = Client::connect_with(endpoint, ClientKind::Desktop, Some(token))
+        .await
+        .unwrap();
+    client.shutdown().await.unwrap();
 }

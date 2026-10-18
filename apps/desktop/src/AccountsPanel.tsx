@@ -3,9 +3,13 @@ import {
   type AccountInput,
   type AccountSummary,
   type ConnectionSecurity,
+  type MailboxListResult,
+  type Role,
   addAccount,
   listAccounts,
+  listMailboxes,
   removeAccount,
+  syncAccount,
 } from "./accounts";
 
 type Load =
@@ -48,17 +52,7 @@ export function AccountsPanel() {
       {load.state === "ready" && load.accounts.length > 0 && (
         <ul className="accounts">
           {load.accounts.map((account) => (
-            <li key={account.id}>
-              <div>
-                <strong>{account.display_name}</strong> <span className="muted">{account.email}</span>
-                <div className="muted small">
-                  {account.imap.host}:{account.imap.port}
-                </div>
-              </div>
-              <button type="button" onClick={() => remove(account)}>
-                Remove
-              </button>
-            </li>
+            <AccountRow key={account.id} account={account} onRemove={() => remove(account)} />
           ))}
         </ul>
       )}
@@ -230,5 +224,90 @@ function AddAccountForm({ onDone, onCancel }: { onDone: () => void; onCancel: ()
         </button>
       </div>
     </form>
+  );
+}
+
+const ROLE_LABELS: Record<Role, string> = {
+  inbox: "Inbox",
+  drafts: "Drafts",
+  sent: "Sent",
+  archive: "Archive",
+  all: "All mail",
+  flagged: "Flagged",
+  junk: "Junk",
+  trash: "Trash",
+};
+
+function AccountRow({ account, onRemove }: { account: AccountSummary; onRemove: () => void }) {
+  const [folders, setFolders] = useState<MailboxListResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+
+  const load = useCallback(() => {
+    listMailboxes(account.id)
+      .then((result) => {
+        setFolders(result);
+        setError(null);
+      })
+      .catch((failure: unknown) => setError(String(failure)));
+  }, [account.id]);
+
+  // Poll while the first sync runs; the change feed (ADR-0007) replaces this later.
+  useEffect(() => {
+    load();
+    const timer = window.setInterval(load, 2000);
+    return () => window.clearInterval(timer);
+  }, [load]);
+
+  const syncNow = async () => {
+    setSyncing(true);
+    try {
+      await syncAccount(account.id);
+    } catch (failure) {
+      setError(String(failure));
+    } finally {
+      setSyncing(false);
+      load();
+    }
+  };
+
+  const sync = folders?.sync;
+  const status = syncing || sync?.running
+    ? "Syncing…"
+    : sync?.last_error
+      ? `Sync failed: ${sync.last_error}`
+      : sync?.last_success_at
+        ? `Synced at ${new Date(sync.last_success_at).toLocaleTimeString()}`
+        : "Not synced yet";
+
+  return (
+    <li className="account">
+      <div className="account-head">
+        <div>
+          <strong>{account.display_name}</strong> <span className="muted">{account.email}</span>
+          <div className={sync?.last_error || error ? "error small" : "muted small"}>{error ?? status}</div>
+        </div>
+        <div className="actions">
+          <button type="button" onClick={syncNow} disabled={syncing || sync?.running}>
+            Sync now
+          </button>
+          <button type="button" onClick={onRemove}>
+            Remove
+          </button>
+        </div>
+      </div>
+      {folders && folders.mailboxes.length > 0 && (
+        <ul className="folders">
+          {folders.mailboxes.map((mailbox) => (
+            <li key={mailbox.id} className={mailbox.selectable ? undefined : "muted"}>
+              {mailbox.role ? ROLE_LABELS[mailbox.role] : mailbox.name}
+              {mailbox.role && mailbox.name.toLowerCase() !== ROLE_LABELS[mailbox.role].toLowerCase() && (
+                <span className="muted small"> ({mailbox.name})</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }

@@ -1,8 +1,7 @@
 //! The Regards IMAP client (ADR-0009), built on `imap-next` + `imap-codec`.
 //!
 //! Only this crate depends on imap-next and imap-types; it exposes Regards
-//! types so the library can be replaced in one place (spike 07 §7). For now it
-//! verifies sign-in; mailbox and message sync follow.
+//! types so the library can be replaced in one place (spike 07 §7).
 //!
 //! **Logging:** imap-next logs raw protocol bytes, including passwords and
 //! mail, at TRACE level. Binaries must cap the `imap_next` target at INFO (the
@@ -10,12 +9,14 @@
 
 mod conn;
 mod tls;
+pub mod utf7;
 
 pub use tls::TlsOptions;
 
 use conn::{Conn, Reply};
 use imap_next::stream::Stream;
 use imap_types::command::CommandBody;
+use imap_types::mailbox::Mailbox;
 use imap_types::response::{Capability, Code, Data, GreetingKind, StatusBody, StatusKind};
 use regards_core::secret::Secret;
 
@@ -59,40 +60,124 @@ pub async fn verify_login(
     password: &Secret,
     tls: &TlsOptions,
 ) -> Result<LoginCheck, ImapError> {
-    let stream = tls::connect(&server.host, server.port, tls).await?;
-    let (mut conn, greeting) = Conn::open(Stream::tls(stream.into())).await?;
-    match greeting.kind {
-        GreetingKind::Ok => {}
-        GreetingKind::PreAuth => return Err(ImapError::Protocol("the server signed us in without a password".into())),
-        GreetingKind::Bye => return Err(ImapError::NotImap(clean(greeting.text.as_ref()))),
-    }
-
-    let mut capabilities = match greeting.code {
-        Some(Code::Capability(caps)) => names(caps.as_ref()),
-        _ => names_from(&conn.run(CommandBody::Capability).await?),
-    };
-    if has(&capabilities, "LOGINDISABLED") {
-        return Err(ImapError::LoginDisabled);
-    }
-
-    let login = CommandBody::login(username.to_owned(), password.expose().to_owned())
-        .map_err(|_| ImapError::AuthFailed("the user name or password contains characters IMAP cannot send".into()))?;
-    let reply = conn.run(login).await?;
-    if reply.done.kind != StatusKind::Ok {
-        return Err(ImapError::AuthFailed(clean(reply.done.text.as_ref())));
-    }
-
-    // Servers often include the new capabilities in the LOGIN reply; otherwise ask.
-    capabilities = match code_capabilities(&reply.done) {
-        Some(caps) => caps,
-        None => names_from(&conn.run(CommandBody::Capability).await?),
-    };
-
-    // A failed LOGOUT does not make the check fail: we are signed in either way.
-    if let Err(error) = conn.run(CommandBody::Logout).await {
-        tracing::debug!(%error, "LOGOUT after the sign-in check failed");
-    }
+    let session = Session::login(server, username, password, tls).await?;
+    let capabilities = session.capabilities.clone();
+    session.logout().await;
     Ok(LoginCheck { capabilities })
+}
+
+/// A mailbox as `LIST` reported it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListedMailbox {
+    /// The name exactly as the server sent it; use it in commands.
+    pub remote_name: Vec<u8>,
+    /// The name decoded for display (modified UTF-7).
+    pub name: String,
+    /// Hierarchy separator, `None` for a flat namespace.
+    pub delimiter: Option<char>,
+    /// Attributes such as `\Noselect` or `\Sent`.
+    pub attributes: Vec<String>,
+}
+
+/// A signed-in IMAP connection.
+pub struct Session {
+    conn: Conn,
+    capabilities: Vec<String>,
+}
+
+impl Session {
+    /// Connect over TLS and sign in with a password.
+    pub async fn login(
+        server: &ImapServer,
+        username: &str,
+        password: &Secret,
+        tls: &TlsOptions,
+    ) -> Result<Self, ImapError> {
+        let stream = tls::connect(&server.host, server.port, tls).await?;
+        let (mut conn, greeting) = Conn::open(Stream::tls(stream.into())).await?;
+        match greeting.kind {
+            GreetingKind::Ok => {}
+            GreetingKind::PreAuth => {
+                return Err(ImapError::Protocol("the server signed us in without a password".into()));
+            }
+            GreetingKind::Bye => return Err(ImapError::NotImap(clean(greeting.text.as_ref()))),
+        }
+
+        let mut capabilities = match greeting.code {
+            Some(Code::Capability(caps)) => names(caps.as_ref()),
+            _ => names_from(&conn.run(CommandBody::Capability).await?),
+        };
+        if has(&capabilities, "LOGINDISABLED") {
+            return Err(ImapError::LoginDisabled);
+        }
+
+        let login = CommandBody::login(username.to_owned(), password.expose().to_owned()).map_err(|_| {
+            ImapError::AuthFailed("the user name or password contains characters IMAP cannot send".into())
+        })?;
+        let reply = conn.run(login).await?;
+        if reply.done.kind != StatusKind::Ok {
+            return Err(ImapError::AuthFailed(clean(reply.done.text.as_ref())));
+        }
+
+        // Servers often include the new capabilities in the LOGIN reply; otherwise ask.
+        capabilities = match code_capabilities(&reply.done) {
+            Some(caps) => caps,
+            None => names_from(&conn.run(CommandBody::Capability).await?),
+        };
+
+        Ok(Self { conn, capabilities })
+    }
+
+    /// Capabilities advertised after login.
+    pub fn capabilities(&self) -> &[String] {
+        &self.capabilities
+    }
+
+    pub fn has_capability(&self, name: &str) -> bool {
+        has(&self.capabilities, name)
+    }
+
+    /// Every mailbox (`LIST "" "*"`), with SPECIAL-USE attributes where the server has them.
+    pub async fn list_mailboxes(&mut self) -> Result<Vec<ListedMailbox>, ImapError> {
+        let list = CommandBody::list("", "*").map_err(|_| ImapError::Protocol("cannot build LIST".into()))?;
+        let reply = self.conn.run(list).await?;
+        if reply.done.kind != StatusKind::Ok {
+            return Err(ImapError::Protocol(format!(
+                "LIST failed: {}",
+                clean(reply.done.text.as_ref())
+            )));
+        }
+        Ok(reply
+            .data
+            .into_iter()
+            .filter_map(|data| match data {
+                Data::List {
+                    items,
+                    delimiter,
+                    mailbox,
+                } => {
+                    let remote_name = match &mailbox {
+                        Mailbox::Inbox => b"INBOX".to_vec(),
+                        Mailbox::Other(other) => other.as_ref().to_vec(),
+                    };
+                    Some(ListedMailbox {
+                        name: utf7::decode(&remote_name),
+                        remote_name,
+                        delimiter: delimiter.map(|d| d.inner()),
+                        attributes: items.iter().map(ToString::to_string).collect(),
+                    })
+                }
+                _ => None,
+            })
+            .collect())
+    }
+
+    /// Sign out. Failures are ignored: the connection closes either way.
+    pub async fn logout(mut self) {
+        if let Err(error) = self.conn.run(CommandBody::Logout).await {
+            tracing::debug!(%error, "LOGOUT failed");
+        }
+    }
 }
 
 /// Capability names, upper-cased: IMAP compares them case-insensitively.

@@ -1,22 +1,24 @@
 //! Account methods. Only the `ui` principal reaches these (ADR-0006).
 
-use crate::State;
+use crate::{State, sync};
 use regards_imap::{ImapError, ImapServer};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountCheckFailure, AccountRemoveParams, AccountSummary, ConnectionSecurity, RpcError,
-    ServerSettings, codes,
+    AccountAddParams, AccountCheckFailure, AccountRef, AccountRemoveParams, AccountSummary, ConnectionSecurity,
+    MailboxListResult, MailboxSummary, RpcError, ServerSettings, SyncResult, codes,
 };
 use regards_store::StoreError;
 use regards_store::accounts::{self, Account, AuthKind, NewAccount, Security, Server};
+use regards_store::mailboxes;
 use regards_vault::{SecretKey, SecretKind, Vault, VaultError};
 use serde_json::{Value, json};
+use std::sync::Arc;
 
 pub(crate) async fn list(state: &State) -> Result<Value, RpcError> {
     let accounts = state.store.read(accounts::list).await.map_err(store_error)?;
     Ok(json!(accounts.into_iter().map(summary).collect::<Vec<_>>()))
 }
 
-pub(crate) async fn add(state: &State, params: AccountAddParams) -> Result<Value, RpcError> {
+pub(crate) async fn add(state: &Arc<State>, params: AccountAddParams) -> Result<Value, RpcError> {
     let new = validate(params)?;
 
     // Refuse a duplicate before contacting the server.
@@ -55,6 +57,7 @@ pub(crate) async fn add(state: &State, params: AccountAddParams) -> Result<Value
     match state.store.write(move |tx| accounts::insert(tx, record)).await {
         Ok(committed) => {
             tracing::info!(account = %id, "account added");
+            sync::spawn_one(Arc::clone(state), id);
             Ok(json!(summary(committed.value)))
         }
         Err(error) => {
@@ -90,6 +93,7 @@ pub(crate) async fn remove(state: &State, params: AccountRemoveParams) -> Result
         }
         Err(error) => tracing::warn!(account = %id, ?error, "account removed, but the credential store is unavailable"),
     }
+    state.sync.forget(&id);
     tracing::info!(account = %id, "account removed");
     Ok(json!({ "removed": true }))
 }
@@ -180,7 +184,7 @@ fn summary(account: Account) -> AccountSummary {
     }
 }
 
-async fn vault(state: &State) -> Result<Vault, RpcError> {
+pub(crate) async fn vault(state: &State) -> Result<Vault, RpcError> {
     state
         .vault
         .get_or_init(|| async {
@@ -231,4 +235,59 @@ fn conflict(email: &str) -> RpcError {
 
 fn invalid(message: &str) -> RpcError {
     RpcError::new(codes::INVALID_PARAMS, message)
+}
+
+pub(crate) async fn mailboxes(state: &State, params: AccountRef) -> Result<Value, RpcError> {
+    ensure_exists(state, &params.account_id).await?;
+    let id = params.account_id.clone();
+    let stored = state
+        .store
+        .read(move |conn| mailboxes::list(conn, &id))
+        .await
+        .map_err(store_error)?;
+    Ok(json!(MailboxListResult {
+        mailboxes: stored
+            .into_iter()
+            .map(|m| MailboxSummary {
+                id: m.id,
+                name: m.name,
+                delimiter: m.delimiter,
+                role: m.role,
+                selectable: m.selectable,
+            })
+            .collect(),
+        sync: state.sync.get(&params.account_id),
+    }))
+}
+
+pub(crate) async fn sync_now(state: &State, params: AccountRef) -> Result<Value, RpcError> {
+    ensure_exists(state, &params.account_id).await?;
+    match sync::sync_account(state, &params.account_id).await {
+        None => Ok(json!(SyncResult {
+            already_running: true,
+            mailboxes_added: 0,
+            mailboxes_updated: 0,
+            mailboxes_removed: 0,
+        })),
+        Some(Ok(changes)) => Ok(json!(SyncResult {
+            already_running: false,
+            mailboxes_added: changes.added,
+            mailboxes_updated: changes.updated,
+            mailboxes_removed: changes.removed,
+        })),
+        Some(Err(error)) => Err(RpcError::new(codes::SYNC_FAILED, error.to_string())),
+    }
+}
+
+async fn ensure_exists(state: &State, account_id: &str) -> Result<(), RpcError> {
+    let id = account_id.to_owned();
+    match state
+        .store
+        .read(move |conn| accounts::get(conn, &id))
+        .await
+        .map_err(store_error)?
+    {
+        Some(_) => Ok(()),
+        None => Err(RpcError::new(codes::NOT_FOUND, "no such account")),
+    }
 }

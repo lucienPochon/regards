@@ -8,7 +8,7 @@ use rcgen::{
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
-use tokio::sync::oneshot;
+use tokio::sync::mpsc;
 use tokio_rustls::TlsAcceptor;
 use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::rustls::crypto::ring;
@@ -57,59 +57,128 @@ pub fn pki(names: &[&str]) -> Pki {
     }
 }
 
-/// Serve one connection on 127.0.0.1: send `greeting`, then answer CAPABILITY,
-/// LOGIN (accepting only `password`) and LOGOUT. Resolves to the password the
-/// client sent, or `None` when it sent none (for example after a TLS failure).
-pub async fn fake_server(
-    pki: &Pki,
-    greeting: &'static str,
-    password: &'static str,
-) -> (u16, oneshot::Receiver<Option<String>>) {
+/// A Dovecot-like folder list: SPECIAL-USE on some folders, a non-ASCII name in
+/// modified UTF-7, and an unselectable parent.
+pub const DEFAULT_LIST: &str = concat!(
+    r#"* LIST (\HasNoChildren) "/" INBOX"#,
+    "\r\n",
+    r#"* LIST (\HasNoChildren \Sent) "/" Sent"#,
+    "\r\n",
+    r#"* LIST (\HasNoChildren \Drafts) "/" Drafts"#,
+    "\r\n",
+    r#"* LIST (\HasNoChildren \Trash) "/" Trash"#,
+    "\r\n",
+    r#"* LIST (\HasNoChildren) "/" Spam"#,
+    "\r\n",
+    r#"* LIST (\Noselect \HasChildren) "/" Projects"#,
+    "\r\n",
+    r#"* LIST (\HasNoChildren) "/" "Projects/R&AOk-sum&AOk-""#,
+    "\r\n",
+);
+
+/// How the fake server behaves.
+#[derive(Clone, Copy)]
+pub struct Script {
+    pub greeting: &'static str,
+    /// The only password LOGIN accepts.
+    pub password: &'static str,
+    /// Untagged lines sent in reply to LIST.
+    pub list: &'static str,
+}
+
+impl Script {
+    pub const fn new(password: &'static str) -> Self {
+        Self {
+            greeting: "* OK ready\r\n",
+            password,
+            list: DEFAULT_LIST,
+        }
+    }
+}
+
+/// What each finished connection sent as its password (`None`: no LOGIN, for
+/// example after a TLS failure), in order.
+pub struct Logins(mpsc::UnboundedReceiver<Option<String>>);
+
+impl Logins {
+    pub async fn next(&mut self) -> Option<String> {
+        self.0.recv().await.expect("the fake server is gone")
+    }
+}
+
+/// [`serve`] with the default folders.
+pub async fn fake_server(pki: &Pki, greeting: &'static str, password: &'static str) -> (u16, Logins) {
+    serve(
+        pki,
+        Script {
+            greeting,
+            ..Script::new(password)
+        },
+    )
+    .await
+}
+
+/// Serve connections on 127.0.0.1 following `script`, until the test ends.
+pub async fn serve(pki: &Pki, script: Script) -> (u16, Logins) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let acceptor = TlsAcceptor::from(Arc::clone(&pki.server));
-    let (sent, received) = oneshot::channel();
+    let (sent, received) = mpsc::unbounded_channel();
     tokio::spawn(async move {
-        let Ok((tcp, _)) = listener.accept().await else { return };
-        let Ok(tls) = acceptor.accept(tcp).await else {
-            let _ = sent.send(None);
-            return;
-        };
-        let (read, mut write) = tokio::io::split(tls);
-        let mut read = BufReader::new(read);
-        let mut given = None;
-        if write.write_all(greeting.as_bytes()).await.is_ok() {
-            while let Some(command) = read_command(&mut read, &mut write).await {
-                let args = parse_words(&command);
-                let tag = args[0].clone();
-                let reply = match args.get(1).map(|v| v.to_ascii_uppercase()).as_deref() {
-                    Some("CAPABILITY") => format!("* CAPABILITY IMAP4rev1 AUTH=PLAIN\r\n{tag} OK done\r\n"),
-                    Some("LOGIN") => {
-                        let attempt = args.get(3).cloned().unwrap_or_default();
-                        let ok = attempt == password;
-                        given = Some(attempt);
-                        if ok {
-                            format!("{tag} OK [CAPABILITY IMAP4rev1 IDLE MOVE UIDPLUS] Logged in\r\n")
-                        } else {
-                            format!("{tag} NO [AUTHENTICATIONFAILED] Authentication failed.\r\n")
-                        }
-                    }
-                    Some("LOGOUT") => {
-                        let _ = write
-                            .write_all(format!("* BYE Logging out\r\n{tag} OK Logout completed\r\n").as_bytes())
-                            .await;
-                        break;
-                    }
-                    _ => format!("{tag} BAD unexpected\r\n"),
+        while let Ok((tcp, _)) = listener.accept().await {
+            let acceptor = acceptor.clone();
+            let sent = sent.clone();
+            tokio::spawn(async move {
+                let given = match acceptor.accept(tcp).await {
+                    Ok(tls) => session(tls, script).await,
+                    Err(_) => None,
                 };
-                if write.write_all(reply.as_bytes()).await.is_err() {
-                    break;
+                let _ = sent.send(given);
+            });
+        }
+    });
+    (port, Logins(received))
+}
+
+async fn session<S>(tls: S, script: Script) -> Option<String>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    let (read, mut write) = tokio::io::split(tls);
+    let mut read = BufReader::new(read);
+    let mut given = None;
+    if write.write_all(script.greeting.as_bytes()).await.is_err() {
+        return given;
+    }
+    while let Some(command) = read_command(&mut read, &mut write).await {
+        let args = parse_words(&command);
+        let tag = args[0].clone();
+        let reply = match args.get(1).map(|v| v.to_ascii_uppercase()).as_deref() {
+            Some("CAPABILITY") => format!("* CAPABILITY IMAP4rev1 AUTH=PLAIN\r\n{tag} OK done\r\n"),
+            Some("LOGIN") => {
+                let attempt = args.get(3).cloned().unwrap_or_default();
+                let ok = attempt == script.password;
+                given = Some(attempt);
+                if ok {
+                    format!("{tag} OK [CAPABILITY IMAP4rev1 IDLE MOVE UIDPLUS SPECIAL-USE] Logged in\r\n")
+                } else {
+                    format!("{tag} NO [AUTHENTICATIONFAILED] Authentication failed.\r\n")
                 }
             }
+            Some("LIST") => format!("{}{tag} OK List completed\r\n", script.list),
+            Some("LOGOUT") => {
+                let _ = write
+                    .write_all(format!("* BYE Logging out\r\n{tag} OK Logout completed\r\n").as_bytes())
+                    .await;
+                break;
+            }
+            _ => format!("{tag} BAD unexpected\r\n"),
+        };
+        if write.write_all(reply.as_bytes()).await.is_err() {
+            break;
         }
-        let _ = sent.send(given);
-    });
-    (port, received)
+    }
+    given
 }
 
 /// Read one command line, following `{n}` literals (sending a continuation for synchronising ones).

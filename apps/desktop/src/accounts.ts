@@ -45,3 +45,33 @@ export function addAccount(input: AccountInput): Promise<AccountSummary> {
 export function removeAccount(id: string): Promise<void> {
   return invoke<void>("account_remove", { id });
 }
+
+export type Role = "inbox" | "sent" | "drafts" | "trash" | "junk" | "archive" | "all" | "flagged";
+
+export interface MailboxSummary {
+  id: number;
+  name: string;
+  delimiter: string | null;
+  role: Role | null;
+  selectable: boolean;
+}
+
+export interface SyncState {
+  running: boolean;
+  last_success_at: number | null;
+  last_error: string | null;
+}
+
+export interface MailboxListResult {
+  mailboxes: MailboxSummary[];
+  sync: SyncState;
+}
+
+export function listMailboxes(accountId: string): Promise<MailboxListResult> {
+  return invoke<MailboxListResult>("mailbox_list", { accountId });
+}
+
+/** Syncs now; resolves when the sync is done, rejects with the reason if it failed. */
+export function syncAccount(accountId: string): Promise<unknown> {
+  return invoke("account_sync", { accountId });
+}
