@@ -159,7 +159,6 @@ flowchart LR
   - **Connections:** addresses are tried "Happy Eyeballs" style (RFC 8305), so a broken IPv6 route costs 250 ms, not seconds.
   - **Live updates in the UI:** a change feed (ADR-0007) notifies subscribed clients of every committed change and sync-status change. The app refreshes on those events and no longer polls.
 - **Still to come in Phase 1:**
-
   - **Sync:** QRESYNC and backfill of older messages.
   - **Bodies and threading:** message bodies, and References threading.
   - **Operations:** the operation queue for user actions.
