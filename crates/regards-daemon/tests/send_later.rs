@@ -169,6 +169,7 @@ async fn send(desktop: &mut Client, id: i64, send_at: Option<i64>) -> Result<Dra
                 id,
                 undo_seconds: Some(0),
                 send_at,
+                remind_at: None,
             },
         )
         .await

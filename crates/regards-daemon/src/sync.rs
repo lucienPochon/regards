@@ -477,7 +477,9 @@ pub(crate) async fn sync_mailbox(
 }
 
 /// New mail arrived: a message from someone else ends the snooze of its
-/// conversation (ADR-0011 §3). The new message itself is unread, so it shows.
+/// conversation (ADR-0011 §3), and is the reply a reminder there waited for
+/// (§4): the reminder goes, and one that came due leaves the inbox, where the
+/// reply now is. The new message itself is unread, so it shows.
 /// `arrived`: the new messages' Message-IDs and senders.
 fn end_answered_snoozes(
     tx: &rusqlite::Transaction<'_>,
@@ -500,6 +502,14 @@ fn end_answered_snoozes(
         }
         for snoozed in marks::snoozed_in_thread_of(tx, &account.id, message_id)? {
             marks::set(tx, &account.id, &snoozed, Mark::Snoozed, None)?;
+        }
+        for waiting in marks::reminders_in_thread_of(tx, &account.id, message_id)? {
+            let came_due = marks::get(tx, &account.id, &waiting)?.reminded_at.is_some();
+            marks::set(tx, &account.id, &waiting, Mark::Remind, None)?;
+            if came_due {
+                marks::set(tx, &account.id, &waiting, Mark::Reminded, None)?;
+                marks::set(tx, &account.id, &waiting, Mark::Surfaced, None)?;
+            }
         }
     }
     Ok(())

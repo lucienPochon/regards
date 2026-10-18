@@ -19,10 +19,14 @@ const drafts: Draft[] = [];
 const outbox: OutboxEntry[] = [];
 const undos = new Map<
   number,
-  { description: string; restore: Map<number, number>; marks?: Map<number, Pick<FixtureMessage, "pinned" | "aside" | "snoozed_until">> }
+  { description: string; restore: Map<number, number>; marks?: Map<number, Marks> }
 >();
 const SOMEDAY = 32_503_680_000_000;
+type Marks = Pick<FixtureMessage, "pinned" | "aside" | "snoozed_until" | "remind_at" | "reminded" | "surfaced_at">;
 const parked = (m: FixtureMessage) => m.aside === true || (m.snoozed_until ?? 0) > Date.now();
+/** Its place in the inbox: what came back is listed by when it did, as the daemon does. */
+const inboxPlace = (m: FixtureMessage) =>
+  m.surfaced_at && (m.reminded || m.surfaced_at > m.received_at) ? m.surfaced_at : m.received_at;
 let nextId = 10_000;
 let background = true;
 
@@ -60,6 +64,13 @@ function sendWhenDue(entry: OutboxEntry) {
     }
     changed();
   }, delay);
+}
+
+// `?reminder=1`: a message Sam sent, whose reminder came due with no reply.
+if (params.get("reminder") === "1") {
+  const sent = accounts[0]?.mailboxes.find((m) => m.role === "sent");
+  const mine = messages.find((m) => m.mailboxId === sent?.id);
+  if (mine) Object.assign(mine, { reminded: true, surfaced_at: started - 60_000 });
 }
 
 // `?outbox=1`: one message scheduled for tomorrow morning, and one held after its time passed.
@@ -111,7 +122,7 @@ const byId = (id: number) => {
   return message;
 };
 
-function summary(message: FixtureMessage): MessageSummary {
+function summary(message: FixtureMessage, listedAt = message.received_at): MessageSummary {
   return {
     id: message.id,
     uid: message.id,
@@ -127,15 +138,19 @@ function summary(message: FixtureMessage): MessageSummary {
     pinned: message.pinned ?? false,
     aside: message.aside ?? false,
     snoozed_until: message.snoozed_until ?? null,
+    remind_at: message.remind_at ?? null,
+    reminded: message.reminded ?? false,
+    listed_at: listedAt,
   };
 }
 
 /** Change a mark on messages, with an undo entry, as the daemon does. */
 function mark(ids: number[], change: (message: FixtureMessage) => void, description: string) {
-  const marks = new Map<number, Pick<FixtureMessage, "pinned" | "aside" | "snoozed_until">>();
+  const marks = new Map<number, Marks>();
   for (const id of ids) {
     const message = byId(id);
-    marks.set(id, { pinned: message.pinned, aside: message.aside, snoozed_until: message.snoozed_until });
+    const { pinned, aside, snoozed_until, remind_at, reminded, surfaced_at } = message;
+    marks.set(id, { pinned, aside, snoozed_until, remind_at, reminded, surfaced_at });
     change(message);
   }
   const id = nextId++;
@@ -236,15 +251,22 @@ function handle(cmd: string, args: Args): unknown {
       const before = args.before as { received_at: number; id: number } | null;
       const limit = (args.limit as number | null) ?? 50;
       const inbox = mailboxOf(args.mailboxId as number)?.role === "inbox";
+      const account = accountOfMailbox(args.mailboxId as number);
+      // The inbox also shows reminders that came due, from wherever they are filed.
+      const place = (m: FixtureMessage) => (inbox ? inboxPlace(m) : m.received_at);
       const all = messages
-        .filter((m) => m.mailboxId === args.mailboxId && !(inbox && parked(m)))
-        .sort((a, b) => b.received_at - a.received_at || b.id - a.id)
-        .filter((m) => !before || m.received_at < before.received_at || (m.received_at === before.received_at && m.id < before.id));
+        .filter((m) =>
+          inbox
+            ? !parked(m) && (m.mailboxId === args.mailboxId || (m.reminded === true && account?.mailboxes.some((b) => b.id === m.mailboxId)))
+            : m.mailboxId === args.mailboxId,
+        )
+        .sort((a, b) => place(b) - place(a) || b.id - a.id)
+        .filter((m) => !before || place(m) < before.received_at || (place(m) === before.received_at && m.id < before.id));
       const page = all.slice(0, limit);
       const last = page[page.length - 1];
       return {
-        messages: page.map(summary),
-        next: all.length > limit && last ? { received_at: last.received_at, id: last.id } : null,
+        messages: page.map((m) => summary(m, place(m))),
+        next: all.length > limit && last ? { received_at: place(last), id: last.id } : null,
       };
     }
     case "message_get": {
@@ -284,8 +306,18 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return { changed: ids.length };
     }
-    case "message_archive":
-      return moveTo(args.ids as number[], (m) => roleBox(m, "archive"), "Archived");
+    case "message_archive": {
+      // Done with a reminder shown from another folder: it leaves the inbox and stays filed.
+      const ids = args.ids as number[];
+      const reminders = ids.filter((id) => byId(id).reminded && mailboxOf(byId(id).mailboxId)?.role !== "inbox");
+      for (const id of reminders) Object.assign(byId(id), { reminded: false, surfaced_at: null });
+      const rest = ids.filter((id) => !reminders.includes(id));
+      if (rest.length === 0) {
+        changed();
+        return { moved: reminders.length, undo: null };
+      }
+      return moveTo(rest, (m) => roleBox(m, "archive"), "Archived");
+    }
     case "message_trash":
       return moveTo(args.ids as number[], (m) => roleBox(m, "trash"), "Deleted");
     case "message_move":
@@ -304,12 +336,26 @@ function handle(cmd: string, args: Args): unknown {
       const until = args.someday ? SOMEDAY : ((args.until as number | null) ?? null);
       return mark(args.ids as number[], (m) => (m.snoozed_until = until), until ? "Snoozed" : "Back in the inbox");
     }
+    case "message_remind": {
+      const at = (args.at as number | null) ?? null;
+      return mark(
+        args.ids as number[],
+        (m) => Object.assign(m, { remind_at: at }, m.reminded ? { reminded: false, surfaced_at: null } : {}),
+        at ? "Reminder set" : "Reminder off",
+      );
+    }
     case "message_view": {
       const owner = accounts.find((a) => a.account.id === args.accountId);
       const shown = messages
         .filter((m) => owner?.mailboxes.some((b) => b.id === m.mailboxId))
         .filter((m) =>
-          args.view === "pinned" ? m.pinned : args.view === "aside" ? m.aside : (m.snoozed_until ?? 0) > Date.now(),
+          args.view === "pinned"
+            ? m.pinned
+            : args.view === "aside"
+              ? m.aside
+              : args.view === "reminders"
+                ? m.remind_at != null
+                : (m.snoozed_until ?? 0) > Date.now(),
         )
         .sort((a, b) => b.received_at - a.received_at || b.id - a.id);
       return { messages: shown.map(summary), next: null };

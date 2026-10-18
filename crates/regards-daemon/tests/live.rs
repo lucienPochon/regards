@@ -13,9 +13,9 @@ use regards_ipc::protocol::{
     DraftAttachFileParams, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult, DraftRef,
     DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MailboxListResult, MarkResult,
     MessageDetail, MessageHtml, MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef,
-    MoveResult, OutboxEntryView, OutboxListResult, OutboxRef, OutboxState, OutboxUndoResult, PinParams, ServerSettings,
-    SetFlagsParams, SetFlagsResult, SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams,
-    methods,
+    MoveResult, OutboxEntryView, OutboxListResult, OutboxRef, OutboxState, OutboxUndoResult, PinParams, RemindParams,
+    ServerSettings, SetFlagsParams, SetFlagsResult, SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View,
+    ViewParams, methods,
 };
 use regards_ipc::{Client, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -1109,6 +1109,7 @@ async fn live_a_reply_can_be_undone_then_goes_out_once_and_lands_in_sent() {
                 id: draft.id,
                 undo_seconds: Some(10),
                 send_at: None,
+                remind_at: None,
             },
         )
         .await
@@ -1134,6 +1135,7 @@ async fn live_a_reply_can_be_undone_then_goes_out_once_and_lands_in_sent() {
                 id: draft.id,
                 undo_seconds: Some(1),
                 send_at: None,
+                remind_at: None,
             },
         )
         .await
@@ -1232,6 +1234,7 @@ async fn live_a_message_that_may_have_gone_is_never_resent_by_itself() {
                 id: draft.id,
                 undo_seconds: Some(0),
                 send_at: None,
+                remind_at: None,
             },
         )
         .await
@@ -1263,6 +1266,7 @@ async fn live_a_message_that_may_have_gone_is_never_resent_by_itself() {
                 id: draft.id,
                 undo_seconds: Some(0),
                 send_at: None,
+                remind_at: None,
             },
         )
         .await
@@ -1365,6 +1369,7 @@ async fn live_attached_files_go_out_with_the_message() {
                 id: draft.id,
                 undo_seconds: Some(0),
                 send_at: None,
+                remind_at: None,
             },
         )
         .await
@@ -1435,6 +1440,7 @@ async fn live_a_forward_carries_the_original_files() {
                 id: draft.id,
                 undo_seconds: Some(0),
                 send_at: None,
+                remind_at: None,
             },
         )
         .await
@@ -1657,6 +1663,134 @@ async fn live_snoozed_mail_comes_back_as_new_or_when_someone_replies() {
         .await
         .unwrap();
     assert!(subjects(messages(&mut desktop, inbox).await).contains(&"Stays".to_owned()));
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_a_reminder_with_no_reply_comes_back_on_top_and_a_reply_ends_it() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let _ = seed.create_mailbox(b"Sent").await;
+    let me = format!("{}@example.test", live.user);
+    seed.append(b"Sent", &[SystemFlag::Seen], &message(1, "Did you get my plans?", &me))
+        .await
+        .unwrap();
+    seed.append(b"Sent", &[SystemFlag::Seen], &message(2, "Lunch on Friday?", &me))
+        .await
+        .unwrap();
+    seed.append(b"INBOX", &[], &message(3, "Newer news", "ada@example.test"))
+        .await
+        .unwrap();
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
+    let sent = folders(&mut desktop, &account.id)
+        .await
+        .mailboxes
+        .into_iter()
+        .find(|m| m.role == Some(Role::Sent))
+        .unwrap()
+        .id;
+    let filed = messages(&mut desktop, sent).await.messages;
+    let id = |subject: &str| filed.iter().find(|m| m.subject == subject).unwrap().id;
+    let subjects = |page: MessageListResult| page.messages.into_iter().map(|m| m.subject).collect::<Vec<_>>();
+    let now = || {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
+    };
+    let remind = |ids: Vec<i64>, at: Option<i64>| RemindParams { ids, at };
+    let reminders = |account_id: String| ViewParams {
+        account_id,
+        view: View::Reminders,
+        limit: None,
+        before: None,
+    };
+
+    let past = desktop
+        .call::<_, Value>(
+            methods::MESSAGE_REMIND,
+            remind(vec![id("Lunch on Friday?")], Some(now() - 1000)),
+        )
+        .await;
+    assert!(past.is_err(), "a time that has passed is refused");
+
+    // Nobody answers within 1.5 s: on top of the inbox, shown from Sent.
+    let set: MarkResult = desktop
+        .call(
+            methods::MESSAGE_REMIND,
+            remind(vec![id("Did you get my plans?")], Some(now() + 1500)),
+        )
+        .await
+        .unwrap();
+    assert_eq!(set.undo.unwrap().description, "Reminder set");
+    let waiting: MessageListResult = desktop
+        .call(methods::MESSAGE_VIEW, reminders(account.id.clone()))
+        .await
+        .unwrap();
+    assert_eq!(subjects(waiting), ["Did you get my plans?"]);
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let top = loop {
+        let page = messages(&mut desktop, inbox).await;
+        if let Some(first) = page.messages.into_iter().next().filter(|m| m.reminded) {
+            break first;
+        }
+        assert!(Instant::now() < deadline, "the reminder did not come due");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    };
+    assert_eq!(top.subject, "Did you get my plans?");
+    assert_eq!(top.mailbox_id, sent, "it stays filed in Sent");
+    assert!(top.listed_at > top.received_at, "listed by when it came back");
+    assert_eq!(top.remind_at, None);
+
+    // Done: it leaves the inbox and stays in Sent; undo brings it back.
+    let done: MoveResult = desktop
+        .call(methods::MESSAGE_ARCHIVE, MessageIds { ids: vec![top.id] })
+        .await
+        .unwrap();
+    assert_eq!(done.moved, 1);
+    assert!(!subjects(messages(&mut desktop, inbox).await).contains(&"Did you get my plans?".to_owned()));
+    assert!(subjects(messages(&mut desktop, sent).await).contains(&"Did you get my plans?".to_owned()));
+    let _: UndoResult = desktop
+        .call(
+            methods::UNDO_APPLY,
+            UndoParams {
+                id: done.undo.unwrap().id,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        messages(&mut desktop, inbox).await.messages[0].subject,
+        "Did you get my plans?"
+    );
+
+    // A reply before the time: the reminder goes, and only the reply shows.
+    let _: MarkResult = desktop
+        .call(
+            methods::MESSAGE_REMIND,
+            remind(vec![id("Lunch on Friday?")], Some(now() + 4000)),
+        )
+        .await
+        .unwrap();
+    let reply = b"From: Bob <bob@example.test>\r\nTo: Live <live@example.test>\r\nSubject: Re: Lunch on Friday?\r\n\
+        Message-ID: <bob-lunch@example.test>\r\nIn-Reply-To: <sync-2@example.test>\r\n\
+        References: <sync-2@example.test>\r\nDate: Sun, 18 Oct 2026 12:00:00 +0000\r\n\r\nYes!\r\n";
+    seed.append(b"INBOX", &[], reply).await.unwrap();
+    sync(&mut desktop, &account.id).await;
+    let waiting: MessageListResult = desktop
+        .call(methods::MESSAGE_VIEW, reminders(account.id.clone()))
+        .await
+        .unwrap();
+    assert!(subjects(waiting).is_empty(), "answered: no reminder left");
+    tokio::time::sleep(Duration::from_millis(4500)).await;
+    let shown = subjects(messages(&mut desktop, inbox).await);
+    assert!(shown.contains(&"Re: Lunch on Friday?".to_owned()), "{shown:?}");
+    assert!(!shown.contains(&"Lunch on Friday?".to_owned()), "{shown:?}");
 
     seed.logout().await;
     handle.abort();

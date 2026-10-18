@@ -215,6 +215,16 @@ flowchart LR
   - **Waking** marks every copy unread, here and on the server, so it is back as new.
   - **Replies:** new mail from someone else in the conversation ends a snooze. "New" means stored by an incremental sync, never compared across the server's and the device's clocks; first syncs and backfill don't count.
   - **Presets** (later today, this evening, tomorrow, this weekend, next week, someday) are built from local dates and hours, so they keep wall-clock times across DST. Unit-tested (Vitest) in a fixed zone with an October change.
+  - **Back on top:**
+    - A woken snooze records `surfaced_at` (migration 0014), and the inbox lists it by that time, so it is on top, not back at its old date.
+    - Summaries carry `listed_at`, and the inbox cursor pages by it.
+    - The inbox query gains a third half that walks `marks_surfaced`. It takes 0.74 ms per page at 100k messages with 100 messages come back (`tests/scale.rs`).
+  - **Reminders:**
+    - `message.remind` (undoable) takes a time, or none. They can also be set when sending: `draft.send` takes `remind_at`, keyed by the new Message-ID; undo send drops it.
+    - **When the time comes:** if someone else has written in the conversation since the message, the reminder just goes. That check compares two server arrival times, never the device's clock.
+    - **Otherwise** the message is "reminded": shown on top of the inbox from wherever it is filed (Sent, usually), with a Reminders view for those still waiting.
+    - **A reply** arriving by incremental sync also ends a waiting or come-due reminder, as with snooze.
+    - **Done:** archiving a reminder shown outside the inbox ends it, and the message stays filed. Any move clears the "came back" marks, undoably.
 
 ### 5.7 Send later, undo send and executors (P1)
 

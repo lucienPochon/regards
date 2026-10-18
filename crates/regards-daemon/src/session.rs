@@ -243,6 +243,10 @@ impl Session {
                 self.require_ui()?;
                 actions::set_aside(&self.state, params(request)?).await
             }
+            methods::MESSAGE_REMIND => {
+                self.require_ui()?;
+                actions::remind(&self.state, params(request)?).await
+            }
             methods::MESSAGE_SNOOZE => {
                 self.require_ui()?;
                 actions::snooze(&self.state, params(request)?).await

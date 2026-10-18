@@ -57,6 +57,9 @@ pub struct Message {
     pub moving_to: Option<i64>,
     /// Its conversation (ADR-0009 §5); `None` until threaded.
     pub thread_id: Option<i64>,
+    /// Its place in the list it was read from: `received_at`, except in the
+    /// inbox for what came back to it (a snooze that ended, a reminder).
+    pub listed_at: i64,
 }
 
 /// Where a page of a message list ends: list strictly older messages next.
@@ -224,18 +227,54 @@ pub fn set_blob(tx: &Transaction<'_>, id: i64, hash: &str) -> Result<(), StoreEr
 /// on their way into it, are separate so that each walks its own index: with
 /// an OR, a 100k-message folder took 55 ms per page instead of well under 1.
 fn list_sql() -> String {
-    // With ?5 (an account), messages it has set aside or snoozed past ?6 (now) stay out.
-    const UNPARKED: &str = "(?5 IS NULL OR NOT EXISTS (SELECT 1 FROM marks k WHERE k.account_id = ?5 \
-        AND k.message_id = messages.message_id_header AND (k.aside_at IS NOT NULL OR k.snoozed_until > ?6)))";
     format!(
         "SELECT * FROM (SELECT {COLUMNS} FROM messages \
              WHERE mailbox_id = ?1 AND moving_to IS NULL AND deleted = 0 AND (received_at, id) < (?2, ?3) \
-             AND {UNPARKED} ORDER BY received_at DESC, id DESC LIMIT ?4) \
+             ORDER BY received_at DESC, id DESC LIMIT ?4) \
          UNION ALL \
          SELECT * FROM (SELECT {COLUMNS} FROM messages \
              WHERE moving_to = ?1 AND deleted = 0 AND (received_at, id) < (?2, ?3) \
-             AND {UNPARKED} ORDER BY received_at DESC, id DESC LIMIT ?4) \
+             ORDER BY received_at DESC, id DESC LIMIT ?4) \
          ORDER BY received_at DESC, id DESC LIMIT ?4"
+    )
+}
+
+/// The inbox's page query: [`list_sql`] without what account ?5 has set
+/// aside or snoozed past ?6 (now), and with what came back to the inbox (a
+/// snooze that ended, a reminder come due) listed by when it came back, so it
+/// is on top. A reminder shows its message from wherever it is filed (Sent,
+/// usually). Rows end with `listed_at`, the time they are listed by.
+///
+/// The third half walks the marks of what came back, newest first; a copy in
+/// the inbox is preferred over one elsewhere, and copies on their way out are
+/// left out.
+fn inbox_sql() -> String {
+    // Listed by its own time: not parked, and not come back since it arrived.
+    const PLAIN: &str = "NOT EXISTS (SELECT 1 FROM marks k WHERE k.account_id = ?5 \
+        AND k.message_id = messages.message_id_header AND (k.aside_at IS NOT NULL OR k.snoozed_until > ?6 \
+        OR k.reminded_at IS NOT NULL OR k.surfaced_at > messages.received_at))";
+    format!(
+        "SELECT * FROM (SELECT {COLUMNS}, received_at AS listed_at FROM messages \
+             WHERE mailbox_id = ?1 AND moving_to IS NULL AND deleted = 0 AND (received_at, id) < (?2, ?3) \
+             AND {PLAIN} ORDER BY received_at DESC, id DESC LIMIT ?4) \
+         UNION ALL \
+         SELECT * FROM (SELECT {COLUMNS}, received_at AS listed_at FROM messages \
+             WHERE moving_to = ?1 AND deleted = 0 AND (received_at, id) < (?2, ?3) \
+             AND {PLAIN} ORDER BY received_at DESC, id DESC LIMIT ?4) \
+         UNION ALL \
+         SELECT * FROM (SELECT {COLUMNS}, k.surfaced_at AS listed_at FROM marks k \
+             JOIN messages ON messages.id = ( \
+                 SELECT m.id FROM messages m JOIN mailboxes b ON b.id = m.mailbox_id \
+                 WHERE b.account_id = k.account_id AND m.message_id_header = k.message_id AND m.deleted = 0 \
+                 AND (m.moving_to IS NULL OR m.moving_to = ?1) \
+                 AND (COALESCE(m.moving_to, m.mailbox_id) = ?1 OR k.reminded_at IS NOT NULL) \
+                 ORDER BY COALESCE(m.moving_to, m.mailbox_id) = ?1 DESC, m.id LIMIT 1) \
+             WHERE k.account_id = ?5 AND k.surfaced_at IS NOT NULL AND k.aside_at IS NULL \
+             AND (k.snoozed_until IS NULL OR k.snoozed_until <= ?6) \
+             AND (k.reminded_at IS NOT NULL OR k.surfaced_at > messages.received_at) \
+             AND (k.surfaced_at, messages.id) < (?2, ?3) \
+             ORDER BY k.surfaced_at DESC, messages.id DESC LIMIT ?4) \
+         ORDER BY listed_at DESC, id DESC LIMIT ?4"
     )
 }
 
@@ -249,8 +288,10 @@ pub fn list(
     list_without_parked(conn, mailbox_id, limit, before, None)
 }
 
-/// [`list`], leaving out what `parked` (an account, and the time now) has set
-/// aside or snoozed: how the inbox is shown.
+/// [`list`], as the inbox of `parked` (an account, and the time now) is
+/// shown: without what is set aside or snoozed, and with what came back on
+/// top ([`inbox_sql`]). Each message's `listed_at` is its place in the list,
+/// and the cursor's `received_at` is the last one's `listed_at`.
 pub fn list_without_parked(
     conn: &Connection,
     mailbox_id: i64,
@@ -259,17 +300,29 @@ pub fn list_without_parked(
     parked: Option<(&str, i64)>,
 ) -> Result<Vec<Message>, StoreError> {
     let (received_at, id) = before.map_or((i64::MAX, i64::MAX), |c| (c.received_at, c.id));
-    let (account, now) = parked.map_or((None, 0), |(account, now)| (Some(account), now));
-    let mut statement = conn.prepare_cached(&list_sql())?;
-    let messages = statement
-        .query_map(params![mailbox_id, received_at, id, limit, account, now], from_row)?
-        .map(|row| row?)
-        .collect::<Result<Vec<_>, _>>()?;
+    let messages = match parked {
+        None => conn
+            .prepare_cached(&list_sql())?
+            .query_map(params![mailbox_id, received_at, id, limit], from_row)?
+            .map(|row| row?)
+            .collect::<Result<Vec<_>, _>>()?,
+        Some((account, now)) => conn
+            .prepare_cached(&inbox_sql())?
+            .query_map(params![mailbox_id, received_at, id, limit, account, now], |row| {
+                let listed_at: i64 = row.get(LISTED_AT)?;
+                Ok(from_row(row)?.map(|message| Message { listed_at, ..message }))
+            })?
+            .map(|row| row?)
+            .collect::<Result<Vec<_>, _>>()?,
+    };
     Ok(messages)
 }
 
+/// Where `listed_at` follows [`COLUMNS`] in [`inbox_sql`].
+const LISTED_AT: usize = 22;
+
 /// The account's messages carrying `mark` (snoozed: until after `now`), one per
-/// Message-ID, newest first: the Pinned, Set aside and Snoozed views.
+/// Message-ID, newest first: the Pinned, Set aside, Snoozed and Reminders views.
 pub fn marked(
     conn: &Connection,
     account_id: &str,
@@ -282,6 +335,9 @@ pub fn marked(
         crate::marks::Mark::Pinned => "k.pinned_at IS NOT NULL",
         crate::marks::Mark::Aside => "k.aside_at IS NOT NULL",
         crate::marks::Mark::Snoozed => "k.snoozed_until > ?2",
+        crate::marks::Mark::Remind => "k.remind_at IS NOT NULL",
+        crate::marks::Mark::Reminded => "k.reminded_at IS NOT NULL",
+        crate::marks::Mark::Surfaced => "k.surfaced_at IS NOT NULL",
     };
     let (received_at, id) = before.map_or((i64::MAX, i64::MAX), |c| (c.received_at, c.id));
     let mut statement = conn.prepare_cached(&format!(
@@ -370,6 +426,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Message, StoreError>> {
             blob_hash: row.get(19)?,
             moving_to: row.get(20)?,
             thread_id: row.get(21)?,
+            listed_at: row.get(10)?,
         })
     })();
     Ok(message)
@@ -395,27 +452,42 @@ mod tests {
     #[tokio::test]
     async fn pages_walk_indexes_instead_of_scanning_the_mailbox() {
         let (_temp, store, _inbox) = store_with_inbox().await;
-        let plan: Vec<String> = store
+        let (plain, inbox): (Vec<String>, Vec<String>) = store
             .read(|conn| {
-                let mut statement = conn.prepare(&format!("EXPLAIN QUERY PLAN {}", list_sql()))?;
-                let details = statement
-                    .query_map(params![1, i64::MAX, i64::MAX, 50, "account", 0], |row| {
-                        row.get::<_, String>(3)
-                    })?
-                    .collect::<Result<_, _>>()?;
-                Ok(details)
+                let plan = |sql: String, inbox: bool| -> Result<Vec<String>, StoreError> {
+                    let mut statement = conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}"))?;
+                    let step = |row: &Row<'_>| row.get::<_, String>(3);
+                    let details = if inbox {
+                        statement.query_map(params![1, i64::MAX, i64::MAX, 50, "account", 0], step)?
+                    } else {
+                        statement.query_map(params![1, i64::MAX, i64::MAX, 50], step)?
+                    };
+                    Ok(details.collect::<Result<_, _>>()?)
+                };
+                Ok((plan(list_sql(), false)?, plan(inbox_sql(), true)?))
             })
             .await
             .unwrap();
         // With an OR, SQLite reads both indexes ("MULTI-INDEX OR") and sorts the
         // whole folder for every page: 55 ms at 100k messages (tests/scale.rs).
+        for plan in [&plain, &inbox] {
+            assert!(
+                plan.iter().any(|step| step.contains("USING INDEX messages_by_date"))
+                    && plan.iter().any(|step| step.contains("USING INDEX messages_moving_to"))
+                    && !plan
+                        .iter()
+                        .any(|step| step.starts_with("SCAN messages") || step.contains("MULTI-INDEX OR")),
+                "{plan:#?}"
+            );
+        }
+        // What came back is found from its marks, newest first; the only scans
+        // are of each half's own page.
         assert!(
-            plan.iter().any(|step| step.contains("USING INDEX messages_by_date"))
-                && plan.iter().any(|step| step.contains("USING INDEX messages_moving_to"))
-                && !plan
+            inbox.iter().any(|step| step.contains("USING INDEX marks_surfaced"))
+                && inbox
                     .iter()
-                    .any(|step| step.starts_with("SCAN messages") || step.contains("MULTI-INDEX OR")),
-            "{plan:#?}"
+                    .all(|step| !step.starts_with("SCAN") || step.starts_with("SCAN (subquery")),
+            "{inbox:#?}"
         );
     }
 
@@ -603,6 +675,191 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(store.read(marks::next_wake).await.unwrap(), Some(50_000));
+    }
+
+    #[tokio::test]
+    async fn what_comes_back_is_on_top_of_the_inbox_and_a_reminder_shows_from_sent() {
+        use crate::marks::{self, Mark};
+        let (_temp, store, inbox) = store_with_inbox().await;
+        let (account, sent) = store
+            .write(move |tx| {
+                let account: String =
+                    tx.query_row("SELECT account_id FROM mailboxes WHERE id = ?1", [inbox], |r| r.get(0))?;
+                let folder = |name: &str, role| RemoteMailbox {
+                    remote_name: name.as_bytes().to_vec(),
+                    name: name.into(),
+                    delimiter: Some('/'),
+                    role: Some(role),
+                    selectable: true,
+                    attributes: vec![],
+                };
+                mailboxes::reconcile(
+                    tx,
+                    &account,
+                    &[folder("INBOX", Role::Inbox), folder("Sent", Role::Sent)],
+                )?;
+                let sent = mailboxes::list(tx, &account)?
+                    .into_iter()
+                    .find(|m| m.role == Some(Role::Sent))
+                    .unwrap()
+                    .id;
+                Ok((account, sent))
+            })
+            .await
+            .unwrap()
+            .value;
+        let with = |uid: u32, at: i64, id: &str, parent: Option<&str>, from: &str| {
+            let mut new = message(uid, at, id);
+            new.headers.message_id = Some(id.into());
+            new.headers.in_reply_to = parent.map(str::to_owned).into_iter().collect();
+            new.headers.from = Some(Person {
+                name: None,
+                address: Some(from.into()),
+            });
+            new
+        };
+        let received: Vec<NewMessage> = (1..=4)
+            .map(|uid| {
+                with(
+                    uid,
+                    i64::from(uid) * 1000,
+                    &format!("m{uid}@x"),
+                    None,
+                    "bob@example.test",
+                )
+            })
+            .collect();
+        store.write(move |tx| upsert(tx, inbox, &received)).await.unwrap();
+        // Ada wrote at 2.5 s and asked to be reminded; nobody answered.
+        let mine = vec![with(1, 2_500, "mine@x", None, "ada@example.test")];
+        store.write(move |tx| upsert(tx, sent, &mine)).await.unwrap();
+        let a = account.clone();
+        store
+            .write(move |tx| {
+                // m1's snooze ended at 10 s; the reminder came due at 9 s.
+                marks::set(tx, &a, "m1@x", Mark::Surfaced, Some(10_000))?;
+                marks::set(tx, &a, "mine@x", Mark::Reminded, Some(9_000))?;
+                marks::set(tx, &a, "mine@x", Mark::Surfaced, Some(9_000))?;
+                // Came back before it arrived (clocks): listed by its own time, once.
+                marks::set(tx, &a, "m3@x", Mark::Surfaced, Some(100))
+            })
+            .await
+            .unwrap();
+
+        let page = |before: Option<Cursor>, limit: u32| {
+            let a = account.clone();
+            let store = store.clone();
+            async move {
+                store
+                    .read(move |c| list_without_parked(c, inbox, limit, before, Some((&a, 20_000))))
+                    .await
+                    .unwrap()
+            }
+        };
+        let shown = |list: &[Message]| {
+            list.iter()
+                .map(|m| (m.subject.clone(), m.listed_at))
+                .collect::<Vec<_>>()
+        };
+        let all = page(None, 10).await;
+        assert_eq!(
+            shown(&all),
+            [
+                ("m1@x".to_owned(), 10_000),
+                ("mine@x".to_owned(), 9_000),
+                ("m4@x".to_owned(), 4_000),
+                ("m3@x".to_owned(), 3_000),
+                ("m2@x".to_owned(), 2_000),
+            ]
+        );
+        assert_eq!(all[1].mailbox_id, sent, "the reminder shows its copy in Sent");
+        // Pages follow the same order: the cursor is the last one's place.
+        let first = page(None, 2).await;
+        let cursor = |m: &Message| Cursor {
+            received_at: m.listed_at,
+            id: m.id,
+        };
+        let second = page(Some(cursor(&first[1])), 2).await;
+        let third = page(Some(cursor(&second[1])), 2).await;
+        let walked: Vec<_> = [first, second, third].iter().flat_map(|p| shown(p)).collect();
+        assert_eq!(walked, shown(&all));
+        // Other folders keep their own order.
+        let sent_list = store.read(move |c| list(c, sent, 10, None)).await.unwrap();
+        assert_eq!(sent_list[0].listed_at, 2_500);
+
+        // Snoozed again: out of the inbox, whatever came back before.
+        let a = account.clone();
+        store
+            .write(move |tx| marks::set(tx, &a, "m1@x", Mark::Snoozed, Some(50_000)))
+            .await
+            .unwrap();
+        assert_eq!(page(None, 10).await[0].subject, "mine@x");
+
+        // A reply from someone else, after Ada's message: replied, and the
+        // reminder is found from the reply's conversation.
+        let a = account.clone();
+        let own = store
+            .read(move |c| marks::replied_after(c, &a, "mine@x", "Ada@Example.test"))
+            .await
+            .unwrap();
+        assert_eq!(own, Some(false), "nobody has answered yet");
+        let follow_up = vec![with(5, 3_000, "again@x", Some("mine@x"), "ada@example.test")];
+        store.write(move |tx| upsert(tx, sent, &follow_up)).await.unwrap();
+        let a = account.clone();
+        assert_eq!(
+            store
+                .read(move |c| marks::replied_after(c, &a, "mine@x", "ada@example.test"))
+                .await
+                .unwrap(),
+            Some(false),
+            "Ada's own follow-up is not a reply"
+        );
+        let reply = vec![with(6, 5_000, "reply@x", Some("mine@x"), "bob@example.test")];
+        store.write(move |tx| upsert(tx, inbox, &reply)).await.unwrap();
+        let a = account.clone();
+        assert_eq!(
+            store
+                .read(move |c| marks::replied_after(c, &a, "mine@x", "ada@example.test"))
+                .await
+                .unwrap(),
+            Some(true)
+        );
+        let a = account.clone();
+        assert_eq!(
+            store
+                .read(move |c| marks::reminders_in_thread_of(c, &a, "reply@x"))
+                .await
+                .unwrap(),
+            ["mine@x"]
+        );
+        let a = account.clone();
+        assert_eq!(
+            store
+                .read(move |c| marks::replied_after(c, &a, "unknown@x", "ada@example.test"))
+                .await
+                .unwrap(),
+            None,
+            "no copy, no answer"
+        );
+
+        // A waiting reminder comes due like a snooze, and shows in its view.
+        let a = account.clone();
+        store
+            .write(move |tx| marks::set(tx, &a, "m2@x", Mark::Remind, Some(30_000)))
+            .await
+            .unwrap();
+        assert_eq!(store.read(marks::next_wake).await.unwrap(), Some(30_000));
+        assert_eq!(
+            store.read(|c| marks::due_reminders(c, 30_000)).await.unwrap(),
+            [(account.clone(), "m2@x".to_owned())]
+        );
+        let a = account.clone();
+        let view = store
+            .read(move |c| marked(c, &a, Mark::Remind, 20_000, 10, None))
+            .await
+            .unwrap();
+        assert_eq!(view.len(), 1);
+        assert_eq!(view[0].subject, "m2@x");
     }
 
     #[tokio::test]

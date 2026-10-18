@@ -23,6 +23,11 @@ export interface FixtureMessage {
   pinned?: boolean;
   aside?: boolean;
   snoozed_until?: number | null;
+  remind_at?: number | null;
+  /** A reminder came due: shown in the inbox from wherever it is. */
+  reminded?: boolean;
+  /** When it came back to the inbox; listed there by it. */
+  surfaced_at?: number | null;
 }
 
 export interface FixtureAccount {

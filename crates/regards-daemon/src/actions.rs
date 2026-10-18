@@ -5,8 +5,8 @@
 use crate::State;
 use regards_core::mailbox::Role;
 use regards_ipc::protocol::{
-    AsideParams, DeleteResult, MarkResult, MessageIds, MoveParams, MoveResult, PinParams, RpcError, SetFlagsParams,
-    SetFlagsResult, SnoozeParams, UndoInfo, UndoParams, UndoResult, codes,
+    AsideParams, DeleteResult, MarkResult, MessageIds, MoveParams, MoveResult, PinParams, RemindParams, RpcError,
+    SetFlagsParams, SetFlagsResult, SnoozeParams, UndoInfo, UndoParams, UndoResult, codes,
 };
 use regards_store::marks::{self, Mark};
 use regards_store::operations::{self, FlagName, NewOperation, OperationKind};
@@ -275,6 +275,22 @@ pub(crate) async fn snooze(state: &State, params: SnoozeParams) -> Result<Value,
     Ok(result)
 }
 
+/// "Remind me if no reply by" a time, or no reminder: either way, done with
+/// one that came due (it leaves the inbox). The scheduler checks for replies.
+pub(crate) async fn remind(state: &State, params: RemindParams) -> Result<Value, RpcError> {
+    if params.at.is_some_and(|at| at <= now_ms()) {
+        return Err(RpcError::new(codes::INVALID_PARAMS, "choose a time in the future"));
+    }
+    let done = if params.at.is_some() {
+        "Reminder set"
+    } else {
+        "Reminder off"
+    };
+    let result = mark_messages(state, params.ids, Mark::Remind, Target::Remind(params.at), done).await?;
+    state.scheduler.wake();
+    Ok(result)
+}
+
 /// What a mark becomes.
 #[derive(Clone, Copy)]
 enum Target {
@@ -282,6 +298,27 @@ enum Target {
     Toggle(bool),
     /// Snoozed until then, or not.
     Snooze(Option<i64>),
+    /// A reminder then, or none; and done with one that came due.
+    Remind(Option<i64>),
+}
+
+impl Target {
+    /// The marks to change on a message that has `current`, and their new values.
+    fn changes(self, mark: Mark, current: &marks::Marks, now: i64) -> Vec<(Mark, Option<i64>)> {
+        let wanted = match self {
+            Self::Toggle(on) if current.get(mark).is_some() == on => vec![],
+            Self::Toggle(on) => vec![(mark, on.then_some(now))],
+            Self::Snooze(until) => vec![(mark, until)],
+            Self::Remind(at) if current.reminded_at.is_some() => {
+                vec![(Mark::Remind, at), (Mark::Reminded, None), (Mark::Surfaced, None)]
+            }
+            Self::Remind(at) => vec![(Mark::Remind, at)],
+        };
+        wanted
+            .into_iter()
+            .filter(|(mark, value)| current.get(*mark) != *value)
+            .collect()
+    }
 }
 
 /// Put a mark on messages, or take it off; one undo entry for all of them.
@@ -300,6 +337,7 @@ async fn mark_messages(
         .write(move |tx| {
             let mut seen = BTreeSet::new();
             let mut inverse = Vec::new();
+            let mut changed = 0;
             for id in &ids {
                 let message =
                     messages::get(tx, *id)?.ok_or_else(|| StoreError::Conflict(format!("no message {id}")))?;
@@ -313,16 +351,17 @@ async fn mark_messages(
                 if !seen.insert((account.clone(), message_id.clone())) {
                     continue;
                 }
-                let current = marks::get(tx, &account, &message_id)?.get(mark);
-                let before = match target {
-                    Target::Toggle(on) if current.is_some() == on => continue,
-                    Target::Toggle(on) => marks::set(tx, &account, &message_id, mark, on.then_some(now))?,
-                    Target::Snooze(until) if current == until => continue,
-                    Target::Snooze(until) => marks::set(tx, &account, &message_id, mark, until)?,
-                };
-                inverse.push((account, message_id, mark, before));
+                let current = marks::get(tx, &account, &message_id)?;
+                let changes = target.changes(mark, &current, now);
+                if changes.is_empty() {
+                    continue;
+                }
+                changed += 1;
+                for (mark, value) in changes {
+                    let before = marks::set(tx, &account, &message_id, mark, value)?;
+                    inverse.push((account.clone(), message_id.clone(), mark, before));
+                }
             }
-            let changed = inverse.len();
             let undo = if changed > 0 {
                 let description = if changed == 1 {
                     done.clone()
@@ -349,6 +388,9 @@ async fn mark_messages(
 /// Undo entries last this long; the app offers undo for the first seconds.
 const UNDO_FOR_MS: i64 = 10 * 60 * 1000;
 
+/// A mark to put back on undo: account, Message-ID, which mark, what it was.
+type MarkUndo = (String, String, Mark, Option<i64>);
+
 /// What reverses a set of moves: put each message (id) back where it was seen (folder id).
 #[derive(Debug, Serialize, Deserialize)]
 struct Inverse {
@@ -356,7 +398,7 @@ struct Inverse {
     moves: Vec<(i64, i64)>,
     /// Marks to put back: account, Message-ID, which mark, what it was.
     #[serde(default)]
-    marks: Vec<(String, String, Mark, Option<i64>)>,
+    marks: Vec<MarkUndo>,
 }
 
 pub(crate) async fn move_to(state: &Arc<State>, params: MoveParams) -> Result<Value, RpcError> {
@@ -371,7 +413,7 @@ pub(crate) async fn move_to(state: &Arc<State>, params: MoveParams) -> Result<Va
         .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such folder"))?
         .name;
     let requests = params.ids.iter().map(|id| (*id, target)).collect();
-    run_moves(state, requests, &format!("Moved to {name}")).await
+    run_moves(state, requests, Vec::new(), &format!("Moved to {name}")).await
 }
 
 pub(crate) async fn archive(state: &Arc<State>, params: MessageIds) -> Result<Value, RpcError> {
@@ -396,7 +438,9 @@ pub(crate) async fn trash(state: &Arc<State>, params: MessageIds) -> Result<Valu
     .await
 }
 
-/// Move each message to the folder with `role` in its own account.
+/// Move each message to the folder with `role` in its own account. Archiving
+/// ("done") a reminder shown in the inbox from another folder (Sent, usually)
+/// ends the reminder instead: the message stays filed where it is.
 async fn to_role(
     state: &Arc<State>,
     params: MessageIds,
@@ -407,46 +451,65 @@ async fn to_role(
     check_count(&params.ids)?;
     let ids = params.ids;
     let missing = missing.to_owned();
-    let requests = state
+    let (requests, reminders) = state
         .store
         .read(move |conn| {
             let mut requests = Vec::new();
+            let mut reminders = Vec::new();
             for id in ids {
                 let message =
                     messages::get(conn, id)?.ok_or_else(|| StoreError::Conflict(format!("no message {id}")))?;
                 let mailbox = mailboxes::get(conn, message.mailbox_id)?
                     .ok_or_else(|| StoreError::Conflict("the folder no longer exists".into()))?;
+                if role == Role::Archive
+                    && let Some(message_id) = &message.message_id
+                {
+                    let shown_in = mailboxes::get(conn, message.moving_to.unwrap_or(message.mailbox_id))?;
+                    let in_inbox = shown_in.is_some_and(|m| m.role == Some(Role::Inbox));
+                    if !in_inbox && marks::get(conn, &mailbox.account_id, message_id)?.reminded_at.is_some() {
+                        reminders.push((mailbox.account_id.clone(), message_id.clone()));
+                        continue;
+                    }
+                }
                 let target = mailboxes::list(conn, &mailbox.account_id)?
                     .into_iter()
                     .find(|m| m.role == Some(role))
                     .ok_or_else(|| StoreError::Conflict(missing.clone()))?;
                 requests.push((id, target.id));
             }
-            Ok(requests)
+            Ok((requests, reminders))
         })
         .await
         .map_err(conflict)?;
-    run_moves(state, requests, done).await
+    run_moves(state, requests, reminders, done).await
 }
 
-async fn run_moves(state: &Arc<State>, requests: Vec<(i64, i64)>, done: &str) -> Result<Value, RpcError> {
+/// Apply moves, and end the reminders shown in the inbox in `reminders`
+/// (account, Message-ID); one undo entry for all of it.
+async fn run_moves(
+    state: &Arc<State>,
+    requests: Vec<(i64, i64)>,
+    reminders: Vec<(String, String)>,
+    done: &str,
+) -> Result<Value, RpcError> {
     let now = now_ms();
     let done = done.to_owned();
     let committed = state
         .store
         .write(move |tx| {
             let (moved, inverse, accounts) = plan_moves(tx, &requests, now)?;
+            let mut marks = leave_the_inbox(tx, &inverse)?;
+            for (account, message_id) in &reminders {
+                clear_came_back(tx, account, message_id, &mut marks)?;
+            }
+            let moved = moved + reminders.len();
             let undo = if moved > 0 {
                 let description = if moved == 1 {
                     done.clone()
                 } else {
                     format!("{done} ({moved} messages)")
                 };
-                let inverse = serde_json::to_string(&Inverse {
-                    moves: inverse,
-                    marks: Vec::new(),
-                })
-                .expect("plain data serializes");
+                let inverse = serde_json::to_string(&Inverse { moves: inverse, marks }).expect("plain data serializes");
                 let id = undo::record(tx, &description, &inverse, now, now + UNDO_FOR_MS)?;
                 Some(UndoInfo { id, description })
             } else {
@@ -494,6 +557,44 @@ pub(crate) async fn apply_undo(state: &Arc<State>, params: UndoParams) -> Result
         state.queue.wake(state, &account);
     }
     Ok(json!(UndoResult { undone }))
+}
+
+/// Moved messages no longer count as come back to the inbox, nor as
+/// reminders shown there; returns the marks to put back on undo.
+fn leave_the_inbox(tx: &rusqlite::Transaction<'_>, moved: &[(i64, i64)]) -> Result<Vec<MarkUndo>, StoreError> {
+    let mut seen = BTreeSet::new();
+    let mut inverse = Vec::new();
+    for (id, _) in moved {
+        let Some(message) = messages::get(tx, *id)? else {
+            continue;
+        };
+        let (Some(message_id), Some(mailbox)) = (message.message_id, mailboxes::get(tx, message.mailbox_id)?) else {
+            continue;
+        };
+        if !seen.insert((mailbox.account_id.clone(), message_id.clone())) {
+            continue;
+        }
+        clear_came_back(tx, &mailbox.account_id, &message_id, &mut inverse)?;
+    }
+    Ok(inverse)
+}
+
+/// Take a message out of what came back to the inbox: its place on top, and a
+/// reminder shown there. What it was goes into `inverse`.
+fn clear_came_back(
+    tx: &rusqlite::Transaction<'_>,
+    account_id: &str,
+    message_id: &str,
+    inverse: &mut Vec<MarkUndo>,
+) -> Result<(), StoreError> {
+    let current = marks::get(tx, account_id, message_id)?;
+    for mark in [Mark::Surfaced, Mark::Reminded] {
+        if current.get(mark).is_some() {
+            let before = marks::set(tx, account_id, message_id, mark, None)?;
+            inverse.push((account_id.to_owned(), message_id.to_owned(), mark, before));
+        }
+    }
+    Ok(())
 }
 
 /// What a batch of moves did: how many moved, the inverse, and the accounts to wake.

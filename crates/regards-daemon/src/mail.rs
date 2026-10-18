@@ -62,7 +62,7 @@ pub(crate) async fn list(state: &State, params: MessageListParams) -> Result<Val
     let next = more.then(|| {
         let last = rows.last().expect("a full page is not empty");
         MessageCursor {
-            received_at: last.received_at,
+            received_at: last.listed_at,
             id: last.id,
         }
     });
@@ -93,6 +93,7 @@ pub(crate) async fn view(state: &State, params: ViewParams) -> Result<Value, Rpc
         View::Pinned => Mark::Pinned,
         View::Aside => Mark::Aside,
         View::Snoozed => Mark::Snoozed,
+        View::Reminders => Mark::Remind,
     };
     let before = params.before.map(|c| Cursor {
         received_at: c.received_at,
@@ -114,7 +115,7 @@ pub(crate) async fn view(state: &State, params: ViewParams) -> Result<Value, Rpc
     let next = more.then(|| {
         let last = rows.last().expect("a full page is not empty");
         MessageCursor {
-            received_at: last.received_at,
+            received_at: last.listed_at,
             id: last.id,
         }
     });
@@ -308,6 +309,9 @@ fn summary(m: Message, marks: &HashMap<String, Marks>) -> MessageSummary {
         pinned: mark.pinned_at.is_some(),
         aside: mark.aside_at.is_some(),
         snoozed_until: mark.snoozed_until,
+        remind_at: mark.remind_at,
+        reminded: mark.reminded_at.is_some(),
+        listed_at: m.listed_at,
         id: m.id,
         uid: m.uid,
         subject: m.subject,

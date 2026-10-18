@@ -107,6 +107,15 @@ export interface MessageSummary {
   aside: boolean;
   /** Out of the inbox until then (Unix ms), if snoozed. */
   snoozed_until: number | null;
+  /** "Remind me if no reply by" then (Unix ms). */
+  remind_at: number | null;
+  /** A reminder came due with no reply: shown in the inbox until done (archive). */
+  reminded: boolean;
+  /**
+   * Its place in the list: `received_at`, except in the inbox for what came
+   * back to it (a snooze that ended, a reminder), listed by when it did.
+   */
+  listed_at: number;
 }
 
 export interface MessageListResult {
@@ -220,12 +229,22 @@ export function setAside(ids: number[], aside: boolean): Promise<MarkResult> {
   return invoke<MarkResult>("message_set_aside", { ids, aside });
 }
 
+/**
+ * "Remind me if no reply by" `at` (Unix ms, in the future), or no reminder
+ * (`null`, also done with one that came due); undoable. If nobody else has
+ * written in the conversation by then, the message comes back on top of the
+ * inbox, from wherever it is filed (Sent, usually).
+ */
+export function remindMessages(ids: number[], at: number | null): Promise<MarkResult> {
+  return invoke<MarkResult>("message_remind", { ids, at });
+}
+
 export type MessageView = "pinned" | "aside" | "snoozed";
 
-/** An account's pinned, set-aside or snoozed messages, newest first; pass `next` back for more. */
+/** An account's pinned, set-aside, snoozed or reminder messages, newest first; pass `next` back for more. */
 export function listView(
   accountId: string,
-  view: MessageView,
+  view: MessageView | "reminders",
   before: MessageCursor | null,
   limit: number | null = null,
 ): Promise<MessageListResult> {

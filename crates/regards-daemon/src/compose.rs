@@ -13,6 +13,7 @@ use regards_ipc::protocol::{
     codes,
 };
 use regards_store::drafts::{self, Content, Draft, Edit};
+use regards_store::marks::{self, Mark};
 use regards_store::outbox::{self, Entry, NewEntry, State as EntryState};
 use regards_store::{StoreError, accounts, mailboxes};
 use rusqlite::Transaction;
@@ -323,10 +324,16 @@ pub(crate) async fn send(state: &Arc<State>, params: DraftSendParams) -> Result<
             format!("undo_seconds must be 0 to {MAX_UNDO_SECONDS}"),
         ));
     }
-    let (id, send_at) = (params.id, params.send_at);
+    let (id, send_at, remind_at) = (params.id, params.send_at, params.remind_at);
     let now = now_ms();
     if let Some(at) = send_at {
         check_send_at(at, now)?;
+    }
+    if remind_at.is_some_and(|at| at <= send_at.unwrap_or(now)) {
+        return Err(RpcError::new(
+            codes::INVALID_PARAMS,
+            "a reminder must come after the message goes",
+        ));
     }
     let undo_until = now + i64::from(undo_seconds) * 1000;
     let (seen_version, files) = draft_files(state, id).await?;
@@ -356,12 +363,20 @@ pub(crate) async fn send(state: &Arc<State>, params: DraftSendParams) -> Result<
                 send_at,
                 answering: draft.replying_to,
             };
-            outbox::queue(tx, &entry, now)
+            let queued = outbox::queue(tx, &entry, now)?;
+            // Keyed by the new Message-ID, so it applies to the copy in Sent.
+            if remind_at.is_some() {
+                marks::set(tx, &account.id, &entry.message_id, Mark::Remind, remind_at)?;
+            }
+            Ok(queued)
         })
         .await
         .map_err(conflict)?
         .value;
     state.outbox.wake();
+    if remind_at.is_some() {
+        state.scheduler.wake();
+    }
     Ok(json!(DraftSendResult {
         outbox_id,
         undo_until,
@@ -504,12 +519,20 @@ pub(crate) async fn outbox_list(state: &State) -> Result<Value, RpcError> {
     }))
 }
 
-/// Undo send, or "edit" after a failure: the entry goes, the draft stays.
+/// Undo send, or "edit" after a failure: the entry goes, the draft stays,
+/// and so does no reminder: sending it again gives it a new Message-ID.
 pub(crate) async fn undo(state: &State, params: OutboxRef) -> Result<Value, RpcError> {
     let id = params.id;
     let taken = state
         .store
-        .write(move |tx| outbox::take_back(tx, id))
+        .write(move |tx| {
+            let entry = outbox::get(tx, id)?;
+            let taken = outbox::take_back(tx, id)?;
+            if let (Some(_), Some(entry)) = (taken, entry) {
+                marks::set(tx, &entry.account_id, &entry.message_id, Mark::Remind, None)?;
+            }
+            Ok(taken)
+        })
         .await
         .map_err(crate::session::internal)?
         .value;

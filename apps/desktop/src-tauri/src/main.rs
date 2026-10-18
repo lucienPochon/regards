@@ -23,8 +23,8 @@ use regards_ipc::protocol::{
     DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MailboxListResult,
     MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams,
     MoveResult, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal,
-    ServerSettings, SetFlagsParams, SetFlagsResult, SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View,
-    ViewParams, methods,
+    RemindParams, ServerSettings, SetFlagsParams, SetFlagsResult, SnoozeParams, SyncResult, ThreadView, UndoParams,
+    UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -381,7 +381,17 @@ async fn message_snooze(
         .map_err(describe)
 }
 
-/// An account's pinned, set-aside or snoozed messages, newest first.
+/// "Remind me if no reply by" `at`, or no reminder (also: done with one that came due).
+#[tauri::command]
+async fn message_remind(bridge: State<'_, Bridge>, ids: Vec<i64>, at: Option<i64>) -> Result<MarkResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_REMIND, RemindParams { ids, at })
+        .await
+        .map_err(describe)
+}
+
+/// An account's pinned, set-aside, snoozed or reminder messages, newest first.
 #[tauri::command]
 async fn message_view(
     bridge: State<'_, Bridge>,
@@ -528,6 +538,7 @@ async fn draft_send(
     id: i64,
     undo_seconds: Option<u32>,
     send_at: Option<i64>,
+    remind_at: Option<i64>,
 ) -> Result<DraftSendResult, String> {
     let mut client = bridge.connect().await?.client;
     client
@@ -537,6 +548,7 @@ async fn draft_send(
                 id,
                 undo_seconds,
                 send_at,
+                remind_at,
             },
         )
         .await
@@ -697,6 +709,7 @@ fn main() {
             message_pin,
             message_set_aside,
             message_snooze,
+            message_remind,
             message_view,
             draft_create,
             draft_reply,

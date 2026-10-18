@@ -75,10 +75,11 @@ export function saveDraft(
 /**
  * Queue it; it goes once the undo window is over, or at `sendAt` (Unix ms,
  * in the future). A scheduled message goes from this computer, which must be
- * on then.
+ * on then. With `remindAt`, it comes back on top of the inbox then if nobody
+ * has replied (see `remindMessages`).
  */
-export const sendDraft = (id: number, undoSeconds = 10, sendAt: number | null = null) =>
-  invoke<Queued>("draft_send", { id, undoSeconds, sendAt });
+export const sendDraft = (id: number, undoSeconds = 10, sendAt: number | null = null, remindAt: number | null = null) =>
+  invoke<Queued>("draft_send", { id, undoSeconds, sendAt, remindAt });
 
 export const listOutbox = () => invoke<{ entries: OutboxEntry[] }>("outbox_list");
 /** Undo send, or edit a failed message: returns the draft to reopen. */

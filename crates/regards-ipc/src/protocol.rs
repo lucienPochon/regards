@@ -60,7 +60,10 @@ pub mod methods {
     pub const MESSAGE_SET_ASIDE: &str = "message.set_aside";
     /// Snooze messages until a time, or "someday"; or end a snooze. Undoable.
     pub const MESSAGE_SNOOZE: &str = "message.snooze";
-    /// An account's pinned, set-aside or snoozed messages, newest first.
+    /// "Remind me if no reply by" a time, or no reminder (also: done with one
+    /// that came due). Undoable.
+    pub const MESSAGE_REMIND: &str = "message.remind";
+    /// An account's pinned, set-aside, snoozed or reminder messages, newest first.
     pub const MESSAGE_VIEW: &str = "message.view";
     /// Start a new message (Phase 2). Drafts and the outbox are `ui` only for now.
     pub const DRAFT_CREATE: &str = "draft.create";
@@ -391,6 +394,7 @@ pub struct ChangesNotification {
 /// Where a page of messages ended; pass it as `before` for the next page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageCursor {
+    /// The last message's place in the list: its `listed_at`.
     pub received_at: i64,
     pub id: i64,
 }
@@ -433,6 +437,17 @@ pub struct MessageSummary {
     /// Out of the inbox until then (Unix ms).
     #[serde(default)]
     pub snoozed_until: Option<i64>,
+    /// "Remind me if no reply by" then (Unix ms).
+    #[serde(default)]
+    pub remind_at: Option<i64>,
+    /// A reminder came due with no reply: it shows in the inbox, wherever the
+    /// message is filed, until it is done ([`methods::MESSAGE_REMIND`] with no time).
+    #[serde(default)]
+    pub reminded: bool,
+    /// Its place in the list: `received_at`, except in the inbox for what came
+    /// back to it (a snooze that ended, a reminder), listed by when it did.
+    #[serde(default)]
+    pub listed_at: i64,
 }
 
 /// Parameters naming one message: [`methods::MESSAGE_GET`].
@@ -566,7 +581,17 @@ pub struct SnoozeParams {
     pub someday: bool,
 }
 
-/// Result of marking messages (pin, set aside, snooze).
+/// Parameters of [`methods::MESSAGE_REMIND`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemindParams {
+    pub ids: Vec<i64>,
+    /// When to remind if nobody has replied (Unix ms, in the future). `None`:
+    /// no reminder, and done with one that came due.
+    #[serde(default)]
+    pub at: Option<i64>,
+}
+
+/// Result of marking messages (pin, set aside, snooze, remind).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MarkResult {
     /// Messages whose mark changed.
@@ -581,6 +606,8 @@ pub enum View {
     Pinned,
     Aside,
     Snoozed,
+    /// Waiting for a reply, with a reminder set.
+    Reminders,
 }
 
 /// Parameters of [`methods::MESSAGE_VIEW`].
@@ -719,6 +746,9 @@ pub struct DraftSendParams {
     /// held for the person instead (ADR-0011 §2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub send_at: Option<i64>,
+    /// Remind me if nobody has replied by then (Unix ms), as [`methods::MESSAGE_REMIND`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remind_at: Option<i64>,
 }
 
 /// Result of [`methods::DRAFT_SEND`].

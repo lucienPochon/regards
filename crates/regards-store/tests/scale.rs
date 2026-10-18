@@ -161,6 +161,27 @@ async fn bench_a_100k_message_mailbox_stays_responsive() {
     .await
     .unwrap();
 
+    // Old mail that came back (snoozes that ended): every 10th of the oldest 1,000, now on top.
+    let a = account.clone();
+    store
+        .write(move |tx| {
+            for uid in (1..=1000).step_by(10) {
+                let back = 1_900_000_000_000 + i64::from(uid);
+                marks::set(tx, &a, &format!("m{uid}@example.test"), Mark::Surfaced, Some(back))?;
+            }
+            Ok(())
+        })
+        .await
+        .unwrap();
+    let shown = time("inbox page, 100 came back", Duration::from_millis(20), || {
+        let a = account.clone();
+        store.read(move |conn| messages::list_without_parked(conn, inbox, 50, None, Some((&a, 0))))
+    })
+    .await
+    .unwrap();
+    assert_eq!(shown[0].uid, 991, "the last to come back is on top");
+    assert!(shown.iter().all(|m| m.uid <= 1000), "what came back comes first");
+
     let middle = Cursor {
         received_at: 1_700_000_000_000 + i64::from(MESSAGES / 2) * 60_000,
         id: i64::MAX,
