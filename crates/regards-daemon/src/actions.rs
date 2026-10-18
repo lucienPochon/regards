@@ -6,7 +6,7 @@ use crate::State;
 use regards_core::mailbox::Role;
 use regards_ipc::protocol::{
     AsideParams, DeleteResult, MarkResult, MessageIds, MoveParams, MoveResult, PinParams, RpcError, SetFlagsParams,
-    SetFlagsResult, UndoInfo, UndoParams, UndoResult, codes,
+    SetFlagsResult, SnoozeParams, UndoInfo, UndoParams, UndoResult, codes,
 };
 use regards_store::marks::{self, Mark};
 use regards_store::operations::{self, FlagName, NewOperation, OperationKind};
@@ -101,6 +101,40 @@ pub(crate) async fn set_flags(state: &Arc<State>, params: SetFlagsParams) -> Res
         state.queue.wake(state, &account);
     }
     Ok(json!(SetFlagsResult { changed }))
+}
+
+/// A snoozed message is back: mark every copy unread, here and (through
+/// the queue) on the server, so it returns as new. Returns whether any changed.
+pub(crate) fn mark_unread_everywhere(
+    tx: &rusqlite::Transaction<'_>,
+    account_id: &str,
+    message_id: &str,
+    now: i64,
+) -> Result<bool, StoreError> {
+    let mut changed = false;
+    for copy in messages::copies(tx, account_id, message_id)? {
+        if !copy.flags.seen {
+            continue;
+        }
+        let Some(uid_validity) = mailboxes::get(tx, copy.mailbox_id)?.and_then(|m| m.uid_validity) else {
+            continue;
+        };
+        operations::apply_locally(tx, copy.mailbox_id, &[copy.uid], &[FlagName::Seen], false)?;
+        operations::enqueue(
+            tx,
+            &NewOperation {
+                mailbox_id: copy.mailbox_id,
+                uid_validity: uid_validity as u32,
+                kind: OperationKind::RemoveFlags,
+                uids: vec![copy.uid],
+                flags: vec![FlagName::Seen],
+                target_mailbox_id: None,
+            },
+            now,
+        )?;
+        changed = true;
+    }
+    Ok(changed)
 }
 
 /// After a reply went out: mark the message it answers `\Answered`, here and
@@ -213,16 +247,51 @@ pub(crate) async fn delete_forever(state: &Arc<State>, params: MessageIds) -> Re
 
 pub(crate) async fn pin(state: &State, params: PinParams) -> Result<Value, RpcError> {
     let done = if params.pinned { "Pinned" } else { "Unpinned" };
-    mark_messages(state, params.ids, Mark::Pinned, params.pinned, done).await
+    mark_messages(state, params.ids, Mark::Pinned, Target::Toggle(params.pinned), done).await
 }
 
 pub(crate) async fn set_aside(state: &State, params: AsideParams) -> Result<Value, RpcError> {
     let done = if params.aside { "Set aside" } else { "Back in the inbox" };
-    mark_messages(state, params.ids, Mark::Aside, params.aside, done).await
+    mark_messages(state, params.ids, Mark::Aside, Target::Toggle(params.aside), done).await
+}
+
+/// Snooze until a time or "someday", or end a snooze; the scheduler wakes them.
+pub(crate) async fn snooze(state: &State, params: SnoozeParams) -> Result<Value, RpcError> {
+    let until = if params.someday {
+        Some(marks::SOMEDAY)
+    } else {
+        params.until
+    };
+    if until.is_some_and(|at| at <= now_ms()) {
+        return Err(RpcError::new(codes::INVALID_PARAMS, "choose a time in the future"));
+    }
+    let done = if until.is_some() {
+        "Snoozed"
+    } else {
+        "Back in the inbox"
+    };
+    let result = mark_messages(state, params.ids, Mark::Snoozed, Target::Snooze(until), done).await?;
+    state.scheduler.wake();
+    Ok(result)
+}
+
+/// What a mark becomes.
+#[derive(Clone, Copy)]
+enum Target {
+    /// On (from now) or off.
+    Toggle(bool),
+    /// Snoozed until then, or not.
+    Snooze(Option<i64>),
 }
 
 /// Put a mark on messages, or take it off; one undo entry for all of them.
-async fn mark_messages(state: &State, ids: Vec<i64>, mark: Mark, on: bool, done: &str) -> Result<Value, RpcError> {
+async fn mark_messages(
+    state: &State,
+    ids: Vec<i64>,
+    mark: Mark,
+    target: Target,
+    done: &str,
+) -> Result<Value, RpcError> {
     check_count(&ids)?;
     let now = now_ms();
     let done = done.to_owned();
@@ -245,10 +314,12 @@ async fn mark_messages(state: &State, ids: Vec<i64>, mark: Mark, on: bool, done:
                     continue;
                 }
                 let current = marks::get(tx, &account, &message_id)?.get(mark);
-                if current.is_some() == on {
-                    continue;
-                }
-                let before = marks::set(tx, &account, &message_id, mark, on.then_some(now))?;
+                let before = match target {
+                    Target::Toggle(on) if current.is_some() == on => continue,
+                    Target::Toggle(on) => marks::set(tx, &account, &message_id, mark, on.then_some(now))?,
+                    Target::Snooze(until) if current == until => continue,
+                    Target::Snooze(until) => marks::set(tx, &account, &message_id, mark, until)?,
+                };
                 inverse.push((account, message_id, mark, before));
             }
             let changed = inverse.len();

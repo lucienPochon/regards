@@ -94,6 +94,8 @@ jobs:
       - run: npm ci
       - name: Type-check and build
         run: npm run build
+      - name: Unit tests
+        run: npm test
 
   deny:
     name: Licences and advisories

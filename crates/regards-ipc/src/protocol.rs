@@ -58,6 +58,8 @@ pub mod methods {
     pub const MESSAGE_PIN: &str = "message.pin";
     /// Set messages aside (out of the inbox) or bring them back; undoable.
     pub const MESSAGE_SET_ASIDE: &str = "message.set_aside";
+    /// Snooze messages until a time, or "someday"; or end a snooze. Undoable.
+    pub const MESSAGE_SNOOZE: &str = "message.snooze";
     /// An account's pinned, set-aside or snoozed messages, newest first.
     pub const MESSAGE_VIEW: &str = "message.view";
     /// Start a new message (Phase 2). Drafts and the outbox are `ui` only for now.
@@ -543,6 +545,18 @@ pub struct AsideParams {
     pub ids: Vec<i64>,
     /// `false` brings them back to the inbox.
     pub aside: bool,
+}
+
+/// Parameters of [`methods::MESSAGE_SNOOZE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SnoozeParams {
+    pub ids: Vec<i64>,
+    /// When they come back (Unix ms). `None` with `someday` false ends the snooze.
+    #[serde(default)]
+    pub until: Option<i64>,
+    /// No time: they come back only when asked (or when someone replies).
+    #[serde(default)]
+    pub someday: bool,
 }
 
 /// Result of marking messages (pin, set aside, snooze).

@@ -20,7 +20,7 @@ use regards_ipc::protocol::{
     DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MailboxListResult,
     MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams,
     MoveResult, OutboxListResult, OutboxRef, OutboxUndoResult, PinParams, Principal, ServerSettings, SetFlagsParams,
-    SetFlagsResult, SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
+    SetFlagsResult, SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -361,6 +361,21 @@ async fn message_set_aside(bridge: State<'_, Bridge>, ids: Vec<i64>, aside: bool
         .map_err(describe)
 }
 
+/// Snooze until a time or "someday", or end a snooze (neither); undoable.
+#[tauri::command]
+async fn message_snooze(
+    bridge: State<'_, Bridge>,
+    ids: Vec<i64>,
+    until: Option<i64>,
+    someday: bool,
+) -> Result<MarkResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_SNOOZE, SnoozeParams { ids, until, someday })
+        .await
+        .map_err(describe)
+}
+
 /// An account's pinned, set-aside or snoozed messages, newest first.
 #[tauri::command]
 async fn message_view(
@@ -628,6 +643,7 @@ fn main() {
             undo_apply,
             message_pin,
             message_set_aside,
+            message_snooze,
             message_view,
             draft_create,
             draft_reply,

@@ -12,6 +12,7 @@ mod feed;
 mod mail;
 mod push;
 mod queue;
+mod scheduler;
 mod sender;
 mod session;
 mod sync;
@@ -72,6 +73,8 @@ pub(crate) struct State {
     pub(crate) backfills: backfill::Backfills,
     /// Sends what is queued in the outbox (ADR-0010 §3).
     pub(crate) outbox: sender::Outbox,
+    /// Brings snoozed messages back when their time comes (ADR-0011).
+    pub(crate) scheduler: scheduler::Scheduler,
     pub(crate) limits: SyncLimits,
 }
 
@@ -216,6 +219,7 @@ impl Daemon {
             queue: queue::Queue::default(),
             backfills: backfill::Backfills::default(),
             outbox: sender::Outbox::default(),
+            scheduler: scheduler::Scheduler::default(),
             limits,
         });
         queue::Queue::wake_all(&state);
@@ -226,6 +230,7 @@ impl Daemon {
         sync::spawn_all(Arc::clone(&state));
         let threading = tokio::spawn(mail::thread_backfill(Arc::clone(&state)));
         let sending = tokio::spawn(sender::run(Arc::clone(&state)));
+        let scheduling = tokio::spawn(scheduler::run(Arc::clone(&state)));
         tracing::info!(%endpoint, "daemon listening");
 
         tokio::pin!(shutdown);
@@ -256,6 +261,7 @@ impl Daemon {
         follow.abort();
         threading.abort();
         sending.abort();
+        scheduling.abort();
         drop(listener);
         // Releasing the lock last lets a replacement daemon start only after we stopped listening.
         drop(lock);

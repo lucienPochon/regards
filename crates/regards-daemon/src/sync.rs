@@ -434,6 +434,14 @@ pub(crate) async fn sync_mailbox(
         })
         .collect();
     let reset = plan.reset;
+    let first_look = reset || stored.uid_validity.is_none();
+    let arrived: Vec<(String, Option<String>)> = records
+        .iter()
+        .filter_map(|r| {
+            let id = r.headers.message_id.clone()?;
+            Some((id, r.headers.from.as_ref().and_then(|p| p.address.clone())))
+        })
+        .collect();
     let committed = state
         .store
         .write(move |tx| {
@@ -441,6 +449,11 @@ pub(crate) async fn sync_mailbox(
                 messages::clear(tx, mailbox_id)?;
             }
             let added = messages::upsert(tx, mailbox_id, &records)?;
+            // New mail (not a first look at the folder) from someone else ends
+            // the snooze of its conversation.
+            if added > 0 && !first_look {
+                end_answered_snoozes(tx, mailbox_id, &arrived)?;
+            }
             let flagged = messages::apply_flags(tx, mailbox_id, &flag_changes)?;
             let removed = messages::delete_uids(tx, mailbox_id, &removed)?;
             // Actions the server has not heard about yet win over its older flags (ADR-0010 §2).
@@ -461,6 +474,35 @@ pub(crate) async fn sync_mailbox(
         );
     }
     Ok(changes)
+}
+
+/// New mail arrived: a message from someone else ends the snooze of its
+/// conversation (ADR-0011 §3). The new message itself is unread, so it shows.
+/// `arrived`: the new messages' Message-IDs and senders.
+fn end_answered_snoozes(
+    tx: &rusqlite::Transaction<'_>,
+    mailbox_id: i64,
+    arrived: &[(String, Option<String>)],
+) -> Result<(), StoreError> {
+    use regards_store::marks::{self, Mark};
+    let Some(mailbox) = mailboxes::get(tx, mailbox_id)? else {
+        return Ok(());
+    };
+    let Some(account) = accounts::get(tx, &mailbox.account_id)? else {
+        return Ok(());
+    };
+    for (message_id, from) in arrived {
+        if from
+            .as_deref()
+            .is_some_and(|from| from.eq_ignore_ascii_case(&account.email))
+        {
+            continue; // My own follow-up does not count.
+        }
+        for snoozed in marks::snoozed_in_thread_of(tx, &account.id, message_id)? {
+            marks::set(tx, &account.id, &snoozed, Mark::Snoozed, None)?;
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn message_flags(flags: Flags) -> MessageFlags {

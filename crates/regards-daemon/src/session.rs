@@ -239,6 +239,10 @@ impl Session {
                 self.require_ui()?;
                 actions::set_aside(&self.state, params(request)?).await
             }
+            methods::MESSAGE_SNOOZE => {
+                self.require_ui()?;
+                actions::snooze(&self.state, params(request)?).await
+            }
             methods::MESSAGE_VIEW => {
                 self.require_ui()?;
                 mail::view(&self.state, params(request)?).await

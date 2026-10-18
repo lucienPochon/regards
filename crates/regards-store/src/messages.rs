@@ -316,6 +316,19 @@ pub fn in_thread(conn: &Connection, thread_id: i64) -> Result<Vec<Message>, Stor
         .collect())
 }
 
+/// Every stored copy of a message in an account (Inbox, All Mail, …), by Message-ID.
+pub fn copies(conn: &Connection, account_id: &str, message_id: &str) -> Result<Vec<Message>, StoreError> {
+    let mut statement = conn.prepare_cached(&format!(
+        "SELECT {COLUMNS} FROM messages WHERE message_id_header = ?2 AND deleted = 0 \
+         AND mailbox_id IN (SELECT id FROM mailboxes WHERE account_id = ?1)"
+    ))?;
+    let rows = statement
+        .query_map(params![account_id, message_id], from_row)?
+        .map(|row| row?)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 pub fn get(conn: &Connection, id: i64) -> Result<Option<Message>, StoreError> {
     conn.query_row(&format!("SELECT {COLUMNS} FROM messages WHERE id = ?1"), [id], from_row)
         .optional()?
@@ -517,6 +530,79 @@ mod tests {
             let view = store.read(move |c| marked(c, &a, mark, 1_000, 10, None)).await.unwrap();
             assert_eq!(subjects(view), [expected], "{mark:?}");
         }
+    }
+
+    #[tokio::test]
+    async fn snoozes_come_due_and_a_reply_from_someone_else_ends_them() {
+        use crate::marks;
+        let (_temp, store, mailbox) = store_with_inbox().await;
+        let account: String = store
+            .read(move |c| {
+                Ok(
+                    c.query_row("SELECT account_id FROM mailboxes WHERE id = ?1", [mailbox], |r| {
+                        r.get(0)
+                    })?,
+                )
+            })
+            .await
+            .unwrap();
+        let with = |uid: u32, at: i64, id: &str, parent: Option<&str>, from: &str| {
+            let mut new = message(uid, at, id);
+            new.headers.message_id = Some(id.into());
+            new.headers.in_reply_to = parent.map(str::to_owned).into_iter().collect();
+            new.headers.from = Some(Person {
+                name: None,
+                address: Some(from.into()),
+            });
+            new
+        };
+        let first = vec![
+            with(1, 1_000, "plan@x", None, "bob@example.test"),
+            with(2, 1_000, "alone@x", None, "bob@example.test"),
+        ];
+        store.write(move |tx| upsert(tx, mailbox, &first)).await.unwrap();
+        let a = account.clone();
+        store
+            .write(move |tx| {
+                marks::set(tx, &a, "plan@x", marks::Mark::Snoozed, Some(50_000))?;
+                marks::set(tx, &a, "alone@x", marks::Mark::Snoozed, Some(9_000))
+            })
+            .await
+            .unwrap();
+        assert_eq!(store.read(marks::next_wake).await.unwrap(), Some(9_000));
+        assert!(store.read(|c| marks::due_snoozes(c, 8_999)).await.unwrap().is_empty());
+        assert_eq!(
+            store.read(|c| marks::due_snoozes(c, 9_000)).await.unwrap(),
+            [(account.clone(), "alone@x".to_owned())]
+        );
+
+        // A reply joins the conversation that holds a snoozed message.
+        let reply = vec![with(4, 4_000, "reply@x", Some("plan@x"), "bob@example.test")];
+        store.write(move |tx| upsert(tx, mailbox, &reply)).await.unwrap();
+        let a = account.clone();
+        assert_eq!(
+            store
+                .read(move |c| marks::snoozed_in_thread_of(c, &a, "reply@x"))
+                .await
+                .unwrap(),
+            ["plan@x"]
+        );
+        let a = account.clone();
+        assert!(
+            store
+                .read(move |c| marks::snoozed_in_thread_of(c, &a, "plan@x"))
+                .await
+                .unwrap()
+                .is_empty(),
+            "a message does not end its own snooze"
+        );
+        // "Someday" never comes due by itself.
+        let a = account.clone();
+        store
+            .write(move |tx| marks::set(tx, &a, "alone@x", marks::Mark::Snoozed, Some(marks::SOMEDAY)))
+            .await
+            .unwrap();
+        assert_eq!(store.read(marks::next_wake).await.unwrap(), Some(50_000));
     }
 
     #[tokio::test]

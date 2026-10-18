@@ -86,6 +86,43 @@ pub fn set(
     Ok(before)
 }
 
+/// "Someday": snoozed with no time to come back.
+pub const SOMEDAY: i64 = 32_503_680_000_000; // 3000-01-01
+
+/// Snoozes whose time has come: (account, Message-ID).
+pub fn due_snoozes(conn: &Connection, now: i64) -> Result<Vec<(String, String)>, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT account_id, message_id FROM marks WHERE snoozed_until IS NOT NULL AND snoozed_until <= ?1",
+    )?;
+    let due = statement
+        .query_map([now], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(due)
+}
+
+/// When the next snooze ends, if one will ("someday" never does).
+pub fn next_wake(conn: &Connection) -> Result<Option<i64>, StoreError> {
+    Ok(conn.query_row(
+        "SELECT MIN(snoozed_until) FROM marks WHERE snoozed_until IS NOT NULL AND snoozed_until < ?1",
+        [SOMEDAY],
+        |row| row.get(0),
+    )?)
+}
+
+/// Snoozed messages of an account in the conversation of `message_id`: a
+/// new message there from someone else ends their snooze (ADR-0011 §3). The
+/// caller decides what is new and from whom: comparing the server's arrival
+/// times with this device's clock would miss replies whenever the two differ.
+pub fn snoozed_in_thread_of(conn: &Connection, account_id: &str, message_id: &str) -> Result<Vec<String>, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT DISTINCT k.message_id FROM marks k          JOIN messages s ON s.message_id_header = k.message_id          JOIN mailboxes b ON b.id = s.mailbox_id AND b.account_id = k.account_id          WHERE k.account_id = ?1 AND k.snoozed_until IS NOT NULL AND k.message_id != ?2 AND s.thread_id IN (              SELECT n.thread_id FROM messages n JOIN mailboxes nb ON nb.id = n.mailbox_id              WHERE nb.account_id = ?1 AND n.message_id_header = ?2 AND n.thread_id IS NOT NULL)",
+    )?;
+    let found = statement
+        .query_map(params![account_id, message_id], |row| row.get(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(found)
+}
+
 /// The marks of some of an account's messages, by Message-ID (for a page of a list).
 pub fn of(conn: &Connection, account_id: &str, message_ids: &[&str]) -> Result<HashMap<String, Marks>, StoreError> {
     let mut statement = conn.prepare_cached(

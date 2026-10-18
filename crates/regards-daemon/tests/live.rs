@@ -14,7 +14,8 @@ use regards_ipc::protocol::{
     DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MailboxListResult, MarkResult,
     MessageDetail, MessageHtml, MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef,
     MoveResult, OutboxEntryView, OutboxListResult, OutboxRef, OutboxState, OutboxUndoResult, PinParams, ServerSettings,
-    SetFlagsParams, SetFlagsResult, SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
+    SetFlagsParams, SetFlagsResult, SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams,
+    methods,
 };
 use regards_ipc::{Client, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -1532,6 +1533,124 @@ async fn live_pin_and_set_aside_stay_on_the_device_and_can_be_undone() {
     sync(&mut desktop, &account.id).await;
     let in_view: MessageListResult = desktop.call(methods::MESSAGE_VIEW, view(View::Pinned)).await.unwrap();
     assert_eq!(subjects(in_view), ["Keep in view"]);
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_snoozed_mail_comes_back_as_new_or_when_someone_replies() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    seed.append(
+        b"INBOX",
+        &[SystemFlag::Seen],
+        &message(1, "Read already", "ada@example.test"),
+    )
+    .await
+    .unwrap();
+    seed.append(b"INBOX", &[], &message(2, "Waiting for Bob", "ada@example.test"))
+        .await
+        .unwrap();
+    seed.append(b"INBOX", &[], &message(3, "Stays", "ada@example.test"))
+        .await
+        .unwrap();
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
+    let listed = messages(&mut desktop, inbox).await.messages;
+    let id = |subject: &str| listed.iter().find(|m| m.subject == subject).unwrap().id;
+    let subjects = |page: MessageListResult| page.messages.into_iter().map(|m| m.subject).collect::<Vec<_>>();
+    let now = || {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
+    };
+    let snooze = |ids: Vec<i64>, until: Option<i64>, someday: bool| SnoozeParams { ids, until, someday };
+
+    // In the past: refused.
+    let past = desktop
+        .call::<_, Value>(
+            methods::MESSAGE_SNOOZE,
+            snooze(vec![id("Stays")], Some(now() - 1000), false),
+        )
+        .await;
+    assert!(past.is_err());
+
+    // Snoozed for two seconds: out of the inbox, in its view, back unread when the time comes.
+    let snoozed: MarkResult = desktop
+        .call(
+            methods::MESSAGE_SNOOZE,
+            snooze(vec![id("Read already")], Some(now() + 2000), false),
+        )
+        .await
+        .unwrap();
+    assert_eq!(snoozed.undo.unwrap().description, "Snoozed");
+    assert!(!subjects(messages(&mut desktop, inbox).await).contains(&"Read already".to_owned()));
+    let view: MessageListResult = desktop
+        .call(
+            methods::MESSAGE_VIEW,
+            ViewParams {
+                account_id: account.id.clone(),
+                view: View::Snoozed,
+                limit: None,
+                before: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(view.messages[0].subject, "Read already");
+    assert!(view.messages[0].snoozed_until.is_some());
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let back = loop {
+        let page = messages(&mut desktop, inbox).await;
+        if let Some(message) = page.messages.into_iter().find(|m| m.subject == "Read already") {
+            break message;
+        }
+        assert!(Instant::now() < deadline, "the snooze did not end");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    };
+    assert!(!back.seen, "back as new");
+    assert_eq!(back.snoozed_until, None);
+    // ...and unread on the server too.
+    server_flags_become(&mut seed, |flags| flags.iter().all(|f| !f.flags.seen)).await;
+
+    // Snoozed "someday": a reply from someone else brings it back.
+    let _: MarkResult = desktop
+        .call(methods::MESSAGE_SNOOZE, snooze(vec![id("Waiting for Bob")], None, true))
+        .await
+        .unwrap();
+    assert!(!subjects(messages(&mut desktop, inbox).await).contains(&"Waiting for Bob".to_owned()));
+    let reply = b"From: Bob <bob@example.test>\r\nTo: Live <live@example.test>\r\nSubject: Re: Waiting for Bob\r\n\
+        Message-ID: <bob-reply@example.test>\r\nIn-Reply-To: <sync-2@example.test>\r\n\
+        References: <sync-2@example.test>\r\nDate: Sun, 18 Oct 2026 12:00:00 +0000\r\n\r\nHere I am\r\n";
+    seed.append(b"INBOX", &[], reply).await.unwrap();
+    sync(&mut desktop, &account.id).await;
+    let shown = subjects(messages(&mut desktop, inbox).await);
+    assert!(shown.contains(&"Waiting for Bob".to_owned()), "{shown:?}");
+    assert!(shown.contains(&"Re: Waiting for Bob".to_owned()));
+
+    // Undo a snooze.
+    let snoozed: MarkResult = desktop
+        .call(
+            methods::MESSAGE_SNOOZE,
+            snooze(vec![id("Stays")], Some(now() + 3_600_000), false),
+        )
+        .await
+        .unwrap();
+    assert!(!subjects(messages(&mut desktop, inbox).await).contains(&"Stays".to_owned()));
+    let _: UndoResult = desktop
+        .call(
+            methods::UNDO_APPLY,
+            UndoParams {
+                id: snoozed.undo.unwrap().id,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(subjects(messages(&mut desktop, inbox).await).contains(&"Stays".to_owned()));
 
     seed.logout().await;
     handle.abort();

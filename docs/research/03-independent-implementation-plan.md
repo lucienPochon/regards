@@ -202,6 +202,12 @@ flowchart LR
 - **Reminders:** "if no reply by …", cancelled by any reply from another participant.
 - **Executed on the device only**, in every release: nobody looks at the inbox while the computer is off.
 - **Accepted when:** these work across restarts, DST, time-zone changes and sleep/resume.
+- **Built so far (Phase 3):**
+  - **Snooze:** until a time or "someday" (`message.snooze`, undoable). Snoozed messages leave the inbox and are listed in the Snoozed view.
+  - **The scheduler** (one daemon task) never sleeps more than 30 s before reading the wall clock again, so sleep, clock and time-zone changes delay a wake-up by seconds. Overdue snoozes wake at startup.
+  - **Waking** marks every copy unread, here and on the server, so it is back as new.
+  - **Replies:** new mail from someone else in the conversation ends a snooze. "New" means stored by an incremental sync, never compared across the server's and the device's clocks; first syncs and backfill don't count.
+  - **Presets** (later today, this evening, tomorrow, this weekend, next week, someday) are built from local dates and hours, so they keep wall-clock times across DST. Unit-tested (Vitest) in a fixed zone with an October change.
 
 ### 5.7 Send later, undo send and executors (P1)
 
