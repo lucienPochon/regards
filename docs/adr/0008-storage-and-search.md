@@ -22,8 +22,10 @@ We need durable local storage for mail metadata, bodies, drafts, state overlays,
 2. **Normalised schema with real columns** for anything queried or sorted (the plan §4 sketch is the starting point). JSON columns are only for opaque provider metadata. Projections (`thread_view`, `list_membership`, counters) are derived tables maintained by the core (ADR-0007).
 3. **Migrations:**
    - Versioned, forward-only SQL migrations embedded in the binary.
-   - The library is chosen in the Phase-0 spike, for example `rusqlite_migration` or `refinery`.
-   - An automatic backup is taken before a migration.
+   - **Library: `rusqlite_migration` 2.6** (Apache-2.0), chosen 2026-10-18.
+     - **Why:** it supports rusqlite 0.40, records the version in SQLite's own `user_version`, and its only dependency is `log`.
+     - **Not refinery:** `refinery` targets many databases and keeps its own history table, which is more than we need.
+   - An automatic backup is taken before a migration: `VACUUM INTO backups/mail-v<N>-<time>.db`, newest three kept. A database from a newer Regards is refused, not modified.
    - Migrations are tested on fixture databases from every released version.
 4. **Search, Phase 0–1:**
    - SQLite **FTS5**, external-content tables over subject, participants and body text, with **BM25** ranking.

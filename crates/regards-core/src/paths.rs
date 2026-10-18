@@ -50,6 +50,16 @@ impl DataDirs {
         self.data.join("run")
     }
 
+    /// The main database (ADR-0008).
+    pub fn mail_db(&self) -> PathBuf {
+        self.data.join("mail.db")
+    }
+
+    /// Copies of `mail.db` taken before each schema migration.
+    pub fn backups(&self) -> PathBuf {
+        self.data.join("backups")
+    }
+
     /// Log of a daemon started in the background by a client. It never
     /// contains message content or secrets.
     pub fn daemon_log(&self) -> PathBuf {

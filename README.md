@@ -13,6 +13,9 @@ Regards is a local-first, open-source email client for **Windows, macOS and Linu
 
 - **One background service per user (the daemon)** owns all mail data. The desktop app, the `regards` CLI and the MCP server for agents all talk to it ([ADR-0005](docs/adr/0005-process-model.md)).
 - **The local API** is JSON-RPC over a per-user Windows named pipe (current user only) or a Unix socket (`0600`). There is no TCP port ([ADR-0006](docs/adr/0006-local-ipc-and-security.md)).
+- **Storage:**
+  - **Mail data:** SQLite (`mail.db`) in the data directory, migrated automatically, with a backup before every migration. The directory is private to the user.
+  - **Passwords:** the OS credential store (Credential Manager, Keychain or Secret Service). They are never written to the database or the logs ([ADR-0008](docs/adr/0008-storage-and-search.md)).
 - **Regards 1.0 is fully local:** no Regards servers and no telemetry. Sending while the computer is off arrives in 1.1 ([ADR-0019](docs/adr/0019-send-while-off-in-1-1.md)).
 
 All architecture decisions are in [`docs/adr/`](docs/adr/README.md). Research is in [`docs/research/`](docs/research/README.md).

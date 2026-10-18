@@ -44,7 +44,7 @@ pub(crate) async fn run(stream: Stream, state: Arc<State>) -> Result<(), FrameEr
                 RpcError::new(codes::PARSE_ERROR, format!("invalid JSON: {error}")),
             ),
             Some(Err(error)) => return Err(error),
-            Some(Ok(value)) => session.handle(value),
+            Some(Ok(value)) => session.handle(value).await,
         };
 
         framing::send(&mut framed, &response).await?;
@@ -56,7 +56,7 @@ pub(crate) async fn run(stream: Stream, state: Arc<State>) -> Result<(), FrameEr
 }
 
 impl Session {
-    fn handle(&mut self, value: Value) -> Response {
+    async fn handle(&mut self, value: Value) -> Response {
         let id = value.get("id").and_then(Value::as_u64);
         let request: Request = match serde_json::from_value(value) {
             Ok(request) => request,
@@ -73,13 +73,13 @@ impl Session {
                 RpcError::new(codes::INVALID_REQUEST, "jsonrpc must be \"2.0\""),
             );
         }
-        match self.dispatch(&request) {
+        match self.dispatch(&request).await {
             Ok(result) => Response::success(request.id, result),
             Err(error) => Response::failure(Some(request.id), error),
         }
     }
 
-    fn dispatch(&mut self, request: &Request) -> Result<Value, RpcError> {
+    async fn dispatch(&mut self, request: &Request) -> Result<Value, RpcError> {
         if request.method == methods::HELLO {
             return self.hello(&request.params);
         }
@@ -96,6 +96,7 @@ impl Session {
                 build_id: BUILD_ID.to_owned(),
                 pid: std::process::id(),
                 uptime_secs: self.state.started.elapsed().as_secs(),
+                revision: self.state.store.revision().await.map_err(internal)?,
             })),
             methods::DAEMON_SHUTDOWN => {
                 tracing::info!("shutdown requested by a client");
@@ -158,4 +159,10 @@ impl Session {
 
 fn to_value<T: serde::Serialize>(value: T) -> Value {
     serde_json::to_value(value).expect("protocol types always serialize")
+}
+
+/// An internal failure, reported without details that could leak data.
+fn internal(error: impl std::fmt::Display) -> RpcError {
+    tracing::error!(%error, "request failed");
+    RpcError::new(codes::INTERNAL_ERROR, "internal error; see the daemon log")
 }

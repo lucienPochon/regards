@@ -10,6 +10,7 @@ use regards_core::paths::DataDirs;
 use regards_ipc::UiToken;
 use regards_ipc::endpoint::Endpoint;
 use regards_ipc::transport::Listener;
+use regards_store::{Store, StoreError};
 use std::fs::{File, TryLockError};
 use std::future::Future;
 use std::io;
@@ -27,6 +28,8 @@ pub enum DaemonError {
     DataDir { path: PathBuf, source: io::Error },
     #[error("could not listen on {endpoint}: {source}")]
     Listen { endpoint: String, source: io::Error },
+    #[error("could not open the mail database: {0}")]
+    Store(#[from] StoreError),
 }
 
 /// Shared state of a running daemon.
@@ -35,6 +38,8 @@ pub(crate) struct State {
     pub(crate) stop: watch::Sender<bool>,
     /// The desktop bridge's per-launch secret, when one was handed off.
     pub(crate) ui_token: Option<UiToken>,
+    /// The mail database.
+    pub(crate) store: Store,
 }
 
 /// A daemon that holds its data-directory lock and is listening, but not yet serving.
@@ -43,6 +48,7 @@ pub struct Daemon {
     endpoint: Endpoint,
     listener: Listener,
     lock: File,
+    store: Store,
     ui_token: Option<UiToken>,
 }
 
@@ -56,6 +62,7 @@ impl Daemon {
             source,
         };
         std::fs::create_dir_all(dirs.data()).map_err(data_error)?;
+        restrict_to_owner(dirs.data()).map_err(data_error)?;
 
         let lock = File::options()
             .create(true)
@@ -70,6 +77,9 @@ impl Daemon {
             Err(TryLockError::Error(source)) => return Err(data_error(source)),
         }
 
+        // Only the lock holder opens the database, so two daemons never migrate it at once.
+        let store = Store::open(&dirs).await?;
+
         let endpoint = Endpoint::for_dirs(&dirs);
         let listener = Listener::bind(&endpoint).await.map_err(|source| DaemonError::Listen {
             endpoint: endpoint.to_string(),
@@ -80,6 +90,7 @@ impl Daemon {
             endpoint,
             listener,
             lock,
+            store,
             ui_token: None,
         })
     }
@@ -108,6 +119,7 @@ impl Daemon {
             lock,
             endpoint,
             ui_token,
+            store,
             ..
         } = self;
         let (stop, mut stopped) = watch::channel(false);
@@ -115,6 +127,7 @@ impl Daemon {
             started: Instant::now(),
             stop,
             ui_token,
+            store,
         });
         tracing::info!(%endpoint, "daemon listening");
 
@@ -145,4 +158,17 @@ impl Daemon {
         // Releasing the lock last lets a replacement daemon start only after we stopped listening.
         drop(lock);
     }
+}
+
+/// Make the data directory private to its owner (`0700`) on Unix. On Windows,
+/// the per-user application-data directory is already restricted to the user.
+#[cfg(unix)]
+fn restrict_to_owner(dir: &std::path::Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+}
+
+#[cfg(not(unix))]
+fn restrict_to_owner(_dir: &std::path::Path) -> io::Result<()> {
+    Ok(())
 }

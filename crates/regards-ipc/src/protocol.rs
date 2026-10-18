@@ -176,6 +176,8 @@ pub struct HealthResult {
     pub build_id: String,
     pub pid: u32,
     pub uptime_secs: u64,
+    /// Revision of the latest committed change to the mail database (ADR-0007).
+    pub revision: i64,
 }
 
 /// Pick the highest version both sides support.
