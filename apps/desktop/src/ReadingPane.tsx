@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { type MessageDetail, type Person, getMessage, messageHtmlUrl } from "./accounts";
+import { useCallback, useEffect, useState } from "react";
+import { type MessageDetail, type Person, getMessage, messageHtmlUrl, setFlags } from "./accounts";
+import { useChanges } from "./changes";
 
 type Load = { state: "loading" } | { state: "ready"; detail: MessageDetail } | { state: "failed"; message: string };
 
@@ -7,19 +8,41 @@ export function ReadingPane({ messageId }: { messageId: number }) {
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [showText, setShowText] = useState(false);
   const [allowRemote, setAllowRemote] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     let current = true;
     setLoad({ state: "loading" });
     setShowText(false);
     setAllowRemote(false);
+    setActionError(null);
     getMessage(messageId)
-      .then((detail) => current && setLoad({ state: "ready", detail }))
+      .then((detail) => {
+        if (!current) return;
+        setLoad({ state: "ready", detail });
+        // Opening a message marks it read (to become a setting).
+        if (!detail.message.seen) {
+          setFlags([messageId], { seen: true }).catch((error: unknown) => setActionError(String(error)));
+        }
+      })
       .catch((error: unknown) => current && setLoad({ state: "failed", message: String(error) }));
     return () => {
       current = false;
     };
   }, [messageId]);
+
+  // Keep the flags shown here current; the body is cached, so this is cheap.
+  const refresh = useCallback(() => {
+    getMessage(messageId)
+      .then((detail) => setLoad((current) => (current.state === "ready" ? { state: "ready", detail } : current)))
+      .catch(() => {});
+  }, [messageId]);
+  useChanges(refresh);
+
+  const act = (flags: { seen?: boolean; flagged?: boolean }) => {
+    setActionError(null);
+    setFlags([messageId], flags).catch((error: unknown) => setActionError(String(error)));
+  };
 
   if (load.state === "loading") {
     return (
@@ -41,6 +64,15 @@ export function ReadingPane({ messageId }: { messageId: number }) {
   return (
     <article className="card reading" aria-labelledby="reading-subject">
       <h2 id="reading-subject">{message.subject || "(no subject)"}</h2>
+      <div className="actions-bar">
+        <button type="button" onClick={() => act({ seen: !message.seen })}>
+          {message.seen ? "Mark unread" : "Mark read"}
+        </button>
+        <button type="button" onClick={() => act({ flagged: !message.flagged })} aria-pressed={message.flagged}>
+          {message.flagged ? "Unflag" : "Flag"}
+        </button>
+        {actionError && <span className="error small">{actionError}</span>}
+      </div>
       <dl className="headers small">
         <dt>From</dt>
         <dd>{people(message.from ? [message.from] : [])}</dd>

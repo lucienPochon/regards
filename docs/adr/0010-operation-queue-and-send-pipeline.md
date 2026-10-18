@@ -20,6 +20,14 @@ Undo send and send later (ADR-0011) both need an outbox.
    - Local projected state is updated **optimistically** in the same transaction.
    - A runner per account executes operations in order per target, coalesces redundant ones (for example, read then unread becomes no-op), and retries with exponential backoff and jitter.
    - Permanent failures **revert** the optimistic state and surface an actionable error, with undo where meaningful.
+   - **Implementation (Phase 1, flags first):**
+     - **Actions:** `message.set_flags` (read/unread, flagged) applies the change locally and enqueues `add_flags`/`remove_flags` operations in one transaction. No-ops are skipped.
+     - **Mailbox check:** each operation records the mailbox's UIDVALIDITY.
+     - **Runner:** a per-account runner sends operations with `UID STORE … .SILENT`, oldest first.
+       - **Connection trouble:** retries with backoff from 5 s to 10 min.
+       - **Refusals:** a server refusal, or a UIDVALIDITY change, drops the operation and resyncs the mailbox, which is the revert. The reason shows in the account status.
+     - **Sync:** sync re-applies pending operations after writing server flags (§2), and drops those from another UIDVALIDITY.
+     - **Not yet:** coalescing of opposite operations.
 2. **Reconciliation:**
    - Server state wins for fields with no pending local operation.
    - Pending local operations are re-applied on top of fresh server state.

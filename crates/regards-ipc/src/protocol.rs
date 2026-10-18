@@ -38,6 +38,9 @@ pub mod methods {
     pub const MESSAGE_GET: &str = "message.get";
     /// The sanitised HTML version of a message (ADR-0006 §4). `ui` only for now.
     pub const MESSAGE_HTML: &str = "message.html";
+    /// Mark messages read or unread, flagged or not. Applied at once, sent to the
+    /// server by the operation queue (ADR-0010). `ui` only for now.
+    pub const MESSAGE_SET_FLAGS: &str = "message.set_flags";
     /// Dedicate this connection to change notifications (ADR-0007). `ui` only for now.
     pub const CHANGES_SUBSCRIBE: &str = "changes.subscribe";
 }
@@ -388,6 +391,23 @@ pub struct MessageDetail {
     /// Remote images in the HTML version, which are not loaded unless asked for.
     pub remote_images: usize,
     pub attachments: Vec<Attachment>,
+}
+
+/// Parameters of [`methods::MESSAGE_SET_FLAGS`]. Omitted flags stay as they are.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetFlagsParams {
+    pub ids: Vec<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seen: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flagged: Option<bool>,
+}
+
+/// Result of [`methods::MESSAGE_SET_FLAGS`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetFlagsResult {
+    /// Messages whose flags actually changed.
+    pub changed: usize,
 }
 
 /// Parameters of [`methods::MESSAGE_HTML`].

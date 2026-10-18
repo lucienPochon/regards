@@ -19,6 +19,7 @@ use regards_store::StoreError;
 use regards_store::accounts;
 use regards_store::mailboxes::{self, Mailbox, Reconciled, RemoteMailbox, SyncPoint};
 use regards_store::messages::{self, FlagChange, MessageFlags, NewMessage};
+use regards_store::operations;
 use regards_vault::SecretKey;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
@@ -73,6 +74,12 @@ impl Tracker {
 
     pub(crate) fn forget(&self, account_id: &str) {
         self.lock().remove(account_id);
+        self.feed.bump();
+    }
+
+    /// Show a problem in the account's status until the next successful sync.
+    pub(crate) fn note_error(&self, account_id: &str, message: &str) {
+        self.lock().entry(account_id.to_owned()).or_default().last_error = Some(message.to_owned());
         self.feed.bump();
     }
 
@@ -411,6 +418,8 @@ pub(crate) async fn sync_mailbox(
             let added = messages::upsert(tx, mailbox_id, &records)?;
             let flagged = messages::apply_flags(tx, mailbox_id, &flag_changes)?;
             let removed = messages::delete_uids(tx, mailbox_id, &removed)?;
+            // Actions the server has not heard about yet win over its older flags (ADR-0010 §2).
+            operations::reapply_pending(tx, mailbox_id, point.uid_validity)?;
             mailboxes::set_sync_point(tx, mailbox_id, point)?;
             Ok((added, flagged, removed))
         })

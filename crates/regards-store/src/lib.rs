@@ -15,6 +15,7 @@ pub mod blobs;
 pub mod mailboxes;
 pub mod messages;
 mod migrate;
+pub mod operations;
 
 use regards_core::paths::DataDirs;
 use rusqlite::{Connection, OpenFlags, Transaction, TransactionBehavior};

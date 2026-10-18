@@ -5,9 +5,11 @@
 //! server talk to it over the local API (ADR-0006).
 
 mod accounts;
+mod actions;
 mod feed;
 mod mail;
 mod push;
+mod queue;
 mod session;
 mod sync;
 
@@ -61,6 +63,8 @@ pub(crate) struct State {
     pub(crate) feed: Arc<feed::Feed>,
     /// Downloaded messages (ADR-0008).
     pub(crate) blobs: Blobs,
+    /// Runners sending queued actions to the servers (ADR-0010).
+    pub(crate) queue: queue::Queue,
 }
 
 /// A daemon that holds its data-directory lock and is listening, but not yet serving.
@@ -174,7 +178,9 @@ impl Daemon {
             watchers: push::Watchers::default(),
             feed,
             blobs: Blobs::new(dirs.blobs()),
+            queue: queue::Queue::default(),
         });
+        queue::Queue::wake_all(&state);
         let follow = tokio::spawn({
             let state = Arc::clone(&state);
             async move { state.feed.follow(&state.store).await }

@@ -17,7 +17,7 @@ use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity,
     MailboxListResult, MessageCursor, MessageDetail, MessageListParams, MessageListResult, MessageRef, Principal,
-    ServerSettings, SyncResult, methods,
+    ServerSettings, SetFlagsParams, SetFlagsResult, SyncResult, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -267,6 +267,21 @@ async fn message_get(bridge: State<'_, Bridge>, id: i64) -> Result<MessageDetail
         .map_err(describe)
 }
 
+/// Mark messages read or unread, flagged or not; applied at once, sent to the server in the background.
+#[tauri::command]
+async fn message_set_flags(
+    bridge: State<'_, Bridge>,
+    ids: Vec<i64>,
+    seen: Option<bool>,
+    flagged: Option<bool>,
+) -> Result<SetFlagsResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_SET_FLAGS, SetFlagsParams { ids, seen, flagged })
+        .await
+        .map_err(describe)
+}
+
 /// Keep one subscribed connection to the daemon and re-emit its change
 /// notifications to the WebView as `changes` events (ADR-0007). Reconnects
 /// with backoff when the daemon restarts or is replaced.
@@ -340,7 +355,8 @@ fn main() {
             account_sync,
             mailbox_list,
             message_list,
-            message_get
+            message_get,
+            message_set_flags
         ])
         .build(tauri::generate_context!())
         .expect("failed to start the Regards desktop app");

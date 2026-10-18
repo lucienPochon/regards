@@ -9,12 +9,15 @@ use regards_daemon::Daemon;
 use regards_imap::{ImapServer, Session, SystemFlag, TlsOptions};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountSummary, ClientKind, ConnectionSecurity, MailboxListResult, MessageDetail,
-    MessageHtml, MessageHtmlParams, MessageListParams, MessageListResult, MessageRef, ServerSettings, SyncResult,
-    methods,
+    MessageHtml, MessageHtmlParams, MessageListParams, MessageListResult, MessageRef, ServerSettings, SetFlagsParams,
+    SetFlagsResult, SyncResult, methods,
 };
 use regards_ipc::{Client, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
 use std::time::{Duration, Instant};
+
+/// Tests run in parallel and the clock can repeat: number the users too.
+static NEXT_USER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 struct Live {
     server: ImapServer,
@@ -38,7 +41,10 @@ fn live() -> Live {
         },
         tls: TlsOptions::platform().with_extra_roots_pem(&ca).unwrap(),
         // A fresh user, so the mailbox starts empty.
-        user: format!("sync-{nanos}"),
+        user: format!(
+            "sync-{nanos}-{}",
+            NEXT_USER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ),
         password: Secret::new(std::env::var("REGARDS_TEST_IMAP_PASSWORD").unwrap_or_else(|_| "pass".into())),
     }
 }
@@ -398,6 +404,142 @@ async fn live_message_bodies_download_once_and_stay_unread() {
     let again: MessageDetail = desktop.call(methods::MESSAGE_GET, MessageRef { id }).await.unwrap();
     assert_eq!(again.text, detail.text);
     assert!(std::fs::read_dir(temp.path().join("blobs")).unwrap().next().is_some());
+
+    seed.logout().await;
+    handle.abort();
+}
+
+/// A daemon with one account on the live server, synced once.
+async fn daemon_with_account(
+    live: &Live,
+) -> (
+    tempfile::TempDir,
+    Client,
+    AccountSummary,
+    i64,
+    tokio::task::JoinHandle<()>,
+) {
+    let temp = tempfile::tempdir().unwrap();
+    let token = UiToken::generate().unwrap();
+    let daemon = Daemon::bind(DataDirs::at(temp.path()))
+        .await
+        .unwrap()
+        .with_ui_token(token.clone())
+        .with_vault(Vault::in_memory())
+        .with_imap_tls(live.tls.clone());
+    let endpoint = daemon.endpoint().clone();
+    let handle = tokio::spawn(daemon.serve(std::future::pending()));
+    let mut desktop = Client::connect_with(&endpoint, ClientKind::Desktop, Some(&token))
+        .await
+        .unwrap();
+    let settings = |port| ServerSettings {
+        host: live.server.host.clone(),
+        port,
+        security: ConnectionSecurity::Tls,
+    };
+    let account: AccountSummary = desktop
+        .call(
+            methods::ACCOUNT_ADD,
+            AccountAddParams {
+                display_name: "Live".into(),
+                email: format!("{}@example.test", live.user),
+                username: Some(live.user.clone()),
+                password: live.password.clone(),
+                imap: settings(live.server.port),
+                smtp: ServerSettings {
+                    security: ConnectionSecurity::Starttls,
+                    ..settings(587)
+                },
+            },
+        )
+        .await
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let inbox = loop {
+        let listed = folders(&mut desktop, &account.id).await;
+        if listed.sync.last_success_at.is_some() {
+            break listed
+                .mailboxes
+                .iter()
+                .find(|m| m.role == Some(Role::Inbox))
+                .unwrap()
+                .id;
+        }
+        assert!(Instant::now() < deadline, "the first sync did not finish");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    (temp, desktop, account, inbox, handle)
+}
+
+/// Wait until the server's flags for the INBOX match `check`.
+async fn server_flags_become(seed: &mut Session, check: impl Fn(&[regards_imap::FlagUpdate]) -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        seed.select(b"INBOX").await.unwrap();
+        let flags = seed.fetch_flags("1:*", None).await.unwrap().items;
+        if check(&flags) {
+            return;
+        }
+        assert!(Instant::now() < deadline, "the server never got the change: {flags:?}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_flag_actions_apply_at_once_and_reach_the_server() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    seed.append(b"INBOX", &[], &message(1, "One", "ada@example.test"))
+        .await
+        .unwrap();
+    seed.append(b"INBOX", &[], &message(2, "Two", "ada@example.test"))
+        .await
+        .unwrap();
+    let (_temp, mut desktop, _account, inbox, handle) = daemon_with_account(&live).await;
+    let listed = messages(&mut desktop, inbox).await.messages;
+    let (two, one) = (listed[0].id, listed[1].id);
+
+    let set = |ids: Vec<i64>, seen: Option<bool>, flagged: Option<bool>| SetFlagsParams { ids, seen, flagged };
+    let result: SetFlagsResult = desktop
+        .call(methods::MESSAGE_SET_FLAGS, set(vec![one], Some(true), None))
+        .await
+        .unwrap();
+    assert_eq!(result.changed, 1);
+    // Applied locally at once, before the server has answered.
+    let local = messages(&mut desktop, inbox).await.messages;
+    assert!(local.iter().find(|m| m.id == one).unwrap().seen);
+    server_flags_become(&mut seed, |flags| flags.iter().any(|f| f.flags.seen)).await;
+
+    // Repeating it changes nothing and queues nothing.
+    let again: SetFlagsResult = desktop
+        .call(methods::MESSAGE_SET_FLAGS, set(vec![one], Some(true), None))
+        .await
+        .unwrap();
+    assert_eq!(again.changed, 0);
+
+    let both: SetFlagsResult = desktop
+        .call(methods::MESSAGE_SET_FLAGS, set(vec![one, two], None, Some(true)))
+        .await
+        .unwrap();
+    assert_eq!(both.changed, 2);
+    server_flags_become(&mut seed, |flags| {
+        flags.len() == 2 && flags.iter().all(|f| f.flags.flagged)
+    })
+    .await;
+
+    let _: SetFlagsResult = desktop
+        .call(methods::MESSAGE_SET_FLAGS, set(vec![one], Some(false), None))
+        .await
+        .unwrap();
+    server_flags_become(&mut seed, |flags| flags.iter().all(|f| !f.flags.seen)).await;
+
+    // After a full sync, the local copy still agrees with the server.
+    let _ = sync(&mut desktop, &_account.id).await;
+    let local = messages(&mut desktop, inbox).await.messages;
+    assert!(local.iter().all(|m| m.flagged && !m.seen), "{local:?}");
 
     seed.logout().await;
     handle.abort();

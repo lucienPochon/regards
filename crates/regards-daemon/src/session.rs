@@ -1,6 +1,6 @@
 //! One client connection: handshake, then request dispatch.
 
-use crate::{State, accounts, mail};
+use crate::{State, accounts, actions, mail};
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_ipc::framing::{self, FrameError};
 use regards_ipc::protocol::{
@@ -170,6 +170,10 @@ impl Session {
             methods::MESSAGE_HTML => {
                 self.require_ui()?;
                 mail::html(&self.state, params(request)?).await
+            }
+            methods::MESSAGE_SET_FLAGS => {
+                self.require_ui()?;
+                actions::set_flags(&self.state, params(request)?).await
             }
             methods::CHANGES_SUBSCRIBE => {
                 self.require_ui()?;

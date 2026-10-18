@@ -145,3 +145,8 @@ export function getMessage(id: number): Promise<MessageDetail> {
 export function messageHtmlUrl(id: number, allowRemote: boolean): string {
   return convertFileSrc(`message/${id}?remote=${allowRemote ? 1 : 0}`, "regards-mail");
 }
+
+/** Mark messages read or unread, flagged or not. Applied at once; the server is told in the background. */
+export function setFlags(ids: number[], flags: { seen?: boolean; flagged?: boolean }): Promise<{ changed: number }> {
+  return invoke("message_set_flags", { ids, seen: flags.seen ?? null, flagged: flags.flagged ?? null });
+}

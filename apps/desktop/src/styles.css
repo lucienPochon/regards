@@ -387,3 +387,15 @@ button:disabled {
   background: #fff;
   resize: vertical;
 }
+
+.actions-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.actions-bar button {
+  margin-top: 0;
+}

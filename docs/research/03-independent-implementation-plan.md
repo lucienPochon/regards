@@ -161,7 +161,7 @@ flowchart LR
 - **Still to come in Phase 1:**
   - **Sync:** QRESYNC and backfill of older messages.
   - **Threading and links:** References threading, and opening links from messages in the browser. Opening a message already shows it: the source is downloaded once (`BODY.PEEK[]`, so it stays unread) and kept in `blobs/`; HTML is sanitised and shown in a sandboxed frame with remote images blocked until allowed.
-  - **Operations:** the operation queue for user actions.
+  - **Actions:** archive, move and delete with undo, on top of the operation queue. Read/unread and flag already go through it: they show at once, reach the server in the background, and are retried while offline.
 - **Capability-aware:** incremental flag sync with CONDSTORE/QRESYNC; efficient UID-range sync plus periodic flag resync without them (Infomaniak advertises neither before login; recheck after login). MOVE, or UIDPLUS COPY + `\Deleted` + UID EXPUNGE.
 - Gmail X-GM-EXT-1 labels and thread IDs when present.
 - **Accepted when:** the fault-injection suite passes with no panics on malformed input, and IDLE delivers new mail in under 5 s.
