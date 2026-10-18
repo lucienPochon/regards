@@ -1,5 +1,7 @@
 //! `regards`: the Regards command-line tool.
 
+mod logging;
+
 use clap::{Parser, Subcommand};
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_core::paths::DataDirs;
@@ -87,7 +89,7 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
 }
 
 async fn daemon_run(dirs: DataDirs, ui_handoff: bool) -> anyhow::Result<ExitCode> {
-    init_logging();
+    logging::init();
     // With --ui-handoff, the starting process reads exactly one line from stdout.
     let announce = |announcement: Announcement| {
         if ui_handoff {
@@ -233,13 +235,4 @@ async fn daemon_stop(dirs: &DataDirs, as_json: bool) -> anyhow::Result<ExitCode>
         println!("The Regards daemon was not running.");
     }
     Ok(ExitCode::SUCCESS)
-}
-
-fn init_logging() {
-    let filter = tracing_subscriber::EnvFilter::try_from_env("REGARDS_LOG")
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_writer(std::io::stderr)
-        .init();
 }

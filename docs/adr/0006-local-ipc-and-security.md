@@ -39,6 +39,8 @@ Loopback TCP is reachable by every local user and, through DNS-rebinding mistake
        - **Limit:** a same-user process that restarts the daemon itself can obtain a token. That is within the "does not protect against" limit below.
    - `agent`: all CLI and MCP connections, which are subject to per-account access levels (ADR-0012).
    - **Changing access levels, accounts or credentials is allowed only for the `ui` principal.**
+     - **Implementation (Phase 1):** `account.add` and `account.remove` refuse every other principal with `FORBIDDEN`.
+     - **Listing accounts:** `account.list` is `ui`-only too, until agent access levels exist (ADR-0012).
 4. **Tauri hardening:**
    - The WebView gets a **narrow, explicit command set**: no generic passthrough to the daemon, no shutdown or settings-of-agents from JS without a UI gesture.
    - Minimal Tauri capabilities; strict CSP.

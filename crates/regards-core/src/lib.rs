@@ -6,6 +6,7 @@
 
 pub mod build_info;
 pub mod paths;
+pub mod secret;
 
 /// Human-readable product name.
 pub const PRODUCT_NAME: &str = "Regards";

@@ -1,0 +1,133 @@
+//! The Regards IMAP client (ADR-0009), built on `imap-next` + `imap-codec`.
+//!
+//! Only this crate depends on imap-next and imap-types; it exposes Regards
+//! types so the library can be replaced in one place (spike 07 §7). For now it
+//! verifies sign-in; mailbox and message sync follow.
+//!
+//! **Logging:** imap-next logs raw protocol bytes, including passwords and
+//! mail, at TRACE level. Binaries must cap the `imap_next` target at INFO (the
+//! `regards` CLI does).
+
+mod conn;
+mod tls;
+
+pub use tls::TlsOptions;
+
+use conn::{Conn, Reply};
+use imap_next::stream::Stream;
+use imap_types::command::CommandBody;
+use imap_types::response::{Capability, Code, Data, GreetingKind, StatusBody, StatusKind};
+use regards_core::secret::Secret;
+
+/// Errors connecting or signing in, phrased for the person setting up the account.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ImapError {
+    #[error("{0}")]
+    Connect(String),
+    #[error("the server's security certificate was not accepted: {0}")]
+    Tls(String),
+    #[error("the server did not answer in time ({0})")]
+    Timeout(&'static str),
+    #[error("this does not look like an IMAP server: {0}")]
+    NotImap(String),
+    #[error("the server refused the user name or password: {0}")]
+    AuthFailed(String),
+    #[error("the server does not allow password sign-in on this connection")]
+    LoginDisabled,
+    #[error("unexpected server behaviour: {0}")]
+    Protocol(String),
+}
+
+/// An IMAP server reached over TLS from the first byte (usually port 993).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImapServer {
+    pub host: String,
+    pub port: u16,
+}
+
+/// What a successful sign-in check learned about the server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoginCheck {
+    /// Capabilities advertised after login, which can differ from those before.
+    pub capabilities: Vec<String>,
+}
+
+/// Connect, sign in with a password, read the capabilities, and log out.
+pub async fn verify_login(
+    server: &ImapServer,
+    username: &str,
+    password: &Secret,
+    tls: &TlsOptions,
+) -> Result<LoginCheck, ImapError> {
+    let stream = tls::connect(&server.host, server.port, tls).await?;
+    let (mut conn, greeting) = Conn::open(Stream::tls(stream.into())).await?;
+    match greeting.kind {
+        GreetingKind::Ok => {}
+        GreetingKind::PreAuth => return Err(ImapError::Protocol("the server signed us in without a password".into())),
+        GreetingKind::Bye => return Err(ImapError::NotImap(clean(greeting.text.as_ref()))),
+    }
+
+    let mut capabilities = match greeting.code {
+        Some(Code::Capability(caps)) => names(caps.as_ref()),
+        _ => names_from(&conn.run(CommandBody::Capability).await?),
+    };
+    if has(&capabilities, "LOGINDISABLED") {
+        return Err(ImapError::LoginDisabled);
+    }
+
+    let login = CommandBody::login(username.to_owned(), password.expose().to_owned())
+        .map_err(|_| ImapError::AuthFailed("the user name or password contains characters IMAP cannot send".into()))?;
+    let reply = conn.run(login).await?;
+    if reply.done.kind != StatusKind::Ok {
+        return Err(ImapError::AuthFailed(clean(reply.done.text.as_ref())));
+    }
+
+    // Servers often include the new capabilities in the LOGIN reply; otherwise ask.
+    capabilities = match code_capabilities(&reply.done) {
+        Some(caps) => caps,
+        None => names_from(&conn.run(CommandBody::Capability).await?),
+    };
+
+    // A failed LOGOUT does not make the check fail: we are signed in either way.
+    if let Err(error) = conn.run(CommandBody::Logout).await {
+        tracing::debug!(%error, "LOGOUT after the sign-in check failed");
+    }
+    Ok(LoginCheck { capabilities })
+}
+
+/// Capability names, upper-cased: IMAP compares them case-insensitively.
+fn names(caps: &[Capability<'_>]) -> Vec<String> {
+    caps.iter().map(|cap| cap.to_string().to_ascii_uppercase()).collect()
+}
+
+fn names_from(reply: &Reply) -> Vec<String> {
+    reply
+        .data
+        .iter()
+        .find_map(|data| match data {
+            Data::Capability(caps) => Some(names(caps.as_ref())),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
+fn code_capabilities(status: &StatusBody<'_>) -> Option<Vec<String>> {
+    match &status.code {
+        Some(Code::Capability(caps)) => Some(names(caps.as_ref())),
+        _ => None,
+    }
+}
+
+fn has(capabilities: &[String], name: &str) -> bool {
+    capabilities.iter().any(|cap| cap.eq_ignore_ascii_case(name))
+}
+
+/// Server text shown to the user: printable, single line, bounded.
+fn clean(text: &str) -> String {
+    let text: String = text.chars().filter(|c| !c.is_control()).take(200).collect();
+    if text.is_empty() {
+        "no reason given".into()
+    } else {
+        text
+    }
+}

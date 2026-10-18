@@ -56,6 +56,11 @@ We must support generic IMAP/SMTP, Gmail and Microsoft 365/Outlook. Tenants may 
    - **SMTP:** `lettre` (MIT), async with rustls.
    - **MIME:** `mail-parser` (Apache-2.0 OR MIT) for parsing; `mail-builder` (Apache-2.0 OR MIT) for building `multipart/alternative` + `related` + attachments.
    - **TLS:** `rustls` with the platform certificate verifier. Certificate validation is always on, with no "accept invalid certs" option in the UI.
+     - **Implementation (Phase 1):**
+       - **Verifier and crypto:** `rustls-platform-verifier` with the `ring` crypto provider. ring builds with a plain C compiler on every OS.
+       - **IMAP connection:** TLS from the first byte (port 993). IMAP STARTTLS is not supported yet.
+       - **Extra trust roots:** only tests can add extra root certificates, and debug builds through `REGARDS_DEV_EXTRA_CA` for local test servers. Release builds ignore that variable.
+     - **Logging:** imap-next logs raw protocol bytes at TRACE level, so its log target is capped at INFO ([spike 07](../research/07-imap-library-spike.md) §5 item 6).
    - **OAuth2:** the `oauth2` crate (MIT/Apache) with PKCE and a loopback redirect; tokens are refreshed by the daemon.
    - **HTTP:** `reqwest` with rustls (for Graph, the Gmail API and autodiscovery).
 4. **Account setup and autoconfiguration:** in order, Mozilla ISPDB-style autoconfig, the provider's well-known endpoints, DNS SRV (RFC 6186), then manual entry. Our own provider presets are written from public provider documentation.

@@ -10,10 +10,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use regards_core::paths::DataDirs;
-use regards_ipc::launcher::{self, LaunchError, Launcher};
-use regards_ipc::protocol::{ClientKind, Principal};
-use regards_ipc::{Client, UiToken};
-use serde::Serialize;
+use regards_core::secret::Secret;
+use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
+use regards_ipc::protocol::{
+    AccountAddParams, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity, Principal, ServerSettings,
+    methods,
+};
+use regards_ipc::{Client, ClientError, UiToken};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::path::PathBuf;
 use std::time::Duration;
 use tauri::{Manager, RunEvent, State};
@@ -96,27 +101,34 @@ impl DaemonStatus {
     }
 }
 
+impl Bridge {
+    /// Connect with desktop access, starting or replacing the daemon as needed.
+    async fn connect(&self) -> Result<Connected, String> {
+        let launcher = self.launcher.as_ref().map_err(Clone::clone)?;
+        // Held while connecting, so concurrent calls never start two daemons.
+        let mut token = self.token.lock().await;
+        let connected = launcher
+            .connect_or_start(ClientKind::Desktop, token.clone(), true)
+            .await
+            .map_err(explain)?;
+        if let Some(launched) = &connected.launched {
+            *token = Some(launched.ui_token.clone());
+        }
+        Ok(connected)
+    }
+}
+
 /// Connect to the daemon, starting or replacing it as needed, and report on it.
 #[tauri::command]
 async fn daemon_status(bridge: State<'_, Bridge>) -> Result<DaemonStatus, String> {
-    let launcher = match &bridge.launcher {
-        Ok(launcher) => launcher,
+    let endpoint = match &bridge.launcher {
+        Ok(launcher) => launcher.endpoint().to_string(),
         Err(error) => return Ok(DaemonStatus::failed(String::new(), error)),
     };
-    let endpoint = launcher.endpoint().to_string();
-
-    // Held for the whole check, so concurrent calls never start two daemons.
-    let mut token = bridge.token.lock().await;
-    let mut connected = match launcher
-        .connect_or_start(ClientKind::Desktop, token.clone(), true)
-        .await
-    {
+    let mut connected = match bridge.connect().await {
         Ok(connected) => connected,
-        Err(error) => return Ok(DaemonStatus::failed(endpoint, explain(error))),
+        Err(error) => return Ok(DaemonStatus::failed(endpoint, error)),
     };
-    if let Some(launched) = &connected.launched {
-        *token = Some(launched.ui_token.clone());
-    }
 
     let status = match connected.client.health().await {
         Ok(health) => DaemonStatus {
@@ -134,6 +146,72 @@ async fn daemon_status(bridge: State<'_, Bridge>) -> Result<DaemonStatus, String
         Err(error) => DaemonStatus::failed(endpoint, error),
     };
     Ok(status)
+}
+
+/// The account form as the UI sends it.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountInput {
+    display_name: String,
+    email: String,
+    username: Option<String>,
+    password: Secret,
+    imap_host: String,
+    imap_port: u16,
+    smtp_host: String,
+    smtp_port: u16,
+    smtp_security: ConnectionSecurity,
+}
+
+#[tauri::command]
+async fn account_list(bridge: State<'_, Bridge>) -> Result<Vec<AccountSummary>, String> {
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::ACCOUNT_LIST, Value::Null).await.map_err(describe)
+}
+
+/// Check the sign-in with the server, then save the account (password in the OS credential store).
+#[tauri::command]
+async fn account_add(bridge: State<'_, Bridge>, input: AccountInput) -> Result<AccountSummary, String> {
+    let smtp_host = match input.smtp_host.trim() {
+        "" => input.imap_host.clone(),
+        host => host.to_owned(),
+    };
+    let params = AccountAddParams {
+        display_name: input.display_name,
+        email: input.email,
+        username: input.username,
+        password: input.password,
+        imap: ServerSettings {
+            host: input.imap_host,
+            port: input.imap_port,
+            security: ConnectionSecurity::Tls,
+        },
+        smtp: ServerSettings {
+            host: smtp_host,
+            port: input.smtp_port,
+            security: input.smtp_security,
+        },
+    };
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::ACCOUNT_ADD, params).await.map_err(describe)
+}
+
+#[tauri::command]
+async fn account_remove(bridge: State<'_, Bridge>, id: String) -> Result<(), String> {
+    let mut client = bridge.connect().await?.client;
+    let _: Value = client
+        .call(methods::ACCOUNT_REMOVE, AccountRemoveParams { id })
+        .await
+        .map_err(describe)?;
+    Ok(())
+}
+
+/// Daemon errors carry messages written for people; show those as they are.
+fn describe(error: ClientError) -> String {
+    match error {
+        ClientError::Rpc(error) => error.message,
+        other => other.to_string(),
+    }
 }
 
 fn explain(error: LaunchError) -> String {
@@ -158,7 +236,12 @@ fn main() {
             }
         }))
         .manage(Bridge::new())
-        .invoke_handler(tauri::generate_handler![daemon_status])
+        .invoke_handler(tauri::generate_handler![
+            daemon_status,
+            account_list,
+            account_add,
+            account_remove
+        ])
         .build(tauri::generate_context!())
         .expect("failed to start the Regards desktop app");
 

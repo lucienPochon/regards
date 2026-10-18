@@ -1,6 +1,6 @@
 //! One client connection: handshake, then request dispatch.
 
-use crate::State;
+use crate::{State, accounts};
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_ipc::framing::{self, FrameError};
 use regards_ipc::protocol::{
@@ -103,9 +103,32 @@ impl Session {
                 let _ = self.state.stop.send(true);
                 Ok(json!({ "stopping": true }))
             }
+            methods::ACCOUNT_LIST => {
+                self.require_ui()?;
+                accounts::list(&self.state).await
+            }
+            methods::ACCOUNT_ADD => {
+                self.require_ui()?;
+                accounts::add(&self.state, params(request)?).await
+            }
+            methods::ACCOUNT_REMOVE => {
+                self.require_ui()?;
+                accounts::remove(&self.state, params(request)?).await
+            }
             other => Err(RpcError::new(
                 codes::METHOD_NOT_FOUND,
                 format!("unknown method \"{other}\""),
+            )),
+        }
+    }
+
+    /// Accounts, credentials and access levels may only be changed from the desktop UI (ADR-0006).
+    fn require_ui(&self) -> Result<(), RpcError> {
+        match self.principal {
+            Some(Principal::Ui) => Ok(()),
+            _ => Err(RpcError::new(
+                codes::FORBIDDEN,
+                "only the Regards app can do this; agents and the CLI cannot",
             )),
         }
     }
@@ -162,7 +185,13 @@ fn to_value<T: serde::Serialize>(value: T) -> Value {
 }
 
 /// An internal failure, reported without details that could leak data.
-fn internal(error: impl std::fmt::Display) -> RpcError {
+pub(crate) fn internal(error: impl std::fmt::Display) -> RpcError {
     tracing::error!(%error, "request failed");
     RpcError::new(codes::INTERNAL_ERROR, "internal error; see the daemon log")
+}
+
+/// Decode a request's parameters.
+fn params<T: serde::de::DeserializeOwned>(request: &Request) -> Result<T, RpcError> {
+    serde_json::from_value(request.params.clone())
+        .map_err(|error| RpcError::new(codes::INVALID_PARAMS, format!("invalid parameters: {error}")))
 }

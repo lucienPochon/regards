@@ -10,7 +10,9 @@ publish.workspace = true
 [dependencies]
 regards-core.workspace = true
 regards-ipc.workspace = true
+regards-imap.workspace = true
 regards-store.workspace = true
+regards-vault.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -20,7 +22,9 @@ tracing.workspace = true
 [dev-dependencies]
 bytes.workspace = true
 futures-util.workspace = true
+rcgen.workspace = true
 tempfile.workspace = true
+tokio-rustls.workspace = true
 
 [lints]
 workspace = true

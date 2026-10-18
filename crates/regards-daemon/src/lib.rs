@@ -4,20 +4,23 @@
 //! process that owns the user's mail data; the desktop app, the CLI and the MCP
 //! server talk to it over the local API (ADR-0006).
 
+mod accounts;
 mod session;
 
 use regards_core::paths::DataDirs;
+use regards_imap::TlsOptions;
 use regards_ipc::UiToken;
 use regards_ipc::endpoint::Endpoint;
 use regards_ipc::transport::Listener;
 use regards_store::{Store, StoreError};
+use regards_vault::Vault;
 use std::fs::{File, TryLockError};
 use std::future::Future;
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::watch;
+use tokio::sync::{OnceCell, watch};
 
 /// Errors starting the daemon.
 #[derive(Debug, thiserror::Error)]
@@ -40,6 +43,11 @@ pub(crate) struct State {
     pub(crate) ui_token: Option<UiToken>,
     /// The mail database.
     pub(crate) store: Store,
+    /// The credential store, opened on first use so a missing Secret Service
+    /// on Linux does not stop the daemon from starting.
+    pub(crate) vault: OnceCell<Result<Vault, String>>,
+    /// Which certificates IMAP connections trust.
+    pub(crate) imap_tls: TlsOptions,
 }
 
 /// A daemon that holds its data-directory lock and is listening, but not yet serving.
@@ -50,6 +58,8 @@ pub struct Daemon {
     lock: File,
     store: Store,
     ui_token: Option<UiToken>,
+    vault: Option<Vault>,
+    imap_tls: TlsOptions,
 }
 
 impl Daemon {
@@ -92,6 +102,8 @@ impl Daemon {
             lock,
             store,
             ui_token: None,
+            vault: None,
+            imap_tls: default_imap_tls(),
         })
     }
 
@@ -99,6 +111,18 @@ impl Daemon {
     /// Without a token, every connection is an `agent`.
     pub fn with_ui_token(mut self, token: UiToken) -> Self {
         self.ui_token = Some(token);
+        self
+    }
+
+    /// Use this credential store instead of the operating system's (tests).
+    pub fn with_vault(mut self, vault: Vault) -> Self {
+        self.vault = Some(vault);
+        self
+    }
+
+    /// Trust these certificates for IMAP instead of the defaults (tests).
+    pub fn with_imap_tls(mut self, tls: TlsOptions) -> Self {
+        self.imap_tls = tls;
         self
     }
 
@@ -120,6 +144,8 @@ impl Daemon {
             endpoint,
             ui_token,
             store,
+            vault,
+            imap_tls,
             ..
         } = self;
         let (stop, mut stopped) = watch::channel(false);
@@ -128,6 +154,8 @@ impl Daemon {
             stop,
             ui_token,
             store,
+            vault: OnceCell::new_with(vault.map(Ok)),
+            imap_tls,
         });
         tracing::info!(%endpoint, "daemon listening");
 
@@ -171,4 +199,27 @@ fn restrict_to_owner(dir: &std::path::Path) -> io::Result<()> {
 #[cfg(not(unix))]
 fn restrict_to_owner(_dir: &std::path::Path) -> io::Result<()> {
     Ok(())
+}
+
+/// Debug builds only: also trust the CA certificates in this PEM file for IMAP,
+/// to develop against a local test server. Release builds ignore it.
+#[cfg(debug_assertions)]
+const DEV_EXTRA_CA_ENV: &str = "REGARDS_DEV_EXTRA_CA";
+
+fn default_imap_tls() -> TlsOptions {
+    #[cfg(debug_assertions)]
+    if let Some(path) = std::env::var_os(DEV_EXTRA_CA_ENV) {
+        match std::fs::read(&path).map_err(|e| e.to_string()).and_then(|pem| {
+            TlsOptions::platform()
+                .with_extra_roots_pem(&pem)
+                .map_err(|e| e.to_string())
+        }) {
+            Ok(tls) => {
+                tracing::warn!(path = %std::path::Path::new(&path).display(), "development build: trusting an extra IMAP CA");
+                return tls;
+            }
+            Err(error) => tracing::error!(%error, "ignoring {DEV_EXTRA_CA_ENV}"),
+        }
+    }
+    TlsOptions::platform()
 }

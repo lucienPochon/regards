@@ -10,9 +10,9 @@
 //! thread.
 
 use keyring_core::{CredentialStore, Entry};
+pub use regards_core::secret::Secret;
 use std::fmt;
 use std::sync::Arc;
-use zeroize::Zeroizing;
 
 /// Service name under which Regards keeps its credentials.
 const SERVICE: &str = "Regards";
@@ -59,27 +59,6 @@ impl SecretKey {
 
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-/// A secret value. Its memory is wiped on drop, and `Debug` never prints it.
-#[derive(Clone)]
-pub struct Secret(Zeroizing<String>);
-
-impl Secret {
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(Zeroizing::new(value.into()))
-    }
-
-    /// The secret text. Hand it straight to the protocol code; never log or store it.
-    pub fn expose(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for Secret {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Secret(<redacted>)")
     }
 }
 

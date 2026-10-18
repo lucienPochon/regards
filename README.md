@@ -56,6 +56,22 @@ regards version
 
 A daemon started in the background logs to `logs/daemon.log` in the data directory.
 
+### Add a mail account
+
+Add accounts in the desktop app.
+- **The check:** Regards first signs in to the IMAP server (TLS, usually port 993) to check the details. Only then does it save the account.
+- **The password:** it goes to the OS credential store.
+
+The CLI cannot add accounts: only the app may change accounts and credentials ([ADR-0006](docs/adr/0006-local-ipc-and-security.md)).
+
+**Testing against a local server:** to try it against a local test server with its own CA, for example the Dovecot container from [`spikes/imap-trial`](spikes/imap-trial/README.md), point a **debug** build at the CA:
+
+```sh
+REGARDS_DEV_EXTRA_CA=/path/to/ca.pem REGARDS_DATA_DIR=/tmp/regards-dev npm run tauri dev
+```
+
+Release builds ignore `REGARDS_DEV_EXTRA_CA`.
+
 **The desktop app owns the daemon it uses.** Only a daemon the app started itself can give it desktop access ([ADR-0006](docs/adr/0006-local-ipc-and-security.md)). When the app finds a daemon started some other way, for example by `regards daemon run`, it replaces it with its own. When the app quits, it stops its daemon.
 
 During development, point Regards at a throwaway data directory so it never touches real data:

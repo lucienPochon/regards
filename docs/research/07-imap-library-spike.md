@@ -112,6 +112,10 @@ Fixing items 1–3 means forking both async-imap and imap-proto and changing the
    - **Mitigation:** fetch headers with `BODY.PEEK[HEADER.FIELDS (…)]`, which always arrives as a literal and can carry any bytes, and parse them with `mail-parser`, instead of relying on ENVELOPE.
    - **Upstream:** a quirk feature.
 5. **Maturity [V].** The codec is a 2.0 alpha, and imap-next has about 35× fewer recent downloads than async-imap.
+6. **Protocol bytes in TRACE logs [V]** (found while building `regards-imap`).
+   - **What happens:** `fragment.rs` logs every command and response fragment in plain text at TRACE level, in release builds too. That includes LOGIN passwords and mail content. imap-types' `Secret` hides values in `Debug` only in release builds.
+   - **Mitigation:** Regards caps the `imap_next` target at INFO whatever `REGARDS_LOG` says. A test checks that a password never reaches the log.
+   - **Upstream:** redact credentials (LOGIN/AUTHENTICATE) in fragment traces.
 
 ## 6. Server findings (Dovecot 2.4.5)
 

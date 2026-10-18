@@ -125,3 +125,103 @@ button:disabled {
   color: var(--muted);
   cursor: default;
 }
+
+.card + .card {
+  margin-top: 16px;
+}
+
+.small {
+  font-size: 13px;
+}
+
+.accounts {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.accounts li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.accounts li button {
+  margin-top: 0;
+}
+
+.account-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.account-form label {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.account-form input,
+.account-form select {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+}
+
+.account-form input:focus-visible,
+.account-form select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.account-form fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.account-form legend {
+  padding: 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.account-form .grow {
+  flex: 1 1 220px;
+}
+
+.account-form .port {
+  flex: 0 0 90px;
+}
+
+.account-form summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.account-form details label {
+  margin-top: 8px;
+}
+
+.account-form .actions {
+  display: flex;
+  gap: 8px;
+}
+
+.account-form .actions button {
+  margin-top: 0;
+}

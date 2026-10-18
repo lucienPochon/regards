@@ -9,6 +9,8 @@ publish.workspace = true
 
 [dependencies]
 dirs.workspace = true
+serde.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

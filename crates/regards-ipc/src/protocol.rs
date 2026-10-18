@@ -1,6 +1,7 @@
 //! JSON-RPC 2.0 messages and the typed Regards methods.
 
 use crate::token::UiToken;
+use regards_core::secret::Secret;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -18,6 +19,12 @@ pub mod methods {
     pub const DAEMON_HEALTH: &str = "daemon.health";
     /// Ask the daemon to stop.
     pub const DAEMON_SHUTDOWN: &str = "daemon.shutdown";
+    /// List mail accounts. `ui` only, until agent access levels exist (ADR-0012).
+    pub const ACCOUNT_LIST: &str = "account.list";
+    /// Verify a password sign-in and add the account. `ui` only (ADR-0006).
+    pub const ACCOUNT_ADD: &str = "account.add";
+    /// Remove an account and its stored password. `ui` only (ADR-0006).
+    pub const ACCOUNT_REMOVE: &str = "account.remove";
 }
 
 /// Error codes. Negative values in -32768..=-32000 are reserved by JSON-RPC;
@@ -34,6 +41,15 @@ pub mod codes {
     pub const UNSUPPORTED_PROTOCOL: i32 = -32002;
     /// The connection's principal may not call this method.
     pub const FORBIDDEN: i32 = -32003;
+    /// The referenced object does not exist.
+    pub const NOT_FOUND: i32 = -32004;
+    /// The request conflicts with existing data, for example a duplicate account.
+    pub const CONFLICT: i32 = -32005;
+    /// Connecting or signing in to the mail server failed. `data.reason` is an
+    /// [`AccountCheckFailure`](super::AccountCheckFailure).
+    pub const ACCOUNT_CHECK_FAILED: i32 = -32010;
+    /// The operating system's credential store could not be used.
+    pub const CREDENTIAL_STORE: i32 = -32011;
 }
 
 /// A client request.
@@ -178,6 +194,76 @@ pub struct HealthResult {
     pub uptime_secs: u64,
     /// Revision of the latest committed change to the mail database (ADR-0007).
     pub revision: i64,
+}
+
+/// How a connection is encrypted. There is no plaintext option.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectionSecurity {
+    /// TLS from the first byte (IMAP 993, SMTP 465).
+    Tls,
+    /// STARTTLS before authentication (SMTP 587).
+    Starttls,
+}
+
+/// A mail server endpoint.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerSettings {
+    pub host: String,
+    pub port: u16,
+    pub security: ConnectionSecurity,
+}
+
+/// Parameters of [`methods::ACCOUNT_ADD`]. `Debug` redacts the password.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountAddParams {
+    pub display_name: String,
+    pub email: String,
+    /// Defaults to `email`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    pub password: Secret,
+    pub imap: ServerSettings,
+    pub smtp: ServerSettings,
+}
+
+/// An account as clients see it: no secrets, no credential-store keys.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountSummary {
+    pub id: String,
+    pub display_name: String,
+    pub email: String,
+    pub username: String,
+    pub imap: ServerSettings,
+    pub smtp: ServerSettings,
+    /// What the IMAP server advertised after sign-in.
+    pub imap_capabilities: Vec<String>,
+    /// Unix time in milliseconds.
+    pub created_at: i64,
+}
+
+/// Parameters of [`methods::ACCOUNT_REMOVE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountRemoveParams {
+    pub id: String,
+}
+
+/// Why an account check failed: `data.reason` of [`codes::ACCOUNT_CHECK_FAILED`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AccountCheckFailure {
+    /// The server could not be reached.
+    Connect,
+    /// The server's certificate was not accepted.
+    Tls,
+    Timeout,
+    /// Something other than an IMAP server answered.
+    NotImap,
+    /// Wrong user name or password.
+    AuthFailed,
+    /// The server does not allow password sign-in.
+    LoginDisabled,
+    Protocol,
 }
 
 /// Pick the highest version both sides support.

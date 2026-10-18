@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { AccountsPanel } from "./AccountsPanel";
 import { type DaemonStatus, fetchDaemonStatus } from "./daemon";
 
 type Check =
@@ -36,6 +37,8 @@ export function App() {
           Check again
         </button>
       </section>
+
+      <AccountsPanel />
     </main>
   );
 }

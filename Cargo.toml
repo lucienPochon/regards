@@ -5,6 +5,7 @@ members = [
     "crates/regards-ipc",
     "crates/regards-daemon",
     "crates/regards-cli",
+    "crates/regards-imap",
     "crates/regards-store",
     "crates/regards-vault",
     "apps/desktop/src-tauri",
@@ -23,6 +24,7 @@ publish = false
 regards-core = { path = "crates/regards-core" }
 regards-ipc = { path = "crates/regards-ipc" }
 regards-daemon = { path = "crates/regards-daemon" }
+regards-imap = { path = "crates/regards-imap" }
 regards-store = { path = "crates/regards-store" }
 regards-vault = { path = "crates/regards-vault" }
 
@@ -36,14 +38,16 @@ keyring-core = "1"
 libc = "0.2"
 rusqlite = { version = "0.40", features = ["bundled"] }
 rusqlite_migration = "2.6"
+rcgen = "0.14"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
 thiserror = "2"
 tokio = { version = "1.53", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "ring", "tls12"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry"] }
 uuid = { version = "1", features = ["v4"] }
 zeroize = "1"
 windows-sys = { version = "0.61", features = [
