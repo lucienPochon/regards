@@ -437,6 +437,14 @@ impl Session {
                 self.require_ui()?;
                 notices::shown(&self.state, params(request)?).await
             }
+            methods::MAIL_ARRIVED => {
+                self.require_ui()?;
+                notices::arrived(&self.state).await
+            }
+            methods::MAIL_ARRIVED_SHOWN => {
+                self.require_ui()?;
+                notices::arrived_shown(&self.state, params(request)?).await
+            }
             methods::OUTBOX_RESCHEDULE => {
                 self.require_ui()?;
                 compose::reschedule(&self.state, params(request)?).await

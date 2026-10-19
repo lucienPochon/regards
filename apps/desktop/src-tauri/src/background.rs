@@ -15,6 +15,7 @@
 //!   default; and whether to check for updates ([`crate::updates`]), not
 //!   asked yet by default.
 
+use crate::notify::NotifyChoices;
 use regards_core::paths::DataDirs;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -40,6 +41,8 @@ struct Settings {
     update_checks: Option<bool>,
     /// The latest version the person was told of.
     told_update: Option<String>,
+    /// Which notifications to show.
+    notify: NotifyChoices,
 }
 
 impl Default for Settings {
@@ -50,6 +53,7 @@ impl Default for Settings {
             told_tray: false,
             update_checks: None,
             told_update: None,
+            notify: NotifyChoices::default(),
         }
     }
 }
@@ -61,6 +65,7 @@ pub(crate) struct Background {
     told_tray: AtomicBool,
     update_checks: Mutex<Option<bool>>,
     told_update: Mutex<Option<String>>,
+    notify: Mutex<NotifyChoices>,
     /// The tray menu's check marks, kept in step with the settings.
     check: Mutex<Option<CheckMenuItem<Wry>>>,
     notify_check: Mutex<Option<CheckMenuItem<Wry>>>,
@@ -82,6 +87,7 @@ impl Background {
             told_tray: AtomicBool::new(settings.told_tray),
             update_checks: Mutex::new(settings.update_checks),
             told_update: Mutex::new(settings.told_update),
+            notify: Mutex::new(settings.notify),
             check: Mutex::new(None),
             notify_check: Mutex::new(None),
         }
@@ -136,6 +142,20 @@ impl Background {
         Ok(())
     }
 
+    pub(crate) fn notify_choices(&self) -> NotifyChoices {
+        self.notify.lock().expect("never poisoned").clone()
+    }
+
+    /// Which notifications to show: saved.
+    pub(crate) fn set_notify_choices(&self, choices: NotifyChoices) -> Result<(), String> {
+        self.save(Settings {
+            notify: choices.clone(),
+            ..self.current()
+        })?;
+        *self.notify.lock().expect("never poisoned") = choices;
+        Ok(())
+    }
+
     pub(crate) fn told_update(&self) -> Option<String> {
         self.told_update.lock().expect("never poisoned").clone()
     }
@@ -178,6 +198,7 @@ impl Background {
             told_tray: self.told_tray.load(Ordering::SeqCst),
             update_checks: self.update_checks(),
             told_update: self.told_update(),
+            notify: self.notify_choices(),
         }
     }
 

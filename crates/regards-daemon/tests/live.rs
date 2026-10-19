@@ -20,8 +20,9 @@ use regards_ipc::protocol::{
     UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::protocol::{
-    ExplainResult, HoldListParams, HoldListResult, Policy, Reason, Screening, ScreeningParams, Section,
-    SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams, SenderSetResult, SmartOverviewResult,
+    ArrivalView, ArrivedResult, ExplainResult, HoldListParams, HoldListResult, NoticeShownParams, Policy, Reason,
+    Screening, ScreeningParams, Section, SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams,
+    SenderSetResult, SmartOverviewResult,
 };
 use regards_ipc::{Client, Endpoint, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -3105,5 +3106,59 @@ async fn live_a_senders_remote_images_load_once_the_person_allows_them() {
         .unwrap();
     let html: MessageHtml = desktop.call(methods::MESSAGE_HTML, shown(false)).await.unwrap();
     assert_eq!(html.blocked_remote, 1);
+    handle.abort();
+}
+
+async fn new_mail(desktop: &mut Client) -> Vec<ArrivalView> {
+    desktop
+        .call::<_, ArrivedResult>(methods::MAIL_ARRIVED, Value::Null)
+        .await
+        .unwrap()
+        .arrivals
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_new_mail_is_told_of_but_not_an_inbox_seen_for_the_first_time() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    seed.append(b"INBOX", &[], &message(1, "Already there", "ada@example.test"))
+        .await
+        .unwrap();
+    let (_temp, mut desktop, account, _inbox, handle) = daemon_with_account(&live).await;
+    assert!(
+        new_mail(&mut desktop).await.is_empty(),
+        "the first look tells of nothing"
+    );
+
+    seed.append(b"INBOX", &[], &message(2, "Just in", "Lena <lena@example.test>"))
+        .await
+        .unwrap();
+    seed.append(
+        b"INBOX",
+        &[SystemFlag::Seen],
+        &message(3, "Read on the phone", "bob@example.test"),
+    )
+    .await
+    .unwrap();
+    sync(&mut desktop, &account.id).await;
+    let new = new_mail(&mut desktop).await;
+    assert_eq!(new.len(), 1, "{new:?}");
+    assert_eq!(new[0].subject, "Just in");
+    assert_eq!(new[0].account_id, account.id);
+    assert_eq!(
+        new[0].from.as_ref().and_then(|from| from.address.as_deref()),
+        Some("lena@example.test")
+    );
+    assert!(new[0].section.is_some(), "sorted, for the app to filter");
+
+    let _: Value = desktop
+        .call(methods::MAIL_ARRIVED_SHOWN, NoticeShownParams { up_to: new[0].id })
+        .await
+        .unwrap();
+    assert!(new_mail(&mut desktop).await.is_empty());
+    seed.logout().await;
     handle.abort();
 }

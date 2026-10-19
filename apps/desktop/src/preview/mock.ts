@@ -247,6 +247,14 @@ const draftById = (id: number) => {
   return draft;
 };
 
+let notificationChoices = {
+  new_mail: {} as Record<string, string>,
+  snooze_ended: true,
+  reminder_due: true,
+  sending: true,
+  agents: true,
+};
+
 function handle(cmd: string, args: Args): unknown {
   switch (cmd) {
     case "daemon_status":
@@ -291,6 +299,11 @@ function handle(cmd: string, args: Args): unknown {
       return { allow: (args.sender as { allow: boolean }).allow };
     case "sender_images":
       return { senders: [] };
+    case "notification_settings":
+      return notificationChoices;
+    case "set_notification_settings":
+      notificationChoices = args.settings as typeof notificationChoices;
+      return null;
     case "update_status":
       return { checks: null, current: "0.1.0", available: null, checked_at: null };
     case "update_set_checks":

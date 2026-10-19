@@ -475,6 +475,10 @@ flowchart LR
 ### 5.12 Notifications, tray, badges (P1, 1.0)
 
 - Only Priority and People notify by default.
+  - **As built (2026-10-19):**
+    - **Recording:** sync records what comes into an inbox (migration 0030 `arrivals`). It never does so on a folder's first look, so adding an account doesn't announce its inbox, and it skips mail that is already read or sent on to Junk.
+    - **Listing:** `mail.arrived` lists the arrivals with sender, subject and Smart Inbox section, never the text, and `mail.arrived_shown` marks them shown. Arrivals are kept a day.
+    - **Filtering:** the app filters per account (all; People and Priority by default; Priority only; none) and per kind for the other notices (snooze, reminders, sending, agents), from choices kept in `desktop.json`.
 - Snooze and reminder returns notify.
 - From 1.1, every remote-executor send notifies.
 - Unread counts appear in the tray.
