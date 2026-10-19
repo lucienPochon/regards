@@ -332,7 +332,9 @@ async fn a_withdrawn_sign_in_asks_to_sign_in_again_which_keeps_the_account() {
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     let waiting = loop {
         let entries = outbox(&mut desktop).await;
-        if entries.first().is_some_and(|entry| entry.attempts > 0) || std::time::Instant::now() > deadline {
+        // Tried, and back to waiting (not still being tried).
+        let tried = |entry: &OutboxEntryView| entry.attempts > 0 && entry.state == OutboxState::Queued;
+        if entries.first().is_some_and(tried) || std::time::Instant::now() > deadline {
             break entries;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
