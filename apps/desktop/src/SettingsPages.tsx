@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import { type AccountSummary, type AutoCopy, prefetchOn, setAutoCopy, setPrefetch } from "./accounts";
+import {
+  type AccountSummary,
+  type AutoCopy,
+  type ReadingSettings,
+  prefetchOn,
+  readingSettings,
+  setAutoCopy,
+  setPrefetch,
+  setReadingSettings,
+} from "./accounts";
 import { Avatar } from "./Avatar";
 import {
   type BackgroundSettings,
@@ -37,11 +46,13 @@ export function GeneralPage({ accounts }: { accounts: AccountSummary[] }) {
   const prefs = usePrefs();
   const [background, setBackground] = useState<BackgroundSettings | null>(null);
   const [prefetch, setPrefetchShown] = useState<boolean | null>(null);
+  const [reading, setReading] = useState<ReadingSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [senders, setSenders] = useState(false);
   useEffect(() => {
     backgroundSettings().then(setBackground, (failure: unknown) => setError(String(failure)));
     prefetchOn().then(setPrefetchShown, (failure: unknown) => setError(String(failure)));
+    readingSettings().then(setReading, (failure: unknown) => setError(String(failure)));
   }, []);
   const changeBackground = (key: keyof BackgroundSettings, on: boolean) => {
     if (!background) return;
@@ -144,6 +155,26 @@ export function GeneralPage({ accounts }: { accounts: AccountSummary[] }) {
           onOpen={() => setSenders(true)}
         />
       )}
+      <Option
+        icon="shield"
+        label="Remove tracking from links"
+        description="Takes out the parts of a link that only tell who clicked (utm_…, fbclid …); the rest of the link stays. Also for what agents read."
+      >
+        {reading !== null && (
+          <Toggle
+            label="Remove tracking from links"
+            on={reading.clean_links}
+            onChange={(on) => {
+              setError(null);
+              const next = { ...reading, clean_links: on };
+              setReadingSettings(next).then(
+                () => setReading(next),
+                (failure: unknown) => setError(String(failure)),
+              );
+            }}
+          />
+        )}
+      </Option>
       <Option
         icon="archive"
         label="Download recent mail ahead of time"
