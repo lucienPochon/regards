@@ -160,7 +160,7 @@ async fn send_one(state: &Arc<State>, entry: &Entry) -> Result<(), StoreError> {
                 .write(move |tx| outbox::retry_later(tx, id, &reason, next))
                 .await?;
         }
-        Err(SubmitError::NotSent { reason, retry: false }) => {
+        Err(SubmitError::NotSent { reason, retry: false } | SubmitError::SignIn(reason)) => {
             tracing::warn!(outbox = id, "message not sent");
             let notice = notice_about(entry, Kind::SendFailed);
             state
@@ -232,6 +232,7 @@ async fn deliver(state: &State, entry: &Entry) -> Result<Submitted, SubmitError>
     let credentials = Credentials {
         username: &account.username,
         password: &password,
+        oauth: false,
     };
     let envelope = Envelope {
         from: entry.envelope_from.clone(),

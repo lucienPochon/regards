@@ -117,12 +117,30 @@ async fn enable_qresync(conn: &mut Conn) -> Result<bool, ImapError> {
         }))
 }
 
+/// How a session signs in.
+#[derive(Debug, Clone, Copy)]
+pub enum Auth<'a> {
+    Password(&'a Secret),
+    /// An OAuth 2.0 access token, by SASL XOAUTH2 (ADR-0018).
+    Bearer(&'a Secret),
+}
+
 impl Session {
     /// Connect over TLS and sign in with a password.
     pub async fn login(
         server: &ImapServer,
         username: &str,
         password: &Secret,
+        tls: &TlsOptions,
+    ) -> Result<Self, ImapError> {
+        Self::sign_in(server, username, Auth::Password(password), tls).await
+    }
+
+    /// Connect over TLS and sign in, with a password or an OAuth token.
+    pub async fn sign_in(
+        server: &ImapServer,
+        username: &str,
+        auth: Auth<'_>,
         tls: &TlsOptions,
     ) -> Result<Self, ImapError> {
         let stream = tls::connect(&server.host, server.port, tls).await?;
@@ -139,20 +157,31 @@ impl Session {
             Some(Code::Capability(caps)) => names(caps.as_ref()),
             _ => names_from(&conn.run(CommandBody::Capability).await?),
         };
-        if has(&capabilities, "LOGINDISABLED") {
-            return Err(ImapError::LoginDisabled);
+        let done = match auth {
+            Auth::Password(password) => {
+                if has(&capabilities, "LOGINDISABLED") {
+                    return Err(ImapError::LoginDisabled);
+                }
+                let login = CommandBody::login(username.to_owned(), password.expose().to_owned()).map_err(|_| {
+                    ImapError::AuthFailed("the user name or password contains characters IMAP cannot send".into())
+                })?;
+                conn.run(login).await?.done
+            }
+            Auth::Bearer(token) => {
+                if !has(&capabilities, "AUTH=XOAUTH2") {
+                    return Err(ImapError::AuthFailed("this server does not take OAuth sign-in".into()));
+                }
+                let sasl = format!("user={username}\u{1}auth=Bearer {}\u{1}\u{1}", token.expose());
+                conn.authenticate_xoauth2(sasl.into_bytes(), has(&capabilities, "SASL-IR"))
+                    .await?
+            }
+        };
+        if done.kind != StatusKind::Ok {
+            return Err(ImapError::AuthFailed(clean(done.text.as_ref())));
         }
 
-        let login = CommandBody::login(username.to_owned(), password.expose().to_owned()).map_err(|_| {
-            ImapError::AuthFailed("the user name or password contains characters IMAP cannot send".into())
-        })?;
-        let reply = conn.run(login).await?;
-        if reply.done.kind != StatusKind::Ok {
-            return Err(ImapError::AuthFailed(clean(reply.done.text.as_ref())));
-        }
-
-        // Servers often include the new capabilities in the LOGIN reply; otherwise ask.
-        capabilities = match code_capabilities(&reply.done) {
+        // Servers often include the new capabilities in the sign-in reply; otherwise ask.
+        capabilities = match code_capabilities(&done) {
             Some(caps) => caps,
             None => names_from(&conn.run(CommandBody::Capability).await?),
         };

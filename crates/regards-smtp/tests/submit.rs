@@ -45,6 +45,7 @@ async fn send(
     let credentials = Credentials {
         username: "ada",
         password: &password,
+        oauth: false,
     };
     let outcome = submit(
         &server(port, security),
@@ -100,6 +101,67 @@ async fn implicit_tls_with_auth_login() {
 }
 
 #[tokio::test]
+async fn an_oauth_token_signs_in_with_xoauth2_and_a_refused_one_is_not_retried() {
+    let pki = pki();
+    let xoauth2 = || Script {
+        auth: "PLAIN XOAUTH2",
+        ..Script::new(Mode::Tls)
+    };
+    let sign_in = |token: &'static str| {
+        let pki = &pki;
+        async move {
+            let (port, mut sessions) = serve(pki, xoauth2()).await;
+            let token = Secret::new(token);
+            let credentials = Credentials {
+                username: "ada@example.test",
+                password: &token,
+                oauth: true,
+            };
+            let outcome = submit(
+                &server(port, Security::Tls),
+                &credentials,
+                &envelope(&["bob@example.test"]),
+                MESSAGE,
+                &trusting(pki),
+            )
+            .await;
+            (outcome, sessions.next().await)
+        }
+    };
+
+    let (outcome, session) = sign_in(PASSWORD).await;
+    outcome.unwrap();
+    assert_eq!(session.login, Some(("ada@example.test".into(), PASSWORD.into())));
+    assert!(session.commands.iter().any(|c| c == "AUTH XOAUTH2 <secret>"));
+    assert!(session.data.is_some());
+
+    // A refused token comes as a challenge; the client ends it and gives up.
+    let (outcome, session) = sign_in("expired").await;
+    match outcome.unwrap_err() {
+        SubmitError::SignIn(reason) => assert!(!reason.contains("expired"), "the token is never in an error"),
+        other => panic!("{other:?}"),
+    }
+    assert!(session.data.is_none());
+
+    // A server without XOAUTH2 is never sent the token another way.
+    let (port, mut sessions) = serve(&pki, Script::new(Mode::Tls)).await;
+    let token = Secret::new(PASSWORD);
+    let credentials = Credentials {
+        username: "ada@example.test",
+        password: &token,
+        oauth: true,
+    };
+    let outcome = verify_login(&server(port, Security::Tls), &credentials, &trusting(&pki)).await;
+    assert!(matches!(
+        outcome.unwrap_err(),
+        SubmitError::NotSent { retry: false, .. }
+    ));
+    let session = sessions.next().await;
+    assert!(session.login.is_none());
+    assert!(!session.commands.iter().any(|c| c.starts_with("AUTH")));
+}
+
+#[tokio::test]
 async fn a_wrong_password_is_not_retried() {
     let pki = pki();
     let (outcome, session) = send(
@@ -111,12 +173,11 @@ async fn a_wrong_password_is_not_retried() {
     )
     .await;
     match outcome.unwrap_err() {
-        SubmitError::NotSent { reason, retry } => {
-            assert!(!retry);
+        SubmitError::SignIn(reason) => {
             assert!(reason.contains("user name or password"), "{reason}");
             assert!(!reason.contains("wrong"), "the password is never in an error");
         }
-        other @ SubmitError::Uncertain(_) => panic!("{other:?}"),
+        other => panic!("{other:?}"),
     }
     assert!(session.data.is_none());
 }
@@ -141,7 +202,7 @@ async fn a_refused_recipient_stops_the_message_before_data() {
             assert!(!retry);
             assert!(reason.contains("nobody@example.test"), "{reason}");
         }
-        other @ SubmitError::Uncertain(_) => panic!("{other:?}"),
+        other => panic!("{other:?}"),
     }
     assert!(session.data.is_none(), "nothing was sent to anyone");
 }
@@ -246,6 +307,7 @@ async fn addresses_that_could_inject_commands_never_reach_the_server() {
         &Credentials {
             username: "ada",
             password: &password,
+            oauth: false,
         },
         &envelope(&["bob@example.test>\r\nRCPT TO:<eve@example.test"]),
         MESSAGE,
@@ -270,6 +332,7 @@ async fn nothing_listening_or_an_untrusted_certificate() {
     let credentials = Credentials {
         username: "ada",
         password: &password,
+        oauth: false,
     };
     let offline = verify_login(&server(port, Security::Tls), &credentials, &TlsOptions::platform()).await;
     assert!(matches!(offline.unwrap_err(), SubmitError::NotSent { retry: true, .. }));
