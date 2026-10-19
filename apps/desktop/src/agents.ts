@@ -31,6 +31,20 @@ export const setAgentAccess = (accountId: string, access: AgentAccess) =>
     (result) => result.agent_access,
   );
 
+/** The undo window an agent's sends may go with, in seconds (ADR-0012 §3). */
+export const AGENT_SEND_WINDOW = { min: 10, max: 600 } as const;
+
+/**
+ * How an agent's sends go from an account (at Send access): each waits for
+ * approval (`null`, the default), or goes after `windowSeconds` (10 to 600),
+ * during which the person is told and can call it back from the Outbox.
+ * At most 20 an hour go so; more wait for approval.
+ */
+export const setAgentSend = (accountId: string, windowSeconds: number | null) =>
+  invoke<{ agent_send_window: number | null }>("account_set_agent_send", { accountId, windowSeconds }).then(
+    (result) => result.agent_send_window,
+  );
+
 /** What became of an agent's request. `held`, `approved` and `rejected` come with send approvals. */
 export type AgentDecision = "allowed" | "denied" | "held" | "approved" | "rejected";
 

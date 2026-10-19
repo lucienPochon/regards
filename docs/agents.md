@@ -1,6 +1,6 @@
 # Using Regards with AI agents
 
-Agents such as Claude Code, Codex and Cursor can read, search, organise and draft your mail through Regards. They see only what you allow, and they never send anything without you.
+Agents such as Claude Code, Codex and Cursor can read, search, organise and draft your mail through Regards. They see only what you allow, and they never send anything without you: you approve each message, or, for an account where you choose so, you get time to call it back.
 
 ## 1. Choose what agents may do
 
@@ -15,9 +15,11 @@ In Regards, open **Settings › Agents** and set each account:
 
 Only you can change these, in the app. Agents cannot change them.
 
-## 2. What always waits for you
+## 2. What waits for you
 
-- **Every send.** An agent's `send` waits in Settings › Agents, where you see the draft and approve or reject it. Regards sends exactly what you saw: if the draft changes after it was held, it is not sent on that approval.
+- **Every send**, unless you chose an undo window for the account:
+  - **By default:** an agent's `send` waits in Settings › Agents. You see the draft there, and approve or reject it. Regards sends exactly what you saw: if the draft changes after it was held, it is not sent on that approval.
+  - **With an undo window** (Settings › Agents, per account, 10 seconds to 10 minutes): the message waits in the Outbox for that long, and you are told. You can call it back there before it goes; the agent cannot. More than 20 such sends in an hour wait for your approval again.
 - **Changing more than 50 messages at once.**
 - **Deleting for good.**
 

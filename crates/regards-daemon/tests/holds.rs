@@ -11,9 +11,10 @@ mod world;
 use regards_core::headers::{self, Person};
 use regards_daemon::DEFAULT_LATE_SEND_GRACE;
 use regards_ipc::protocol::{
-    AgentAccess, AgentAccessParams, AgentActivityParams, AgentActivityResult, AgentDecision, ClientKind,
-    DraftCreateParams, DraftSendParams, DraftUpdateParams, DraftView, HoldListParams, HoldListResult, HoldReason,
-    HoldRef, HoldStatus, HoldView, MessageIds, NoticeKind, NoticeListResult, RpcError, codes, methods,
+    AccountSummary, AgentAccess, AgentAccessParams, AgentActivityParams, AgentActivityResult, AgentDecision,
+    AgentSendParams, ClientKind, DraftCreateParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView,
+    HoldListParams, HoldListResult, HoldReason, HoldRef, HoldStatus, HoldView, MessageIds, NoticeKind,
+    NoticeListResult, OutboxRef, RpcError, codes, methods,
 };
 use regards_ipc::{Client, ClientError};
 use serde_json::Value;
@@ -209,4 +210,99 @@ async fn an_agents_send_waits_for_the_person_who_sees_what_goes() {
     let hidden = agent.call::<_, HoldView>(methods::HOLD_GET, HoldRef { id }).await;
     assert_eq!(refusal(hidden).code, codes::NOT_FOUND);
     handle.abort();
+}
+
+#[tokio::test]
+async fn with_an_undo_window_an_agents_send_goes_unless_the_person_calls_it_back() {
+    let mut world = World::new(DEFAULT_LATE_SEND_GRACE).await;
+    let Running {
+        endpoint,
+        mut desktop,
+        handle,
+    } = world.start().await;
+    let account = world.add_account(&mut desktop).await;
+    let _: Value = desktop
+        .call(
+            methods::ACCOUNT_SET_AGENT_ACCESS,
+            AgentAccessParams {
+                account_id: account.id.clone(),
+                access: AgentAccess::Send,
+            },
+        )
+        .await
+        .unwrap();
+    let window = |seconds: Option<u32>| AgentSendParams {
+        account_id: account.id.clone(),
+        window_seconds: seconds,
+    };
+    let mut agent = Client::connect(&endpoint, ClientKind::Mcp).await.unwrap();
+
+    // Only the person sets it, and not too short.
+    let refused = agent
+        .call::<_, Value>(methods::ACCOUNT_SET_AGENT_SEND, window(Some(10)))
+        .await;
+    assert_eq!(refusal(refused).code, codes::FORBIDDEN);
+    let refused = desktop
+        .call::<_, Value>(methods::ACCOUNT_SET_AGENT_SEND, window(Some(5)))
+        .await;
+    assert_eq!(refusal(refused).code, codes::INVALID_PARAMS);
+    let _: Value = desktop
+        .call(methods::ACCOUNT_SET_AGENT_SEND, window(Some(10)))
+        .await
+        .unwrap();
+    let listed: Vec<AccountSummary> = desktop.call(methods::ACCOUNT_LIST, Value::Null).await.unwrap();
+    assert_eq!(listed[0].agent_send_window, Some(10));
+
+    // Queued, not held; the person is told and can call it back, the agent cannot.
+    let started = std::time::Instant::now();
+    let regret = draft(&mut agent, &account.id, "Regret").await;
+    let queued: DraftSendResult = agent.call(methods::DRAFT_SEND, send_now(&regret)).await.unwrap();
+    assert!(queued.undo_until >= now_ms() + 8_000, "the window, not the agent's 0 s");
+    let told: NoticeListResult = desktop.call(methods::NOTICE_LIST, Value::Null).await.unwrap();
+    assert!(
+        told.notices.iter().any(|n| n.kind == NoticeKind::AgentSending
+            && n.subject == "Regret"
+            && n.outbox_id == Some(queued.outbox_id))
+    );
+    let undo = OutboxRef { id: queued.outbox_id };
+    assert_eq!(
+        refusal(agent.call::<_, Value>(methods::OUTBOX_UNDO, undo).await).code,
+        codes::FORBIDDEN
+    );
+    let _: Value = desktop.call(methods::OUTBOX_UNDO, undo).await.unwrap();
+
+    // Left alone: it goes once the window is over.
+    let fine = draft(&mut agent, &account.id, "Fine").await;
+    let _: DraftSendResult = agent.call(methods::DRAFT_SEND, send_now(&fine)).await.unwrap();
+    let message = world.next_message().await;
+    assert_eq!(headers::parse(&message).subject, "Fine");
+    assert!(
+        started.elapsed() >= std::time::Duration::from_secs(9),
+        "not before the window"
+    );
+    assert!(world.nothing_sent(), "the one called back never went");
+
+    // Past 20 an hour, sends wait for approval again.
+    for n in 2..20 {
+        let more = draft(&mut desktop, &account.id, &format!("More {n}")).await;
+        let _: DraftSendResult = agent.call(methods::DRAFT_SEND, send_now(&more)).await.unwrap();
+    }
+    let one_too_many = draft(&mut desktop, &account.id, "One too many").await;
+    ask_to_send(&mut agent, &one_too_many).await;
+
+    // Back to approval for each.
+    let _: Value = desktop
+        .call(methods::ACCOUNT_SET_AGENT_SEND, window(None))
+        .await
+        .unwrap();
+    let listed: Vec<AccountSummary> = desktop.call(methods::ACCOUNT_LIST, Value::Null).await.unwrap();
+    assert_eq!(listed[0].agent_send_window, None);
+    handle.abort();
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
 }

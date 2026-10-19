@@ -27,6 +27,11 @@ export interface AccountSummary {
   created_at: number;
   /** What agents may do with it (see agents.ts); "off" until its owner allows them. */
   agent_access?: import("./agents").AgentAccess;
+  /**
+   * An agent's send goes after this many seconds, which the person can call
+   * it back in (see `setAgentSend`); absent: each waits for approval.
+   */
+  agent_send_window?: number;
   /** How it signs in; "password" when the daemon does not say. */
   sign_in?: SignIn;
   /**

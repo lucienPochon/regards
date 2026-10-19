@@ -104,6 +104,10 @@ fn text(notice: &NoticeView) -> (String, String) {
             "An agent is waiting for you".into(),
             format!("{subject}. Approve or reject it in Settings › Agents."),
         ),
+        NoticeKind::AgentSending => (
+            "An agent is sending a message".into(),
+            format!("“{subject}” to {who}. Call it back from the Outbox before it goes."),
+        ),
     }
 }
 
@@ -131,6 +135,11 @@ fn summary(notices: &[NoticeView]) -> (String, String) {
             count(&[NoticeKind::AgentAsks]),
             "agent request waiting for you",
             "agent requests waiting for you",
+        ),
+        (
+            count(&[NoticeKind::AgentSending]),
+            "message an agent is sending",
+            "messages an agent is sending",
         ),
     ]
     .into_iter()

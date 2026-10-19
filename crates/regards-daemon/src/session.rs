@@ -217,6 +217,10 @@ impl Session {
                 self.require_ui()?;
                 accounts::set_agent_access(&self.state, params(request)?).await
             }
+            methods::ACCOUNT_SET_AGENT_SEND => {
+                self.require_ui()?;
+                accounts::set_agent_send(&self.state, params(request)?).await
+            }
             methods::AGENT_ACTIVITY => {
                 self.require_ui()?;
                 audit::activity(&self.state, params(request)?).await
@@ -405,8 +409,12 @@ impl Session {
                 if self.is_ui() {
                     return compose::send(&self.state, params).await;
                 }
-                // An agent's send always waits for the person (ADR-0012 §3).
+                // An agent's send waits for the person (ADR-0012 §3), unless its
+                // account lets it go after an undo window.
                 self.allow_draft(Access::Send, params.id).await?;
+                if let Some(window) = compose::agent_send_window(&self.state, params.id).await? {
+                    return compose::send_for_agent(&self.state, params, window).await;
+                }
                 Err(holds::hold_send(&self.state, self.asker(request), &params).await)
             }
             methods::OUTBOX_LIST => {

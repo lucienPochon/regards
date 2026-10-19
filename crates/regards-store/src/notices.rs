@@ -18,6 +18,8 @@ pub enum Kind {
     SendUncertain,
     /// An agent asks something that waits for the person (ADR-0012 §3).
     AgentAsks,
+    /// An agent's message is on its way, and can be called back until it goes.
+    AgentSending,
 }
 
 impl Kind {
@@ -29,6 +31,7 @@ impl Kind {
             Self::SendFailed => "send_failed",
             Self::SendUncertain => "send_uncertain",
             Self::AgentAsks => "agent_asks",
+            Self::AgentSending => "agent_sending",
         }
     }
 
@@ -40,6 +43,7 @@ impl Kind {
             "send_failed" => Self::SendFailed,
             "send_uncertain" => Self::SendUncertain,
             "agent_asks" => Self::AgentAsks,
+            "agent_sending" => Self::AgentSending,
             other => return Err(StoreError::Corrupt(format!("unknown notice kind {other:?}"))),
         })
     }
@@ -89,6 +93,13 @@ pub fn add(tx: &Transaction<'_>, notice: &NewNotice, now: i64) -> Result<i64, St
 }
 
 /// Notices not shown yet, oldest first.
+/// How many notices of `kind` an account had since `since` (Unix ms).
+pub fn count_since(conn: &Connection, account_id: &str, kind: Kind, since: i64) -> Result<u32, StoreError> {
+    Ok(conn
+        .prepare_cached("SELECT count(*) FROM notices WHERE account_id = ?1 AND kind = ?2 AND created_at >= ?3")?
+        .query_row(params![account_id, kind.as_str(), since], |row| row.get(0))?)
+}
+
 pub fn unshown(conn: &Connection, limit: u32) -> Result<Vec<Notice>, StoreError> {
     let mut statement = conn.prepare_cached(
         "SELECT id, account_id, kind, message_id, outbox_id, people_json, subject, created_at \

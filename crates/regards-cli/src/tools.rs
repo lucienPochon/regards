@@ -418,9 +418,11 @@ pub(crate) const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "send",
-        description: "Ask to send a draft, now or at a time. It always waits for the person to approve \
-                      it in Regards: the answer is `held`, with a hold id to follow with `hold`. Changing \
-                      the draft after that means it is not sent on that approval.",
+        description: "Ask to send a draft, now or at a time. It waits for the person to approve it in \
+                      Regards: the answer is `held`, with a hold id to follow with `hold`. Changing the \
+                      draft after that means it is not sent on that approval. If the person lets this \
+                      account's sends go after an undo window, it is queued instead (`outbox_id`, \
+                      `undo_until`): they are told, and can call it back until then; you cannot.",
         access: Access::Send,
         method: "draft.send",
         params: &[

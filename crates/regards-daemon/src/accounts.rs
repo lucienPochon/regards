@@ -6,8 +6,8 @@ use crate::{State, sync};
 use regards_imap::{ImapError, ImapServer};
 use regards_ipc::protocol::{
     AccountAddParams, AccountCheckFailure, AccountRef, AccountRemoveParams, AccountSummary, AgentAccess,
-    AgentAccessParams, ConnectionSecurity, MailboxListResult, MailboxSummary, RpcError, ServerSettings, SignIn,
-    SyncResult, codes,
+    AgentAccessParams, AgentSendParams, ConnectionSecurity, MailboxListResult, MailboxSummary, RpcError,
+    ServerSettings, SignIn, SyncResult, codes,
 };
 use regards_store::StoreError;
 use regards_store::accounts::{self, Account, AuthKind, NewAccount, Security, Server};
@@ -18,18 +18,26 @@ use std::sync::Arc;
 
 /// The accounts; to an agent, only those open to it.
 pub(crate) async fn list(state: &State, agent: bool) -> Result<Value, RpcError> {
-    let (accounts, levels) = state
+    let (accounts, levels, windows) = state
         .store
-        .read(|conn| Ok((accounts::list(conn)?, accounts::agent_access(conn)?)))
+        .read(|conn| {
+            Ok((
+                accounts::list(conn)?,
+                accounts::agent_access(conn)?,
+                accounts::agent_send_windows(conn)?,
+            ))
+        })
         .await
         .map_err(store_error)?;
     let levels: std::collections::HashMap<String, AgentAccess> = levels.into_iter().collect();
+    let windows: std::collections::HashMap<String, Option<u32>> = windows.into_iter().collect();
     let summaries: Vec<AccountSummary> = accounts
         .into_iter()
         .map(|account| {
             let access = levels.get(&account.id).copied().unwrap_or_default();
             AccountSummary {
                 agent_access: access,
+                agent_send_window: windows.get(&account.id).copied().flatten(),
                 needs_sign_in: state.oauth.needs_sign_in(&account.id),
                 ..summary(account)
             }
@@ -205,17 +213,48 @@ pub(crate) fn server(settings: ServerSettings, label: &str) -> Result<Server, Rp
 
 /// One account as `account.list` gives it.
 pub(crate) async fn summary_of(state: &State, account: Account) -> Result<Value, RpcError> {
-    let levels = state.store.read(accounts::agent_access).await.map_err(store_error)?;
-    let access = levels
-        .into_iter()
-        .find(|(id, _)| *id == account.id)
-        .map(|(_, access)| access)
-        .unwrap_or_default();
+    let id = account.id.clone();
+    let (access, window) = state
+        .store
+        .read(move |conn| {
+            let access = accounts::agent_access_of(conn, &id)?.map(|(_, access)| access);
+            Ok((access, accounts::agent_send_window(conn, &id)?))
+        })
+        .await
+        .map_err(store_error)?;
     Ok(json!(AccountSummary {
-        agent_access: access,
+        agent_access: access.unwrap_or_default(),
+        agent_send_window: window,
         needs_sign_in: state.oauth.needs_sign_in(&account.id),
         ..summary(account)
     }))
+}
+
+/// Shortest and longest undo window for an agent's sends, in seconds.
+const AGENT_SEND_WINDOW: std::ops::RangeInclusive<u32> = 10..=600;
+
+/// Whether an agent's sends wait for approval or go after an undo window
+/// (ADR-0012 §3). Only the app gets here.
+pub(crate) async fn set_agent_send(state: &State, params: AgentSendParams) -> Result<Value, RpcError> {
+    let (id, window) = (params.account_id, params.window_seconds);
+    if window.is_some_and(|seconds| !AGENT_SEND_WINDOW.contains(&seconds)) {
+        return Err(invalid(&format!(
+            "the undo window is {} to {} seconds",
+            AGENT_SEND_WINDOW.start(),
+            AGENT_SEND_WINDOW.end()
+        )));
+    }
+    let found = state
+        .store
+        .write(move |tx| accounts::set_agent_send_window(tx, &id, window))
+        .await
+        .map_err(store_error)?
+        .value;
+    if !found {
+        return Err(RpcError::new(codes::NOT_FOUND, "no such account"));
+    }
+    tracing::info!(window = ?window, "agent sending changed");
+    Ok(json!({ "agent_send_window": window }))
 }
 
 pub(crate) fn summary(account: Account) -> AccountSummary {
@@ -237,6 +276,7 @@ pub(crate) fn summary(account: Account) -> AccountSummary {
         imap_capabilities: account.imap_capabilities,
         created_at: account.created_at,
         agent_access: AgentAccess::Off,
+        agent_send_window: None,
         sign_in: match account.auth_kind {
             AuthKind::Password => SignIn::Password,
             AuthKind::OauthMicrosoft => SignIn::Microsoft,

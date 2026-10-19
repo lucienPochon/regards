@@ -171,6 +171,33 @@ pub fn agent_access_of(conn: &Connection, id: &str) -> Result<Option<(String, Ac
     Ok(found.map(|(email, access)| (email, Access::parse(&access).unwrap_or_default())))
 }
 
+/// How long an agent's send waits, undoable, before it goes (ADR-0012 §3),
+/// in seconds; `None`: each waits for the person's approval.
+pub fn agent_send_windows(conn: &Connection) -> Result<Vec<(String, Option<u32>)>, StoreError> {
+    let mut statement = conn.prepare_cached("SELECT id, agent_send_window FROM accounts")?;
+    let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// [`agent_send_windows`] for one account; `None` also when there is none.
+pub fn agent_send_window(conn: &Connection, id: &str) -> Result<Option<u32>, StoreError> {
+    Ok(conn
+        .prepare_cached("SELECT agent_send_window FROM accounts WHERE id = ?1")?
+        .query_row([id], |row| row.get(0))
+        .optional()?
+        .flatten())
+}
+
+/// Let an agent's sends go after `window` seconds (10 to 600), or (`None`)
+/// wait for approval; `false` if there is no such account.
+pub fn set_agent_send_window(tx: &Transaction<'_>, id: &str, window: Option<u32>) -> Result<bool, StoreError> {
+    let changed = tx.execute(
+        "UPDATE accounts SET agent_send_window = ?2 WHERE id = ?1",
+        params![id, window],
+    )?;
+    Ok(changed > 0)
+}
+
 /// Set what an account allows agents to do; `false` if there is no such account.
 pub fn set_agent_access(tx: &Transaction<'_>, id: &str, access: Access) -> Result<bool, StoreError> {
     let changed = tx.execute(
