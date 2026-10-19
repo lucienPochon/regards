@@ -63,6 +63,8 @@ pub struct NewEntry {
     pub send_at: Option<i64>,
     pub answering: Option<i64>,
     pub executor: Executor,
+    /// Queued at an agent's request (ADR-0012).
+    pub by_agent: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,14 +87,15 @@ pub struct Entry {
     pub answering: Option<i64>,
     pub created_at: i64,
     pub executor: Executor,
+    pub by_agent: bool,
 }
 
 pub fn queue(tx: &Transaction<'_>, entry: &NewEntry, now: i64) -> Result<i64, StoreError> {
     let hash = sha256_hex(&entry.mime);
     tx.execute(
         "INSERT INTO outbox (account_id, draft_id, message_id, subject, recipients_json, envelope_from, envelope_to, \
-         mime, mime_sha256, state, undo_until, send_at, next_attempt_at, answering, created_at, executor) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'queued', ?10, ?13, MAX(?10, COALESCE(?13, ?10)), ?11, ?12, ?14)",
+         mime, mime_sha256, state, undo_until, send_at, next_attempt_at, answering, created_at, executor, by_agent) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'queued', ?10, ?13, MAX(?10, COALESCE(?13, ?10)), ?11, ?12, ?14, ?15)",
         params![
             entry.account_id,
             entry.draft_id,
@@ -108,6 +111,7 @@ pub fn queue(tx: &Transaction<'_>, entry: &NewEntry, now: i64) -> Result<i64, St
             now,
             entry.send_at,
             entry.executor.as_str(),
+            entry.by_agent,
         ],
     )?;
     Ok(tx.last_insert_rowid())
@@ -268,7 +272,7 @@ pub fn finish(tx: &Transaction<'_>, id: i64) -> Result<(), StoreError> {
 }
 
 const COLUMNS: &str = "id, account_id, draft_id, message_id, subject, recipients_json, envelope_from, envelope_to, \
-    state, undo_until, next_attempt_at, attempts, last_error, sent_at, answering, created_at, send_at, executor";
+    state, undo_until, next_attempt_at, attempts, last_error, sent_at, answering, created_at, send_at, executor, by_agent";
 
 pub fn get(conn: &Connection, id: i64) -> Result<Option<Entry>, StoreError> {
     conn.query_row(&format!("SELECT {COLUMNS} FROM outbox WHERE id = ?1"), [id], from_row)
@@ -353,6 +357,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Entry, StoreError>> {
             created_at: row.get(15)?,
             executor: Executor::parse(&executor)
                 .ok_or_else(|| StoreError::Corrupt(format!("unknown outbox executor {executor:?}")))?,
+            by_agent: row.get(18)?,
         })
     };
     Ok(parse())
@@ -435,6 +440,7 @@ mod tests {
             send_at: None,
             answering: None,
             executor: Executor::Device,
+            by_agent: false,
         }
     }
 

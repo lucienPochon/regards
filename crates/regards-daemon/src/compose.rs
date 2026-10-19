@@ -583,6 +583,8 @@ async fn queue_send(
                 send_at,
                 answering: draft.replying_to,
                 executor: executor_for(&account, send_at),
+                // Its undo window was the agent's due, or the person approved its hold.
+                by_agent: agent || version.is_some(),
             };
             let queued = outbox::queue(tx, &entry, now)?;
             // Keyed by the new Message-ID, so it applies to the copy in Sent.
@@ -1040,6 +1042,7 @@ fn entry_view(entry: Entry) -> OutboxEntryView {
         executor: entry.executor,
         needs_this_computer: entry.executor.needs_this_computer(),
         waiting_for_sign_in: false,
+        by_agent: entry.by_agent,
     }
 }
 

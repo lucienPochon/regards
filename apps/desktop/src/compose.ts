@@ -63,6 +63,8 @@ export interface OutboxEntry {
    * it goes as soon as that is done.
    */
   waiting_for_sign_in?: boolean;
+  /** An agent asked for it: it goes after the account's undo window for agents, or the person approved it. */
+  by_agent?: boolean;
 }
 
 export interface Queued {
