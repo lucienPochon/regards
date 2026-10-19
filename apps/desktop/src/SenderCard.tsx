@@ -25,6 +25,7 @@ export function SenderCard({
   request,
   onClose,
   onWrite,
+  onSearch,
   onBlocked,
   onFailed,
 }: {
@@ -32,6 +33,8 @@ export function SenderCard({
   onClose: () => void;
   /** Start a message to them. */
   onWrite: (person: Person) => void;
+  /** Search all mail from them. */
+  onSearch?: (address: string) => void;
   onBlocked: (result: MoveResult) => void;
   onFailed: (error: unknown) => void;
 }) {
@@ -116,6 +119,15 @@ export function SenderCard({
             <Icon name="compose" size={16} />
             <span>Write to them</span>
           </button>
+          {onSearch && (
+            <button type="button" className="sender-row" onClick={() => onSearch(address)} disabled={!address}>
+              <Icon name="search" size={16} />
+              <span>
+                Search mail from them
+                <span className="muted sender-row-detail">{address}</span>
+              </span>
+            </button>
+          )}
           <button
             type="button"
             className="sender-row"

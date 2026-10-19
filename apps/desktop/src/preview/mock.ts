@@ -102,6 +102,79 @@ function explanationOf(message: FixtureMessage): Explanation {
   if (written) return placed("people", "you_wrote_to_them");
   return placed("new_senders", "new_sender");
 }
+// Search, roughly as the daemon reads a query: words (folded, so accents
+// need not be typed), "phrases", -word, and from: to: subject: in: has:
+// is: before: after:. `?indexing=3` pretends changes are still to index.
+const fold = (text: string) =>
+  text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+const stillIndexing = Number(params.get("indexing") ?? "0");
+
+function searchSamples(query: string, accountId: string | null) {
+  const terms = query.match(/-?[a-z]+:"[^"]*"|-?"[^"]*"?|\S+/gi) ?? [];
+  const tests: ((m: FixtureMessage) => boolean)[] = [];
+  const words: string[] = [];
+  let folder: string | null = null;
+  const day = (value: string) => new Date(`${value}T00:00:00`).getTime();
+  for (const raw of terms) {
+    const negate = raw.startsWith("-");
+    const term = negate ? raw.slice(1) : raw;
+    const field = term.match(/^([a-z]+):(.*)$/i);
+    const value = fold((field ? field[2] : term).replace(/"/g, ""));
+    if (!value) continue;
+    let test: (m: FixtureMessage) => boolean;
+    const people = (list: { name: string | null; address: string | null }[]) =>
+      list.some((p) => fold(`${p.name ?? ""} ${p.address ?? ""}`).includes(value));
+    switch (field?.[1].toLowerCase()) {
+      case "from":
+        test = (m) => people([m.from]);
+        break;
+      case "to":
+        test = (m) => people([...m.to, ...m.cc]);
+        break;
+      case "subject":
+        test = (m) => fold(m.subject).includes(value);
+        break;
+      case "has":
+        test = (m) => m.attachments.length > 0;
+        break;
+      case "is":
+        test = (m) => (value === "unread" ? !m.seen : value === "read" ? m.seen : value === "flagged" ? m.flagged : true);
+        break;
+      case "in":
+        folder = value;
+        continue;
+      case "before":
+        test = (m) => m.received_at < day(value);
+        break;
+      case "after":
+        test = (m) => m.received_at >= day(value);
+        break;
+      default:
+        if (!negate) words.push(value);
+        test = (m) => fold(`${m.subject} ${m.from.name} ${m.from.address} ${m.to.map((p) => p.address).join(" ")} ${m.text}`).includes(value);
+    }
+    tests.push(negate ? (m) => !test(m) : test);
+  }
+  const wanted = accounts.filter((a) => !accountId || a.account.id === accountId);
+  const boxes = new Map(wanted.flatMap((a) => a.mailboxes.map((m) => [m.id, m] as const)));
+  const found = messages
+    .filter((m) => {
+      const box = boxes.get(m.mailboxId);
+      if (!box) return false;
+      if (folder === null || folder === "anywhere") {
+        if (folder === null && (box.role === "trash" || box.role === "junk")) return false;
+      } else if (box.role !== folder && fold(box.name) !== folder) return false;
+      return tests.every((test) => test(m));
+    })
+    .sort((a, b) => b.received_at - a.received_at || b.id - a.id);
+  // The best: those with the first word in the subject, as the daemon weighs it most.
+  const top = words.length > 0 && found.length <= 2000 ? found.filter((m) => fold(m.subject).includes(words[0])).slice(0, 3) : [];
+  return { found, top };
+}
+
 /** What a section's list shows: without screening, new senders are with People. */
 const shownIn = (asked: Section, section: Section) =>
   section === asked || (asked === "people" && section === "new_senders" && screeningMode === "off");
@@ -629,6 +702,22 @@ function handle(cmd: string, args: Args): unknown {
       if (draft) draft.sending = false;
       changed();
       return { draft_id: entry.draft_id };
+    }
+    case "search_messages": {
+      const before = args.before as { received_at: number; id: number } | null;
+      const limit = (args.limit as number | null) ?? 50;
+      const { found, top } = searchSamples(String(args.query ?? ""), (args.accountId as string | null) ?? null);
+      const after = found.filter(
+        (m) => !before || m.received_at < before.received_at || (m.received_at === before.received_at && m.id < before.id),
+      );
+      const page = after.slice(0, limit);
+      const last = page[page.length - 1];
+      return {
+        messages: page.map((m) => summary(m)),
+        top: before ? [] : top.map((m) => summary(m)),
+        next: after.length > limit && last ? { received_at: last.received_at, id: last.id } : null,
+        indexing: stillIndexing,
+      };
     }
     case "smart_overview": {
       const owner = accounts.find((a) => a.account.id === args.accountId);

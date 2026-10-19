@@ -16,6 +16,7 @@ import {
 import { useChanges } from "./changes";
 import { type Draft, type OutboxEntry, listDrafts, listOutbox } from "./compose";
 import { type DaemonStatus, fetchDaemonStatus } from "./daemon";
+import { searchMessages } from "./search";
 import { type Section, type SectionCount, smartOverview } from "./smart";
 import type { View } from "./views";
 
@@ -67,6 +68,8 @@ export interface Source {
   /** The folder, when the source is one; otherwise each message says where it is. */
   mailboxId: number | null;
   role: Role | null;
+  /** Without a role of its own: the role of the folder each message is in. */
+  roleOf?: (mailboxId: number) => Role | null;
   fetch: (before: MessageCursor | null, limit: number | null) => Promise<MessageListResult>;
 }
 
@@ -190,6 +193,64 @@ export function useSmartOverview(accounts: AccountMail[], enabled: boolean): Par
   useEffect(refresh, [refresh]);
   useChanges(refresh);
   return counts;
+}
+
+export interface Search {
+  /** One source per account searched, for `useFeed`; null without words to search. */
+  sources: Source[] | null;
+  /** The best few matches, when there are few enough to rank. */
+  top: ListItem[];
+  /** Changes not indexed yet: recent mail may be missing while above 0. */
+  indexing: number;
+}
+
+/**
+ * A search of every account, or of one, as sources for `useFeed` (so the
+ * results page, merge and stay current like a folder), with the best matches
+ * and what is still being indexed from each first page.
+ */
+export function useSearch(accounts: AccountMail[], query: string, accountId: string | null, round: number): Search {
+  const key = `${round}:${accountId ?? ""}:${query}`;
+  const [firsts, setFirsts] = useState<{ key: string; by: Record<string, { top: ListItem[]; indexing: number }> }>({
+    key: "",
+    by: {},
+  });
+  const sources = useMemo(() => {
+    if (!query) return null;
+    return accounts
+      .filter((entry) => accountId === null || entry.account.id === accountId)
+      .map(({ account, mailboxes }): Source => {
+        const roles = new Map(mailboxes.map((mailbox) => [mailbox.id, mailbox.role]));
+        const roleOf = (id: number) => roles.get(id) ?? null;
+        return {
+          key: `search:${account.id}:${key}`,
+          accountId: account.id,
+          mailboxId: null,
+          role: null,
+          roleOf,
+          fetch: (before, limit) =>
+            searchMessages(query, { accountId: account.id, before, limit }).then((result) => {
+              if (!before) {
+                const top = result.top.map(
+                  (message): ListItem => ({ ...message, mailboxId: message.mailbox_id, accountId: account.id, role: roleOf(message.mailbox_id) }),
+                );
+                setFirsts((now) => ({
+                  key,
+                  by: { ...(now.key === key ? now.by : {}), [account.id]: { top, indexing: result.indexing } },
+                }));
+              }
+              return { messages: result.messages, next: result.next };
+            }),
+        };
+      });
+  }, [accounts, query, accountId, key]);
+  const found = firsts.key === key ? Object.values(firsts.by) : [];
+  // The accounts' best, taken in turns, three in all.
+  const top: ListItem[] = [];
+  for (let index = 0; top.length < 3 && found.some((one) => one.top.length > index); index++) {
+    for (const one of found) if (one.top[index] && top.length < 3) top.push(one.top[index]);
+  }
+  return { sources, top, indexing: found.reduce((sum, one) => sum + one.indexing, 0) };
 }
 
 /** A message in a list, with the folder it was listed from. */
@@ -321,7 +382,7 @@ export function useFeed(sources: Source[]): MessageFeed {
           ...message,
           mailboxId: feed.source.mailboxId ?? message.mailbox_id,
           accountId: feed.source.accountId,
-          role: feed.source.role,
+          role: feed.source.role ?? feed.source.roleOf?.(message.mailbox_id) ?? null,
         });
       }
     }

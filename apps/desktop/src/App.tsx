@@ -23,6 +23,7 @@ import { Icon, type IconName } from "./icons";
 import { LIST_MAX, LIST_MIN, clampList, useLayout } from "./layout";
 import {
   type ListItem,
+  type MessageFeed,
   sectionSources,
   sourcesFor,
   useDrafts,
@@ -31,9 +32,12 @@ import {
   useMail,
   useMarked,
   useOutbox,
+  useSearch,
   useService,
   useSmartOverview,
 } from "./mail";
+import { useRecentSearches } from "./recent-searches";
+import { searchTerm } from "./search";
 import { type Anchor, Menu, type MenuEntry, type MenuRequest } from "./Menu";
 import { type Bundle, ListHeader, MessageList, type Screener } from "./MessageList";
 import { SenderCard, type SenderRequest } from "./SenderCard";
@@ -72,6 +76,9 @@ import { Welcome } from "./Welcome";
 const NOTICE_MS = 8000;
 
 const trashLike = (item: ListItem) => item.role === "trash" || item.role === "junk";
+
+/** While the first results of a search are on their way. */
+const SEARCHING: MessageFeed = { items: [], loading: true, error: null, more: false, loadMore: () => {} };
 
 /** Where a part of the Smart Inbox leads back to: the inbox it was opened from. */
 const inboxOf = (view: Extract<View, { kind: "section" }>): View =>
@@ -169,6 +176,16 @@ export function App() {
   const closeUndo = useCallback(() => setUndo(null), []);
   const closeQueued = useCallback(() => setQueued(null), []);
 
+  // Searching all mail, in place of the list's header: what is typed, and in which account (null: all).
+  const [search, setSearch] = useState<{ query: string; accountId: string | null } | null>(null);
+  const [searchRound, setSearchRound] = useState(0);
+  const [recentSearches, rememberSearch, forgetSearch] = useRecentSearches();
+  const typed = search?.query.trim() ?? "";
+  const [searchFor, setSearchFor] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearchFor(typed), typed ? 200 : 0);
+    return () => window.clearTimeout(timer);
+  }, [typed]);
   const [chooser, setChooser] = useState<Anchor | null>(null);
   const [sender, setSenderCard] = useState<SenderRequest | null>(null);
   const [screen, setScreen] = useState<Screening>("off");
@@ -191,12 +208,19 @@ export function App() {
     () => (layout.inboxView !== "smart" ? null : inInbox ? accounts : accountInbox ? [accountInbox] : null),
     [layout.inboxView, inInbox, accounts, accountInbox],
   );
-  const smartOn = smartScope !== null;
+  const smartOn = smartScope !== null && search === null;
+  const found = useSearch(accounts, search ? searchFor : "", search?.accountId ?? null, searchRound);
   const sources = useMemo(
-    () => (smartScope ? sectionSources(smartScope, "people") : sourcesFor(accounts, view)),
-    [smartScope, accounts, view],
+    () => found.sources ?? (smartScope ? sectionSources(smartScope, "people") : sourcesFor(accounts, view)),
+    [found.sources, smartScope, accounts, view],
   );
-  const feed = useFeed(sources);
+  const listed = useFeed(sources);
+  // The last results stay while the next ones come, so typing doesn't flash the list.
+  const lastFound = useRef<MessageFeed | null>(null);
+  if (!found.sources) lastFound.current = null;
+  else if (!listed.loading) lastFound.current = listed;
+  const feed: MessageFeed =
+    typed && !found.sources ? SEARCHING : found.sources && listed.loading && lastFound.current ? lastFound.current : listed;
   const scope = useMemo(() => smartScope ?? [], [smartScope]);
   const overview = useSmartOverview(scope, smartOn);
   const priorityItems = useFirstPage(useMemo(() => sectionSources(scope, "priority"), [scope]), 3, smartOn);
@@ -413,6 +437,7 @@ export function App() {
 
   const changeView = useCallback((next: View) => {
     setView(next);
+    setSearch(null);
     setOpen(null);
     setPicked(new Set());
     setOverlay(false);
@@ -565,6 +590,15 @@ export function App() {
     entries.push(
       "separator",
       { label: "New message", icon: "compose", keys: "c", onSelect: writeNew },
+      {
+        label: "Search mail",
+        icon: "search",
+        keys: "Mod+f",
+        onSelect: () => {
+          if (layout.mode === "single") setOpen(null);
+          setSearch({ query: "", accountId: null });
+        },
+      },
       { label: "Check for new mail", icon: "refresh", onSelect: syncNow },
       { label: layout.locked ? "Fold the sidebar" : "Show the sidebar", icon: "sidebar", keys: "/", onSelect: toggleSidebar },
       {
@@ -612,6 +646,11 @@ export function App() {
     c: writeNew,
     "Mod+,": () => setSettings("accounts"),
     "Mod+k": () => palette(openItem ? actionsForItems([openItem]) : null, openItem?.subject || undefined),
+    // The list handles it when shown; here when a message covers it.
+    "Mod+f": () => {
+      if (layout.mode === "single") setOpen(null);
+      setSearch((now) => now ?? { query: "", accountId: null });
+    },
     "Mod+q": quit,
     "/": toggleSidebar,
     ...(overlay ? { Escape: () => setOverlay(false) } : {}),
@@ -871,7 +910,10 @@ export function App() {
         mode={layout.mode}
         openId={openItem?.id ?? null}
         picked={picked}
-        onOpen={setOpen}
+        onOpen={(item) => {
+          if (typed) rememberSearch(typed);
+          setOpen(item);
+        }}
         onPick={setPicked}
         actionsFor={actionsForItems}
         onPalette={(actions, paletteTitle, about) => palette(actions, paletteTitle, about ? [senderEntry(about)] : [])}
@@ -879,6 +921,27 @@ export function App() {
         onSplit={layout.mode === "single" ? () => setLayout({ mode: "split" }) : undefined}
         own={ownAddresses}
         smart={smart}
+        search={{
+          query: search?.query ?? null,
+          onQuery: (query) => {
+            setSearch(query === null ? null : { query, accountId: search?.accountId ?? null });
+            if (query === null) setPicked(new Set());
+          },
+          scope:
+            accounts.length > 1
+              ? {
+                  accounts: accounts.map((entry) => ({ id: entry.account.id, label: entry.account.email })),
+                  accountId: search?.accountId ?? null,
+                  onScope: (accountId) => setSearch({ query: search?.query ?? "", accountId }),
+                }
+              : null,
+          recents: recentSearches,
+          onRemember: rememberSearch,
+          onForget: forgetSearch,
+          top: found.top,
+          indexing: found.indexing,
+          onRetry: () => setSearchRound((round) => round + 1),
+        }}
         screener={screener}
         screenAll={view.kind === "section" && view.section === "new_senders"}
       />
@@ -1127,6 +1190,11 @@ export function App() {
           onWrite={(person) => {
             setSenderCard(null);
             writeTo(person, sender.accountId);
+          }}
+          onSearch={(address) => {
+            setSenderCard(null);
+            if (layout.mode === "single") setOpen(null);
+            setSearch({ query: `${searchTerm("from", address)} `, accountId: null });
           }}
           onBlocked={(result) => moved(result.moved > 0 ? [sender.messageId] : [], result)}
           onFailed={failed}

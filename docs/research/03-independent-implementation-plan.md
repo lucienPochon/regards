@@ -194,7 +194,7 @@ flowchart LR
     - Set-aside mail waits in a bubble at the bottom left.
     - Several can be selected (Ctrl/⌘-click, Shift-click, `x`, Ctrl/⌘+A, or the check when the list is alone). A bar at the top then acts on all of them.
     - Single-key shortcuts act on the selection, else the message under the pointer, else the highlighted one.
-    - The search field filters the loaded list by sender, subject and preview until full search arrives (§5.10).
+    - Search (Ctrl/⌘+F, the magnifier, or the palette) takes the header's place and searches all mail (§5.10).
   - **Reading:** a toolbar with Back | Done, then delete, flag, read/unread, pin, set aside, snooze and ⋯; the subject below it; the conversation as cards, oldest first, the open message expanded. Reply and forward sit at the bottom of each card, and after archiving or deleting the next message opens.
   - **Writing:** a new message takes the whole pane, with a large subject field. A reply opens in a panel over the conversation, which can be made full size.
   - **The command palette** (Ctrl/⌘+K, right-click on a message, and every ⋯): the actions on that message, conversation or selection, with their keys, then going to any folder and the app's commands. Moving, snoozing, reminders and sending later open as pages of it.
@@ -405,6 +405,14 @@ flowchart LR
     - Every query took 0.3–22 ms: a rare word 3 ms, a word in 88% of mail 22 ms, the whole walk (nothing passes the filters) 15 ms. The target is 150 ms p95.
     - Indexing 100k took 11.7 s in the background, each batch under 0.45 s.
   - **Interfaces:** `search.query` (`ui` only until agent access levels), bridged as `search_messages`, and `search.ts` in the app.
+  - **In the app:**
+    - Ctrl/⌘+F, the list's magnifier, or "Search mail" in the palette turns the list's header into a search field. With several accounts, the field also chooses all of them or one.
+    - **Before typing:** tips to click into the field (from:, to:, subject:, in:, has:attachment, is:unread, after:, phrases and -word), and recent searches, each removable.
+    - **Results** come as typing pauses (200 ms), through the same list as a folder, so rows, keys, selection and actions all work.
+      - Above them: how many, and, while changes are still being indexed, that recent mail may be missing, with "Search again".
+      - When there are more than a few, the best three come first as "Top results".
+    - **Remembering:** Enter remembers the search and goes to the first result. Opening a result remembers it too.
+    - **The sender card** has "Search mail from them".
   - **Not yet:** typo tolerance (ADR-0008's side index), searching the server for mail not downloaded, and the full text of mail not opened.
 
 ### 5.11 Agent gateway: CLI + MCP (P1, 1.0, ADR-0012)

@@ -204,6 +204,15 @@ const PATHS = {
       <path d="M12 13.5v7" />
     </>
   ),
+  // A day: a calendar page.
+  calendar: (
+    <>
+      <rect x="4" y="5.5" width="16" height="14.5" rx="2.5" />
+      <path d="M4 10h16M8.5 3.5v4M15.5 3.5v4" />
+    </>
+  ),
+  // Words as written: two quotation marks.
+  quote: <path d="M5.5 17c2-1 3-2.8 3-5H5.5V7.5h4.5V12c0 3.3-1.5 5.6-4.5 6.5M14 17c2-1 3-2.8 3-5h-3V7.5h4.5V12c0 3.3-1.5 5.6-4.5 6.5" />,
   clock: (
     <>
       <circle cx="12" cy="12" r="8.5" />

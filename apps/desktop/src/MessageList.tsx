@@ -1,4 +1,14 @@
-import { type DragEvent, type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type DragEvent,
+  type MouseEvent,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { Person } from "./accounts";
 import { type Action, choose } from "./actions";
 import { Avatar } from "./Avatar";
@@ -72,6 +82,26 @@ export interface Bundle {
   onOpen: () => void;
 }
 
+/** Searching all mail (Ctrl/⌘+F), in place of the header. */
+export interface SearchControls {
+  /** What is typed; null when not searching. */
+  query: string | null;
+  onQuery: (query: string | null) => void;
+  /** With several accounts: all of them (null), or one. */
+  scope: { accounts: { id: string; label: string }[]; accountId: string | null; onScope: (accountId: string | null) => void } | null;
+  recents: string[];
+  onRemember: (query: string) => void;
+  onForget: (query: string) => void;
+  /** The best few matches, shown on their own when the results run long. */
+  top: ListItem[];
+  /** Changes not indexed yet: recent mail may be missing. */
+  indexing: number;
+  onRetry: () => void;
+}
+
+/** Results beyond which the best matches get a block of their own. */
+const TOP_AFTER = 6;
+
 /** The Smart Inbox around the People list: the priority card, new senders, and group rows. */
 export interface SmartParts {
   priority: { items: ListItem[]; total: number; onAll: () => void } | null;
@@ -104,6 +134,7 @@ export function MessageList({
   onSplit,
   own,
   smart,
+  search,
   screener,
   screenAll = false,
 }: {
@@ -130,12 +161,14 @@ export function MessageList({
   own: ReadonlySet<string>;
   /** The inbox as the Smart Inbox: cards and groups around the People list. */
   smart?: SmartParts | null;
+  search: SearchControls;
   screener?: Screener;
   /** Every row here is a new sender (the screener's own list): Accept and Block on each. */
   screenAll?: boolean;
 }) {
-  const [searching, setSearching] = useState(false);
-  const [query, setQuery] = useState("");
+  const searching = search.query !== null;
+  const query = search.query?.trim() ?? "";
+  const field = useRef<HTMLInputElement>(null);
   const [cursor, setCursor] = useState<number | null>(null);
   const hovered = useRef<number | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -143,19 +176,12 @@ export function MessageList({
   const anchor = useRef<number | null>(null);
 
   // The cards' messages come first, then the list, for the keyboard and for selecting.
-  const showSmart = Boolean(smart) && !query;
+  const showSmart = Boolean(smart) && !searching;
   const cardItems = useMemo(
     () => (smart ? [...(smart.newSenders?.held ? [] : (smart.newSenders?.items ?? [])), ...(smart.priority?.items ?? [])] : []),
     [smart],
   );
-  const items = useMemo(() => {
-    const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    if (words.length === 0) return feed.items;
-    return feed.items.filter((item) => {
-      const text = `${item.subject} ${item.from?.name ?? ""} ${item.from?.address ?? ""} ${item.preview ?? ""}`.toLowerCase();
-      return words.every((word) => text.includes(word));
-    });
-  }, [feed.items, query]);
+  const items = feed.items;
   const all = useMemo(() => (showSmart ? [...cardItems, ...items] : items), [showSmart, cardItems, items]);
 
   // In split view the keyboard follows the open message.
@@ -242,8 +268,17 @@ export function MessageList({
       if (item) toggle(item);
     },
     "Mod+a": () => onPick(new Set(all.map((item) => item.id))),
-    "Mod+f": () => setSearching(true),
-    ...(picked.size > 0 ? { Escape: () => onPick(new Set()) } : onBack ? { Escape: onBack } : {}),
+    "Mod+f": () => {
+      search.onQuery(search.query ?? "");
+      field.current?.focus();
+    },
+    ...(picked.size > 0
+      ? { Escape: () => onPick(new Set()) }
+      : searching
+        ? { Escape: () => search.onQuery(null) }
+        : onBack
+          ? { Escape: onBack }
+          : {}),
   });
 
   useEffect(() => {
@@ -257,9 +292,9 @@ export function MessageList({
   const { more, loadMore } = feed;
   const nearEnd = useCallback(() => {
     const element = scroller.current;
-    if (!element || !more || query) return;
+    if (!element || !more) return;
     if (element.scrollTop + element.clientHeight > element.scrollHeight - PREFETCH_PX) loadMore();
-  }, [more, loadMore, query]);
+  }, [more, loadMore]);
   useEffect(nearEnd, [items.length, nearEnd]);
 
   // Rows drag onto the sidebar's folders.
@@ -433,16 +468,21 @@ export function MessageList({
       <SelectionBar count={pickedItems.length} actions={actionsFor(pickedItems)} onClear={() => onPick(new Set())} onMore={() => palette(pickedItems)} />
     ) : searching ? (
       <SearchBar
-        query={query}
-        onQuery={setQuery}
-        onClose={() => {
-          setSearching(false);
-          setQuery("");
+        field={field}
+        query={search.query ?? ""}
+        onQuery={search.onQuery}
+        scope={search.scope}
+        onEnter={() => {
+          if (!query) return;
+          search.onRemember(query);
+          step(1);
         }}
+        onDown={() => step(1)}
+        onClose={() => search.onQuery(null)}
       />
     ) : (
       <ListHeader title={title} subtitle={subtitle} onTitle={onTitle} onBack={onBack}>
-        <button type="button" className="icon-btn" title={`Search (${MOD_KEY}+F)`} aria-label="Search" onClick={() => setSearching(true)}>
+        <button type="button" className="icon-btn" title={`Search (${MOD_KEY}+F)`} aria-label="Search" onClick={() => search.onQuery("")}>
           <Icon name="search" size={17} />
         </button>
         <button type="button" className="icon-btn" title="New message (c)" aria-label="New message" onClick={onCompose} disabled={!canCompose}>
@@ -465,13 +505,36 @@ export function MessageList({
             <Icon name="alert" size={16} /> {feed.error}
           </p>
         )}
-        {feed.loading ? (
+        {searching && !query ? (
+          <SearchTips
+            recents={search.recents}
+            onRecent={(recent) => {
+              search.onQuery(recent);
+              search.onRemember(recent);
+            }}
+            onForget={search.onForget}
+            onTerm={(term) => {
+              const now = search.query ?? "";
+              search.onQuery(now === "" || now.endsWith(" ") ? now + term : `${now} ${term}`);
+              field.current?.focus();
+            }}
+          />
+        ) : feed.loading ? (
           <Skeleton mode={mode} />
         ) : nothing && !feed.error ? (
-          query ? (
+          searching ? (
             <div className="empty list-empty">
-              <h2>Nothing matches “{query}”</h2>
-              <p>This searches the messages already in this list, by sender, subject and preview.</p>
+              <h2>Nothing found for “{query}”</h2>
+              <p>
+                {search.indexing > 0
+                  ? "Recent mail is still being indexed and may be missing. Try again in a moment."
+                  : "Search looks at subjects, people and text. Try fewer words, or in:anywhere to include Trash and Junk."}
+              </p>
+              {search.indexing > 0 && (
+                <button type="button" className="btn small" onClick={search.onRetry}>
+                  Search again
+                </button>
+              )}
             </div>
           ) : (
             <div className="empty list-empty">
@@ -484,6 +547,28 @@ export function MessageList({
           )
         ) : (
           <div className={`rows ${mode === "single" ? "wide" : "tall"}${picked.size > 0 ? " picking" : ""}`}>
+            {searching && (
+              <p className="search-summary" role="status">
+                <span>
+                  {items.length}
+                  {feed.more ? "+" : ""} {items.length === 1 && !feed.more ? "result" : "results"}
+                </span>
+                {search.indexing > 0 && (
+                  <span className="search-indexing">
+                    Still indexing: recent mail may be missing.
+                    <button type="button" onClick={search.onRetry}>
+                      Search again
+                    </button>
+                  </span>
+                )}
+              </p>
+            )}
+            {searching && search.top.length > 0 && items.length > TOP_AFTER && (
+              <section className="day top-results" aria-label="Top results">
+                <h3 className="day-head">Top results</h3>
+                <ul>{search.top.map((item) => row(item))}</ul>
+              </section>
+            )}
             {newSenders && newSenders.total > 0 && newSenders.held && (
               // Held before the inbox: one line that leads to them.
               <button type="button" className="screen-banner" onClick={newSenders.onAll}>
@@ -641,29 +726,153 @@ function SelectionBar({
   );
 }
 
-function SearchBar({ query, onQuery, onClose }: { query: string; onQuery: (query: string) => void; onClose: () => void }) {
+function SearchBar({
+  field,
+  query,
+  onQuery,
+  scope,
+  onEnter,
+  onDown,
+  onClose,
+}: {
+  field: RefObject<HTMLInputElement | null>;
+  query: string;
+  onQuery: (query: string) => void;
+  scope: SearchControls["scope"];
+  /** Enter: remember the search and go to the first result. */
+  onEnter: () => void;
+  onDown: () => void;
+  onClose: () => void;
+}) {
+  const one = scope?.accounts.find((account) => account.id === scope.accountId);
   return (
     <header className="list-head searching" data-tauri-drag-region>
       <label className="search-field">
         <Icon name="search" size={16} />
         <input
+          ref={field}
           autoFocus
           value={query}
-          placeholder="Search this list"
-          aria-label="Search this list"
+          placeholder={one ? `Search ${one.label}` : "Search all mail"}
+          aria-label="Search mail"
+          spellCheck={false}
           onChange={(event) => onQuery(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               event.preventDefault();
+              event.stopPropagation();
               onClose();
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              onEnter();
+            } else if (event.key === "ArrowDown") {
+              event.preventDefault();
+              onDown();
             }
           }}
         />
-        <button type="button" className="search-clear" title="Close the search (Esc)" aria-label="Close the search" onClick={onClose}>
+        {scope && (
+          <select
+            className="search-scope"
+            aria-label="Which accounts to search"
+            value={scope.accountId ?? ""}
+            onChange={(event) => scope.onScope(event.target.value || null)}
+          >
+            <option value="">All accounts</option>
+            {scope.accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.label}
+              </option>
+            ))}
+          </select>
+        )}
+        <button
+          type="button"
+          className="search-clear"
+          title={query ? "Clear" : "Close the search (Esc)"}
+          aria-label={query ? "Clear the search" : "Close the search"}
+          onClick={() => {
+            if (query) {
+              onQuery("");
+              field.current?.focus();
+            } else onClose();
+          }}
+        >
           <Icon name="close" size={12} />
         </button>
       </label>
     </header>
+  );
+}
+
+/** What search understands, as examples to click into the field. */
+const TIPS: { icon: IconName; term: string; example: string; text: string }[] = [
+  { icon: "user", term: "from:", example: "from:lena", text: "From someone, by name or address" },
+  { icon: "send", term: "to:", example: "to:marco", text: "To someone" },
+  { icon: "text", term: "subject:", example: "subject:invoice", text: "Words in the subject" },
+  { icon: "folder", term: "in:", example: "in:sent", text: "In one folder; in:anywhere adds Trash and Junk" },
+  { icon: "paperclip", term: "has:attachment ", example: "has:attachment", text: "With files attached" },
+  { icon: "mail", term: "is:unread ", example: "is:unread", text: "Unread, read or flagged" },
+  { icon: "calendar", term: "after:", example: "after:2026-09-01", text: "After or before a day" },
+  { icon: "quote", term: '"', example: '"exact words" -word', text: "A phrase as written; leave a word out" },
+];
+
+/** Under the field before anything is typed: tips, then recent searches. */
+function SearchTips({
+  recents,
+  onRecent,
+  onForget,
+  onTerm,
+}: {
+  recents: string[];
+  onRecent: (query: string) => void;
+  onForget: (query: string) => void;
+  onTerm: (term: string) => void;
+}) {
+  return (
+    <div className="search-start">
+      <h3 className="day-head">Tips</h3>
+      <ul className="search-tips">
+        {TIPS.map((tip) => (
+          <li key={tip.example}>
+            <button type="button" className="search-tip" onClick={() => onTerm(tip.term)}>
+              <Icon name={tip.icon} size={17} />
+              <span>
+                <strong>{tip.example}</strong>
+                <span className="muted">{tip.text}</span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="search-hint muted">
+        Combine them, as in <code>from:lena has:attachment after:2026-09-01</code>. Accents need not be typed.
+      </p>
+      {recents.length > 0 && (
+        <>
+          <h3 className="day-head">Recent searches</h3>
+          <ul className="search-recents">
+            {recents.map((recent) => (
+              <li key={recent}>
+                <button type="button" className="search-recent" onClick={() => onRecent(recent)}>
+                  <Icon name="clock" size={15} />
+                  <span>{recent}</span>
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn small search-forget"
+                  title="Remove from recent searches"
+                  aria-label={`Remove “${recent}” from recent searches`}
+                  onClick={() => onForget(recent)}
+                >
+                  <Icon name="close" size={12} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }
 
