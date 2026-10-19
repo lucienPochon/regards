@@ -1,5 +1,6 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { removeAccount, syncAccount } from "./accounts";
+import { backgroundMode, notificationsShown, setBackgroundMode, setNotificationsShown } from "./background";
 import { AccountForm } from "./AccountForm";
 import { Avatar } from "./Avatar";
 import type { ConfirmRequest } from "./Confirm";
@@ -9,11 +10,14 @@ import type { AccountMail, MailState, ServiceCheck } from "./mail";
 import { SHORTCUTS, useShortcuts } from "./shortcuts";
 import { type Theme, applyTheme, savedTheme } from "./theme";
 
-export type SettingsTab = "accounts" | "appearance" | "shortcuts" | "about";
+export type SettingsTab = "general" | "accounts" | "appearance" | "shortcuts" | "about";
 
 /** Grouped as in the nav; each item has its own colour. */
 const GROUPS: { id: SettingsTab; label: string; icon: IconName; tone: string }[][] = [
-  [{ id: "accounts", label: "Accounts", icon: "user", tone: "tone-blue" }],
+  [
+    { id: "general", label: "General", icon: "settings", tone: "tone-slate" },
+    { id: "accounts", label: "Accounts", icon: "user", tone: "tone-blue" },
+  ],
   [
     { id: "appearance", label: "Appearance", icon: "sun", tone: "tone-violet" },
     { id: "shortcuts", label: "Shortcuts", icon: "keyboard", tone: "tone-amber" },
@@ -84,6 +88,7 @@ export function Settings({
           <button type="button" className="icon-btn settings-close" aria-label="Close" title="Close (Esc)" onClick={onClose}>
             <Icon name="close" />
           </button>
+          {tab === "general" && <GeneralTab />}
           {tab === "accounts" && <AccountsTab mail={mail} confirm={confirm} />}
           {tab === "appearance" && <AppearanceTab layout={layout} onLayout={onLayout} />}
           {tab === "shortcuts" && <ShortcutsTab />}
@@ -136,6 +141,60 @@ function Choice<T extends string>({
         </button>
       ))}
     </span>
+  );
+}
+
+/**
+ * Background mode and notifications: kept by the app (desktop.json), and
+ * also in the tray menu.
+ */
+function GeneralTab() {
+  const [background, setBackground] = useState<boolean | null>(null);
+  const [notifications, setNotifications] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    backgroundMode().then(setBackground, (failure: unknown) => setError(String(failure)));
+    notificationsShown().then(setNotifications, (failure: unknown) => setError(String(failure)));
+  }, []);
+  const change = (save: (on: boolean) => Promise<unknown>, show: (on: boolean) => void) => (value: "on" | "off") => {
+    const on = value === "on";
+    setError(null);
+    save(on).then(
+      () => show(on),
+      (failure: unknown) => setError(String(failure)),
+    );
+  };
+  const onOff = [
+    { id: "on" as const, label: "On" },
+    { id: "off" as const, label: "Off" },
+  ];
+  return (
+    <>
+      <h3>General</h3>
+      {error && <p className="error">{error}</p>}
+      <Option
+        icon="clock"
+        label="Run in the background"
+        description={
+          background === false
+            ? "Off: closing the window quits Regards. Snoozed mail, reminders and scheduled messages then wait until it is open again."
+            : "Regards starts when you log in and stays in the tray when you close its window, so snoozed mail comes back and scheduled messages go. They need this computer to be on."
+        }
+      >
+        {background !== null && (
+          <Choice label="Run in the background" value={background ? "on" : "off"} options={onOff} onChange={change(setBackgroundMode, setBackground)} />
+        )}
+      </Option>
+      <Option
+        icon="bell"
+        label="Notifications"
+        description="When a snooze ends, nobody has replied by a reminder, or a message could not be sent. They show who and the subject, never the message."
+      >
+        {notifications !== null && (
+          <Choice label="Notifications" value={notifications ? "on" : "off"} options={onOff} onChange={change(setNotificationsShown, setNotifications)} />
+        )}
+      </Option>
+    </>
   );
 }
 

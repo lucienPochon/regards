@@ -2354,6 +2354,7 @@ button.list-title:hover {
   place-items: center;
 }
 
+.tone-slate { color: #66717f; }
 .tone-blue { color: #3b7dd8; }
 .tone-violet { color: #8b5cc8; }
 .tone-amber { color: #d4891f; }

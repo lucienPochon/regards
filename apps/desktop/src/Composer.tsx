@@ -13,7 +13,7 @@ import {
   sendDraft,
   textToHtml,
 } from "./compose";
-import { fileKind, fileSize } from "./format";
+import { fileKind, fileSize, laterDate } from "./format";
 import { Icon } from "./icons";
 import { type Anchor, anchorOf } from "./Menu";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
@@ -37,7 +37,8 @@ const AUTOSAVE_MS = 800;
  * Write a message: across the whole content area ("full"), or in a panel
  * over the conversation when replying ("panel"). Everything is saved to the
  * draft as you type; closing keeps the draft, the bin deletes it, Send queues
- * it with a few seconds to undo, and Send later picks a time.
+ * it with a few seconds to undo, and Send later picks a time. The bell asks
+ * to be reminded if nobody replies by a time.
  */
 export function Composer({
   draftId,
@@ -46,6 +47,7 @@ export function Composer({
   onClose,
   onQueued,
   pickSendTime,
+  pickReminder,
 }: {
   draftId: number;
   mode: "full" | "panel";
@@ -54,6 +56,8 @@ export function Composer({
   onQueued: (queued: Queued) => void;
   /** Ask when to send it: Unix ms, or null if cancelled. */
   pickSendTime: (anchor: Anchor) => Promise<number | null>;
+  /** Ask when to be reminded if nobody replies: Unix ms, or null if cancelled. */
+  pickReminder: (anchor: Anchor) => Promise<number | null>;
 }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [fields, setFields] = useState<Fields | null>(null);
@@ -62,6 +66,8 @@ export function Composer({
   const [error, setError] = useState<string | null>(null);
   const [askSubject, setAskSubject] = useState(false);
   const [busy, setBusy] = useState(false);
+  // "Remind me if no reply by" this time, once it has gone.
+  const [remindAt, setRemindAt] = useState<number | null>(null);
   const saved = useRef<string>("");
   const timer = useRef<number | undefined>(undefined);
   const toField = useRef<HTMLInputElement>(null);
@@ -169,7 +175,7 @@ export function Composer({
     setBusy(true);
     try {
       if (!(await flush())) return;
-      onQueued(await sendDraft(draft.id, 10, sendAt));
+      onQueued(await sendDraft(draft.id, 10, sendAt, remindAt));
     } catch (failure) {
       setError(String(failure));
     } finally {
@@ -181,6 +187,14 @@ export function Composer({
     if (!checked()) return;
     const at = await pickSendTime(anchorOf(button, "end"));
     if (at !== null) await send(at);
+  };
+
+  const remind = async (button: HTMLElement) => {
+    if (remindAt !== null) {
+      setRemindAt(null);
+      return;
+    }
+    setRemindAt(await pickReminder(anchorOf(button, "end")));
   };
 
   const attach = async () => {
@@ -245,6 +259,21 @@ export function Composer({
         disabled={Boolean(draft?.sending)}
       >
         <Icon name="trash" />
+      </button>
+      <button
+        type="button"
+        className="icon-btn"
+        title={
+          remindAt === null
+            ? "Remind me if nobody replies"
+            : `Reminds you ${laterDate(remindAt)} if nobody replies (click to remove)`
+        }
+        aria-label="Remind me if nobody replies"
+        aria-pressed={remindAt !== null}
+        onClick={(event) => void remind(event.currentTarget)}
+        disabled={locked}
+      >
+        <Icon name="bell" />
       </button>
       <button
         type="button"

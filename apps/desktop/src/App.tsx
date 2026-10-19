@@ -591,6 +591,7 @@ export function App() {
               setQueued(result);
             }}
             pickSendTime={pickSendTime}
+            pickReminder={pickReminder}
           />
         )}
         <div className="dock">
