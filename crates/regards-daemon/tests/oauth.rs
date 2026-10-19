@@ -338,6 +338,7 @@ async fn a_withdrawn_sign_in_asks_to_sign_in_again_which_keeps_the_account() {
         tokio::time::sleep(Duration::from_millis(50)).await;
     };
     assert_eq!(waiting[0].state, OutboxState::Queued);
+    assert!(waiting[0].waiting_for_sign_in);
     assert!(
         waiting[0]
             .last_error

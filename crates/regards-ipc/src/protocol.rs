@@ -1399,6 +1399,10 @@ pub struct OutboxEntryView {
     /// See [`DraftSendResult::needs_this_computer`].
     #[serde(default)]
     pub needs_this_computer: bool,
+    /// Queued, and its account must be signed in again
+    /// ([`AccountSummary::needs_sign_in`]): it goes as soon as that is done.
+    #[serde(default)]
+    pub waiting_for_sign_in: bool,
 }
 
 /// Result of [`methods::OUTBOX_LIST`].

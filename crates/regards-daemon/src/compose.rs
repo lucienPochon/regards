@@ -765,7 +765,19 @@ fn outgoing(
 pub(crate) async fn outbox_list(state: &State) -> Result<Value, RpcError> {
     let entries = state.store.read(outbox::list).await.map_err(crate::session::internal)?;
     Ok(json!(OutboxListResult {
-        entries: entries.into_iter().map(entry_view).collect(),
+        entries: entries
+            .into_iter()
+            .map(|entry| {
+                // Tried, and its account is signed out: it goes once signed in again.
+                let waiting = entry.state == EntryState::Queued
+                    && entry.attempts > 0
+                    && state.oauth.needs_sign_in(&entry.account_id);
+                OutboxEntryView {
+                    waiting_for_sign_in: waiting,
+                    ..entry_view(entry)
+                }
+            })
+            .collect(),
     }))
 }
 
@@ -968,6 +980,7 @@ fn entry_view(entry: Entry) -> OutboxEntryView {
         last_error: entry.last_error,
         executor: entry.executor,
         needs_this_computer: entry.executor.needs_this_computer(),
+        waiting_for_sign_in: false,
     }
 }
 
