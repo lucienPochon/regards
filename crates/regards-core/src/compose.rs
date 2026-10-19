@@ -10,6 +10,7 @@
 use crate::headers::Person;
 use mail_builder::MessageBuilder;
 use mail_builder::headers::address::Address;
+use mail_builder::mime::{BodyPart, MimePart};
 
 /// At most this many References are carried on (the parent's oldest are dropped).
 const MAX_REFERENCES: usize = 20;
@@ -41,6 +42,8 @@ pub struct Attachment {
     pub name: String,
     pub mime: String,
     pub data: Vec<u8>,
+    /// An image in the text (`<img src="cid:…">`), not a file beside it.
+    pub content_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -90,12 +93,66 @@ impl Outgoing {
             .from(address(&self.from))
             .subject(self.subject.as_str())
             .message_id(self.message_id.as_str())
-            .date(self.date.div_euclid(1000))
-            .text_body(normalise(&self.text));
-        if let Some(html) = &self.html {
-            builder = builder.html_body(format!(
-                "<!doctype html><html><head><meta charset=\"utf-8\"></head><body>{html}</body></html>"
-            ));
+            .date(self.date.div_euclid(1000));
+        // Images the text has; one taken out of it is not sent at all.
+        let images: Vec<&Attachment> = match &self.html {
+            Some(html) => self
+                .attachments
+                .iter()
+                .filter(|a| {
+                    a.content_id
+                        .as_ref()
+                        .is_some_and(|cid| html.contains(&format!("cid:{cid}")))
+                })
+                .collect(),
+            None => Vec::new(),
+        };
+        // Files beside the text. Images are only in formatted text.
+        let files: Vec<&Attachment> = self.attachments.iter().filter(|a| a.content_id.is_none()).collect();
+        let document = self.html.as_ref().map(|html| {
+            format!("<!doctype html><html><head><meta charset=\"utf-8\"></head><body>{html}</body></html>")
+        });
+        match document {
+            // Images in the text: the HTML and its images together, the text beside them.
+            Some(document) if !images.is_empty() => {
+                let mut related = vec![MimePart::new("text/html", BodyPart::Text(document.into()))];
+                for image in &images {
+                    let cid = image.content_id.clone().unwrap_or_default();
+                    related.push(
+                        MimePart::new(image.mime.clone(), image.data.as_slice())
+                            .inline()
+                            .cid(cid),
+                    );
+                }
+                let alternative = MimePart::new(
+                    "multipart/alternative",
+                    vec![
+                        MimePart::new("text/plain", BodyPart::Text(normalise(&self.text).into())),
+                        MimePart::new("multipart/related", related),
+                    ],
+                );
+                let body = if files.is_empty() {
+                    alternative
+                } else {
+                    let mut parts = vec![alternative];
+                    for file in &files {
+                        parts.push(
+                            MimePart::new(file.mime.clone(), file.data.as_slice()).attachment(file_name(&file.name)),
+                        );
+                    }
+                    MimePart::new("multipart/mixed", parts)
+                };
+                builder = builder.body(body);
+            }
+            document => {
+                builder = builder.text_body(normalise(&self.text));
+                if let Some(document) = document {
+                    builder = builder.html_body(document);
+                }
+                for file in &files {
+                    builder = builder.attachment(file.mime.as_str(), file_name(&file.name), file.data.as_slice());
+                }
+            }
         }
         if !self.to.is_empty() {
             builder = builder.to(list(&self.to));
@@ -111,13 +168,6 @@ impl Outgoing {
         }
         if !self.references.is_empty() {
             builder = builder.references(self.references.clone());
-        }
-        for attachment in &self.attachments {
-            builder = builder.attachment(
-                attachment.mime.as_str(),
-                file_name(&attachment.name),
-                attachment.data.as_slice(),
-            );
         }
         Ok(builder.write_to_vec().expect("writing to memory cannot fail"))
     }
@@ -476,6 +526,80 @@ mod tests {
     }
 
     #[test]
+    fn images_in_the_text_go_with_the_html_and_files_beside() {
+        use mail_parser::{MessageParser, MimeHeaders, PartType};
+        let mut message = outgoing();
+        message.html = Some("<p>See <img src=\"cid:lake@regards\" alt=\"\"></p>".into());
+        message.attachments = vec![
+            Attachment {
+                name: "lake.png".into(),
+                mime: "image/png".into(),
+                data: b"\x89PNG fake".to_vec(),
+                content_id: Some("lake@regards".into()),
+            },
+            Attachment {
+                name: "plan.pdf".into(),
+                mime: "application/pdf".into(),
+                data: b"%PDF".to_vec(),
+                content_id: None,
+            },
+            // Taken out of the text: not sent at all.
+            Attachment {
+                name: "removed.png".into(),
+                mime: "image/png".into(),
+                data: b"\x89PNG gone".to_vec(),
+                content_id: Some("removed@regards".into()),
+            },
+        ];
+        let mime = message.build().unwrap();
+        let parsed = MessageParser::new().parse(&mime).unwrap();
+        let types: Vec<String> = parsed
+            .parts
+            .iter()
+            .map(|part| {
+                let kind = part
+                    .content_type()
+                    .map(|t| format!("{}/{}", t.ctype(), t.subtype().unwrap_or("")));
+                kind.unwrap_or_default()
+            })
+            .collect();
+        assert_eq!(
+            types,
+            [
+                "multipart/mixed",
+                "multipart/alternative",
+                "text/plain",
+                "multipart/related",
+                "text/html",
+                "image/png",
+                "application/pdf"
+            ]
+        );
+        let image = parsed
+            .parts
+            .iter()
+            .find(|part| part.content_type().is_some_and(|t| t.ctype() == "image"))
+            .unwrap();
+        assert_eq!(image.content_id(), Some("lake@regards"));
+        assert!(matches!(image.body, PartType::Binary(_) | PartType::InlineBinary(_)));
+        assert!(parsed.body_html(0).unwrap().contains("cid:lake@regards"));
+        // The one file is a file; the image is not.
+        assert_eq!(
+            parsed
+                .attachments()
+                .filter(|a| a.attachment_name() == Some("plan.pdf"))
+                .count(),
+            1
+        );
+
+        // Without formatting there is no text to put an image in: only the file goes.
+        message.html = None;
+        let plain_mime = message.build().unwrap();
+        let plain = MessageParser::new().parse(&plain_mime).unwrap();
+        assert_eq!(plain.attachments().count(), 1);
+    }
+
+    #[test]
     fn attachments_travel_with_their_names_and_types() {
         let mut message = outgoing();
         message.attachments = vec![
@@ -483,11 +607,13 @@ mod tests {
                 name: "C:\\Users\\ada\\Rapport été.pdf".into(),
                 mime: guess_mime("Rapport été.pdf").into(),
                 data: b"%PDF-1.4 binary \x00\xff".to_vec(),
+                content_id: None,
             },
             Attachment {
                 name: "notes.txt".into(),
                 mime: guess_mime("notes.txt").into(),
                 data: b"plain notes".to_vec(),
+                content_id: None,
             },
         ];
         let mime = message.build().unwrap();

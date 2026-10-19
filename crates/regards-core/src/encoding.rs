@@ -24,9 +24,57 @@ pub fn base64(bytes: &[u8]) -> String {
     out
 }
 
+/// Standard base64, padded or not; `None` if it is not base64. Whitespace is skipped.
+pub fn base64_decode(text: &str) -> Option<Vec<u8>> {
+    let value = |c: u8| -> Option<u32> {
+        Some(match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        } as u32)
+    };
+    let digits: Vec<u8> = text.bytes().filter(|c| !c.is_ascii_whitespace()).collect();
+    let digits = digits
+        .strip_suffix(b"==")
+        .or_else(|| digits.strip_suffix(b"="))
+        .unwrap_or(&digits);
+    if digits.len() % 4 == 1 {
+        return None;
+    }
+    let mut out = Vec::with_capacity(digits.len() * 3 / 4);
+    for chunk in digits.chunks(4) {
+        let mut n = 0u32;
+        for (i, c) in chunk.iter().enumerate() {
+            n |= value(*c)? << (18 - 6 * i);
+        }
+        out.push((n >> 16) as u8);
+        if chunk.len() > 2 {
+            out.push((n >> 8) as u8);
+        }
+        if chunk.len() > 3 {
+            out.push(n as u8);
+        }
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn base64_reads_back() {
+        for bytes in [&b""[..], b"f", b"fo", b"foo", b"foobar", &[0, 255, 7, 128, 64]] {
+            assert_eq!(base64_decode(&base64(bytes)).as_deref(), Some(bytes));
+        }
+        assert_eq!(base64_decode("Zm9v\r\nYmFy").as_deref(), Some(&b"foobar"[..]));
+        assert_eq!(base64_decode("Zm8").as_deref(), Some(&b"fo"[..]), "unpadded");
+        assert_eq!(base64_decode("Zm9v!"), None);
+        assert_eq!(base64_decode("Z"), None);
+    }
 
     #[test]
     fn base64_matches_the_standard() {

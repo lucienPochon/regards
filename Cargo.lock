@@ -3768,6 +3768,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "futures-util",
+ "mail-parser",
  "rcgen",
  "regards-core",
  "regards-imap",

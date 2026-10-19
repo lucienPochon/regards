@@ -1,20 +1,39 @@
-import { Extension } from "@tiptap/core";
+import { type Editor, Extension } from "@tiptap/core";
+import Image from "@tiptap/extension-image";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { IMAGE_TYPES } from "./images";
 // ProseMirror's base styles as files: the app's CSP allows no injected <style>.
 import "prosemirror-view/style/prosemirror.css";
 import "prosemirror-gapcursor/style/gapcursor.css";
 
+/** An image in the text, shown from its bytes, marked with its Content-ID (images.ts). */
+const InlineImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      cid: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-cid"),
+        renderHTML: (attributes) => (attributes.cid ? { "data-cid": attributes.cid } : {}),
+      },
+    };
+  },
+}).configure({ inline: true, allowBase64: true });
+
 /**
  * The message text, with formatting: bold, italic, underline, strikethrough,
- * links, lists and quotes (Tiptap, on ProseMirror). The daemon sanitises what
- * it receives, so this is about writing comfortably, not about safety.
+ * links, lists, quotes and images (Tiptap, on ProseMirror). The daemon
+ * sanitises what it receives, so this is about writing comfortably, not
+ * about safety.
  */
 export function RichEditor({
   initial,
   onChange,
   onSend,
+  onImages,
+  onEditor,
   disabled,
   autofocus,
 }: {
@@ -22,12 +41,18 @@ export function RichEditor({
   initial: string;
   onChange: (html: string) => void;
   onSend: () => void;
+  /** Images pasted: to store, then put in the text (`insertImage`). */
+  onImages?: (files: File[]) => void;
+  /** The editor, once there, for what the composer puts in it. */
+  onEditor?: (editor: Editor) => void;
   disabled: boolean;
   autofocus: boolean;
 }) {
-  // The latest callbacks, for the editor's long-lived keyboard handler.
+  // The latest callbacks, for the editor's long-lived handlers.
   const send = useRef(onSend);
   send.current = onSend;
+  const images = useRef(onImages);
+  images.current = onImages;
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -40,6 +65,7 @@ export function RichEditor({
           protocols: ["http", "https", "mailto"],
         },
       }),
+      InlineImage,
       // Cmd/Ctrl+Enter sends, before the line break that would otherwise take it.
       Extension.create({
         name: "sendKey",
@@ -58,7 +84,16 @@ export function RichEditor({
     injectCSS: false,
     editable: !disabled,
     autofocus: autofocus ? "start" : false,
-    editorProps: { attributes: { class: "compose-body", "aria-label": "Message", role: "textbox" } },
+    editorProps: {
+      attributes: { class: "compose-body", "aria-label": "Message", role: "textbox" },
+      // Pasted images are stored first: the editor shows them once they are.
+      handlePaste: (_view, event) => {
+        const files = [...(event.clipboardData?.files ?? [])].filter((file) => IMAGE_TYPES.includes(file.type));
+        if (files.length === 0 || !images.current) return false;
+        images.current(files);
+        return true;
+      },
+    },
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
   });
   const active = useEditorState({
@@ -75,6 +110,9 @@ export function RichEditor({
     }),
   });
   const [linking, setLinking] = useState<string | null>(null);
+  useEffect(() => {
+    if (editor) onEditor?.(editor);
+  }, [editor, onEditor]);
 
   if (!editor) return null;
   const chain = () => editor.chain().focus();

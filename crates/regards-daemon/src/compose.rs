@@ -7,10 +7,10 @@ use crate::State;
 use regards_core::compose::{self, Outgoing};
 use regards_core::headers::{self, Person};
 use regards_ipc::protocol::{
-    DraftAttachFileParams, DraftAttachment, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult,
-    DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
-    MessageRef, OutboxEntryView, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxState, OutboxUndoResult,
-    RpcError, codes,
+    DraftAttachFileParams, DraftAttachImageParams, DraftAttachment, DraftCreateParams, DraftDetachParams, DraftImage,
+    DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult,
+    DraftSetFromParams, DraftUpdateParams, DraftView, MessageRef, OutboxEntryView, OutboxListResult, OutboxRef,
+    OutboxRescheduleParams, OutboxState, OutboxUndoResult, RpcError, codes,
 };
 use regards_store::drafts::{self, Content, Draft, Edit};
 use regards_store::identities::{self, Identity};
@@ -32,6 +32,14 @@ const MAX_RECIPIENTS: usize = 100;
 const MAX_BODY: usize = 2 * 1024 * 1024;
 /// Most mail servers take messages up to about 25 MB (attachments grow by a third in transit).
 const MAX_ATTACHMENTS: u64 = 25 * 1024 * 1024;
+/// An image in the text: at most this big …
+const MAX_IMAGE: u64 = 5 * 1024 * 1024;
+/// … and all of a draft's together, so they reach the editor in one piece.
+const MAX_IMAGES: u64 = 10 * 1024 * 1024;
+/// An image just added is kept this long even if a save does not have it yet.
+const IMAGE_GRACE_MS: i64 = 60_000;
+/// Images a message's text may carry.
+const IMAGE_TYPES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
 
 pub(crate) async fn create(state: &State, params: DraftCreateParams) -> Result<Value, RpcError> {
     check_content(&params.to, &params.cc, &params.bcc, &params.body)?;
@@ -246,7 +254,11 @@ pub(crate) async fn update(state: &State, params: DraftUpdateParams) -> Result<V
                 body: &body,
                 html: html.as_deref(),
             };
-            drafts::update(tx, params.id, &edit, now)
+            drafts::update(tx, params.id, &edit, now)?;
+            // An image taken out of the text goes from the draft too, once
+            // it has been there a while.
+            drafts::drop_unused_images(tx, params.id, html.as_deref(), now - IMAGE_GRACE_MS)?;
+            Ok(())
         })
         .await
         .map_err(conflict)?;
@@ -311,12 +323,132 @@ pub(crate) async fn attach_file(state: &State, params: DraftAttachFileParams) ->
     .map_err(crate::session::internal)??;
     let (hash, name, size) = read;
     let mime = compose::guess_mime(&name).to_owned();
+    if params.inline {
+        check_image(state, draft_id, &mime, size).await?;
+        let content_id = new_content_id();
+        state
+            .store
+            .write(move |tx| drafts::attach_inline(tx, draft_id, (&hash, &name, &mime, size), &content_id))
+            .await
+            .map_err(conflict)?;
+    } else {
+        state
+            .store
+            .write(move |tx| drafts::attach(tx, draft_id, &hash, &name, &mime, size))
+            .await
+            .map_err(conflict)?;
+    }
+    view(state, draft_id).await
+}
+
+/// An image for the text: of a kind mail shows, and not too big.
+async fn check_image(state: &State, draft_id: i64, mime: &str, size: u64) -> Result<(), RpcError> {
+    if !IMAGE_TYPES.contains(&mime) {
+        return Err(RpcError::new(
+            codes::INVALID_PARAMS,
+            "only PNG, JPEG, GIF and WebP images go in the text; attach other files beside it",
+        ));
+    }
+    if size > MAX_IMAGE {
+        return Err(RpcError::new(
+            codes::TOO_LARGE,
+            format!(
+                "an image in the text can be at most {} MB; attach it instead",
+                MAX_IMAGE / 1024 / 1024
+            ),
+        ));
+    }
+    let (images, all): (u64, u64) = state
+        .store
+        .read(move |conn| {
+            let files = drafts::attachments(conn, draft_id)?;
+            let images = files.iter().filter(|f| f.content_id.is_some()).map(|f| f.size).sum();
+            Ok((images, files.iter().map(|f| f.size).sum()))
+        })
+        .await
+        .map_err(crate::session::internal)?;
+    if images + size > MAX_IMAGES || all + size > MAX_ATTACHMENTS {
+        return Err(RpcError::new(
+            codes::TOO_LARGE,
+            format!(
+                "the images in a message's text can be {} MB in all; attach the rest instead",
+                MAX_IMAGES / 1024 / 1024
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn new_content_id() -> String {
+    format!("{}@regards", accounts::new_id())
+}
+
+/// Put an image in a draft's text, from its bytes (pasted, say).
+pub(crate) async fn attach_image(state: &State, params: DraftAttachImageParams) -> Result<Value, RpcError> {
+    // Base64 is a third larger than what it carries.
+    if params.data.len() as u64 > MAX_IMAGE / 3 * 4 + 8 {
+        return Err(RpcError::new(
+            codes::TOO_LARGE,
+            format!(
+                "an image in the text can be at most {} MB; attach it instead",
+                MAX_IMAGE / 1024 / 1024
+            ),
+        ));
+    }
+    let data = regards_core::encoding::base64_decode(&params.data)
+        .ok_or_else(|| RpcError::new(codes::INVALID_PARAMS, "the image is not base64"))?;
+    let (draft_id, mime) = (params.draft_id, params.mime.to_ascii_lowercase());
+    check_image(state, draft_id, &mime, data.len() as u64).await?;
+    let blobs = state.blobs.clone();
+    let size = data.len() as u64;
+    let hash = tokio::task::spawn_blocking(move || blobs.put(&data))
+        .await
+        .map_err(crate::session::internal)?
+        .map_err(crate::session::internal)?;
+    let (name, content_id) = (compose::file_name(&params.name), new_content_id());
+    let cid = content_id.clone();
     state
         .store
-        .write(move |tx| drafts::attach(tx, draft_id, &hash, &name, &mime, size))
+        .write(move |tx| drafts::attach_inline(tx, draft_id, (&hash, &name, &mime, size), &cid))
         .await
         .map_err(conflict)?;
-    view(state, draft_id).await
+    let draft = view(state, draft_id).await?;
+    Ok(json!({ "content_id": content_id, "draft": draft }))
+}
+
+/// The images in a draft's text, to show while writing.
+pub(crate) async fn images(state: &State, params: DraftRef) -> Result<Value, RpcError> {
+    let id = params.id;
+    let files = state
+        .store
+        .read(move |conn| {
+            if drafts::get(conn, id)?.is_none() {
+                return Ok(None);
+            }
+            Ok(Some(drafts::attachments(conn, id)?))
+        })
+        .await
+        .map_err(crate::session::internal)?
+        .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such draft"))?;
+    let mut images = Vec::new();
+    for file in files {
+        let Some(content_id) = file.content_id else { continue };
+        let blobs = state.blobs.clone();
+        let hash = file.blob_hash.clone();
+        let data = tokio::task::spawn_blocking(move || blobs.get(&hash))
+            .await
+            .map_err(crate::session::internal)?
+            .map_err(crate::session::internal)?;
+        // A missing blob: the image is gone; the editor shows it broken.
+        if let Some(data) = data {
+            images.push(DraftImage {
+                content_id,
+                mime: file.mime,
+                data: regards_core::encoding::base64(&data),
+            });
+        }
+    }
+    Ok(json!(DraftImagesResult { images }))
 }
 
 pub(crate) async fn detach(state: &State, params: DraftDetachParams) -> Result<Value, RpcError> {
@@ -570,6 +702,7 @@ async fn draft_files(state: &State, id: i64) -> Result<(i64, Vec<compose::Attach
             name: attachment.name,
             mime: attachment.mime,
             data,
+            content_id: attachment.content_id,
         });
     }
     Ok((version, files))
@@ -781,6 +914,7 @@ fn draft_view(draft: Draft, identity: &Identity, files: Vec<drafts::Attachment>)
                 name: file.name,
                 mime: file.mime,
                 size: file.size,
+                content_id: file.content_id,
             })
             .collect(),
         id: draft.id,

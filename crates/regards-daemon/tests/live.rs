@@ -1353,6 +1353,7 @@ async fn live_attached_files_go_out_with_the_message() {
     let attach = |path: &std::path::Path| DraftAttachFileParams {
         draft_id: draft.id,
         path: path.to_string_lossy().into_owned(),
+        inline: false,
     };
     let _: DraftView = desktop.call(methods::DRAFT_ATTACH_FILE, attach(&report)).await.unwrap();
     let with_both: DraftView = desktop.call(methods::DRAFT_ATTACH_FILE, attach(&extra)).await.unwrap();
@@ -1369,6 +1370,7 @@ async fn live_attached_files_go_out_with_the_message() {
             DraftAttachFileParams {
                 draft_id: draft.id,
                 path: "relative.txt".into(),
+                inline: false,
             },
         )
         .await;

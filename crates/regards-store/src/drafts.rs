@@ -164,6 +164,8 @@ pub struct Attachment {
     pub name: String,
     pub mime: String,
     pub size: u64,
+    /// An image in the text, which the HTML refers to as `cid:`.
+    pub content_id: Option<String>,
 }
 
 /// Attach a stored blob. Refused while the draft is being sent.
@@ -175,10 +177,34 @@ pub fn attach(
     mime: &str,
     size: u64,
 ) -> Result<i64, StoreError> {
+    attach_as(tx, draft_id, blob_hash, name, mime, size, None)
+}
+
+/// [`attach`] an image for the draft's text, by its Content-ID.
+pub fn attach_inline(
+    tx: &Transaction<'_>,
+    draft_id: i64,
+    file: (&str, &str, &str, u64),
+    content_id: &str,
+) -> Result<i64, StoreError> {
+    let (blob_hash, name, mime, size) = file;
+    attach_as(tx, draft_id, blob_hash, name, mime, size, Some(content_id))
+}
+
+fn attach_as(
+    tx: &Transaction<'_>,
+    draft_id: i64,
+    blob_hash: &str,
+    name: &str,
+    mime: &str,
+    size: u64,
+    content_id: Option<&str>,
+) -> Result<i64, StoreError> {
     editable(tx, draft_id)?;
     tx.execute(
-        "INSERT INTO draft_attachments (draft_id, blob_hash, name, mime, size) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![draft_id, blob_hash, name, mime, size as i64],
+        "INSERT INTO draft_attachments (draft_id, blob_hash, name, mime, size, content_id, added_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, CAST(unixepoch('subsec') * 1000 AS INTEGER))",
+        params![draft_id, blob_hash, name, mime, size as i64, content_id],
     )?;
     tx.execute(
         "UPDATE drafts SET updated_at = updated_at + 1 WHERE id = ?1",
@@ -203,10 +229,40 @@ pub fn detach(tx: &Transaction<'_>, draft_id: i64, attachment_id: i64) -> Result
     Ok(removed)
 }
 
+/// Take off the draft's images its text no longer has (`html`: `None`
+/// when it has no formatting, so no images), if added before `before`
+/// (Unix ms): a save begun before an image was put in the text does not
+/// have it yet. How many went.
+pub fn drop_unused_images(
+    tx: &Transaction<'_>,
+    draft_id: i64,
+    html: Option<&str>,
+    before: i64,
+) -> Result<usize, StoreError> {
+    let old: Vec<(i64, String)> = {
+        let mut statement = tx.prepare_cached(
+            "SELECT id, content_id FROM draft_attachments \
+             WHERE draft_id = ?1 AND content_id IS NOT NULL AND (added_at IS NULL OR added_at < ?2)",
+        )?;
+        let rows = statement.query_map(params![draft_id, before], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    let unused: Vec<i64> = old
+        .into_iter()
+        .filter(|(_, cid)| !html.is_some_and(|html| html.contains(&format!("cid:{cid}"))))
+        .map(|(id, _)| id)
+        .collect();
+    let mut statement = tx.prepare_cached("DELETE FROM draft_attachments WHERE id = ?1")?;
+    for id in &unused {
+        statement.execute([id])?;
+    }
+    Ok(unused.len())
+}
+
 /// A draft's files, in the order they were attached.
 pub fn attachments(conn: &Connection, draft_id: i64) -> Result<Vec<Attachment>, StoreError> {
     let mut statement = conn.prepare_cached(
-        "SELECT id, blob_hash, name, mime, size FROM draft_attachments WHERE draft_id = ?1 ORDER BY id",
+        "SELECT id, blob_hash, name, mime, size, content_id FROM draft_attachments WHERE draft_id = ?1 ORDER BY id",
     )?;
     let rows = statement
         .query_map([draft_id], |row| {
@@ -216,6 +272,7 @@ pub fn attachments(conn: &Connection, draft_id: i64) -> Result<Vec<Attachment>, 
                 name: row.get(2)?,
                 mime: row.get(3)?,
                 size: row.get::<_, i64>(4)? as u64,
+                content_id: row.get(5)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -262,4 +319,80 @@ fn json<T: serde::Serialize + ?Sized>(value: &T) -> String {
 
 fn from_json<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, StoreError> {
     serde_json::from_str(text).map_err(|error| StoreError::Corrupt(format!("draft: {error}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Store;
+    use crate::accounts::{self, AuthKind, NewAccount, Security, Server};
+    use regards_core::paths::DataDirs;
+
+    #[tokio::test]
+    async fn images_taken_out_of_the_text_go_once_they_have_been_there_a_while() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&DataDirs::at(temp.path())).await.unwrap();
+        let draft = store
+            .write(|tx| {
+                let server = Server {
+                    host: "h".into(),
+                    port: 993,
+                    security: Security::Tls,
+                };
+                accounts::insert(
+                    tx,
+                    NewAccount {
+                        id: "a1".into(),
+                        display_name: "Ada".into(),
+                        email: "ada@example.test".into(),
+                        auth_kind: AuthKind::Password,
+                        username: "ada".into(),
+                        secret_key: "k".into(),
+                        imap: server.clone(),
+                        smtp: server,
+                        imap_capabilities: vec![],
+                    },
+                )?;
+                let draft = create(tx, "a1", &Content::default(), 1_000)?;
+                attach(tx, draft, "h1", "plan.pdf", "application/pdf", 10)?;
+                attach_inline(tx, draft, ("h2", "kept.png", "image/png", 20), "kept@regards")?;
+                attach_inline(tx, draft, ("h3", "gone.png", "image/png", 30), "gone@regards")?;
+                Ok(draft)
+            })
+            .await
+            .unwrap()
+            .value;
+        let names = |files: Vec<Attachment>| files.into_iter().map(|f| (f.name, f.content_id)).collect::<Vec<_>>();
+        let html = r#"<p><img src="cid:kept@regards" alt=""></p>"#;
+
+        // Just added: kept, though the save does not have it yet.
+        let dropped = store
+            .write(move |tx| drop_unused_images(tx, draft, Some(html), 0))
+            .await
+            .unwrap()
+            .value;
+        assert_eq!(dropped, 0);
+        // A while later: the one the text no longer has goes; files stay.
+        let dropped = store
+            .write(move |tx| drop_unused_images(tx, draft, Some(html), i64::MAX))
+            .await
+            .unwrap()
+            .value;
+        assert_eq!(dropped, 1);
+        let left = store.read(move |conn| attachments(conn, draft)).await.unwrap();
+        assert_eq!(
+            names(left),
+            [
+                ("plan.pdf".to_owned(), None),
+                ("kept.png".to_owned(), Some("kept@regards".to_owned()))
+            ]
+        );
+        // No formatting: no text for images.
+        store
+            .write(move |tx| drop_unused_images(tx, draft, None, i64::MAX))
+            .await
+            .unwrap();
+        let left = store.read(move |conn| attachments(conn, draft)).await.unwrap();
+        assert_eq!(names(left), [("plan.pdf".to_owned(), None)]);
+    }
 }

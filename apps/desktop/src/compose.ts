@@ -29,6 +29,8 @@ export interface DraftAttachment {
   name: string;
   mime: string;
   size: number;
+  /** An image in the text (images.ts), not a file beside it. */
+  content_id?: string | null;
 }
 
 /** `held`: scheduled, but found well past its time (the computer was off); it waits for the person. */
@@ -221,13 +223,20 @@ export interface DroppedFile {
 export interface Dropped {
   id: number;
   files: DroppedFile[];
+  /** Where in the window (CSS pixels): on the text, images go in it. */
+  x: number;
+  y: number;
 }
 
-/** Attach the files of a drop to a draft, once; what could not be attached, and why. */
-export const attachDropped = (draftId: number, dropId: number) =>
+/**
+ * Attach the files of a drop to a draft, once; with `inline`, as images in
+ * its text. What could not be attached comes back, with why.
+ */
+export const attachDropped = (draftId: number, dropId: number, inline = false) =>
   invoke<{ draft: Draft | null; refused: { name: string; error: string }[] }>("draft_attach_dropped", {
     draftId,
     dropId,
+    inline,
   });
 
 /** Files are dragged over the window (`true`), or no longer are. */
