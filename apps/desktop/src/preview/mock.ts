@@ -729,6 +729,12 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return owner.account;
     }
+    case "support_settings":
+      return { detailed_logs: false };
+    case "set_detailed_logs":
+      return null;
+    case "export_diagnostics":
+      return "C:\\Users\\you\\Documents\\regards-diagnostics.txt";
     case "notification_settings":
       return notificationChoices;
     case "set_notification_settings":

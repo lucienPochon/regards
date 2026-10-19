@@ -105,11 +105,16 @@ pub fn sibling_program() -> std::io::Result<PathBuf> {
     Ok(exe.with_file_name(format!("regards{}", std::env::consts::EXE_SUFFIX)))
 }
 
+/// The daemon's log filter, as the `regards` program reads it.
+const LOG_ENV: &str = "REGARDS_LOG";
+
 /// Starts and connects to the daemon for one data directory.
 pub struct Launcher {
     dirs: DataDirs,
     endpoint: Endpoint,
     program: PathBuf,
+    /// The log filter a daemon started from here gets (detailed logging).
+    log: std::sync::Mutex<Option<String>>,
 }
 
 impl Launcher {
@@ -120,7 +125,14 @@ impl Launcher {
             dirs,
             endpoint,
             program,
+            log: std::sync::Mutex::new(None),
         }
+    }
+
+    /// The log filter for daemons started from now on (`None`: the default,
+    /// info). A daemon already running keeps its own.
+    pub fn set_log_filter(&self, filter: Option<String>) {
+        *self.log.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = filter;
     }
 
     pub fn endpoint(&self) -> &Endpoint {
@@ -167,7 +179,12 @@ impl Launcher {
                 Err(error) => return Err(error.into()),
             }
 
-            match spawn_daemon(&self.program, &self.dirs).await {
+            let log = self
+                .log
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
+            match spawn_daemon_with(&self.program, &self.dirs, log.as_deref()).await {
                 Ok(new) => {
                     tracing::info!(pid = new.pid, "started the daemon");
                     token = Some(new.ui_token.clone());
@@ -195,6 +212,11 @@ impl Launcher {
 /// Start `program daemon run --ui-handoff` for `dirs`, detached from the
 /// calling process, and wait for its announcement.
 pub async fn spawn_daemon(program: &Path, dirs: &DataDirs) -> Result<Launched, LaunchError> {
+    spawn_daemon_with(program, dirs, None).await
+}
+
+/// [`spawn_daemon`], logging with `log` (a `REGARDS_LOG` filter) when given.
+pub async fn spawn_daemon_with(program: &Path, dirs: &DataDirs, log: Option<&str>) -> Result<Launched, LaunchError> {
     if !program.is_file() {
         return Err(LaunchError::ProgramMissing(program.to_path_buf()));
     }
@@ -213,6 +235,9 @@ pub async fn spawn_daemon(program: &Path, dirs: &DataDirs) -> Result<Launched, L
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(stderr);
+    if let Some(filter) = log {
+        command.env(LOG_ENV, filter);
+    }
     detach(&mut command);
     let mut child = command.spawn().map_err(LaunchError::Spawn)?;
     let stdout = child.stdout.take().expect("stdout is piped");

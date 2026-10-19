@@ -128,3 +128,19 @@ async fn daemon_stop_returns_once_the_daemon_let_go() {
         .unwrap();
     assert!(lock.try_lock().is_ok(), "the daemon still holds its data directory");
 }
+
+#[tokio::test]
+async fn a_daemon_started_with_a_log_filter_logs_in_detail() {
+    let temp = tempfile::tempdir().unwrap();
+    let dirs = DataDirs::at(temp.path());
+    let _guard = StopOnDrop(dirs.clone());
+    let launcher = Launcher::new(dirs.clone(), program());
+    launcher.set_log_filter(Some("info,regards_daemon=debug".into()));
+    let connected = launcher
+        .connect_or_start(ClientKind::Desktop, None, true)
+        .await
+        .unwrap();
+    launcher.stop(connected.client).await.unwrap();
+    let log = std::fs::read_to_string(dirs.daemon_log()).unwrap();
+    assert!(log.contains("handshake completed"), "a debug line:\n{log}");
+}

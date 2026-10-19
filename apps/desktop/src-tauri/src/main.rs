@@ -16,6 +16,7 @@ mod drops;
 mod links;
 mod mail_frame;
 mod notify;
+mod support;
 mod system;
 mod updates;
 
@@ -1174,6 +1175,7 @@ fn main() {
         .manage(background::Background::load(DataDirs::resolve().ok().as_ref()))
         .register_asynchronous_uri_scheme_protocol(mail_frame::SCHEME, mail_frame::handle)
         .setup(|app| {
+            support::apply(app.handle());
             tauri::async_runtime::spawn(forward_changes(app.handle().clone()));
             tauri::async_runtime::spawn(notify::run(app.handle().clone()));
             tauri::async_runtime::spawn(updates::run(app.handle().clone()));
@@ -1223,6 +1225,9 @@ fn main() {
             system::open_url,
             account_update,
             account_set_auto_copy,
+            support::support_settings,
+            support::set_detailed_logs,
+            support::export_diagnostics,
             notify::notification_settings,
             notify::set_notification_settings,
             updates::update_status,
