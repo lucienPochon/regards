@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { applyUndo, setFlags } from "./accounts";
 import { type AgentActivity as Entry, type AgentDecision, listAgentActivity } from "./agents";
 import { fullDate } from "./format";
 import { Icon } from "./icons";
@@ -7,6 +8,8 @@ import { Icon } from "./icons";
 const POLL_MS = 5000;
 /** Entries a session shows before "Show all". */
 const FOLDED = 5;
+/** How long a flag change can be set back from here, as long as an undo lasts. */
+const SET_BACK_MS = 10 * 60_000;
 
 /** What agents did, in plain words; other methods show as named. */
 const ACTIONS: Record<string, string> = {
@@ -50,14 +53,45 @@ const DECISIONS: Partial<Record<AgentDecision, { label: string; tone: string }>>
   rejected: { label: "Rejected", tone: "refused" },
 };
 
-/** The action in words, with what was searched for when it was a search. */
+/** The action in words: what was searched for, which flags, how many messages. */
 function describe(entry: Entry): string {
-  const action = ACTIONS[entry.method] ?? entry.method;
-  const args = entry.args as { query?: unknown } | null;
-  if (entry.method.startsWith("search.") && args && typeof args.query === "string" && args.query) {
+  const args = (entry.args ?? {}) as { query?: unknown; ids?: unknown; seen?: unknown; flagged?: unknown };
+  let action = ACTIONS[entry.method] ?? entry.method;
+  if (entry.method === "message.set_flags") {
+    const parts = [
+      args.seen === true ? "Marked read" : args.seen === false ? "Marked unread" : null,
+      args.flagged === true ? "flagged" : args.flagged === false ? "unflagged" : null,
+    ].filter(Boolean) as string[];
+    if (parts.length > 0) action = parts.length === 2 ? `${parts[0]} and ${parts[1]}` : parts[0].replace(/^f/, "F").replace(/^u/, "U");
+  }
+  if (entry.method.startsWith("search.") && typeof args.query === "string" && args.query) {
     return `${action} “${args.query}”`;
   }
-  return action;
+  const count = Array.isArray(args.ids) ? args.ids.length : 0;
+  return count > 1 ? `${action}: ${count} messages` : action;
+}
+
+/** How one thing an agent changed stood before: a message, a draft or a sender. */
+function wasText(item: Record<string, unknown>, folderName: (id: number) => string | null): string {
+  if (typeof item.address === "string") {
+    const policy = typeof item.policy === "string" ? `always ${item.policy}` : "sorted automatically";
+    return [item.address, policy, item.priority ? "priority" : null, item.blocked ? "blocked" : null].filter(Boolean).join(", ");
+  }
+  const subject = typeof item.subject === "string" && item.subject ? `“${item.subject}”` : "(no subject)";
+  if ("sending" in item || "bcc" in item) return `The draft ${subject}`;
+  const folder = typeof item.mailbox_id === "number" ? folderName(item.mailbox_id) : null;
+  return [
+    subject,
+    folder ? `in ${folder}` : null,
+    item.seen === false ? "unread" : item.seen === true ? "read" : null,
+    item.flagged ? "flagged" : null,
+    item.pinned ? "pinned" : null,
+    item.aside ? "set aside" : null,
+    item.snoozed_until ? "snoozed" : null,
+    item.remind_at ? "with a reminder" : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
 }
 
 const time = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -82,7 +116,14 @@ function bySession(entries: Entry[]): { session: string; client: string; entries
  * Settings › Agents: every request agents made, allowed or refused, newest
  * first and grouped by session; kept 90 days by the daemon.
  */
-export function AgentActivity({ accounts }: { accounts: { id: string; email: string }[] }) {
+export function AgentActivity({
+  accounts,
+  folderName,
+}: {
+  accounts: { id: string; email: string }[];
+  /** A folder's name, for "Was: in Archive". */
+  folderName: (mailboxId: number) => string | null;
+}) {
   const [accountId, setAccountId] = useState<string | null>(null);
   const [refusedOnly, setRefusedOnly] = useState(false);
   const [entries, setEntries] = useState<Entry[] | null>(null);
@@ -110,8 +151,9 @@ export function AgentActivity({ accounts }: { accounts: { id: string; email: str
         setEntries((now) => {
           if (now === null) return page.entries;
           const known = new Set(now.map((entry) => entry.id));
+          const latest = new Map(page.entries.map((entry) => [entry.id, entry]));
           const fresh = page.entries.filter((entry) => !known.has(entry.id));
-          return fresh.length > 0 ? [...fresh, ...now] : now;
+          return [...fresh, ...now.map((entry) => latest.get(entry.id) ?? entry)];
         });
       },
       (failure: unknown) => setError(String(failure)),
@@ -207,6 +249,8 @@ export function AgentActivity({ accounts }: { accounts: { id: string; email: str
               client={group.client}
               entries={group.entries}
               emailOf={accounts.length > 1 ? emailOf : () => null}
+              folderName={folderName}
+              onChanged={refresh}
             />
           ))}
         </ol>
@@ -224,10 +268,14 @@ function Session({
   client,
   entries,
   emailOf,
+  folderName,
+  onChanged,
 }: {
   client: string;
   entries: Entry[];
   emailOf: (id: string | null) => string | null;
+  folderName: (mailboxId: number) => string | null;
+  onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const newest = entries[0];
@@ -248,7 +296,7 @@ function Session({
       </div>
       <ul className="activity-entries">
         {shown.map((entry) => (
-          <Row key={entry.id} entry={entry} email={emailOf(entry.account_id)} />
+          <Row key={entry.id} entry={entry} email={emailOf(entry.account_id)} folderName={folderName} onChanged={onChanged} />
         ))}
       </ul>
       {entries.length > FOLDED && (
@@ -260,8 +308,66 @@ function Session({
   );
 }
 
-function Row({ entry, email }: { entry: Entry; email: string | null }) {
+function Row({
+  entry,
+  email,
+  folderName,
+  onChanged,
+}: {
+  entry: Entry;
+  email: string | null;
+  folderName: (mailboxId: number) => string | null;
+  onChanged: () => void;
+}) {
   const decision = DECISIONS[entry.decision];
+  // What was done about it here: undone, set back, or why that failed.
+  const [done, setDone] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const before = Array.isArray(entry.before)
+    ? (entry.before as Record<string, unknown>[])
+    : entry.before && typeof entry.before === "object"
+      ? [entry.before as Record<string, unknown>]
+      : [];
+  // Flag changes keep no undo entry; what they changed can be set back from how it was.
+  const settable =
+    entry.method === "message.set_flags" &&
+    entry.decision === "allowed" &&
+    !entry.error &&
+    before.length > 0 &&
+    Date.now() - entry.at < SET_BACK_MS;
+
+  const act = (label: string, work: () => Promise<unknown>) => (event: { preventDefault: () => void; stopPropagation: () => void }) => {
+    // Inside the row's summary: act, without opening the details.
+    event.preventDefault();
+    event.stopPropagation();
+    setBusy(true);
+    setProblem(null);
+    work()
+      .then(
+        () => {
+          setDone(label);
+          onChanged();
+        },
+        (failure: unknown) => setProblem(String(failure)),
+      )
+      .finally(() => setBusy(false));
+  };
+  const undo = act("Undone", () => applyUndo(entry.undo_id ?? 0));
+  const setBack = act("Set back", () => {
+    const groups = new Map<string, { seen?: boolean; flagged?: boolean; ids: number[] }>();
+    for (const item of before) {
+      if (typeof item.id !== "number") continue;
+      const seen = typeof item.seen === "boolean" ? item.seen : undefined;
+      const flagged = typeof item.flagged === "boolean" ? item.flagged : undefined;
+      const key = `${seen}|${flagged}`;
+      const group = groups.get(key) ?? { seen, flagged, ids: [] };
+      group.ids.push(item.id);
+      groups.set(key, group);
+    }
+    return Promise.all([...groups.values()].map((group) => setFlags(group.ids, group)));
+  });
+
   return (
     <li className="activity-entry">
       <details>
@@ -271,7 +377,19 @@ function Row({ entry, email }: { entry: Entry; email: string | null }) {
           {email && <span className="activity-account muted">{email}</span>}
           {decision && <span className={`chip activity-decision ${decision.tone}`}>{decision.label}</span>}
           {!decision && entry.error && <span className="chip activity-decision refused">Failed</span>}
+          {done ? (
+            <span className="chip activity-decision approved">{done}</span>
+          ) : entry.undoable && entry.undo_id !== null ? (
+            <button type="button" className="activity-undo" onClick={undo} disabled={busy}>
+              Undo
+            </button>
+          ) : settable ? (
+            <button type="button" className="activity-undo" title="Set the flags back as they were" onClick={setBack} disabled={busy}>
+              Set back
+            </button>
+          ) : null}
         </summary>
+        {problem && <p className="error activity-problem">{problem}</p>}
         <div className="activity-details">
           {entry.error && <p className={entry.decision === "denied" ? "activity-error" : "error"}>{entry.error}</p>}
           <dl>
@@ -281,6 +399,19 @@ function Row({ entry, email }: { entry: Entry; email: string | null }) {
               {entry.access && ` · account allowed ${entry.access}`}
             </dd>
           </dl>
+          {before.length > 0 && (
+            <dl className="activity-before">
+              <dt>Was</dt>
+              <dd>
+                <ul>
+                  {before.slice(0, 10).map((item, index) => (
+                    <li key={index}>{wasText(item, folderName)}</li>
+                  ))}
+                  {before.length > 10 && <li className="muted">and {before.length - 10} more</li>}
+                </ul>
+              </dd>
+            </dl>
+          )}
           {entry.args !== null && entry.args !== undefined && <pre>{JSON.stringify(entry.args, null, 2)}</pre>}
         </div>
       </details>

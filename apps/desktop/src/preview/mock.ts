@@ -183,8 +183,24 @@ function searchSamples(query: string, accountId: string | null, server = false) 
 }
 
 /** Sample agent sessions: the command line two hours ago, an assistant just now (one request refused), and a script during it. */
+/** The sample archive an agent made: undone from Settings › Agents once. */
+const AGENT_UNDO = 9001;
+const agentUndone = new Set<number>();
+
 function agentActivity(): AgentActivity[] {
   const account = accounts[0]?.account.id ?? null;
+  const inbox = accounts[0]?.mailboxes.find((m) => m.role === "inbox")?.id ?? 1;
+  const was = (id: number, subject: string, seen: boolean) => ({
+    id,
+    mailbox_id: inbox,
+    subject,
+    seen,
+    flagged: false,
+    pinned: false,
+    aside: false,
+    snoozed_until: null,
+    remind_at: null,
+  });
   const at = (minutesAgo: number) => started - minutesAgo * 60_000;
   const entry = (
     id: number,
@@ -194,6 +210,8 @@ function agentActivity(): AgentActivity[] {
     method: string,
     args: unknown,
     denied = false,
+    before: unknown = null,
+    undo: number | null = null,
   ): AgentActivity => ({
     id,
     at: at(minutesAgo),
@@ -202,14 +220,29 @@ function agentActivity(): AgentActivity[] {
     method,
     args,
     account_id: method === "account.list" ? null : account,
-    access: method === "account.list" ? null : "read",
+    access: method === "account.list" ? null : before !== null ? "triage" : "read",
     decision: denied ? "denied" : "allowed",
     error_code: denied ? -32010 : null,
     error: denied ? "Agents may only read sam@example.org. Allow more in Settings › Agents." : null,
     duration_ms: 3 + (id % 7),
+    before,
+    undo_id: undo,
+    undoable: undo !== null && !agentUndone.has(undo),
   });
   // A script on the command line ran while the assistant was connected: their requests interleave.
   return [
+    entry(16, 0.2, "mcp-1", "mcp", "message.set_flags", { ids: [104], seen: true }, false, [was(104, "Book club: next pick", false)]),
+    entry(
+      15,
+      0.3,
+      "mcp-1",
+      "mcp",
+      "message.archive",
+      { ids: [106, 107] },
+      false,
+      [was(106, "Your parcel is out for delivery", true), was(107, "Your October statement is ready", true)],
+      AGENT_UNDO,
+    ),
     entry(14, 0.5, "mcp-1", "mcp", "message.get", { id: 105 }),
     entry(13, 1, "cli-2", "cli", "search.query", { query: "is:unread" }),
     entry(12, 2, "mcp-1", "mcp", "draft.create", { account_id: account }, true),
@@ -621,6 +654,12 @@ function handle(cmd: string, args: Args): unknown {
       return { messages: shown.map((m) => summary(m)), next: null };
     }
     case "undo_apply": {
+      if (args.id === AGENT_UNDO) {
+        if (agentUndone.has(AGENT_UNDO)) throw new Error("It is too late to undo that.");
+        agentUndone.add(AGENT_UNDO);
+        changed();
+        return { undone: 2 };
+      }
       const undo = undos.get(args.id as number);
       if (!undo) throw new Error("It is too late to undo that.");
       undos.delete(args.id as number);

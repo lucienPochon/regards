@@ -3783,6 +3783,38 @@ button.sender-row:hover:not(:disabled) {
   color: var(--accent);
 }
 
+/* Undo (or Set back) on what an agent changed, while it can be. */
+.activity-undo {
+  flex: none;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.activity-undo:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.activity-problem {
+  margin: 2px 8px 6px 72px;
+  font-size: 12.5px;
+}
+
+.activity-before ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-before li + li {
+  margin-top: 2px;
+}
+
 .activity-details {
   margin: 2px 8px 8px 72px;
   font-size: 12.5px;

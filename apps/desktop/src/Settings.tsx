@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { type AccountSummary, removeAccount, syncAccount } from "./accounts";
 import { AgentActivity } from "./AgentActivity";
+import { leafName } from "./views";
 import { AGENT_ACCESS_LEVELS, type AgentAccess, setAgentAccess } from "./agents";
 import { backgroundMode, notificationsShown, setBackgroundMode, setNotificationsShown } from "./background";
 import { AccountForm } from "./AccountForm";
@@ -249,8 +250,8 @@ function AccountsTab({ mail, confirm }: { mail: MailState; confirm: (request: Co
   );
 }
 
-/** Levels kept for each account but not yet giving agents more than Read (ADR-0012). */
-const COMING: ReadonlySet<AgentAccess> = new Set(["triage", "send"]);
+/** Levels kept for each account but not yet giving agents more (ADR-0012): Send waits for approval of each send. */
+const COMING: ReadonlySet<AgentAccess> = new Set(["send"]);
 
 /**
  * What agents (AI assistants and other programs using Regards through its
@@ -307,7 +308,7 @@ function AgentsTab({ mail, confirm }: { mail: MailState; confirm: (request: Conf
                   <strong>{account.email}</strong>
                   <span className="muted agent-allows">
                     {info?.allows}
-                    {COMING.has(level) && " For now, agents can only read."}
+                    {COMING.has(level) && " For now, agents can't send."}
                   </span>
                 </span>
                 <select
@@ -340,11 +341,18 @@ function AgentsTab({ mail, confirm }: { mail: MailState; confirm: (request: Conf
         ))}
       </dl>
       <p className="muted settings-note">
-        Each level allows what the one before it does. Triage and Send are kept for each account now and take effect
-        with the next steps: undo for what agents change, and each send waiting for your approval here.
+        Each level allows what the one before it does. What agents change can be undone from the activity below for
+        ten minutes. Send is kept for each account now and takes effect with the next step: each send waiting for your
+        approval here.
       </p>
       {accounts.length > 0 && (
-        <AgentActivity accounts={accounts.map(({ account }) => ({ id: account.id, email: account.email }))} />
+        <AgentActivity
+          accounts={accounts.map(({ account }) => ({ id: account.id, email: account.email }))}
+          folderName={(mailboxId) => {
+            const mailbox = accounts.flatMap((entry) => entry.mailboxes).find((m) => m.id === mailboxId);
+            return mailbox ? leafName(mailbox) : null;
+          }}
+        />
       )}
     </>
   );
