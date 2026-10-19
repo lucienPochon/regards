@@ -88,6 +88,11 @@ pub mod methods {
     /// Block a sender or `@domain` (their inbox mail goes to Junk, and what
     /// arrives later; undoable), or unblock.
     pub const SENDER_BLOCK: &str = "sender.block";
+    /// Let a sender's or `@domain`'s remote images load from then on, or
+    /// block them again (ADR-0015 §4). `ui` only: a reading-privacy choice.
+    pub const SENDER_SET_IMAGES: &str = "sender.set_images";
+    /// The senders an account loads remote images from. `ui` only.
+    pub const SENDER_IMAGES: &str = "sender.images";
     /// How new senders' mail is shown: off, section or hold.
     pub const SMART_SCREENING: &str = "smart.screening";
     pub const SMART_SET_SCREENING: &str = "smart.set_screening";
@@ -920,6 +925,10 @@ pub struct MessageDetail {
     pub has_html: bool,
     /// Remote images in the HTML version, which are not loaded unless asked for.
     pub remote_images: usize,
+    /// The person lets this sender's (or its domain's) remote images load:
+    /// `message.html` shows them without `allow_remote`.
+    #[serde(default)]
+    pub images_from_sender: bool,
     pub attachments: Vec<Attachment>,
 }
 
@@ -1061,6 +1070,21 @@ pub struct SenderView {
     /// Blocked, by address or domain: their mail goes to Junk.
     #[serde(default)]
     pub blocked: bool,
+}
+
+/// Parameters of [`methods::SENDER_SET_IMAGES`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SenderImagesParams {
+    pub account_id: String,
+    /// An address, or a whole domain as `@example.org`.
+    pub address: String,
+    pub allow: bool,
+}
+
+/// The result of [`methods::SENDER_IMAGES`]: addresses and `@domain`s, sorted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SenderImagesResult {
+    pub senders: Vec<String>,
 }
 
 /// Parameters of [`methods::SENDER_BLOCK`].

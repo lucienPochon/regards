@@ -287,6 +287,10 @@ function handle(cmd: string, args: Args): unknown {
           }
         : { source: null, imap: null, smtp: null, oauth_only: false };
     }
+    case "sender_set_images":
+      return { allow: (args.sender as { allow: boolean }).allow };
+    case "sender_images":
+      return { senders: [] };
     case "update_status":
       return { checks: null, current: "0.1.0", available: null, checked_at: null };
     case "update_set_checks":

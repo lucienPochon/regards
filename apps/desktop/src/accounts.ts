@@ -269,6 +269,11 @@ export interface MessageDetail {
   has_html: boolean;
   /** Remote images in the HTML version, not loaded unless asked for. */
   remote_images: number;
+  /**
+   * The person lets this sender's (or its domain's) remote images load: the
+   * HTML shows them without asking (`setSenderImages` in smart.ts).
+   */
+  images_from_sender?: boolean;
   attachments: Attachment[];
 }
 

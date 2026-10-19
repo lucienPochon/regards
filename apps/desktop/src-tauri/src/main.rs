@@ -32,9 +32,9 @@ use regards_ipc::protocol::{
     MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult, OauthFlowRef, OauthProvidersResult,
     OauthStartParams, OauthStartResult, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult,
     PinParams, Principal, RemindParams, Screening, ScreeningParams, SearchParams, SearchResult, Section,
-    SenderBlockParams, SenderSetParams, SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams,
-    SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams,
-    TemplateView, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
+    SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams, SenderSetResult, ServerSearchResult,
+    ServerSettings, SetFlagsParams, SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult,
+    TemplateRef, TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -515,6 +515,23 @@ async fn message_explain(bridge: State<'_, Bridge>, id: i64) -> Result<ExplainRe
 async fn sender_block(bridge: State<'_, Bridge>, sender: SenderBlockParams) -> Result<MoveResult, String> {
     let mut client = bridge.connect().await?.client;
     client.call(methods::SENDER_BLOCK, sender).await.map_err(describe)
+}
+
+/// Let a sender's or `@domain`'s remote images load from then on, or block them again.
+#[tauri::command]
+async fn sender_set_images(bridge: State<'_, Bridge>, sender: SenderImagesParams) -> Result<Value, String> {
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::SENDER_SET_IMAGES, sender).await.map_err(describe)
+}
+
+/// The senders an account loads remote images from.
+#[tauri::command]
+async fn sender_images(bridge: State<'_, Bridge>, account_id: String) -> Result<SenderImagesResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::SENDER_IMAGES, AccountRef { account_id })
+        .await
+        .map_err(describe)
 }
 
 /// How new senders' mail is shown: off, section or hold.
@@ -1169,6 +1186,8 @@ fn main() {
             message_explain,
             sender_set,
             sender_block,
+            sender_set_images,
+            sender_images,
             smart_screening,
             smart_set_screening,
             message_get,

@@ -95,6 +95,18 @@ export const setSender = (accountId: string, address: string, choice: { policy: 
 export const blockSender = (accountId: string, address: string, blocked = true) =>
   invoke<MoveResult>("sender_block", { sender: { account_id: accountId, address, blocked } });
 
+/**
+ * Load a sender's remote images from then on (an address, or a whole domain
+ * as `@example.org`), or block them again. Remote images can tell the
+ * sender their message was opened, so they are blocked until allowed.
+ */
+export const setSenderImages = (accountId: string, address: string, allow: boolean) =>
+  invoke<{ allow: boolean }>("sender_set_images", { sender: { account_id: accountId, address, allow } });
+
+/** The senders (addresses and `@domain`s) an account loads remote images from, sorted. */
+export const senderImages = (accountId: string) =>
+  invoke<{ senders: string[] }>("sender_images", { accountId }).then((result) => result.senders);
+
 export const screening = () => invoke<{ mode: Screening }>("smart_screening").then((result) => result.mode);
 export const setScreening = (mode: Screening) => invoke<{ mode: Screening }>("smart_set_screening", { mode });
 

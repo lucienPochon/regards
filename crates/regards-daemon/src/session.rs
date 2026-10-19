@@ -469,6 +469,14 @@ impl Session {
                 self.allow_message(Access::Read, params.id).await?;
                 smart::explain(&self.state, params).await
             }
+            methods::SENDER_SET_IMAGES => {
+                self.require_ui()?;
+                mail::set_sender_images(&self.state, params(request)?).await
+            }
+            methods::SENDER_IMAGES => {
+                self.require_ui()?;
+                mail::sender_images_list(&self.state, params(request)?).await
+            }
             methods::SENDER_BLOCK => {
                 let params: SenderBlockParams = params(request)?;
                 self.allow_sender(&params.account_id, &params.address).await?;

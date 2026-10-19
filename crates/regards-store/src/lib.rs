@@ -20,6 +20,7 @@ pub mod draft_sync;
 pub mod drafts;
 pub mod holds;
 pub mod identities;
+pub mod images;
 pub mod mailboxes;
 pub mod marks;
 pub mod messages;

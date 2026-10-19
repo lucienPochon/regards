@@ -21,7 +21,7 @@ use regards_ipc::protocol::{
 };
 use regards_ipc::protocol::{
     ExplainResult, HoldListParams, HoldListResult, Policy, Reason, Screening, ScreeningParams, Section,
-    SenderBlockParams, SenderSetParams, SenderSetResult, SmartOverviewResult,
+    SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams, SenderSetResult, SmartOverviewResult,
 };
 use regards_ipc::{Client, Endpoint, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -3036,5 +3036,74 @@ async fn live_mail_that_gives_orders_moves_nothing() {
     );
 
     seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_a_senders_remote_images_load_once_the_person_allows_them() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let sale = b"From: Shop <news@shop.example>\r\nTo: Bob <bob@example.test>\r\nSubject: Sale\r\n\
+        Date: Sun, 18 Oct 2026 11:00:00 +0000\r\nMIME-Version: 1.0\r\n\
+        Content-Type: text/html; charset=utf-8\r\n\r\n\
+        <p>Sale <img src=\"https://shop.example/banner.png\" alt=\"banner\"></p>\r\n";
+    seed.append(b"INBOX", &[], sale).await.unwrap();
+    seed.logout().await;
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
+    let id = loop {
+        if let Some(message) = messages(&mut desktop, inbox).await.messages.first() {
+            break message.id;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    let shown = |allow_remote| MessageHtmlParams {
+        id,
+        allow_remote,
+        link_prefix: None,
+    };
+
+    // Blocked by default.
+    let detail: MessageDetail = desktop.call(methods::MESSAGE_GET, MessageRef { id }).await.unwrap();
+    assert_eq!((detail.remote_images, detail.images_from_sender), (1, false));
+    let html: MessageHtml = desktop.call(methods::MESSAGE_HTML, shown(false)).await.unwrap();
+    assert_eq!(html.blocked_remote, 1);
+    assert!(!html.html.contains("shop.example/banner.png"));
+
+    // Allowed for the sender: from then on, without asking each time.
+    let allow = |address: &str, allow| SenderImagesParams {
+        account_id: account.id.clone(),
+        address: address.into(),
+        allow,
+    };
+    let _: Value = desktop
+        .call(methods::SENDER_SET_IMAGES, allow("News@Shop.example", true))
+        .await
+        .unwrap();
+    let detail: MessageDetail = desktop.call(methods::MESSAGE_GET, MessageRef { id }).await.unwrap();
+    assert!(detail.images_from_sender);
+    let html: MessageHtml = desktop.call(methods::MESSAGE_HTML, shown(false)).await.unwrap();
+    assert_eq!(html.blocked_remote, 0);
+    assert!(html.html.contains("https://shop.example/banner.png"), "{}", html.html);
+    let listed: SenderImagesResult = desktop
+        .call(
+            methods::SENDER_IMAGES,
+            AccountRef {
+                account_id: account.id.clone(),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(listed.senders, ["news@shop.example"]);
+
+    // Blocked again.
+    let _: Value = desktop
+        .call(methods::SENDER_SET_IMAGES, allow("news@shop.example", false))
+        .await
+        .unwrap();
+    let html: MessageHtml = desktop.call(methods::MESSAGE_HTML, shown(false)).await.unwrap();
+    assert_eq!(html.blocked_remote, 1);
     handle.abort();
 }
