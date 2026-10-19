@@ -36,7 +36,7 @@ async fn search_answers_the_app_and_checks_what_it_is_asked() {
         mut desktop,
         handle,
     } = world.start().await;
-    world.add_account(&mut desktop).await;
+    let account = world.add_account(&mut desktop).await;
 
     let found: SearchResult = desktop
         .call(methods::SEARCH, search("garden from:lena is:unread"))
@@ -76,18 +76,21 @@ async fn search_answers_the_app_and_checks_what_it_is_asked() {
         codes::INVALID_PARAMS
     );
 
-    // Agents get access levels later (ADR-0012); until then, not mail.
+    // Agents search only the accounts open to them (ADR-0012; tests/agents.rs).
     let mut agent = Client::connect(&endpoint, ClientKind::Cli).await.unwrap();
-    assert_eq!(
-        code(agent.call::<_, SearchResult>(methods::SEARCH, search("garden")).await),
-        codes::FORBIDDEN
+    let found: SearchResult = agent.call(methods::SEARCH, search("garden")).await.unwrap();
+    assert!(found.messages.is_empty());
+    let found: ServerSearchResult = agent.call(methods::SEARCH_SERVER, search("garden")).await.unwrap();
+    assert!(
+        found.messages.is_empty() && found.unreachable.is_empty(),
+        "no server asked"
     );
+    let named = SearchParams {
+        account_id: Some(account.id.clone()),
+        ..search("garden")
+    };
     assert_eq!(
-        code(
-            agent
-                .call::<_, ServerSearchResult>(methods::SEARCH_SERVER, search("garden"))
-                .await
-        ),
+        code(agent.call::<_, ServerSearchResult>(methods::SEARCH_SERVER, named).await),
         codes::FORBIDDEN
     );
     handle.abort();
