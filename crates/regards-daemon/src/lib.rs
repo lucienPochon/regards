@@ -17,6 +17,7 @@ mod queue;
 mod scheduler;
 mod sender;
 mod session;
+mod smart;
 mod sync;
 
 use regards_core::paths::DataDirs;
@@ -249,6 +250,7 @@ impl Daemon {
         });
         sync::spawn_all(Arc::clone(&state));
         let threading = tokio::spawn(mail::thread_backfill(Arc::clone(&state)));
+        let sorting = tokio::spawn(smart::sort_stored(Arc::clone(&state)));
         let sending = tokio::spawn(sender::run(Arc::clone(&state)));
         let scheduling = tokio::spawn(scheduler::run(Arc::clone(&state)));
         tracing::info!(%endpoint, "daemon listening");
@@ -280,6 +282,7 @@ impl Daemon {
         state.backfills.stop_all();
         follow.abort();
         threading.abort();
+        sorting.abort();
         sending.abort();
         scheduling.abort();
         drop(listener);

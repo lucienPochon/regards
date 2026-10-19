@@ -1,6 +1,6 @@
 //! One client connection: handshake, then request dispatch.
 
-use crate::{State, accounts, actions, compose, identities, mail, notices};
+use crate::{State, accounts, actions, compose, identities, mail, notices, smart};
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_ipc::framing::{self, FrameError};
 use regards_ipc::protocol::{
@@ -270,6 +270,18 @@ impl Session {
             methods::MESSAGE_SET_ASIDE => {
                 self.require_ui()?;
                 actions::set_aside(&self.state, params(request)?).await
+            }
+            methods::SMART_OVERVIEW => {
+                self.require_ui()?;
+                smart::overview(&self.state, params(request)?).await
+            }
+            methods::MESSAGE_EXPLAIN => {
+                self.require_ui()?;
+                smart::explain(&self.state, params(request)?).await
+            }
+            methods::SENDER_SET => {
+                self.require_ui()?;
+                smart::set_sender(&self.state, params(request)?).await
             }
             methods::MESSAGE_REMIND => {
                 self.require_ui()?;

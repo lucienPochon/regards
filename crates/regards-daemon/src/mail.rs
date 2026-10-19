@@ -33,7 +33,7 @@ pub(crate) async fn list(state: &State, params: MessageListParams) -> Result<Val
             format!("limit must be 1 to {MAX_PAGE}"),
         ));
     }
-    let mailbox_id = params.mailbox_id;
+    let (mailbox_id, section) = (params.mailbox_id, params.section);
     let before = params.before.map(|c| Cursor {
         received_at: c.received_at,
         id: c.id,
@@ -48,7 +48,12 @@ pub(crate) async fn list(state: &State, params: MessageListParams) -> Result<Val
             // The inbox leaves out what is set aside or snoozed (plan §5.5–5.6).
             let parked = (mailbox.role == Some(Role::Inbox)).then_some((mailbox.account_id.as_str(), now));
             // One extra row tells whether another page exists.
-            let rows = messages::list_without_parked(conn, mailbox_id, limit + 1, before, parked)?;
+            let rows = match parked {
+                Some((account, now)) => {
+                    messages::inbox_page(conn, mailbox_id, limit + 1, before, account, now, section)?
+                }
+                None => messages::list(conn, mailbox_id, limit + 1, before)?,
+            };
             let marks = marks_of(conn, &mailbox.account_id, &rows)?;
             Ok(Some((rows, marks)))
         })
@@ -314,6 +319,7 @@ fn summary(m: Message, marks: &HashMap<String, Marks>) -> MessageSummary {
         snoozed_until: mark.snoozed_until,
         remind_at: mark.remind_at,
         reminded: mark.reminded_at.is_some(),
+        section: m.section,
         listed_at: m.listed_at,
         id: m.id,
         uid: m.uid,

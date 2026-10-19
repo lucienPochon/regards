@@ -22,11 +22,11 @@ use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, AsideParams, ClientKind, ConnectionSecurity,
     DeleteResult, DraftAttachFileParams, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult,
     DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
-    IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView, MailboxListResult, MarkResult, MessageCursor,
-    MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult,
-    OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams,
-    ServerSettings, SetFlagsParams, SetFlagsResult, SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View,
-    ViewParams, methods,
+    ExplainResult, IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView, MailboxListResult, MarkResult,
+    MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult,
+    OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams, Section,
+    SenderSetParams, SenderSetResult, ServerSettings, SetFlagsParams, SetFlagsResult, SmartOverviewResult,
+    SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -252,6 +252,7 @@ async fn message_list(
     mailbox_id: i64,
     before: Option<MessageCursor>,
     limit: Option<u32>,
+    section: Option<Section>,
 ) -> Result<MessageListResult, String> {
     let mut client = bridge.connect().await?.client;
     client
@@ -261,10 +262,38 @@ async fn message_list(
                 mailbox_id,
                 limit,
                 before,
+                section,
             },
         )
         .await
         .map_err(describe)
+}
+
+/// The Smart Inbox's sections of an account's inbox, with counts.
+#[tauri::command]
+async fn smart_overview(bridge: State<'_, Bridge>, account_id: String) -> Result<SmartOverviewResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::SMART_OVERVIEW, AccountRef { account_id })
+        .await
+        .map_err(describe)
+}
+
+/// Why a message is in its section, and what is known about its sender.
+#[tauri::command]
+async fn message_explain(bridge: State<'_, Bridge>, id: i64) -> Result<ExplainResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_EXPLAIN, MessageRef { id })
+        .await
+        .map_err(describe)
+}
+
+/// The person's choice for a sender: a section (or the rules), and priority.
+#[tauri::command]
+async fn sender_set(bridge: State<'_, Bridge>, sender: SenderSetParams) -> Result<SenderSetResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::SENDER_SET, sender).await.map_err(describe)
 }
 
 /// One message with its body; the daemon downloads it the first time.
@@ -765,6 +794,9 @@ fn main() {
             account_sync,
             mailbox_list,
             message_list,
+            smart_overview,
+            message_explain,
+            sender_set,
             message_get,
             thread_get,
             message_set_flags,

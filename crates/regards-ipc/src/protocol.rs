@@ -5,6 +5,7 @@ use regards_core::body::Attachment;
 use regards_core::headers::Person;
 use regards_core::mailbox::Role;
 use regards_core::secret::Secret;
+pub use regards_core::smart::{Policy, Reason, Section};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -60,6 +61,14 @@ pub mod methods {
     pub const MESSAGE_SET_ASIDE: &str = "message.set_aside";
     /// Snooze messages until a time, or "someday"; or end a snooze. Undoable.
     pub const MESSAGE_SNOOZE: &str = "message.snooze";
+    /// The Smart Inbox (plan §5.4): an account's inbox by section, with counts.
+    pub const SMART_OVERVIEW: &str = "smart.overview";
+    /// Why a message is in its section ("why is this here?"), and what is
+    /// known about its sender.
+    pub const MESSAGE_EXPLAIN: &str = "message.explain";
+    /// The person's choice for a sender: a section (or the rules), and whether
+    /// they are a priority. Their mail follows.
+    pub const SENDER_SET: &str = "sender.set";
     /// "Remind me if no reply by" a time, or no reminder (also: done with one
     /// that came due). Undoable.
     pub const MESSAGE_REMIND: &str = "message.remind";
@@ -425,6 +434,9 @@ pub struct MessageListParams {
     pub limit: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub before: Option<MessageCursor>,
+    /// In the inbox: only this Smart Inbox section.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section: Option<Section>,
 }
 
 /// A message in a list.
@@ -465,6 +477,9 @@ pub struct MessageSummary {
     /// message is filed, until it is done ([`methods::MESSAGE_REMIND`] with no time).
     #[serde(default)]
     pub reminded: bool,
+    /// Its Smart Inbox section (none until sorted).
+    #[serde(default)]
+    pub section: Option<Section>,
     /// Its place in the list: `received_at`, except in the inbox for what came
     /// back to it (a snooze that ended, a reminder), listed by when it did.
     #[serde(default)]
@@ -600,6 +615,59 @@ pub struct SnoozeParams {
     /// No time: they come back only when asked (or when someone replies).
     #[serde(default)]
     pub someday: bool,
+}
+
+/// One section of the Smart Inbox: how many messages, how many unread.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SectionCount {
+    pub section: Section,
+    pub total: u32,
+    pub unread: u32,
+}
+
+/// Result of [`methods::SMART_OVERVIEW`]: the sections with mail, in order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SmartOverviewResult {
+    pub sections: Vec<SectionCount>,
+}
+
+/// What is known about a sender, for one account.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SenderView {
+    pub address: String,
+    /// The section the person chose for them, if any.
+    pub policy: Option<Policy>,
+    pub priority: bool,
+    /// The account has written to them.
+    pub written_to: bool,
+}
+
+/// Result of [`methods::MESSAGE_EXPLAIN`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExplainResult {
+    pub section: Section,
+    /// The rule that placed it.
+    pub reason: Reason,
+    /// None for a message without a sender's address.
+    pub sender: Option<SenderView>,
+}
+
+/// Parameters of [`methods::SENDER_SET`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SenderSetParams {
+    pub account_id: String,
+    pub address: String,
+    /// Where their mail goes; none to let the rules decide.
+    #[serde(default)]
+    pub policy: Option<Policy>,
+    #[serde(default)]
+    pub priority: bool,
+}
+
+/// Result of [`methods::SENDER_SET`]: how many messages changed section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SenderSetResult {
+    pub changed: usize,
 }
 
 /// Parameters of [`methods::MESSAGE_REMIND`].

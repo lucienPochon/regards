@@ -15,7 +15,8 @@ use imap_types::search::SearchKey;
 use imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
 use std::num::{NonZeroU32, NonZeroU64};
 
-/// The headers Regards keeps for lists and threading.
+/// The headers Regards keeps for lists and threading, and those the Smart
+/// Inbox reads to tell newsletters and notifications from people.
 const HEADER_FIELDS: &[&str] = &[
     "DATE",
     "FROM",
@@ -25,6 +26,15 @@ const HEADER_FIELDS: &[&str] = &[
     "MESSAGE-ID",
     "IN-REPLY-TO",
     "REFERENCES",
+    "LIST-ID",
+    "LIST-UNSUBSCRIBE",
+    "LIST-POST",
+    "PRECEDENCE",
+    "AUTO-SUBMITTED",
+    "X-AUTO-RESPONSE-SUPPRESS",
+    "X-AUTOREPLY",
+    "CONTENT-TYPE",
+    "FEEDBACK-ID",
 ];
 
 /// What SELECT reported about a mailbox.
