@@ -3,6 +3,7 @@
 use crate::token::UiToken;
 pub use regards_core::agents::Access as AgentAccess;
 use regards_core::body::Attachment;
+pub use regards_core::compose::{AutoCopy, CopyKind};
 pub use regards_core::executor::Executor;
 use regards_core::headers::Person;
 use regards_core::mailbox::Role;
@@ -34,6 +35,9 @@ pub mod methods {
     pub const ACCOUNT_REMOVE: &str = "account.remove";
     /// Rename an account; the name it sends with follows if it was the same. `ui` only.
     pub const ACCOUNT_UPDATE: &str = "account.update";
+    /// A copy (Cc or Bcc to an address) every new draft of an account gets,
+    /// or none. `ui` only.
+    pub const ACCOUNT_SET_AUTO_COPY: &str = "account.set_auto_copy";
     /// An address's mail servers, found before the person types them
     /// (known providers, DNS, then the usual names, checked). `ui` only.
     pub const ACCOUNT_DISCOVER: &str = "account.discover";
@@ -417,6 +421,15 @@ pub struct AccountAddParams {
     pub smtp: ServerSettings,
 }
 
+/// Parameters of [`methods::ACCOUNT_SET_AUTO_COPY`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutoCopyParams {
+    pub account_id: String,
+    /// `None`: no copy.
+    #[serde(default)]
+    pub auto_copy: Option<AutoCopy>,
+}
+
 /// Parameters of [`methods::ACCOUNT_UPDATE`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AccountUpdateParams {
@@ -446,6 +459,9 @@ pub struct AccountSummary {
     /// approval. At most 20 an hour go so; more wait for approval.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_send_window: Option<u32>,
+    /// The copy every new draft gets (Cc or Bcc to an address), if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_copy: Option<AutoCopy>,
     /// How it signs in.
     #[serde(default)]
     pub sign_in: SignIn,

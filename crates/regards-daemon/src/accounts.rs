@@ -6,8 +6,8 @@ use crate::{State, sync};
 use regards_imap::{ImapError, ImapServer};
 use regards_ipc::protocol::{
     AccountAddParams, AccountCheckFailure, AccountRef, AccountRemoveParams, AccountSummary, AccountUpdateParams,
-    AgentAccess, AgentAccessParams, AgentSendParams, ConnectionSecurity, MailboxListResult, MailboxSummary, RpcError,
-    ServerSettings, SignIn, SyncResult, codes,
+    AgentAccess, AgentAccessParams, AgentSendParams, AutoCopyParams, ConnectionSecurity, MailboxListResult,
+    MailboxSummary, RpcError, ServerSettings, SignIn, SyncResult, codes,
 };
 use regards_store::StoreError;
 use regards_store::accounts::{self, Account, AuthKind, NewAccount, Security, Server};
@@ -18,13 +18,19 @@ use std::sync::Arc;
 
 /// The accounts; to an agent, only those open to it.
 pub(crate) async fn list(state: &State, agent: bool) -> Result<Value, RpcError> {
-    let (accounts, levels, windows) = state
+    let (accounts, levels, windows, copies) = state
         .store
         .read(|conn| {
+            let accounts = accounts::list(conn)?;
+            let copies = accounts
+                .iter()
+                .map(|account| Ok((account.id.clone(), accounts::auto_copy(conn, &account.id)?)))
+                .collect::<Result<std::collections::HashMap<_, _>, StoreError>>()?;
             Ok((
-                accounts::list(conn)?,
+                accounts,
                 accounts::agent_access(conn)?,
                 accounts::agent_send_windows(conn)?,
+                copies,
             ))
         })
         .await
@@ -38,6 +44,7 @@ pub(crate) async fn list(state: &State, agent: bool) -> Result<Value, RpcError> 
             AccountSummary {
                 agent_access: access,
                 agent_send_window: windows.get(&account.id).copied().flatten(),
+                auto_copy: copies.get(&account.id).cloned().flatten(),
                 needs_sign_in: state.oauth.needs_sign_in(&account.id),
                 ..summary(account)
             }
@@ -113,6 +120,37 @@ pub(crate) async fn add(state: &Arc<State>, params: AccountAddParams) -> Result<
             Err(store_error(error))
         }
     }
+}
+
+/// `account.set_auto_copy`: the copy every new draft of an account gets.
+pub(crate) async fn set_auto_copy(state: &State, params: AutoCopyParams) -> Result<Value, RpcError> {
+    let id = params.account_id;
+    let copy = params.auto_copy.map(|copy| regards_ipc::protocol::AutoCopy {
+        address: copy.address.trim().to_owned(),
+        ..copy
+    });
+    if let Some(copy) = &copy {
+        let valid = copy.address.contains('@')
+            && copy.address.len() <= 320
+            && !copy
+                .address
+                .chars()
+                .any(|c| c.is_whitespace() || matches!(c, '<' | '>' | ','));
+        if !valid {
+            return Err(invalid("enter one email address to copy"));
+        }
+    }
+    let stored = copy.clone();
+    let found = state
+        .store
+        .write(move |tx| accounts::set_auto_copy(tx, &id, stored.as_ref()))
+        .await
+        .map_err(store_error)?
+        .value;
+    if !found {
+        return Err(RpcError::new(codes::NOT_FOUND, "no such account"));
+    }
+    Ok(json!({ "auto_copy": copy }))
 }
 
 /// `account.update`: rename an account.
@@ -241,17 +279,22 @@ pub(crate) fn server(settings: ServerSettings, label: &str) -> Result<Server, Rp
 /// One account as `account.list` gives it.
 pub(crate) async fn summary_of(state: &State, account: Account) -> Result<Value, RpcError> {
     let id = account.id.clone();
-    let (access, window) = state
+    let (access, window, copy) = state
         .store
         .read(move |conn| {
             let access = accounts::agent_access_of(conn, &id)?.map(|(_, access)| access);
-            Ok((access, accounts::agent_send_window(conn, &id)?))
+            Ok((
+                access,
+                accounts::agent_send_window(conn, &id)?,
+                accounts::auto_copy(conn, &id)?,
+            ))
         })
         .await
         .map_err(store_error)?;
     Ok(json!(AccountSummary {
         agent_access: access.unwrap_or_default(),
         agent_send_window: window,
+        auto_copy: copy,
         needs_sign_in: state.oauth.needs_sign_in(&account.id),
         ..summary(account)
     }))
@@ -304,6 +347,7 @@ pub(crate) fn summary(account: Account) -> AccountSummary {
         created_at: account.created_at,
         agent_access: AgentAccess::Off,
         agent_send_window: None,
+        auto_copy: None,
         sign_in: match account.auth_kind {
             AuthKind::Password => SignIn::Password,
             AuthKind::OauthMicrosoft => SignIn::Microsoft,

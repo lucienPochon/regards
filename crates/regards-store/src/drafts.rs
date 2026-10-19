@@ -44,15 +44,21 @@ pub struct Content {
     pub identity_id: Option<i64>,
 }
 
+/// A new draft. It gets the account's automatic Cc or Bcc, if it has one
+/// and the address is not addressed already.
 pub fn create(tx: &Transaction<'_>, account_id: &str, content: &Content, now: i64) -> Result<i64, StoreError> {
+    let (mut cc, mut bcc) = (content.cc.clone(), content.bcc.clone());
+    if let Some(copy) = crate::accounts::auto_copy(tx, account_id)? {
+        copy.apply(&content.to, &mut cc, &mut bcc);
+    }
     tx.execute(
         "INSERT INTO drafts (account_id, to_json, cc_json, bcc_json, subject, body, in_reply_to, references_json, \
          replying_to, created_at, updated_at, identity_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, ?11)",
         params![
             account_id,
             json(&content.to),
-            json(&content.cc),
-            json(&content.bcc),
+            json(&cc),
+            json(&bcc),
             content.subject,
             content.body,
             content.in_reply_to,

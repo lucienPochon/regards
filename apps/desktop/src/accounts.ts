@@ -27,6 +27,8 @@ export interface AccountSummary {
   created_at: number;
   /** What agents may do with it (see agents.ts); "off" until its owner allows them. */
   agent_access?: import("./agents").AgentAccess;
+  /** The copy every new draft gets, if any. */
+  auto_copy?: AutoCopy;
   /**
    * An agent's send goes after this many seconds, which the person can call
    * it back in (see `setAgentSend`); absent: each waits for approval.
@@ -69,6 +71,21 @@ export function addAccount(input: AccountInput): Promise<AccountSummary> {
  */
 export function updateAccount(id: string, displayName: string): Promise<AccountSummary> {
   return invoke<AccountSummary>("account_update", { id, displayName });
+}
+
+/** A copy every new draft of an account gets: Cc or Bcc to one address. */
+export interface AutoCopy {
+  kind: "cc" | "bcc";
+  address: string;
+}
+
+/**
+ * Always copy new drafts of an account (`null`: no longer). Applied when a
+ * draft is made, by the daemon, so drafts from the CLI and agents get it
+ * too; not added when the address is already a recipient.
+ */
+export function setAutoCopy(accountId: string, autoCopy: AutoCopy | null): Promise<void> {
+  return invoke<void>("account_set_auto_copy", { accountId, autoCopy });
 }
 
 export function removeAccount(id: string): Promise<void> {

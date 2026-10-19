@@ -702,6 +702,13 @@ function handle(cmd: string, args: Args): unknown {
       return null;
     case "open_url":
       return null;
+    case "account_set_auto_copy": {
+      const owner = accounts.find((a) => a.account.id === args.accountId);
+      if (!owner) throw "No such account.";
+      (owner.account as { auto_copy?: unknown }).auto_copy = args.autoCopy ?? undefined;
+      changed();
+      return { auto_copy: args.autoCopy ?? null };
+    }
     case "account_update": {
       const owner = accounts.find((a) => a.account.id === args.id);
       if (!owner) throw "No such account.";
