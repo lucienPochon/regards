@@ -11,7 +11,9 @@
 //! - **At login** the app starts with [`BACKGROUND_ARG`] and no window.
 //!   Development builds never register themselves to start at login.
 //! - **The settings** live in `desktop.json` in the data directory: background
-//!   mode, and whether to show notifications ([`crate::notify`]), both on by default.
+//!   mode, and whether to show notifications ([`crate::notify`]), both on by
+//!   default; and whether to check for updates ([`crate::updates`]), not
+//!   asked yet by default.
 
 use regards_core::paths::DataDirs;
 use serde::{Deserialize, Serialize};
@@ -34,6 +36,10 @@ struct Settings {
     notifications: bool,
     /// Told once that closing the window leaves Regards running.
     told_tray: bool,
+    /// Check for updates once a day; `None` until the person was asked.
+    update_checks: Option<bool>,
+    /// The latest version the person was told of.
+    told_update: Option<String>,
 }
 
 impl Default for Settings {
@@ -42,6 +48,8 @@ impl Default for Settings {
             background: true,
             notifications: true,
             told_tray: false,
+            update_checks: None,
+            told_update: None,
         }
     }
 }
@@ -51,6 +59,8 @@ pub(crate) struct Background {
     on: AtomicBool,
     notifications: AtomicBool,
     told_tray: AtomicBool,
+    update_checks: Mutex<Option<bool>>,
+    told_update: Mutex<Option<String>>,
     /// The tray menu's check marks, kept in step with the settings.
     check: Mutex<Option<CheckMenuItem<Wry>>>,
     notify_check: Mutex<Option<CheckMenuItem<Wry>>>,
@@ -70,6 +80,8 @@ impl Background {
             on: AtomicBool::new(settings.background),
             notifications: AtomicBool::new(settings.notifications),
             told_tray: AtomicBool::new(settings.told_tray),
+            update_checks: Mutex::new(settings.update_checks),
+            told_update: Mutex::new(settings.told_update),
             check: Mutex::new(None),
             notify_check: Mutex::new(None),
         }
@@ -110,6 +122,32 @@ impl Background {
         Ok(())
     }
 
+    pub(crate) fn update_checks(&self) -> Option<bool> {
+        *self.update_checks.lock().expect("never poisoned")
+    }
+
+    /// Check for updates once a day, or not: saved.
+    pub(crate) fn set_update_checks(&self, on: bool) -> Result<(), String> {
+        self.save(Settings {
+            update_checks: Some(on),
+            ..self.current()
+        })?;
+        *self.update_checks.lock().expect("never poisoned") = Some(on);
+        Ok(())
+    }
+
+    pub(crate) fn told_update(&self) -> Option<String> {
+        self.told_update.lock().expect("never poisoned").clone()
+    }
+
+    /// The person was told of `version`: not again.
+    pub(crate) fn set_told_update(&self, version: &str) {
+        *self.told_update.lock().expect("never poisoned") = Some(version.to_owned());
+        if let Err(error) = self.save(self.current()) {
+            eprintln!("updates: {error}");
+        }
+    }
+
     /// The window was closed into the tray. The first time, say that Regards
     /// keeps running, why, and where to quit it.
     pub(crate) fn hidden(&self, app: &AppHandle) {
@@ -138,6 +176,8 @@ impl Background {
             background: self.on(),
             notifications: self.notifications(),
             told_tray: self.told_tray.load(Ordering::SeqCst),
+            update_checks: self.update_checks(),
+            told_update: self.told_update(),
         }
     }
 

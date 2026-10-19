@@ -3948,6 +3948,7 @@ dependencies = [
  "open",
  "regards-core",
  "regards-ipc",
+ "regards-net",
  "serde",
  "serde_json",
  "tauri",

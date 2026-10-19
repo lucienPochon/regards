@@ -656,6 +656,14 @@ function handle(cmd: string, args: Args): unknown {
           }
         : { source: null, imap: null, smtp: null, oauth_only: false };
     }
+    case "update_status":
+      return { checks: null, current: "0.1.0", available: null, checked_at: null };
+    case "update_set_checks":
+      return null;
+    case "update_check":
+      return { version: "0.2.0", url: "https://github.com/lucienPochon/regards/releases/tag/v0.2.0", published_at: null };
+    case "update_open":
+      return null;
     case "account_oauth_providers":
       return { providers: ["microsoft", "google"] };
     case "account_oauth_start":

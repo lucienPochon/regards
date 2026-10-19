@@ -16,6 +16,7 @@ mod drops;
 mod links;
 mod mail_frame;
 mod notify;
+mod updates;
 
 use regards_core::paths::DataDirs;
 use regards_core::secret::Secret;
@@ -1098,11 +1099,13 @@ fn main() {
         .manage(Bridge::new())
         .manage(links::Pending::default())
         .manage(drops::Drops::default())
+        .manage(updates::Updates::default())
         .manage(background::Background::load(DataDirs::resolve().ok().as_ref()))
         .register_asynchronous_uri_scheme_protocol(mail_frame::SCHEME, mail_frame::handle)
         .setup(|app| {
             tauri::async_runtime::spawn(forward_changes(app.handle().clone()));
             tauri::async_runtime::spawn(notify::run(app.handle().clone()));
+            tauri::async_runtime::spawn(updates::run(app.handle().clone()));
             background::setup(app)?;
             // Installers register the scheme; a development build does it itself.
             #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
@@ -1142,6 +1145,10 @@ fn main() {
             account_list,
             account_add,
             account_discover,
+            updates::update_status,
+            updates::update_set_checks,
+            updates::update_check,
+            updates::update_open,
             account_oauth_providers,
             account_oauth_start,
             account_oauth_finish,
