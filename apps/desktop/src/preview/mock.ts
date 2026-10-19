@@ -566,6 +566,13 @@ function handle(cmd: string, args: Args): unknown {
       const [kind, id] = (params.get("link") ?? "").split(":");
       return kind && id ? { kind, id: Number(id) } : null;
     }
+    case "draft_attach_dropped": {
+      // As the desktop does with the paths it keeps: here, by the sample drop's name.
+      const draft = draftById(args.draftId as number);
+      draft.attachments = [...draft.attachments, { id: nextId++, name: "Garden-rota.pdf", mime: "application/pdf", size: 48_000 }];
+      changed();
+      return { draft, refused: [] };
+    }
     case "hold_list":
       return { holds: sampleHolds().filter((hold) => !args.pending || hold.status === "pending") };
     case "hold_approve":
@@ -1012,6 +1019,16 @@ mockIPC(
   },
   { shouldMockEvents: true },
 );
+
+// Files dragged and dropped on the window, as the desktop sends them: regardsDropFiles() in the console
+// (the drag shows for `holdMs`, then the drop). Paths never reach the page; the preview attaches by name.
+(window as unknown as { regardsDropFiles: (holdMs?: number) => void }).regardsDropFiles = (holdMs = 1200) => {
+  void emit("files_drag", { over: true });
+  window.setTimeout(() => {
+    void emit("files_drag", { over: false });
+    void emit("files_dropped", { id: 1, files: [{ name: "Garden-rota.pdf", size: 48_000, image: false }] });
+  }, holdMs);
+};
 
 // A link opened while Regards runs, as the desktop sends it: regardsOpenLink("message:5") in the console.
 (window as unknown as { regardsOpenLink: (link: string) => void }).regardsOpenLink = (link) => {

@@ -2656,6 +2656,36 @@ button.list-title:hover {
 
 /* ---------- Bottom left: toasts and the set-aside bubble ---------- */
 
+/* Files dragged over the window with no message open: they will start one. */
+.window-drop {
+  position: absolute;
+  inset: 12px;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  pointer-events: none;
+}
+
+.window-drop > span {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 18px 24px;
+  border-radius: 12px;
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.window-drop .icon {
+  color: var(--accent);
+}
+
 /* Toasts. While a message is written across the pane, they sit above its format bar. */
 .dock {
   position: absolute;

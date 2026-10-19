@@ -385,6 +385,7 @@ flowchart LR
     - **Drafts from webmail or another device** are listed (`draft.elsewhere`) and picked up (`draft.adopt`).
     - **Servers without UIDPLUS:** drafts stay on the device.
 - **Dropping files onto the composer** (2026-10-19): the system's drop reaches the app's Rust side with the paths, which stay there. The UI learns names and sizes, and attaches a drop to the open draft by its id (`draft_attach_dropped`), as the file picker does: the WebView never handles a path (ADR-0006 §4). Files that cannot be attached (a folder, over 25 MB) are named, with why.
+- **Dropping files on the window** with no message open starts a new message with them, from the account shown. While files are dragged over the window, a dashed overlay says so. Files that could not be attached are named.
 - **Still to come in Phase 2:** checking the HTML in major clients (the acceptance test), and inline images.
 
 ### 5.10 Search (P0 keyword, P2 semantic, 1.0)

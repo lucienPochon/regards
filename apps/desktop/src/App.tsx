@@ -19,7 +19,17 @@ import { type Action, type ActionHost, type Target, choose, messageActions } fro
 import { usePendingHolds } from "./AgentHolds";
 import { Avatar } from "./Avatar";
 import { Composer } from "./Composer";
-import { type Draft, type Queued, getDraft, newDraft, saveDraft } from "./compose";
+import {
+  type Draft,
+  type Dropped,
+  type Queued,
+  attachDropped,
+  getDraft,
+  newDraft,
+  onFilesDrag,
+  onFilesDropped,
+  saveDraft,
+} from "./compose";
 import { Confirm, type ConfirmRequest } from "./Confirm";
 import { DraftsList } from "./DraftsList";
 import { Icon, type IconName } from "./icons";
@@ -560,6 +570,32 @@ export function App() {
 
   const composeFrom =
     openItem?.accountId ?? (view.kind === "mailbox" ? view.accountId : accounts[0]?.account.id) ?? null;
+
+  // Files dropped on the window while no message is being written: a new message
+  // with them (the composer takes its own drops). Paths never reach this side.
+  const [filesOver, setFilesOver] = useState(false);
+  const canDrop = !composer && composeFrom !== null && !settings;
+  const dropped = useRef<(drop: Dropped) => void>(() => {});
+  dropped.current = (drop) => {
+    setFilesOver(false);
+    if (!canDrop || !composeFrom) return;
+    newDraft(composeFrom)
+      .then((draft) =>
+        attachDropped(draft.id, drop.id).then((result) => {
+          setComposer({ id: draft.id, mode: "full" });
+          if (result.refused.length > 0) {
+            setNotice(`Not attached: ${result.refused.map((file) => `${file.name} (${file.error})`).join(", ")}`);
+          }
+        }),
+      )
+      .catch(failed);
+  };
+  useEffect(() => {
+    const stops = [onFilesDrag(setFilesOver), onFilesDropped((drop) => dropped.current(drop))];
+    return () => {
+      for (const stop of stops) void stop.then((unlisten) => unlisten()).catch(() => {});
+    };
+  }, []);
   const writeNew = () => {
     if (composeFrom) startDraft(newDraft(composeFrom), "full");
   };
@@ -1182,6 +1218,14 @@ export function App() {
       >
         {framed && <div className="drag-band" data-tauri-drag-region aria-hidden="true" />}
         {body}
+        {filesOver && canDrop && (
+          <div className="window-drop" aria-hidden="true">
+            <span>
+              <Icon name="paperclip" size={22} />
+              Drop to write a new message with these files
+            </span>
+          </div>
+        )}
         {composer && (
           <Composer
             key={composer.id}
@@ -1226,7 +1270,7 @@ export function App() {
               }}
             />
           )}
-          {holds.length > 0 && (
+          {holds.length > 0 && composer?.mode !== "full" && (
             <button
               type="button"
               className="aside-bubble agent-waiting"
