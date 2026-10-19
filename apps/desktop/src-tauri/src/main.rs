@@ -741,6 +741,19 @@ async fn message_get(bridge: State<'_, Bridge>, id: i64) -> Result<MessageDetail
         .map_err(describe)
 }
 
+/// A message as it came, headers and all: its first megabyte at most.
+#[tauri::command]
+async fn message_source(
+    bridge: State<'_, Bridge>,
+    id: i64,
+) -> Result<regards_ipc::protocol::MessageSource, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_SOURCE, MessageRef { id })
+        .await
+        .map_err(describe)
+}
+
 /// The conversation a message belongs to, across folders, oldest first.
 #[tauri::command]
 async fn thread_get(bridge: State<'_, Bridge>, id: i64) -> Result<ThreadView, String> {
@@ -1435,6 +1448,7 @@ fn main() {
             message_snooze,
             message_remind,
             message_view,
+            message_source,
             draft_create,
             draft_reply,
             draft_forward,

@@ -23,6 +23,7 @@ const READING: &[&str] = &[
     methods::PEOPLE_SUGGEST,
     methods::MESSAGE_GET,
     methods::MESSAGE_HTML,
+    methods::MESSAGE_SOURCE,
     methods::THREAD_GET,
     methods::MESSAGE_VIEW,
     methods::SMART_OVERVIEW,

@@ -307,6 +307,11 @@ impl Session {
                 self.allow_message(Access::Read, params.id).await?;
                 mail::get(&self.state, params).await
             }
+            methods::MESSAGE_SOURCE => {
+                let params: MessageRef = params(request)?;
+                self.allow_message(Access::Read, params.id).await?;
+                mail::source(&self.state, params).await
+            }
             methods::MESSAGE_HTML => {
                 let params: MessageHtmlParams = params(request)?;
                 self.allow_message(Access::Read, params.id).await?;

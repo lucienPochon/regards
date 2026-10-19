@@ -10,8 +10,8 @@ use regards_core::{body, html};
 use regards_imap::SearchTerm;
 use regards_ipc::protocol::{
     AccountRef, MessageCursor, MessageDetail, MessageHtml, MessageHtmlParams, MessageListParams, MessageListResult,
-    MessageRef, MessageSummary, ReadingSettings, RpcError, SearchParams, SearchResult, SenderImagesParams,
-    SenderImagesResult, ServerSearchResult, ThreadEntry, ThreadView, View, ViewParams, codes,
+    MessageRef, MessageSource, MessageSummary, ReadingSettings, RpcError, SearchParams, SearchResult,
+    SenderImagesParams, SenderImagesResult, ServerSearchResult, ThreadEntry, ThreadView, View, ViewParams, codes,
 };
 use regards_store::mailboxes::Mailbox;
 use regards_store::marks::{self, Mark, Marks};
@@ -597,6 +597,21 @@ pub(crate) async fn html(state: &State, params: MessageHtmlParams) -> Result<Val
     }))
 }
 
+/// `message.source`: the message as it came, its first megabyte at most.
+pub(crate) async fn source(state: &State, params: MessageRef) -> Result<Value, RpcError> {
+    let (_, source) = load(state, params.id).await?;
+    Ok(json!(source_view(&source)))
+}
+
+fn source_view(source: &[u8]) -> MessageSource {
+    let shown = &source[..source.len().min(MessageSource::MAX)];
+    MessageSource {
+        text: String::from_utf8_lossy(shown).into_owned(),
+        truncated: shown.len() < source.len(),
+        size: source.len() as u64,
+    }
+}
+
 /// A message and its source, downloading the source the first time.
 pub(crate) async fn load(state: &State, id: i64) -> Result<(Message, Vec<u8>), RpcError> {
     let mut retried = false;
@@ -867,4 +882,21 @@ fn shown_sections(asked: Option<Section>, screening: Screening) -> (Vec<Section>
 /// A message's summary, without its page's marks and conversation sizes.
 pub(crate) fn plain_summary(m: Message) -> MessageSummary {
     summary(m, &PageInfo::default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_source_is_shown_as_text_up_to_a_megabyte() {
+        let small = source_view(b"Subject: Hi\r\n\r\nCaf\xc3\xa9 \xff");
+        assert_eq!(small.text, "Subject: Hi\r\n\r\nCafé \u{fffd}");
+        assert!(!small.truncated);
+        assert_eq!(small.size, 22);
+        let big = vec![b'a'; MessageSource::MAX + 10];
+        let cut = source_view(&big);
+        assert!(cut.truncated);
+        assert_eq!((cut.text.len(), cut.size), (MessageSource::MAX, big.len() as u64));
+    }
 }
