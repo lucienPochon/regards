@@ -705,6 +705,7 @@ fn main() {
             {
                 api.prevent_close();
                 let _ = window.hide();
+                window.state::<background::Background>().hidden(window.app_handle());
             }
         })
         .invoke_handler(tauri::generate_handler![

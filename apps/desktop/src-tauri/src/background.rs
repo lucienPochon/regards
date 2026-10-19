@@ -6,7 +6,8 @@
 //!   turns background mode on or off, and quits. Quitting stops the service
 //!   too, and with it scheduled work.
 //! - **Closing the window** hides it while background mode is on; otherwise it
-//!   quits, as before.
+//!   quits, as before. The first time, a notification says Regards is still
+//!   running and where to quit it (the onboarding ADR-0017 asks for).
 //! - **At login** the app starts with [`BACKGROUND_ARG`] and no window.
 //!   Development builds never register themselves to start at login.
 //! - **The settings** live in `desktop.json` in the data directory: background
@@ -21,6 +22,7 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, AppHandle, Manager, Wry};
 use tauri_plugin_autostart::ManagerExt;
+use tauri_plugin_notification::NotificationExt;
 
 /// Given when the app starts at login: start in the tray, with no window.
 pub(crate) const BACKGROUND_ARG: &str = "--background";
@@ -30,6 +32,8 @@ pub(crate) const BACKGROUND_ARG: &str = "--background";
 struct Settings {
     background: bool,
     notifications: bool,
+    /// Told once that closing the window leaves Regards running.
+    told_tray: bool,
 }
 
 impl Default for Settings {
@@ -37,6 +41,7 @@ impl Default for Settings {
         Self {
             background: true,
             notifications: true,
+            told_tray: false,
         }
     }
 }
@@ -45,6 +50,7 @@ pub(crate) struct Background {
     file: Option<PathBuf>,
     on: AtomicBool,
     notifications: AtomicBool,
+    told_tray: AtomicBool,
     /// The tray menu's check marks, kept in step with the settings.
     check: Mutex<Option<CheckMenuItem<Wry>>>,
     notify_check: Mutex<Option<CheckMenuItem<Wry>>>,
@@ -63,6 +69,7 @@ impl Background {
             file,
             on: AtomicBool::new(settings.background),
             notifications: AtomicBool::new(settings.notifications),
+            told_tray: AtomicBool::new(settings.told_tray),
             check: Mutex::new(None),
             notify_check: Mutex::new(None),
         }
@@ -78,7 +85,10 @@ impl Background {
 
     /// Turn background mode on or off: saved, start at login, and the tray.
     pub(crate) fn set(&self, app: &AppHandle, on: bool) -> Result<(), String> {
-        self.save(on, self.notifications())?;
+        self.save(Settings {
+            background: on,
+            ..self.current()
+        })?;
         self.on.store(on, Ordering::SeqCst);
         start_at_login(app, on);
         if let Some(check) = self.check.lock().expect("never poisoned").as_ref() {
@@ -89,7 +99,10 @@ impl Background {
 
     /// Show notifications, or not: saved, and the tray.
     pub(crate) fn set_notifications(&self, on: bool) -> Result<(), String> {
-        self.save(self.on(), on)?;
+        self.save(Settings {
+            notifications: on,
+            ..self.current()
+        })?;
         self.notifications.store(on, Ordering::SeqCst);
         if let Some(check) = self.notify_check.lock().expect("never poisoned").as_ref() {
             let _ = check.set_checked(on);
@@ -97,13 +110,40 @@ impl Background {
         Ok(())
     }
 
-    fn save(&self, background: bool, notifications: bool) -> Result<(), String> {
+    /// The window was closed into the tray. The first time, say that Regards
+    /// keeps running, why, and where to quit it.
+    pub(crate) fn hidden(&self, app: &AppHandle) {
+        if self.told_tray.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        if let Err(error) = self.save(self.current()) {
+            eprintln!("background mode: {error}");
+        }
+        let place = if cfg!(target_os = "macos") { "menu bar" } else { "tray" };
+        let shown = app
+            .notification()
+            .builder()
+            .title("Regards is still running")
+            .body(format!(
+                "It stays in the {place} so snoozed mail comes back and scheduled messages go. Quit it from the {place} icon."
+            ))
+            .show();
+        if let Err(error) = shown {
+            eprintln!("notification: {error}");
+        }
+    }
+
+    fn current(&self) -> Settings {
+        Settings {
+            background: self.on(),
+            notifications: self.notifications(),
+            told_tray: self.told_tray.load(Ordering::SeqCst),
+        }
+    }
+
+    fn save(&self, settings: Settings) -> Result<(), String> {
         let file = self.file.as_deref().ok_or("the data directory could not be located")?;
-        let json = serde_json::to_vec_pretty(&Settings {
-            background,
-            notifications,
-        })
-        .expect("plain data always serializes");
+        let json = serde_json::to_vec_pretty(&settings).expect("plain data always serializes");
         if let Some(parent) = file.parent() {
             std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
