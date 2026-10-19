@@ -250,7 +250,7 @@ pub struct Hits {
     pub top: Vec<Message>,
 }
 
-/// Search `account_id` (every account when `None`): one copy of each message
+/// Search `accounts` (every account when `None`): one copy of each message
 /// (the inbox's, if it has one), newest first, older than `before`.
 ///
 /// Trash and Junk are left out, unless `in:` names them (or `in:anywhere`).
@@ -259,7 +259,7 @@ pub struct Hits {
 pub fn search(
     conn: &Connection,
     query: &Query,
-    account_id: Option<&str>,
+    accounts: Option<&[String]>,
     limit: u32,
     before: Option<Cursor>,
 ) -> Result<Hits, StoreError> {
@@ -269,7 +269,7 @@ pub fn search(
     if !available(conn)? {
         return Err(StoreError::Conflict("search is not available".into()));
     }
-    let folders = folders(conn, account_id, query.folder.as_deref())?;
+    let folders = folders(conn, accounts, query.folder.as_deref())?;
     if folders.is_empty() {
         return Ok(Hits::default());
     }
@@ -376,10 +376,13 @@ fn filters(query: &Query, m: &str) -> String {
 }
 
 /// The folders a search looks in: `in:`'s, or all but Trash and Junk.
-pub fn folders(conn: &Connection, account_id: Option<&str>, folder: Option<&str>) -> Result<Vec<i64>, StoreError> {
-    let mut statement =
-        conn.prepare_cached("SELECT id, name, delimiter, role FROM mailboxes WHERE ?1 IS NULL OR account_id = ?1")?;
-    let rows = statement.query_map([account_id], |row| {
+pub fn folders(conn: &Connection, accounts: Option<&[String]>, folder: Option<&str>) -> Result<Vec<i64>, StoreError> {
+    let accounts = accounts.map(|ids| serde_json::to_string(ids).expect("strings always serialize"));
+    let mut statement = conn.prepare_cached(
+        "SELECT id, name, delimiter, role FROM mailboxes \
+         WHERE ?1 IS NULL OR account_id IN (SELECT value FROM json_each(?1))",
+    )?;
+    let rows = statement.query_map([accounts], |row| {
         Ok((
             row.get::<_, i64>(0)?,
             row.get::<_, String>(1)?,

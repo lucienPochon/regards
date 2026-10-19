@@ -18,6 +18,8 @@ export interface AccountSummary {
   smtp: ServerSettings;
   imap_capabilities: string[];
   created_at: number;
+  /** What agents may do with it (see agents.ts); "off" until its owner allows them. */
+  agent_access?: import("./agents").AgentAccess;
 }
 
 /** Mirrors `AccountInput` in `src-tauri/src/main.rs`. IMAP always uses TLS. */

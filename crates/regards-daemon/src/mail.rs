@@ -210,14 +210,15 @@ fn cut(page: &mut Vec<Message>, limit: u32) -> Option<MessageCursor> {
 
 /// Search the mail (plan §5.10): one copy of each message, newest first; on
 /// the first page of words that match few messages, the best matches too.
-pub(crate) async fn search(state: &State, params: SearchParams) -> Result<Value, RpcError> {
+/// `scope`: only these accounts (an agent's), else the one asked for or all.
+pub(crate) async fn search(state: &State, params: SearchParams, scope: Option<Vec<String>>) -> Result<Value, RpcError> {
     let (limit, query, before) = search_request(&params)?;
-    let account_id = params.account_id;
+    let accounts = scope.or(params.account_id.map(|account| vec![account]));
     let (hits, info, indexing) = state
         .store
         .read(move |conn| {
             // One extra row tells whether another page exists.
-            let hits = regards_store::search::search(conn, &query, account_id.as_deref(), limit + 1, before)?;
+            let hits = regards_store::search::search(conn, &query, accounts.as_deref(), limit + 1, before)?;
             let rows: Vec<Message> = hits.page.iter().chain(&hits.top).cloned().collect();
             let info = page_info_any(conn, &rows)?;
             Ok((hits, info, regards_store::search::pending(conn)?))
@@ -241,7 +242,11 @@ pub(crate) async fn search(state: &State, params: SearchParams) -> Result<Value,
 /// not opened on this device, which the index here lacks. What they find
 /// that is on this device is listed as [`search`] lists it; the rest is
 /// counted (older than what has been fetched so far, or just arrived).
-pub(crate) async fn search_server(state: &State, params: SearchParams) -> Result<Value, RpcError> {
+pub(crate) async fn search_server(
+    state: &State,
+    params: SearchParams,
+    scope: Option<Vec<String>>,
+) -> Result<Value, RpcError> {
     let (limit, query, before) = search_request(&params)?;
     if query.is_empty() {
         return Ok(json!(ServerSearchResult {
@@ -252,19 +257,23 @@ pub(crate) async fn search_server(state: &State, params: SearchParams) -> Result
         }));
     }
     let terms = server_terms(&query);
-    let (only, folder) = (params.account_id, query.folder.clone());
+    let (only, folder) = (
+        scope.or(params.account_id.map(|account| vec![account])),
+        query.folder.clone(),
+    );
     // Each account's folders to ask, and the folders results may show in.
     let (plan, shown) = state
         .store
         .read(move |conn| {
             let accounts: Vec<String> = match only {
-                Some(account) => vec![account],
+                Some(accounts) => accounts,
                 None => regards_store::accounts::list(conn)?.into_iter().map(|a| a.id).collect(),
             };
             let mut plan: Vec<(String, Vec<Mailbox>)> = Vec::new();
             let mut shown: HashMap<i64, Option<Role>> = HashMap::new();
             for account in accounts {
-                let ids = regards_store::search::folders(conn, Some(&account), folder.as_deref())?;
+                let ids =
+                    regards_store::search::folders(conn, Some(std::slice::from_ref(&account)), folder.as_deref())?;
                 let mut asked: Vec<Mailbox> = mailboxes::list(conn, &account)?
                     .into_iter()
                     .filter(|m| ids.contains(&m.id))

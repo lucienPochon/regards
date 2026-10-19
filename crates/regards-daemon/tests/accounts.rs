@@ -88,12 +88,14 @@ fn rpc_error(result: Result<Value, ClientError>) -> (i32, Option<Value>) {
 }
 
 #[tokio::test]
-async fn agents_cannot_list_add_or_remove_accounts() {
+async fn agents_cannot_add_or_remove_accounts() {
     let running = start(TlsOptions::platform()).await;
     let mut agent = Client::connect(&running.endpoint, ClientKind::Cli).await.unwrap();
+    // They list only the accounts open to them (ADR-0012; tests/agents.rs).
+    let listed: Vec<AccountSummary> = agent.call(methods::ACCOUNT_LIST, Value::Null).await.unwrap();
+    assert!(listed.is_empty());
     let add = serde_json::to_value(params("ada@example.test", 1, PASSWORD)).unwrap();
     for (method, body) in [
-        (methods::ACCOUNT_LIST, Value::Null),
         (methods::ACCOUNT_ADD, add),
         (methods::ACCOUNT_REMOVE, json!({ "id": "x" })),
     ] {

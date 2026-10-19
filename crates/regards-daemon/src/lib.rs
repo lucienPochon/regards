@@ -4,6 +4,7 @@
 //! process that owns the user's mail data; the desktop app, the CLI and the MCP
 //! server talk to it over the local API (ADR-0006).
 
+mod access;
 mod accounts;
 mod actions;
 mod backfill;

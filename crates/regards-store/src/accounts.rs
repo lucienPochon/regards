@@ -2,6 +2,7 @@
 //! credential store (`regards-vault`).
 
 use crate::StoreError;
+use regards_core::agents::Access;
 use rusqlite::{Connection, ErrorCode, OptionalExtension, Row, Transaction, params};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -149,6 +150,36 @@ pub fn list(conn: &Connection) -> Result<Vec<Account>, StoreError> {
     rows.map(|row| row?).collect()
 }
 
+/// What each account allows agents to do (ADR-0012), in list order.
+pub fn agent_access(conn: &Connection) -> Result<Vec<(String, Access)>, StoreError> {
+    let mut statement = conn.prepare_cached("SELECT id, agent_access FROM accounts ORDER BY position, created_at")?;
+    let rows = statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
+    let mut levels = Vec::new();
+    for row in rows {
+        let (id, access) = row?;
+        levels.push((id, Access::parse(&access).unwrap_or_default()));
+    }
+    Ok(levels)
+}
+
+/// An account's address and agent access.
+pub fn agent_access_of(conn: &Connection, id: &str) -> Result<Option<(String, Access)>, StoreError> {
+    let found = conn
+        .prepare_cached("SELECT email, agent_access FROM accounts WHERE id = ?1")?
+        .query_row([id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .optional()?;
+    Ok(found.map(|(email, access)| (email, Access::parse(&access).unwrap_or_default())))
+}
+
+/// Set what an account allows agents to do; `false` if there is no such account.
+pub fn set_agent_access(tx: &Transaction<'_>, id: &str, access: Access) -> Result<bool, StoreError> {
+    let changed = tx.execute(
+        "UPDATE accounts SET agent_access = ?2 WHERE id = ?1",
+        params![id, access.as_str()],
+    )?;
+    Ok(changed > 0)
+}
+
 pub fn get(conn: &Connection, id: &str) -> Result<Option<Account>, StoreError> {
     conn.query_row(&format!("SELECT {COLUMNS} FROM accounts WHERE id = ?1"), [id], from_row)
         .optional()?
@@ -293,6 +324,52 @@ mod tests {
 
         let none = store.write(|tx| delete(tx, "no-such-id")).await.unwrap().value;
         assert_eq!(none, None);
+    }
+
+    #[tokio::test]
+    async fn agents_are_kept_out_until_an_account_lets_them_in() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&DataDirs::at(temp.path())).await.unwrap();
+        let (work, home) = (new_account("work@example.test"), new_account("home@example.test"));
+        let (work_id, home_id) = (work.id.clone(), home.id.clone());
+        store
+            .write(move |tx| {
+                insert(tx, work)?;
+                insert(tx, home)
+            })
+            .await
+            .unwrap();
+        let levels = store.read(agent_access).await.unwrap();
+        assert_eq!(
+            levels,
+            [(work_id.clone(), Access::Off), (home_id.clone(), Access::Off)],
+            "off by default"
+        );
+
+        let id = work_id.clone();
+        assert!(
+            store
+                .write(move |tx| set_agent_access(tx, &id, Access::Triage))
+                .await
+                .unwrap()
+                .value
+        );
+        let id = work_id.clone();
+        let found = store.read(move |conn| agent_access_of(conn, &id)).await.unwrap();
+        assert_eq!(found, Some(("work@example.test".into(), Access::Triage)));
+        assert!(
+            !store
+                .write(|tx| set_agent_access(tx, "nobody", Access::Send))
+                .await
+                .unwrap()
+                .value
+        );
+        // Only the four levels can be stored.
+        let id = home_id.clone();
+        let refused = store
+            .write(move |tx| Ok(tx.execute("UPDATE accounts SET agent_access = 'admin' WHERE id = ?1", [&id])?))
+            .await;
+        assert!(refused.is_err());
     }
 
     #[tokio::test]
