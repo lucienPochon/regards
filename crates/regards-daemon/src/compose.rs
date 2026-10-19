@@ -136,25 +136,8 @@ pub(crate) async fn forward(state: &State, params: MessageRef) -> Result<Value, 
         .map_err(crate::session::internal)?
         .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "the message's account no longer exists"))?;
     let original = headers::parse(&source);
-    let blobs = state.blobs.clone();
-    // The original's files go too, kept in blobs/ like attached ones (up to the usual limit).
-    let (text, files) = tokio::task::spawn_blocking(move || -> std::io::Result<_> {
-        let text = regards_core::body::parse(&source).text;
-        let mut total = 0u64;
-        let mut kept = Vec::new();
-        for file in regards_core::body::files(&source) {
-            total += file.data.len() as u64;
-            if total > MAX_ATTACHMENTS {
-                break;
-            }
-            let hash = blobs.put(&file.data)?;
-            kept.push((hash, compose::file_name(&file.name), file.mime, file.data.len() as u64));
-        }
-        Ok((text, kept))
-    })
-    .await
-    .map_err(crate::session::internal)?
-    .map_err(crate::session::internal)?;
+    // The original's files go too.
+    let (text, files) = text_and_files(state, source).await?;
     let forwarded = compose::forwarded(
         &text,
         original.from.as_ref(),
@@ -457,6 +440,67 @@ pub(crate) async fn reschedule(state: &Arc<State>, params: OutboxRescheduleParam
     Ok(json!({ "rescheduled": true }))
 }
 
+/// A file kept for a draft: its blob, name, type and size.
+pub(crate) type KeptFile = (String, String, String, u64);
+
+/// A message's text, and its files kept in blobs/ like attached ones (up to
+/// the usual limit), for a draft made from it (a forward, a draft picked up).
+pub(crate) async fn text_and_files(state: &State, source: Vec<u8>) -> Result<(String, Vec<KeptFile>), RpcError> {
+    let blobs = state.blobs.clone();
+    tokio::task::spawn_blocking(move || -> std::io::Result<_> {
+        let text = regards_core::body::parse(&source).text;
+        let mut total = 0u64;
+        let mut kept = Vec::new();
+        for file in regards_core::body::files(&source) {
+            total += file.data.len() as u64;
+            if total > MAX_ATTACHMENTS {
+                break;
+            }
+            let hash = blobs.put(&file.data)?;
+            kept.push((hash, compose::file_name(&file.name), file.mime, file.data.len() as u64));
+        }
+        Ok((text, kept))
+    })
+    .await
+    .map_err(crate::session::internal)?
+    .map_err(crate::session::internal)
+}
+
+/// The copy of a draft for the server's Drafts folder (plan §5.9): its
+/// account, the version it holds and its bytes, with the Message-ID all its
+/// copies carry. `None` if the draft went or is being sent.
+pub(crate) async fn draft_copy(state: &State, id: i64) -> Result<Option<(String, i64, Vec<u8>)>, RpcError> {
+    let (version, files) = match draft_files(state, id).await {
+        Ok(found) => found,
+        Err(error) if error.code == codes::NOT_FOUND => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let built = state
+        .store
+        .write(move |tx| {
+            let Some(draft) = drafts::get(tx, id)? else {
+                return Ok(None);
+            };
+            if draft.sending || draft.updated_at != version {
+                return Ok(None); // Changed since the files were read: next time.
+            }
+            let account =
+                accounts::get(tx, &draft.account_id)?.ok_or_else(|| StoreError::Conflict("no such account".into()))?;
+            let identity = identity_of(tx, &account, draft.identity_id)?;
+            let message_id =
+                regards_store::draft_sync::message_id(tx, id, || compose::new_message_id(&identity.email))?
+                    .ok_or_else(|| StoreError::Conflict("no such draft".into()))?;
+            let mime = outgoing(&draft, &identity, files, message_id, draft.updated_at)
+                .build_draft()
+                .map_err(|error| StoreError::Conflict(error.to_string()))?;
+            Ok(Some((account.id, version, mime)))
+        })
+        .await
+        .map_err(conflict)?
+        .value;
+    Ok(built)
+}
+
 fn check_send_at(at: i64, now: i64) -> Result<(), RpcError> {
     if at <= now {
         return Err(RpcError::new(codes::INVALID_PARAMS, "that time has passed"));
@@ -618,7 +662,7 @@ pub(crate) async fn dismiss(state: &State, params: OutboxRef) -> Result<Value, R
     Ok(json!({ "dismissed": true }))
 }
 
-async fn view(state: &State, id: i64) -> Result<Value, RpcError> {
+pub(crate) async fn view(state: &State, id: i64) -> Result<Value, RpcError> {
     let found = state
         .store
         .read(move |conn| {
@@ -650,7 +694,7 @@ fn sender(identity: &Identity) -> Person {
 /// Who a draft of `account` goes out from: identity `id` if it is one of the
 /// account's, else its default. An account always has one; the account
 /// itself stands in otherwise.
-fn identity_of(
+pub(crate) fn identity_of(
     conn: &rusqlite::Connection,
     account: &accounts::Account,
     id: Option<i64>,

@@ -190,6 +190,23 @@ pub fn unread_counts(
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+/// Drafts on the server that were not written here (on another device, in
+/// webmail): messages in Drafts folders that are no draft's copy, newest
+/// first; of one account, or of all.
+pub fn drafts_elsewhere(conn: &Connection, account_id: Option<&str>) -> Result<Vec<Message>, StoreError> {
+    let mut statement = conn.prepare_cached(&format!(
+        "SELECT {COLUMNS} FROM messages WHERE deleted = 0 AND moving_to IS NULL AND mailbox_id IN ( \
+             SELECT id FROM mailboxes WHERE role = 'drafts' AND (?1 IS NULL OR account_id = ?1)) \
+         AND NOT EXISTS (SELECT 1 FROM drafts d WHERE d.server_mailbox_id = messages.mailbox_id \
+             AND d.server_uid = messages.uid) \
+         AND NOT EXISTS (SELECT 1 FROM drafts d JOIN mailboxes b ON b.id = messages.mailbox_id \
+             WHERE d.account_id = b.account_id AND d.server_message_id = messages.message_id_header) \
+         ORDER BY received_at DESC, id DESC LIMIT 200"
+    ))?;
+    let rows = statement.query_map([account_id], from_row)?;
+    rows.map(|row| row?).collect()
+}
+
 /// What a list row shows beyond the headers: whether the message carries
 /// files, and the start of its text.
 pub fn set_details(

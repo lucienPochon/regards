@@ -28,6 +28,9 @@ pub struct Headers {
     /// Where replies should go, when the sender asked for somewhere else.
     #[serde(default)]
     pub reply_to: Vec<Person>,
+    /// Only in drafts' copies: mail as sent carries no Bcc.
+    #[serde(default)]
+    pub bcc: Vec<Person>,
     /// How it was sent, for the Smart Inbox ([`crate::smart::traits`]).
     #[serde(default)]
     pub traits: u32,
@@ -49,6 +52,7 @@ pub fn parse(raw: &[u8]) -> Headers {
         in_reply_to: ids(message.in_reply_to()),
         references: ids(message.references()),
         reply_to: people(message.reply_to()),
+        bcc: people(message.bcc()),
         traits: crate::smart::traits_of(&crate::smart::HeaderValues {
             from: message.from().and_then(Address::first).and_then(|addr| addr.address()),
             list_id: message.header_raw("List-Id"),

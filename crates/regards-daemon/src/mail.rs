@@ -439,3 +439,8 @@ fn shown_sections(asked: Option<Section>, screening: Screening) -> (Vec<Section>
         (Some(section), _) => (vec![section], None),
     }
 }
+
+/// A message's summary, without its page's marks and conversation sizes.
+pub(crate) fn plain_summary(m: Message) -> MessageSummary {
+    summary(m, &PageInfo::default())
+}

@@ -467,20 +467,29 @@ async fn daemon_with_limits(live: &Live, limits: SyncLimits) -> WithAccount {
         port: 587,
         security: ConnectionSecurity::Starttls,
     };
-    daemon_with_settings(live, limits, smtp, live.tls.clone()).await
+    daemon_with_settings(live, smtp, live.tls.clone(), move |daemon| {
+        daemon.with_sync_limits(limits)
+    })
+    .await
 }
 
 /// A daemon with one account: IMAP on the live server, SMTP as given.
-async fn daemon_with_settings(live: &Live, limits: SyncLimits, smtp: ServerSettings, tls: TlsOptions) -> WithAccount {
+async fn daemon_with_settings(
+    live: &Live,
+    smtp: ServerSettings,
+    tls: TlsOptions,
+    configure: impl FnOnce(Daemon) -> Daemon,
+) -> WithAccount {
     let temp = tempfile::tempdir().unwrap();
     let token = UiToken::generate().unwrap();
-    let daemon = Daemon::bind(DataDirs::at(temp.path()))
-        .await
-        .unwrap()
-        .with_ui_token(token.clone())
-        .with_vault(Vault::in_memory())
-        .with_tls(tls)
-        .with_sync_limits(limits);
+    let daemon = configure(
+        Daemon::bind(DataDirs::at(temp.path()))
+            .await
+            .unwrap()
+            .with_ui_token(token.clone())
+            .with_vault(Vault::in_memory())
+            .with_tls(tls),
+    );
     let endpoint = daemon.endpoint().clone();
     let handle = tokio::spawn(daemon.serve(std::future::pending()));
     let mut desktop = Client::connect_with(&endpoint, ClientKind::Desktop, Some(&token))
@@ -1019,10 +1028,7 @@ async fn daemon_sending_through(live: &Live, script: fake_smtp::Script) -> (With
         port,
         security: ConnectionSecurity::Starttls,
     };
-    (
-        daemon_with_settings(live, SyncLimits::default(), smtp, tls).await,
-        sessions,
-    )
+    (daemon_with_settings(live, smtp, tls, |daemon| daemon).await, sessions)
 }
 
 async fn outbox(desktop: &mut Client) -> Vec<OutboxEntryView> {
@@ -2163,6 +2169,158 @@ async fn live_new_senders_can_be_held_accepted_or_blocked() {
         .id;
     let why: ExplainResult = desktop.call(methods::MESSAGE_EXPLAIN, MessageRef { id }).await.unwrap();
     assert!(!why.sender.unwrap().blocked);
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_drafts_are_kept_in_the_drafts_folder_and_picked_up_from_it() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let _ = seed.create_mailbox(b"Drafts").await;
+    let smtp = ServerSettings {
+        host: live.server.host.clone(),
+        port: 587,
+        security: ConnectionSecurity::Starttls,
+    };
+    let (_temp, mut desktop, account, _inbox, handle) = daemon_with_settings(&live, smtp, live.tls.clone(), |daemon| {
+        daemon.with_draft_pace(Duration::from_millis(300), Duration::from_millis(400))
+    })
+    .await;
+    let drafts_box = folders(&mut desktop, &account.id)
+        .await
+        .mailboxes
+        .into_iter()
+        .find(|m| m.role == Some(Role::Drafts))
+        .unwrap()
+        .id;
+    // What the server's Drafts folder holds: each copy's text.
+    async fn server_drafts(seed: &mut Session) -> Vec<String> {
+        let selected = seed.select(b"Drafts").await.unwrap();
+        if selected.exists == 0 {
+            return Vec::new();
+        }
+        let mut texts = Vec::new();
+        for uid in seed.uid_search_all().await.unwrap() {
+            if let Some(source) = seed.fetch_source(uid).await.unwrap() {
+                texts.push(regards_core::body::parse(&source).text.trim().to_owned());
+            }
+        }
+        texts
+    }
+    async fn wait_for(seed: &mut Session, check: impl Fn(&[String]) -> bool) -> Vec<String> {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            let found = server_drafts(seed).await;
+            if check(&found) {
+                return found;
+            }
+            assert!(Instant::now() < deadline, "the Drafts folder stayed {found:?}");
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    }
+
+    // Written here: a copy appears in the folder.
+    let draft: DraftView = desktop
+        .call(
+            methods::DRAFT_CREATE,
+            DraftCreateParams {
+                account_id: account.id.clone(),
+                subject: "Plans".into(),
+                body: "First thoughts".into(),
+                ..DraftCreateParams::default()
+            },
+        )
+        .await
+        .unwrap();
+    wait_for(&mut seed, |texts| texts == ["First thoughts"]).await;
+
+    // Changed: the copy is replaced, not added to.
+    let _: DraftView = desktop
+        .call(
+            methods::DRAFT_UPDATE,
+            DraftUpdateParams {
+                id: draft.id,
+                to: vec![person("bob@example.test")],
+                cc: vec![],
+                bcc: vec![],
+                subject: "Plans".into(),
+                body: "Better thoughts".into(),
+                html: None,
+            },
+        )
+        .await
+        .unwrap();
+    wait_for(&mut seed, |texts| texts == ["Better thoughts"]).await;
+
+    // Discarded here: the copy goes too.
+    let _: Value = desktop
+        .call(methods::DRAFT_DELETE, DraftRef { id: draft.id })
+        .await
+        .unwrap();
+    wait_for(&mut seed, <[String]>::is_empty).await;
+
+    // Written in webmail: listed here, and picked up.
+    seed.append(
+        b"Drafts",
+        &[SystemFlag::Draft],
+        b"From: Live <live@example.test>\r\nTo: Cy <cy@example.test>\r\nSubject: From the web\r\n\
+          Message-ID: <web-draft@example.test>\r\nDate: Sun, 18 Oct 2026 09:00:00 +0000\r\n\r\nStarted on the web\r\n",
+    )
+    .await
+    .unwrap();
+    sync(&mut desktop, &account.id).await;
+    let elsewhere: MessageListResult = desktop
+        .call(methods::DRAFT_ELSEWHERE, DraftListParams { account_id: None })
+        .await
+        .unwrap();
+    assert_eq!(elsewhere.messages.len(), 1);
+    let adopted: DraftView = desktop
+        .call(
+            methods::DRAFT_ADOPT,
+            MessageRef {
+                id: elsewhere.messages[0].id,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(adopted.subject, "From the web");
+    assert_eq!(adopted.to[0].address.as_deref(), Some("cy@example.test"));
+    let elsewhere: MessageListResult = desktop
+        .call(methods::DRAFT_ELSEWHERE, DraftListParams { account_id: None })
+        .await
+        .unwrap();
+    assert!(elsewhere.messages.is_empty(), "it is ours now");
+
+    // Sent from webmail: its copy goes, and so does the unchanged draft here.
+    seed.select(b"Drafts").await.unwrap();
+    let uids = seed.uid_search_all().await.unwrap();
+    seed.delete_messages(&uids.iter().map(u32::to_string).collect::<Vec<_>>().join(","))
+        .await
+        .unwrap();
+    // Something new in the folder, so its sync looks past the copy.
+    seed.append(
+        b"Drafts",
+        &[SystemFlag::Draft],
+        &message(9, "Another", "live@example.test"),
+    )
+    .await
+    .unwrap();
+    sync(&mut desktop, &account.id).await;
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let found: Result<DraftView, _> = desktop.call(methods::DRAFT_GET, DraftRef { id: adopted.id }).await;
+        if found.is_err() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "the draft sent elsewhere stayed");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let _ = drafts_box;
 
     seed.logout().await;
     handle.abort();

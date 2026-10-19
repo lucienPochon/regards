@@ -105,6 +105,11 @@ pub mod methods {
     pub const IDENTITY_REMOVE: &str = "identity.remove";
     /// Make an identity its account's default (new messages go out from it).
     pub const IDENTITY_MAKE_DEFAULT: &str = "identity.make_default";
+    /// Drafts in the server's Drafts folders written elsewhere (another
+    /// device, webmail), to pick up. `ui` only.
+    pub const DRAFT_ELSEWHERE: &str = "draft.elsewhere";
+    /// Pick up a draft written elsewhere: it becomes a draft here, kept in step.
+    pub const DRAFT_ADOPT: &str = "draft.adopt";
     /// Templates: text to start a message with, kept on this device. `ui` only.
     pub const TEMPLATE_LIST: &str = "template.list";
     /// Add a template (without `id`) or change one.

@@ -590,6 +590,26 @@ async fn draft_set_from(bridge: State<'_, Bridge>, id: i64, identity_id: i64) ->
         .map_err(describe)
 }
 
+/// Drafts in the server's Drafts folders written elsewhere, to pick up.
+#[tauri::command]
+async fn draft_elsewhere(bridge: State<'_, Bridge>) -> Result<MessageListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::DRAFT_ELSEWHERE, DraftListParams { account_id: None })
+        .await
+        .map_err(describe)
+}
+
+/// Pick up a draft written elsewhere: it becomes a draft here.
+#[tauri::command]
+async fn draft_adopt(bridge: State<'_, Bridge>, message_id: i64) -> Result<DraftView, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::DRAFT_ADOPT, MessageRef { id: message_id })
+        .await
+        .map_err(describe)
+}
+
 /// Templates: text to start a message with, by name.
 #[tauri::command]
 async fn template_list(bridge: State<'_, Bridge>) -> Result<TemplateListResult, String> {
@@ -881,6 +901,8 @@ fn main() {
             draft_delete,
             draft_set_from,
             identity_list,
+            draft_elsewhere,
+            draft_adopt,
             template_list,
             template_save,
             template_remove,

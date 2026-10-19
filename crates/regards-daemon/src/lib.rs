@@ -9,6 +9,7 @@ mod actions;
 mod backfill;
 mod compose;
 mod details;
+mod draft_sync;
 mod feed;
 mod identities;
 mod mail;
@@ -83,6 +84,9 @@ pub(crate) struct State {
     pub(crate) limits: SyncLimits,
     /// A scheduled send found later than this is held for the person.
     pub(crate) late_send_grace: Duration,
+    /// How often drafts are synced with the server's Drafts folder, and how
+    /// long a draft is left alone before it is.
+    pub(crate) draft_pace: (Duration, Duration),
 }
 
 /// How much mail is fetched at a time (ADR-0009).
@@ -115,6 +119,7 @@ pub struct Daemon {
     tls: TlsOptions,
     limits: SyncLimits,
     late_send_grace: Duration,
+    draft_pace: (Duration, Duration),
 }
 
 /// A scheduled send found more than this late, because the computer was off
@@ -166,6 +171,7 @@ impl Daemon {
             tls: default_tls(),
             limits: SyncLimits::default(),
             late_send_grace: DEFAULT_LATE_SEND_GRACE,
+            draft_pace: (Duration::from_secs(10), Duration::from_secs(5)),
         })
     }
 
@@ -201,6 +207,13 @@ impl Daemon {
         self
     }
 
+    /// Sync drafts with the server every `pass`, once left alone `quiet`
+    /// (tests; 10 s and 5 s otherwise).
+    pub fn with_draft_pace(mut self, pass: Duration, quiet: Duration) -> Self {
+        self.draft_pace = (pass, quiet);
+        self
+    }
+
     /// Where clients can reach this daemon.
     pub fn endpoint(&self) -> &Endpoint {
         &self.endpoint
@@ -224,6 +237,7 @@ impl Daemon {
             dirs,
             limits,
             late_send_grace,
+            draft_pace,
         } = self;
         let (stop, mut stopped) = watch::channel(false);
         let feed = Arc::new(feed::Feed::new(*store.subscribe().borrow()));
@@ -244,6 +258,7 @@ impl Daemon {
             scheduler: scheduler::Scheduler::default(),
             limits,
             late_send_grace,
+            draft_pace,
         });
         state.queue.attach(&state);
         queue::Queue::wake_all(&state);
@@ -254,6 +269,7 @@ impl Daemon {
         sync::spawn_all(Arc::clone(&state));
         let threading = tokio::spawn(mail::thread_backfill(Arc::clone(&state)));
         let sorting = tokio::spawn(smart::sort_stored(Arc::clone(&state)));
+        let drafting = tokio::spawn(draft_sync::run(Arc::clone(&state)));
         let sending = tokio::spawn(sender::run(Arc::clone(&state)));
         let scheduling = tokio::spawn(scheduler::run(Arc::clone(&state)));
         tracing::info!(%endpoint, "daemon listening");
@@ -286,6 +302,7 @@ impl Daemon {
         follow.abort();
         threading.abort();
         sorting.abort();
+        drafting.abort();
         sending.abort();
         scheduling.abort();
         drop(listener);
