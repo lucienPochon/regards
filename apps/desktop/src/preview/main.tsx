@@ -11,11 +11,12 @@ import "../styles.css";
 const params = new URLSearchParams(window.location.search);
 const theme = params.get("theme");
 applyTheme(theme === "dark" || theme === "light" ? (theme as Theme) : savedTheme());
-// `?layout=split` and `?sidebar=open` start from that layout; without them, from the default.
+// `?layout=single` and `?sidebar=icons` start from that layout; without them, from the default
+// (split view, sidebar open).
 if (params.has("layout") || params.has("sidebar")) {
   window.localStorage.setItem(
     "regards.layout",
-    JSON.stringify({ mode: params.get("layout") === "split" ? "split" : "single", locked: params.get("sidebar") === "open" }),
+    JSON.stringify({ mode: params.get("layout") === "single" ? "single" : "split", locked: params.get("sidebar") !== "icons" }),
   );
 } else if (params.has("fresh")) {
   window.localStorage.removeItem("regards.layout");

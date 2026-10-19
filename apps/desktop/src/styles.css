@@ -3163,3 +3163,23 @@ button.list-title:hover {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* The first run: the window's own title band, with the caption buttons. */
+.welcome-shell {
+  --band: 0px;
+  position: relative;
+  height: 100vh;
+}
+
+.welcome-shell.framed {
+  --band: 32px;
+}
+
+.welcome-shell .drag-band {
+  z-index: 1;
+}
+
+/* Beside the list, a reply's panel stays over the conversation. */
+.content.split .composer.panel {
+  width: min(640px, calc(100% - var(--list-w) - 48px));
+}

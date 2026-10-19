@@ -517,11 +517,38 @@ export function App() {
   );
 
   if (mail.state === "ready" && accounts.length === 0) {
+    // The first run still has the window's own title band and caption buttons.
     return (
-      <>
+      <div className={["welcome-shell", PLATFORM !== "linux" ? "framed" : "", PLATFORM].join(" ")}>
+        {PLATFORM !== "linux" && <div className="drag-band" data-tauri-drag-region aria-hidden="true" />}
         {banner}
         <Welcome />
-      </>
+        <TitleBar onAppMenu={appMenu} />
+        {menu && <Menu request={menu} onClose={() => setMenu(null)} />}
+        {help && <ShortcutHelp onClose={() => setHelp(false)} />}
+        {settings && (
+          <Settings
+            tab={settings}
+            onTab={setSettings}
+            mail={mail}
+            service={check}
+            onRecheck={recheck}
+            layout={layout}
+            onLayout={setLayout}
+            confirm={confirm}
+            onClose={() => setSettings(null)}
+          />
+        )}
+        {asking && (
+          <Confirm
+            request={asking.request}
+            onAnswer={(ok) => {
+              asking.resolve(ok);
+              setAsking(null);
+            }}
+          />
+        )}
+      </div>
     );
   }
 

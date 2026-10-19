@@ -262,10 +262,16 @@ export function Composer({
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       void send();
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      void close();
     }
+  };
+
+  // Escape closes, even from the text: the editor would otherwise take it (to select the
+  // enclosing block). The link field keeps it, to cancel the link.
+  const escape = (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || (event.target as HTMLElement).closest(".link-input")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void close();
   };
 
   const locked = Boolean(draft?.sending) || busy;
@@ -350,7 +356,7 @@ export function Composer({
   );
 
   return (
-    <section className={`composer ${mode}`} role="dialog" aria-label={mode === "panel" ? "Reply" : "New message"} onKeyDown={keys}>
+    <section className={`composer ${mode}`} role="dialog" aria-label={mode === "panel" ? "Reply" : "New message"} onKeyDown={keys} onKeyDownCapture={escape}>
       <div className="composer-top">
         <div className="segmented">
           <button type="button" title="Close (Esc). The draft is kept." aria-label="Close" onClick={() => void close()}>

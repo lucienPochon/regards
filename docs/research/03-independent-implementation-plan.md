@@ -177,31 +177,33 @@ flowchart LR
 - **Scope:** unified and per-account inboxes, system mailboxes, folders/labels, Outbox, Snoozed, Set aside, Recently seen; split layouts; keyboard-first navigation; context menus.
 - **Accepted when:** 10k-thread lists scroll at 60 fps, every action is keyboard-reachable, and the layout persists per window.
 - **Built so far:**
-  - **Layout:**
-    - A dark rail of folder icons beside one content pane.
-    - The rail opens out into a full sidebar (`/`), either over the content or kept open beside it.
-    - A message opens in place of the list, with a way back. Split view puts the list and the message side by side, and the list's width can be dragged.
-    - All of this, and the theme (light, dark or as the system), is remembered.
-  - **Folders:**
-    - Inbox, Pinned, Snoozed, Set aside, Sent, Archive, Junk and Trash show every account at once, each merged from the accounts' folders, newest first.
-    - Then Drafts, and the Outbox when it has something.
-    - With several accounts, the inbox can be opened per account, from the sidebar or from the list's title.
+  - **Window:**
+    - The sidebar is kept open beside the mail, or folded to a dark rail of icons that opens over it (`/`).
+    - Split view puts the list and the open message side by side (the default); a message can also open in place of the list, with a way back.
+    - On Windows the app draws its own title band, with an app menu (⌄), minimise, maximise and close; macOS keeps its traffic lights over the sidebar.
+    - The layout and the theme (light, dark or as the system) are remembered.
+  - **Sidebar:**
+    - Inbox (with its unread count, and per account under a chevron when there are several), then Pinned, Drafts, Sent, Trash and the Outbox (with its count).
+    - Under Folders: Archive, the folders added with a star, and More. More opens a panel of every folder: Snoozed, Reminders, Set aside, Junk and anything taken out of the sidebar, then each account's folders. The star adds one to the sidebar; Ctrl+click adds several.
+    - Folders opened from the panel are listed under Recents (with Clear). Right-clicking a folder removes it from the sidebar, or pins a recent one.
+    - Messages can be dragged onto a folder: Archive, Trash, Junk, a folder of their account, Pinned, Set aside, Snoozed or Reminders.
   - **The list:**
-    - Grouped by day, with one line per message when the list is alone and two in split view.
-    - The inbox starts with a row for the pinned messages and keeps set-aside ones in a bubble at the bottom.
-    - Hovering a message highlights it, shows a select check in the margin, and puts its actions in place of the date. Right-clicking gives every action.
-    - Several can be selected: by the check, Ctrl/⌘-click, Shift-click, `x` or Ctrl/⌘+A. A bar at the top then acts on all of them.
+    - Grouped by day (Today, Yesterday, This week, Last week, then by month).
+    - Beside the reader, three lines per message: who and when; the subject, the conversation's size and a paperclip; the start of the text. Hovering shows Done, read/unread and delete in the margin. The open message is tinted across the row.
+    - Alone, one line per message, with the actions in place of the date on hover.
+    - Set-aside mail waits in a bubble at the bottom left.
+    - Several can be selected (Ctrl/⌘-click, Shift-click, `x`, Ctrl/⌘+A, or the check when the list is alone). A bar at the top then acts on all of them.
     - Single-key shortcuts act on the selection, else the message under the pointer, else the highlighted one.
-    - The search field filters the loaded list by sender and subject until full search arrives (§5.10).
-  - **Reading:** the conversation as cards, oldest first, with the open message expanded and the others one line each. Reply and forward sit at the bottom of each card, and after archiving or deleting the next message opens.
+    - The search field filters the loaded list by sender, subject and preview until full search arrives (§5.10).
+  - **Reading:** a toolbar with Back | Done, then delete, flag, read/unread, pin, set aside, snooze and ⋯; the subject below it; the conversation as cards, oldest first, the open message expanded. Reply and forward sit at the bottom of each card, and after archiving or deleting the next message opens.
   - **Writing:** a new message takes the whole pane, with a large subject field. A reply opens in a panel over the conversation, which can be made full size.
-  - **Actions** come from one list, which feeds the toolbar, hover buttons, right-click menu, selection bar, shortcuts and the command palette (Ctrl/⌘+K). Moving opens a folder picker you can type into. Snoozing and sending later pick from preset times.
+  - **The command palette** (Ctrl/⌘+K, right-click on a message, and every ⋯): the actions on that message, conversation or selection, with their keys, then going to any folder and the app's commands. Moving, snoozing, reminders and sending later open as pages of it.
+  - **Actions** come from one list, which feeds the toolbar, the hover buttons, the selection bar, the palette and the shortcuts.
   - **Still to come:**
-    - unread counts
-    - a preview line and attachment marks in the list
     - one row per conversation
     - a virtualised list for 10k rows
-    - the window's own title bar (the system one is still used)
+    - reordering the sidebar by dragging
+    - the Smart Inbox's sections in the list (§5.4)
 
 ### 5.4 Smart Inbox (P1, 1.0)
 
