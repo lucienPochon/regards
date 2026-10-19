@@ -3,7 +3,7 @@ import { type AccountSummary, removeAccount, syncAccount } from "./accounts";
 import { AgentActivity } from "./AgentActivity";
 import { AgentHolds } from "./AgentHolds";
 import { leafName } from "./views";
-import { AGENT_ACCESS_LEVELS, type AgentAccess, setAgentAccess } from "./agents";
+import { AGENT_ACCESS_LEVELS, AGENT_SEND_WINDOW, type AgentAccess, setAgentAccess, setAgentSend } from "./agents";
 import { backgroundMode, notificationsShown, setBackgroundMode, setNotificationsShown } from "./background";
 import { AccountForm } from "./AccountForm";
 import { IdentitiesEditor } from "./IdentitiesEditor";
@@ -255,6 +255,12 @@ function AccountsTab({ mail, confirm }: { mail: MailState; confirm: (request: Co
   );
 }
 
+/** How long an agent's send may wait in the Outbox before it goes, when it needn't be approved (ADR-0012 §3). */
+const SEND_WINDOWS = [10, 30, 60, 120, 300, 600].filter(
+  (seconds) => seconds >= AGENT_SEND_WINDOW.min && seconds <= AGENT_SEND_WINDOW.max,
+);
+const windowLabel = (seconds: number) => (seconds < 60 ? `${seconds} s` : `${seconds / 60} min`);
+
 /** Levels kept for each account but not yet giving agents more (ADR-0012); none since sends wait for approval. */
 const COMING: ReadonlySet<AgentAccess> = new Set();
 
@@ -277,6 +283,31 @@ function AgentsTab({
   const [chosen, setChosen] = useState<Record<string, AgentAccess>>({});
   const [error, setError] = useState<string | null>(null);
   const levelOf = (account: AccountSummary) => chosen[account.id] ?? account.agent_access ?? "off";
+  // At Send: each send asked (null), or sent after this many seconds unless called back.
+  const [windows, setWindows] = useState<Record<string, number | null>>({});
+  const windowOf = (account: AccountSummary) =>
+    account.id in windows ? windows[account.id] : (account.agent_send_window ?? null);
+
+  const chooseWindow = async (account: AccountSummary, seconds: number | null) => {
+    const before = windowOf(account);
+    if (seconds !== null && before === null) {
+      const ok = await confirm({
+        title: `Let agents' sends from ${account.email} go without asking?`,
+        body: `Each send then waits ${windowLabel(seconds)} in the Outbox, and you are told, so you can call it back. After that it goes. At most 20 an hour go this way; more wait for your approval.`,
+        confirm: `Send after ${windowLabel(seconds)}`,
+      });
+      if (!ok) return;
+    }
+    setWindows((now) => ({ ...now, [account.id]: seconds }));
+    setError(null);
+    setAgentSend(account.id, seconds).then(
+      (stored) => setWindows((now) => ({ ...now, [account.id]: stored })),
+      (failure: unknown) => {
+        setWindows((now) => ({ ...now, [account.id]: before }));
+        setError(String(failure));
+      },
+    );
+  };
 
   const choose = async (account: AccountSummary, access: AgentAccess) => {
     if (access === "send") {
@@ -315,6 +346,7 @@ function AgentsTab({
           {accounts.map(({ account }) => {
             const level = levelOf(account);
             const info = AGENT_ACCESS_LEVELS.find((entry) => entry.value === level);
+            const window = windowOf(account);
             return (
               <li key={account.id} className="account-row agent-row">
                 <Avatar person={{ name: account.display_name, address: account.email }} size="md" />
@@ -322,8 +354,30 @@ function AgentsTab({
                   <strong>{account.email}</strong>
                   <span className="muted agent-allows">
                     {info?.allows}
-                    {level === "send" && " Each send waits for you here."}
+                    {level === "send" &&
+                      (window === null
+                        ? " Each send waits for you here."
+                        : ` Each send goes after ${windowLabel(window)} unless you call it back from the Outbox.`)}
                   </span>
+                  {level === "send" && (
+                    <label className="agent-send">
+                      Sends
+                      <select
+                        className="agent-level"
+                        value={window ?? ""}
+                        onChange={(event) =>
+                          void chooseWindow(account, event.target.value === "" ? null : Number(event.target.value))
+                        }
+                      >
+                        <option value="">Ask me each time</option>
+                        {SEND_WINDOWS.map((seconds) => (
+                          <option key={seconds} value={seconds}>
+                            Send after {windowLabel(seconds)} unless I call it back
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                 </span>
                 <select
                   className="agent-level"
@@ -356,8 +410,8 @@ function AgentsTab({
       </dl>
       <p className="muted settings-note">
         Each level allows what the one before it does. What agents change can be undone from the activity below for
-        ten minutes. Whatever level an account has, every send, changes to more than 50 messages at once, and deleting
-        for good wait for you at the top of this page.
+        ten minutes. Whatever level an account has, changes to more than 50 messages at once and deleting for good wait
+        for you at the top of this page, and so does every send, unless an account lets its sends go after a delay.
       </p>
       {accounts.length > 0 && (
         <AgentActivity

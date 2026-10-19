@@ -711,6 +711,14 @@ function handle(cmd: string, args: Args): unknown {
           : null,
       };
     }
+    case "account_set_agent_send": {
+      const owner = accounts.find((a) => a.account.id === args.accountId);
+      if (!owner) throw new Error("That account is gone.");
+      const seconds = (args.windowSeconds as number | null) ?? null;
+      owner.account = { ...owner.account, agent_send_window: seconds ?? undefined };
+      changed();
+      return { agent_send_window: seconds };
+    }
     case "account_sync":
       return new Promise((resolve) => window.setTimeout(() => resolve(null), 900));
     case "mailbox_list": {
