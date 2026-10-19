@@ -14,5 +14,12 @@
         "hiddenTitle": true
       }
     ]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["regards", "mailto"]
+      }
+    }
   }
 }
