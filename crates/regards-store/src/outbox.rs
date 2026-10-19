@@ -10,9 +10,11 @@
 //! and waits for the person, who sends it now, picks a new time or takes it back.
 //!
 //! **Executors** (plan §5.7): this device sends only entries whose executor is
-//! `device`, the one executor in 1.0.
+//! `device`, the one executor in 1.0. An entry another executor holds is
+//! `handed_off` (from 1.1).
 
 use crate::StoreError;
+pub use regards_core::executor::Executor;
 use regards_core::headers::Person;
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 use sha2::{Digest, Sha256};
@@ -22,6 +24,8 @@ pub enum State {
     Queued,
     /// Scheduled, and found too late: waits for the person.
     Held,
+    /// A remote executor holds it, to send at its time (1.1).
+    HandedOff,
     Sending,
     Sent,
     Failed,
@@ -33,6 +37,7 @@ impl State {
         Ok(match text {
             "queued" => Self::Queued,
             "held" => Self::Held,
+            "handed_off" => Self::HandedOff,
             "sending" => Self::Sending,
             "sent" => Self::Sent,
             "failed" => Self::Failed,
@@ -57,6 +62,7 @@ pub struct NewEntry {
     /// Send later: not before this time (Unix ms).
     pub send_at: Option<i64>,
     pub answering: Option<i64>,
+    pub executor: Executor,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,14 +84,15 @@ pub struct Entry {
     pub sent_at: Option<i64>,
     pub answering: Option<i64>,
     pub created_at: i64,
+    pub executor: Executor,
 }
 
 pub fn queue(tx: &Transaction<'_>, entry: &NewEntry, now: i64) -> Result<i64, StoreError> {
     let hash = sha256_hex(&entry.mime);
     tx.execute(
         "INSERT INTO outbox (account_id, draft_id, message_id, subject, recipients_json, envelope_from, envelope_to, \
-         mime, mime_sha256, state, undo_until, send_at, next_attempt_at, answering, created_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'queued', ?10, ?13, MAX(?10, COALESCE(?13, ?10)), ?11, ?12)",
+         mime, mime_sha256, state, undo_until, send_at, next_attempt_at, answering, created_at, executor) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'queued', ?10, ?13, MAX(?10, COALESCE(?13, ?10)), ?11, ?12, ?14)",
         params![
             entry.account_id,
             entry.draft_id,
@@ -100,6 +107,7 @@ pub fn queue(tx: &Transaction<'_>, entry: &NewEntry, now: i64) -> Result<i64, St
             entry.answering,
             now,
             entry.send_at,
+            entry.executor.as_str(),
         ],
     )?;
     Ok(tx.last_insert_rowid())
@@ -260,7 +268,7 @@ pub fn finish(tx: &Transaction<'_>, id: i64) -> Result<(), StoreError> {
 }
 
 const COLUMNS: &str = "id, account_id, draft_id, message_id, subject, recipients_json, envelope_from, envelope_to, \
-    state, undo_until, next_attempt_at, attempts, last_error, sent_at, answering, created_at, send_at";
+    state, undo_until, next_attempt_at, attempts, last_error, sent_at, answering, created_at, send_at, executor";
 
 pub fn get(conn: &Connection, id: i64) -> Result<Option<Entry>, StoreError> {
     conn.query_row(&format!("SELECT {COLUMNS} FROM outbox WHERE id = ?1"), [id], from_row)
@@ -323,6 +331,7 @@ fn query(conn: &Connection, sql: &str, params: impl rusqlite::Params) -> Result<
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Entry, StoreError>> {
     let (recipients, envelope_to, state): (String, String, String) = (row.get(5)?, row.get(7)?, row.get(8)?);
+    let executor: String = row.get(17)?;
     let parse = || -> Result<Entry, StoreError> {
         Ok(Entry {
             id: row.get(0)?,
@@ -342,6 +351,8 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Entry, StoreError>> {
             sent_at: row.get(13)?,
             answering: row.get(14)?,
             created_at: row.get(15)?,
+            executor: Executor::parse(&executor)
+                .ok_or_else(|| StoreError::Corrupt(format!("unknown outbox executor {executor:?}")))?,
         })
     };
     Ok(parse())
@@ -423,7 +434,30 @@ mod tests {
             undo_until,
             send_at: None,
             answering: None,
+            executor: Executor::Device,
         }
+    }
+
+    #[tokio::test]
+    async fn only_entries_for_this_device_are_its_to_send() {
+        let (_temp, store, account, draft) = store_with_draft().await;
+        let a = account.clone();
+        let id = store
+            .write(move |tx| {
+                let remote = NewEntry {
+                    executor: Executor::SendService,
+                    ..entry(&a, draft, 100)
+                };
+                queue(tx, &remote, 0)
+            })
+            .await
+            .unwrap()
+            .value;
+        let kept = store.read(move |conn| get(conn, id)).await.unwrap().unwrap();
+        assert_eq!((kept.executor, kept.state), (Executor::SendService, State::Queued));
+        assert!(store.read(|conn| due(conn, 1_000)).await.unwrap().is_empty());
+        assert_eq!(store.read(next_due_at).await.unwrap(), None);
+        assert!(!store.write(move |tx| claim(tx, id, 1_000)).await.unwrap().value);
     }
 
     #[tokio::test]

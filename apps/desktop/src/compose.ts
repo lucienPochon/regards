@@ -33,8 +33,14 @@ export interface DraftAttachment {
   content_id?: string | null;
 }
 
-/** `held`: scheduled, but found well past its time (the computer was off); it waits for the person. */
-export type OutboxState = "queued" | "held" | "sending" | "failed" | "uncertain";
+/**
+ * `held`: scheduled, but found well past its time (the computer was off); it waits for the person.
+ * `handed_off` (from 1.1): a remote executor holds it and sends it at its time, computer on or off.
+ */
+export type OutboxState = "queued" | "held" | "handed_off" | "sending" | "failed" | "uncertain";
+
+/** Who sends a queued message (plan §5.7). Regards 1.0 has only "device": this computer. */
+export type Executor = "device" | "provider" | "self_hosted" | "send_service";
 
 export interface OutboxEntry {
   id: number;
@@ -49,6 +55,9 @@ export interface OutboxEntry {
   next_attempt_at: number;
   attempts: number;
   last_error: string | null;
+  executor?: Executor;
+  /** See `Queued.needs_this_computer`. */
+  needs_this_computer?: boolean;
 }
 
 export interface Queued {
@@ -57,6 +66,12 @@ export interface Queued {
   undo_until: number;
   /** Send later: when it goes. Until then it can be taken back. */
   send_at: number | null;
+  executor?: Executor;
+  /**
+   * It goes from this computer: when scheduled, say that the computer must be
+   * on then ("your computer must be on at 09:00", ADR-0019).
+   */
+  needs_this_computer?: boolean;
 }
 
 export const newDraft = (accountId: string) => invoke<Draft>("draft_create", { accountId });

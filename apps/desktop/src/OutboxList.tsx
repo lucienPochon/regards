@@ -109,6 +109,9 @@ function describe(entry: OutboxEntry): string {
       return `It may or may not have been sent: ${entry.last_error ?? ""} Check the recipient or your Sent folder before sending it again.`;
     case "held":
       return `Not sent: it was due ${fullDate(entry.send_at ?? entry.next_attempt_at)}, while this computer was off or asleep. Send it now, or edit it.`;
+    case "handed_off":
+      // From 1.1: a remote executor holds it.
+      return `Sends ${fullDate(entry.send_at ?? entry.next_attempt_at)}, even with this computer off.`;
     case "queued":
       if (scheduled(entry)) return `Sends ${fullDate(entry.send_at!)}. This computer must be on then.`;
       if (entry.attempts === 0) return "Sending soon…";

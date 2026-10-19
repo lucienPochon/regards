@@ -422,7 +422,15 @@ pub(crate) const TOOLS: &[Tool] = &[
                       the draft after that means it is not sent on that approval.",
         access: Access::Send,
         method: "draft.send",
-        params: &[DRAFT, param("at", Kind::Time, "Send later, at this time.")],
+        params: &[
+            DRAFT,
+            param(
+                "at",
+                Kind::Time,
+                "Send later, at this time. It goes from the person's computer, which must be on \
+                 then (the answer's `needs_this_computer`); one found well past its time waits for them.",
+            ),
+        ],
         links: Links::None,
         read_only: false,
     },
