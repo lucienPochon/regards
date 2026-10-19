@@ -383,6 +383,9 @@ pub struct MailboxSummary {
     pub delimiter: Option<char>,
     pub role: Option<Role>,
     pub selectable: bool,
+    /// Unread messages; for the inbox, leaving out what is set aside or snoozed.
+    #[serde(default)]
+    pub unread: u32,
 }
 
 /// Result of [`methods::MAILBOX_LIST`].
@@ -480,10 +483,23 @@ pub struct MessageSummary {
     /// Its Smart Inbox section (none until sorted).
     #[serde(default)]
     pub section: Option<Section>,
+    /// How many messages its conversation has (1 when alone).
+    #[serde(default = "one")]
+    pub thread_size: u32,
+    /// It has attached files (not inline images).
+    #[serde(default)]
+    pub has_attachments: bool,
+    /// The start of its text, whitespace collapsed (about 140 characters).
+    #[serde(default)]
+    pub preview: Option<String>,
     /// Its place in the list: `received_at`, except in the inbox for what came
     /// back to it (a snooze that ended, a reminder), listed by when it did.
     #[serde(default)]
     pub listed_at: i64,
+}
+
+fn one() -> u32 {
+    1
 }
 
 /// Parameters naming one message: [`methods::MESSAGE_GET`].

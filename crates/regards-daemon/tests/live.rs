@@ -1991,3 +1991,59 @@ async fn live_the_smart_inbox_sorts_by_section_and_follows_corrections() {
     seed.logout().await;
     handle.abort();
 }
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_rows_show_a_preview_a_paperclip_a_thread_size_and_unread_counts() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let with_file = b"From: Lena <lena@example.net>\r\nTo: Live <live@example.test>\r\nSubject: Tickets\r\n\
+        Message-ID: <tickets@example.test>\r\nDate: Sun, 18 Oct 2026 09:00:00 +0000\r\nMIME-Version: 1.0\r\n\
+        Content-Type: multipart/mixed; boundary=\"b\"\r\n\r\n--b\r\nContent-Type: text/plain; charset=utf-8\r\n\
+        Content-Transfer-Encoding: quoted-printable\r\n\r\nHere are the tickets for Z=C3=BCrich.\r\n> old quote\r\n\r\n\
+        --b\r\nContent-Type: application/pdf; name=\"t.pdf\"\r\nContent-Disposition: attachment; filename=\"t.pdf\"\r\n\
+        Content-Transfer-Encoding: base64\r\n\r\nJVBERi0xLjQK\r\n--b--\r\n";
+    let html_only = b"From: Shop <news@shop.example>\r\nTo: Live <live@example.test>\r\nSubject: Weekly\r\n\
+        Message-ID: <weekly@example.test>\r\nDate: Sun, 18 Oct 2026 10:00:00 +0000\r\nMIME-Version: 1.0\r\n\
+        Content-Type: text/html; charset=utf-8\r\n\r\n<html><head><style>p{color:red}</style></head>\
+        <body><p>This week: <b>seeds</b> and tools.</p></body></html>\r\n";
+    let reply = b"From: Lena <lena@example.net>\r\nTo: Live <live@example.test>\r\nSubject: Re: Tickets\r\n\
+        Message-ID: <tickets-2@example.test>\r\nIn-Reply-To: <tickets@example.test>\r\n\
+        References: <tickets@example.test>\r\nDate: Sun, 18 Oct 2026 11:00:00 +0000\r\n\r\nAnd the seats.\r\n";
+    seed.append(b"INBOX", &[], with_file).await.unwrap();
+    seed.append(b"INBOX", &[], html_only).await.unwrap();
+    seed.append(b"INBOX", &[SystemFlag::Seen], reply).await.unwrap();
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
+
+    let page = messages(&mut desktop, inbox).await;
+    let row = |subject: &str| page.messages.iter().find(|m| m.subject == subject).unwrap().clone();
+    let tickets = row("Tickets");
+    assert!(tickets.has_attachments);
+    assert_eq!(tickets.preview.as_deref(), Some("Here are the tickets for Zürich."));
+    assert_eq!(tickets.thread_size, 2);
+    let weekly = row("Weekly");
+    assert!(!weekly.has_attachments);
+    assert_eq!(weekly.preview.as_deref(), Some("This week: seeds and tools."));
+    assert_eq!(weekly.thread_size, 1);
+    assert_eq!(row("Re: Tickets").preview.as_deref(), Some("And the seats."));
+
+    // Two unread in the inbox; one set aside leaves one.
+    let unread = |listed: &MailboxListResult| listed.mailboxes.iter().find(|m| m.id == inbox).unwrap().unread;
+    assert_eq!(unread(&folders(&mut desktop, &account.id).await), 2);
+    let _: MarkResult = desktop
+        .call(
+            methods::MESSAGE_SET_ASIDE,
+            AsideParams {
+                ids: vec![weekly.id],
+                aside: true,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(unread(&folders(&mut desktop, &account.id).await), 1);
+
+    seed.logout().await;
+    handle.abort();
+}

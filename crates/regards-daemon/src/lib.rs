@@ -8,6 +8,7 @@ mod accounts;
 mod actions;
 mod backfill;
 mod compose;
+mod details;
 mod feed;
 mod identities;
 mod mail;

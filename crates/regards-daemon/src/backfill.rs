@@ -84,6 +84,7 @@ async fn run(state: &State, account_id: &str, stopped: watch::Receiver<bool>) ->
         if folder.role == Some(Role::Inbox) {
             refresh_traits(state, connection, &folder, &stopped).await?;
         }
+        refresh_details(state, connection, &folder, &stopped).await?;
         added += backfill_folder(state, connection, &folder, &stopped).await?;
     }
     if let Some(session) = session {
@@ -143,6 +144,37 @@ async fn refresh_traits(
         tracing::info!(mailbox = id, refreshed, "inbox sorted for the Smart Inbox");
     }
     Ok(refreshed)
+}
+
+/// Previews and paperclips for what a sync left without ([`crate::details`]),
+/// newest first, until the folder is complete or the server cannot say.
+async fn refresh_details(
+    state: &State,
+    session: &mut Session,
+    folder: &Mailbox,
+    stopped: &watch::Receiver<bool>,
+) -> Result<(), SyncError> {
+    let id = folder.id;
+    let selected = session.select(&folder.remote_name).await?;
+    let validity = state
+        .store
+        .read(move |conn| Ok(mailboxes::get(conn, id)?.and_then(|m| m.uid_validity)))
+        .await?;
+    if validity != Some(i64::from(selected.uid_validity)) {
+        return Ok(());
+    }
+    let batch = crate::details::AT_SYNC as u32;
+    while !*stopped.borrow() {
+        let uids = state
+            .store
+            .read(move |conn| messages::details_unknown(conn, id, batch))
+            .await?;
+        if uids.is_empty() || !crate::details::fill(state, session, id, &uids).await {
+            break;
+        }
+        tokio::time::sleep(PAUSE).await;
+    }
+    Ok(())
 }
 
 /// Fetch the messages of `folder` older than the oldest stored, newest first.
@@ -223,7 +255,7 @@ fn older(present: &[u32], lowest: u32, limit: usize) -> &[u32] {
 }
 
 /// A compact UID set for sorted UIDs: runs become ranges ("1:3,7,9:10").
-fn uid_set(uids: &[u32]) -> String {
+pub(crate) fn uid_set(uids: &[u32]) -> String {
     let mut parts = Vec::new();
     let mut index = 0;
     while index < uids.len() {

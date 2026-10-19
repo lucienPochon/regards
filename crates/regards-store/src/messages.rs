@@ -60,6 +60,10 @@ pub struct Message {
     pub thread_id: Option<i64>,
     /// Its Smart Inbox section; `None` until sorted.
     pub section: Option<Section>,
+    /// It has attached files; `None` until its structure is known.
+    pub has_attachments: Option<bool>,
+    /// The start of its text, whitespace collapsed; `None` until fetched.
+    pub preview: Option<String>,
     /// Its place in the list it was read from: `received_at`, except in the
     /// inbox for what came back to it (a snooze that ended, a reminder).
     pub listed_at: i64,
@@ -165,6 +169,63 @@ pub fn apply_flags(tx: &Transaction<'_>, mailbox_id: i64, changes: &[FlagChange]
     Ok(changed)
 }
 
+/// Unread messages per folder of an account, by folder id, where it shows
+/// (a message being moved counts in its target). The inbox leaves out what
+/// is set aside or snoozed past `now`, as it does in its list.
+pub fn unread_counts(
+    conn: &Connection,
+    account_id: &str,
+    inbox_id: Option<i64>,
+    now: i64,
+) -> Result<std::collections::HashMap<i64, u32>, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT COALESCE(m.moving_to, m.mailbox_id) AS shown, COUNT(*) FROM messages m \
+         WHERE m.seen = 0 AND m.deleted = 0 AND m.mailbox_id IN (SELECT id FROM mailboxes WHERE account_id = ?1) \
+         AND NOT (COALESCE(m.moving_to, m.mailbox_id) IS ?2 AND EXISTS (SELECT 1 FROM marks k \
+             WHERE k.account_id = ?1 AND k.message_id = m.message_id_header \
+             AND (k.aside_at IS NOT NULL OR k.snoozed_until > ?3))) \
+         GROUP BY shown",
+    )?;
+    let rows = statement.query_map(params![account_id, inbox_id, now], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// What a list row shows beyond the headers: whether the message carries
+/// files, and the start of its text.
+pub fn set_details(
+    tx: &Transaction<'_>,
+    mailbox_id: i64,
+    uid: u32,
+    has_attachments: bool,
+    preview: Option<&str>,
+) -> Result<(), StoreError> {
+    tx.prepare_cached("UPDATE messages SET has_attachments = ?3, preview = ?4 WHERE mailbox_id = ?1 AND uid = ?2")?
+        .execute(params![mailbox_id, uid, has_attachments, preview])?;
+    Ok(())
+}
+
+/// Messages of a folder whose details were not fetched yet, newest first.
+pub fn details_unknown(conn: &Connection, mailbox_id: i64, limit: u32) -> Result<Vec<u32>, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT uid FROM messages WHERE mailbox_id = ?1 AND has_attachments IS NULL ORDER BY uid DESC LIMIT ?2",
+    )?;
+    let rows = statement.query_map(params![mailbox_id, limit], |row| row.get(0))?;
+    Ok(rows.collect::<Result<Vec<u32>, _>>()?)
+}
+
+/// How many messages each conversation has (one per Message-ID, not deleted).
+pub fn thread_sizes(conn: &Connection, threads: &[i64]) -> Result<std::collections::HashMap<i64, u32>, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT COUNT(DISTINCT COALESCE(message_id_header, '#' || id)) FROM messages \
+         WHERE thread_id = ?1 AND deleted = 0",
+    )?;
+    let mut sizes = std::collections::HashMap::new();
+    for thread in threads {
+        sizes.insert(*thread, statement.query_row([thread], |row| row.get(0))?);
+    }
+    Ok(sizes)
+}
+
 /// UIDs stored for a mailbox, ascending.
 pub fn uids(conn: &Connection, mailbox_id: i64) -> Result<Vec<u32>, StoreError> {
     let mut statement = conn.prepare_cached("SELECT uid FROM messages WHERE mailbox_id = ?1 ORDER BY uid")?;
@@ -232,7 +293,7 @@ pub fn clear(tx: &Transaction<'_>, mailbox_id: i64) -> Result<usize, StoreError>
 
 const COLUMNS: &str = "id, mailbox_id, uid, modseq, seen, answered, flagged, draft, deleted, keywords, \
     received_at, size, sent_at, subject, from_name, from_address, to_json, cc_json, message_id_header, blob_hash, moving_to, thread_id, \
-    section";
+    section, has_attachments, preview";
 
 /// Record where the downloaded source of message `id` is stored.
 pub fn set_blob(tx: &Transaction<'_>, id: i64, hash: &str) -> Result<(), StoreError> {
@@ -362,7 +423,7 @@ pub fn inbox_page(
 }
 
 /// Where `listed_at` follows [`COLUMNS`] in [`inbox_sql`].
-const LISTED_AT: usize = 23;
+const LISTED_AT: usize = 25;
 
 /// The account's messages carrying `mark` (snoozed: until after `now`), one per
 /// Message-ID, newest first: the Pinned, Set aside, Snoozed and Reminders views.
@@ -470,6 +531,8 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Message, StoreError>> {
             moving_to: row.get(20)?,
             thread_id: row.get(21)?,
             section: row.get::<_, Option<String>>(22)?.as_deref().and_then(Section::parse),
+            has_attachments: row.get(23)?,
+            preview: row.get(24)?,
             listed_at: row.get(10)?,
         })
     })();

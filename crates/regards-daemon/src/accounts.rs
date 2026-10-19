@@ -242,15 +242,25 @@ fn invalid(message: &str) -> RpcError {
 pub(crate) async fn mailboxes(state: &State, params: AccountRef) -> Result<Value, RpcError> {
     ensure_exists(state, &params.account_id).await?;
     let id = params.account_id.clone();
-    let stored = state
+    let now = crate::compose::now_ms();
+    let (stored, unread) = state
         .store
-        .read(move |conn| mailboxes::list(conn, &id))
+        .read(move |conn| {
+            let stored = mailboxes::list(conn, &id)?;
+            let inbox = stored
+                .iter()
+                .find(|m| m.role == Some(regards_core::mailbox::Role::Inbox))
+                .map(|m| m.id);
+            let unread = regards_store::messages::unread_counts(conn, &id, inbox, now)?;
+            Ok((stored, unread))
+        })
         .await
         .map_err(store_error)?;
     Ok(json!(MailboxListResult {
         mailboxes: stored
             .into_iter()
             .map(|m| MailboxSummary {
+                unread: unread.get(&m.id).copied().unwrap_or(0),
                 id: m.id,
                 name: m.name,
                 delimiter: m.delimiter,

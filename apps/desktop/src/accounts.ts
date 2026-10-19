@@ -54,6 +54,8 @@ export interface MailboxSummary {
   delimiter: string | null;
   role: Role | null;
   selectable: boolean;
+  /** Unread messages (for the inbox, not counting those set aside or snoozed), when the daemon says. */
+  unread?: number;
 }
 
 export interface SyncState {
@@ -118,6 +120,12 @@ export interface MessageSummary {
    * back to it (a snooze that ended, a reminder), listed by when it did.
    */
   listed_at: number;
+  /** The start of its text, for the list's third line, when the daemon has it. */
+  preview?: string | null;
+  /** It has attached files (not inline images), when the daemon says. */
+  has_attachments?: boolean;
+  /** How many messages its conversation has, when the daemon says. */
+  thread_size?: number;
 }
 
 export interface MessageListResult {

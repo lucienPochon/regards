@@ -9,6 +9,7 @@
 
 mod conn;
 mod messages;
+mod shape;
 mod tls;
 pub mod utf7;
 
@@ -17,6 +18,7 @@ pub use messages::{
 };
 
 pub use conn::IdleEnd;
+pub use shape::{Shape, TextPart, shape_of};
 pub use tls::TlsOptions;
 
 use conn::{Conn, Reply};

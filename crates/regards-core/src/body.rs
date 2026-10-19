@@ -49,6 +49,58 @@ pub fn parse(raw: &[u8]) -> Body {
     }
 }
 
+/// How long a preview is, in characters.
+pub const PREVIEW_CHARS: usize = 200;
+
+/// The start of a message's text for its row in a list, from the first
+/// octets of its text part as stored (`encoding`: its transfer encoding, so
+/// base64 or quoted-printable, which may be cut anywhere). Quoted lines go,
+/// whitespace (and the invisible padding of newsletter previews) collapses.
+pub fn preview(start: &[u8], encoding: &str, charset: Option<&str>, html: bool) -> String {
+    let mut part = format!(
+        "Content-Type: text/{}; charset=\"{}\"\r\nContent-Transfer-Encoding: {encoding}\r\n\r\n",
+        if html { "html" } else { "plain" },
+        charset.unwrap_or("utf-8"),
+    )
+    .into_bytes();
+    if encoding.eq_ignore_ascii_case("base64") {
+        // Cut where the server cut, then back to whole groups of four.
+        let mut kept: Vec<u8> = start.iter().copied().filter(|b| !b.is_ascii_whitespace()).collect();
+        kept.truncate(kept.len() / 4 * 4);
+        part.extend_from_slice(&kept);
+    } else {
+        part.extend_from_slice(start);
+    }
+    let text = MessageParser::default()
+        .parse(&part)
+        .and_then(|message| message.body_text(0).map(|text| text.into_owned()))
+        .unwrap_or_default();
+    let mut out = String::new();
+    for line in text.lines().filter(|line| !line.trim_start().starts_with('>')) {
+        for word in line
+            .split(|c: char| c.is_whitespace() || is_padding(c))
+            .filter(|w| !w.is_empty())
+        {
+            if !out.is_empty() {
+                out.push(' ');
+            }
+            out.push_str(word);
+        }
+        if out.chars().count() >= PREVIEW_CHARS {
+            break;
+        }
+    }
+    out.chars().take(PREVIEW_CHARS).collect()
+}
+
+/// Characters newsletters use to pad their preview text: invisible here.
+fn is_padding(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200b}' | '\u{200c}' | '\u{200d}' | '\u{feff}' | '\u{034f}' | '\u{00ad}' | '\u{2007}'
+    )
+}
+
 /// A file a message carries, with its bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct File {
@@ -175,5 +227,33 @@ mod tests {
     fn garbage_gives_an_empty_body() {
         assert_eq!(parse(b""), Body::default());
         let _ = parse(b"\xff\xfe\x00not mail at all");
+    }
+
+    #[test]
+    fn previews_read_the_start_however_it_was_cut() {
+        // Quoted-printable, with a quote below the reply.
+        let qp = b"Perfect, Saturdays work =\r\nfor us.\r\n\r\nOn Sun, Bob wrote:\r\n> Plans?\r\n";
+        assert_eq!(
+            preview(qp, "quoted-printable", Some("utf-8"), false),
+            "Perfect, Saturdays work for us. On Sun, Bob wrote:"
+        );
+        // Base64 cut in the middle of a group: what is whole is read.
+        let full = crate::encoding::base64("Gr\u{fc}\u{df}e aus Z\u{fc}rich".as_bytes());
+        let cut = &full.as_bytes()[..full.len() - 2];
+        assert!(preview(cut, "base64", Some("utf-8"), false).starts_with("Gr\u{fc}\u{df}e aus Z"));
+        // Latin-1, decoded.
+        assert_eq!(
+            preview(b"Caf\xe9 cr\xe8me", "8bit", Some("iso-8859-1"), false),
+            "Caf\u{e9} cr\u{e8}me"
+        );
+        // HTML: the text, not the styles or tags, nor the invisible padding.
+        let html = b"<html><head><style>p{color:red}</style></head><body><p>Hello\xe2\x80\x8c\xe2\x80\x8c <b>Sam</b></p></body></html>";
+        assert_eq!(preview(html, "8bit", Some("utf-8"), true), "Hello Sam");
+        // Long text stops at the limit.
+        let long = "word ".repeat(100);
+        assert_eq!(
+            preview(long.as_bytes(), "7bit", None, false).chars().count(),
+            PREVIEW_CHARS
+        );
     }
 }

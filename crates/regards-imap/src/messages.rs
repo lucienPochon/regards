@@ -551,7 +551,7 @@ impl Session {
     }
 }
 
-fn ok(reply: &Reply, command: &str) -> Result<(), ImapError> {
+pub(crate) fn ok(reply: &Reply, command: &str) -> Result<(), ImapError> {
     if reply.done.kind == StatusKind::Ok {
         Ok(())
     } else {
@@ -609,7 +609,7 @@ fn uid_ranges(set: &SequenceSet) -> Vec<(u32, u32)> {
         .collect()
 }
 
-fn sequence_set(set: &str) -> Result<SequenceSet, ImapError> {
+pub(crate) fn sequence_set(set: &str) -> Result<SequenceSet, ImapError> {
     SequenceSet::try_from(set).map_err(|_| ImapError::Protocol(format!("invalid message set {set:?}")))
 }
 

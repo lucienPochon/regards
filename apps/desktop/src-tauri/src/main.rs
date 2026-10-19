@@ -726,6 +726,13 @@ fn explain(error: LaunchError) -> String {
     }
 }
 
+/// Quit Regards fully, as the tray's Quit does: the app's own daemon stops
+/// with it (`RunEvent::Exit`), and with it scheduled work.
+#[tauri::command]
+fn app_quit(app: AppHandle) {
+    app.exit(0);
+}
+
 /// Whether Regards keeps running in the background (ADR-0017 §1).
 #[tauri::command]
 fn background_get(background: State<'_, background::Background>) -> bool {
@@ -784,6 +791,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             daemon_status,
+            app_quit,
             background_get,
             background_set,
             notifications_get,

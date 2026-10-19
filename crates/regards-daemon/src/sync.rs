@@ -435,6 +435,10 @@ pub(crate) async fn sync_mailbox(
         .collect();
     let reset = plan.reset;
     let first_look = reset || stored.uid_validity.is_none();
+    // The newest of what came in get their previews now; the backfill does the rest.
+    let mut detail_uids: Vec<u32> = records.iter().map(|r| r.uid).collect();
+    detail_uids.sort_unstable_by(|a, b| b.cmp(a));
+    detail_uids.truncate(crate::details::AT_SYNC);
     let arrived: Vec<(String, Option<String>)> = records
         .iter()
         .filter_map(|r| {
@@ -463,6 +467,7 @@ pub(crate) async fn sync_mailbox(
         })
         .await?;
     let (added, flagged, removed) = committed.value;
+    let _ = crate::details::fill(state, session, mailbox_id, &detail_uids).await;
     changes.messages_added = added;
     changes.flag_changes = flagged;
     changes.messages_removed = removed;
