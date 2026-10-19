@@ -633,15 +633,7 @@ async fn download(state: &State, message: &Message, mailbox: &Mailbox) -> Result
         RpcError::new(codes::SYNC_FAILED, format!("could not download the message: {error}"))
     };
     let mut session = sync::login(state, &mailbox.account_id).await.map_err(|e| failed(&e))?;
-    let outcome = async {
-        let selected = session.select(&mailbox.remote_name).await?;
-        // A different UIDVALIDITY means the UID may now name another message.
-        if mailbox.uid_validity != Some(i64::from(selected.uid_validity)) {
-            return Ok(None);
-        }
-        session.fetch_source(message.uid).await
-    }
-    .await;
+    let outcome = source_from(&mut session, message, mailbox).await;
     session.logout().await;
     let Some(source) = outcome.map_err(|e| failed(&e))? else {
         return Err(RpcError::new(
@@ -649,7 +641,47 @@ async fn download(state: &State, message: &Message, mailbox: &Mailbox) -> Result
             "the server no longer has this message; it disappears after the next sync",
         ));
     };
+    keep_source(state, message, mailbox, source).await
+}
 
+/// A message's source from the server, if it still has it under the same UIDVALIDITY.
+async fn source_from(
+    session: &mut regards_imap::Session,
+    message: &Message,
+    mailbox: &Mailbox,
+) -> Result<Option<Vec<u8>>, regards_imap::ImapError> {
+    let selected = session.select(&mailbox.remote_name).await?;
+    // A different UIDVALIDITY means the UID may now name another message.
+    if mailbox.uid_validity != Some(i64::from(selected.uid_validity)) {
+        return Ok(None);
+    }
+    session.fetch_source(message.uid).await
+}
+
+/// Download message `id` with an open session, unless it is downloaded already
+/// (prefetching); whether it was.
+pub(crate) async fn fetch_with(state: &State, session: &mut regards_imap::Session, id: i64) -> Result<bool, RpcError> {
+    let Some((message, mailbox)) = find(state, id).await? else {
+        return Ok(false);
+    };
+    if message.blob_hash.is_some() || message.size.is_some_and(|size| size > MAX_DOWNLOAD) {
+        return Ok(false);
+    }
+    let source = source_from(session, &message, &mailbox)
+        .await
+        .map_err(|error| RpcError::new(codes::SYNC_FAILED, error.to_string()))?;
+    let Some(source) = source else { return Ok(false) };
+    keep_source(state, &message, &mailbox, source).await?;
+    Ok(true)
+}
+
+/// Keep a downloaded source in blobs/, and its whole text searchable.
+async fn keep_source(
+    state: &State,
+    message: &Message,
+    mailbox: &Mailbox,
+    source: Vec<u8>,
+) -> Result<Vec<u8>, RpcError> {
     let blobs = state.blobs.clone();
     let copy = source.clone();
     // Kept, and its whole text searchable from now on.

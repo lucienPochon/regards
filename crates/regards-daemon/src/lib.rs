@@ -20,6 +20,7 @@ mod limits;
 mod mail;
 mod notices;
 mod oauth;
+mod prefetch;
 mod push;
 mod queue;
 mod scheduler;
@@ -73,6 +74,8 @@ pub(crate) struct State {
     pub(crate) vault: OnceCell<Result<Vault, String>>,
     /// Signing in with Microsoft and Google (ADR-0018).
     pub(crate) oauth: oauth::Oauth,
+    /// Downloading recent inbox mail ahead, when on.
+    pub(crate) prefetch: prefetch::Prefetch,
     /// Which certificates IMAP and SMTP connections trust.
     pub(crate) tls: TlsOptions,
     /// Sync progress per account.
@@ -268,6 +271,7 @@ impl Daemon {
             store,
             vault: OnceCell::new_with(vault.map(Ok)),
             oauth: oauth::Oauth::new(oauth_apps),
+            prefetch: prefetch::Prefetch::default(),
             tls,
             sync: sync::Tracker::new(Arc::clone(&feed)),
             watchers: push::Watchers::default(),
@@ -295,6 +299,7 @@ impl Daemon {
         let scheduling = tokio::spawn(scheduler::run(Arc::clone(&state)));
         let indexing = tokio::spawn(search::run(Arc::clone(&state)));
         let pruning = tokio::spawn(audit::prune(Arc::clone(&state)));
+        let prefetching = tokio::spawn(prefetch::run(Arc::clone(&state)));
         tracing::info!(%endpoint, "daemon listening");
 
         tokio::pin!(shutdown);
@@ -330,6 +335,7 @@ impl Daemon {
         scheduling.abort();
         indexing.abort();
         pruning.abort();
+        prefetching.abort();
         drop(listener);
         // Releasing the lock last lets a replacement daemon start only after we stopped listening.
         drop(lock);

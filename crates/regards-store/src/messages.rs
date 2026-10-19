@@ -325,6 +325,19 @@ pub(crate) fn columns(alias: &str) -> String {
 }
 
 /// Record where the downloaded source of message `id` is stored.
+/// Inbox messages received since `since` (Unix ms), not downloaded yet and
+/// at most `max_size` bytes, newest first: (id, account) to download ahead.
+pub fn to_prefetch(conn: &Connection, since: i64, max_size: i64, limit: u32) -> Result<Vec<(i64, String)>, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT m.id, b.account_id FROM messages m JOIN mailboxes b ON b.id = m.mailbox_id \
+         WHERE b.role = 'inbox' AND m.blob_hash IS NULL AND m.deleted = 0 AND m.moving_to IS NULL \
+         AND m.received_at >= ?1 AND COALESCE(m.size, 0) <= ?2 \
+         ORDER BY m.received_at DESC, m.id DESC LIMIT ?3",
+    )?;
+    let rows = statement.query_map(params![since, max_size, limit], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 pub fn set_blob(tx: &Transaction<'_>, id: i64, hash: &str) -> Result<(), StoreError> {
     tx.execute("UPDATE messages SET blob_hash = ?2 WHERE id = ?1", params![id, hash])?;
     Ok(())

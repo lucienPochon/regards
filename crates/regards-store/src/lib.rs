@@ -30,6 +30,7 @@ pub mod notices;
 pub mod operations;
 pub mod outbox;
 pub mod search;
+pub mod settings;
 pub mod smart;
 pub mod templates;
 pub mod threads;

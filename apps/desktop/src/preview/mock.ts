@@ -322,6 +322,10 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return owner.account;
     }
+    case "prefetch_get":
+      return false;
+    case "prefetch_set":
+      return null;
     case "mail_app_status":
       return { registered: false, can_register: true };
     case "make_mail_app":
