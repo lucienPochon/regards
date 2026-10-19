@@ -158,6 +158,9 @@ pub mod methods {
     /// What agents may do with an account: off, read, triage or send
     /// (ADR-0012). `ui` only: agents cannot change their own access.
     pub const ACCOUNT_SET_AGENT_ACCESS: &str = "account.set_agent_access";
+    /// Whether an agent's sends wait for approval (the default) or go after
+    /// an undo window the person can call them back in (ADR-0012 §3). `ui` only.
+    pub const ACCOUNT_SET_AGENT_SEND: &str = "account.set_agent_send";
     /// What agents did, newest first: every request, allowed or refused
     /// (ADR-0012 §4). Kept 90 days. `ui` only.
     pub const AGENT_ACTIVITY: &str = "agent.activity";
@@ -415,6 +418,11 @@ pub struct AccountSummary {
     /// What agents may do with it (ADR-0012); `off` until its owner allows them.
     #[serde(default)]
     pub agent_access: AgentAccess,
+    /// An agent's send goes after this many seconds, during which the
+    /// person can call it back; without it (the default), each waits for
+    /// approval. At most 20 an hour go so; more wait for approval.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_send_window: Option<u32>,
     /// How it signs in.
     #[serde(default)]
     pub sign_in: SignIn,
@@ -630,6 +638,16 @@ pub enum AgentDecision {
 pub struct AgentAccessParams {
     pub account_id: String,
     pub access: AgentAccess,
+}
+
+/// Parameters of [`methods::ACCOUNT_SET_AGENT_SEND`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSendParams {
+    pub account_id: String,
+    /// Seconds, 10 to 600, that an agent's send waits before it goes, during
+    /// which the person can call it back. `None`: each waits for approval.
+    #[serde(default)]
+    pub window_seconds: Option<u32>,
 }
 
 /// Parameters of [`methods::ACCOUNT_REMOVE`].
@@ -1438,6 +1456,9 @@ pub enum NoticeKind {
     /// An agent asks something that waits for the person: the subject is
     /// what it asks ("Send “Plans” to Bob"), or the draft's subject.
     AgentAsks,
+    /// An agent's message is on its way (`outbox_id`): it can be called
+    /// back (`outbox.undo`) until its undo window is over.
+    AgentSending,
 }
 
 /// One notice: what happened, who (the sender, or the recipients) and the

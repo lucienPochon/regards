@@ -22,17 +22,18 @@ use regards_core::secret::Secret;
 use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, AgentAccess, AgentAccessParams,
-    AgentActivityParams, AgentActivityResult, AsideParams, ClientKind, ConnectionSecurity, DeleteResult,
-    DraftAttachFileParams, DraftAttachImageParams, DraftCreateParams, DraftDetachParams, DraftImageAttached,
-    DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult,
-    DraftSetFromParams, DraftUpdateParams, DraftView, ExplainResult, HoldListParams, HoldListResult, HoldRef, HoldView,
-    IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView, MailboxListResult, MarkResult, MessageCursor,
-    MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult, OauthFlowRef,
-    OauthProvidersResult, OauthStartParams, OauthStartResult, OutboxListResult, OutboxRef, OutboxRescheduleParams,
-    OutboxUndoResult, PinParams, Principal, RemindParams, Screening, ScreeningParams, SearchParams, SearchResult,
-    Section, SenderBlockParams, SenderSetParams, SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams,
-    SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams,
-    TemplateView, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
+    AgentActivityParams, AgentActivityResult, AgentSendParams, AsideParams, ClientKind, ConnectionSecurity,
+    DeleteResult, DraftAttachFileParams, DraftAttachImageParams, DraftCreateParams, DraftDetachParams,
+    DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams,
+    DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView, ExplainResult, HoldListParams,
+    HoldListResult, HoldRef, HoldView, IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView,
+    MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult,
+    MessageRef, MoveParams, MoveResult, OauthFlowRef, OauthProvidersResult, OauthStartParams, OauthStartResult,
+    OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams,
+    Screening, ScreeningParams, SearchParams, SearchResult, Section, SenderBlockParams, SenderSetParams,
+    SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SmartOverviewResult,
+    SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView,
+    UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -235,6 +236,27 @@ async fn account_set_agent_access(
         .call(
             methods::ACCOUNT_SET_AGENT_ACCESS,
             AgentAccessParams { account_id, access },
+        )
+        .await
+        .map_err(describe)
+}
+
+/// Whether an agent's sends wait for approval (`None`) or go after an undo
+/// window of 10 to 600 seconds (ADR-0012 §3).
+#[tauri::command]
+async fn account_set_agent_send(
+    bridge: State<'_, Bridge>,
+    account_id: String,
+    window_seconds: Option<u32>,
+) -> Result<Value, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::ACCOUNT_SET_AGENT_SEND,
+            AgentSendParams {
+                account_id,
+                window_seconds,
+            },
         )
         .await
         .map_err(describe)
@@ -1114,6 +1136,7 @@ fn main() {
             account_oauth_cancel,
             account_remove,
             account_set_agent_access,
+            account_set_agent_send,
             agent_activity,
             hold_list,
             hold_approve,

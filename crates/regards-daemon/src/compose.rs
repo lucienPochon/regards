@@ -16,6 +16,7 @@ use regards_ipc::protocol::{
 use regards_store::drafts::{self, Content, Draft, Edit};
 use regards_store::identities::{self, Identity};
 use regards_store::marks::{self, Mark};
+use regards_store::notices::{self, Kind, NewNotice};
 use regards_store::outbox::{self, Entry, NewEntry, State as EntryState};
 use regards_store::{StoreError, accounts, mailboxes};
 use rusqlite::Transaction;
@@ -490,6 +491,53 @@ pub(crate) async fn send_unchanged(
             format!("undo_seconds must be 0 to {MAX_UNDO_SECONDS}"),
         ));
     }
+    queue_send(state, params, version, undo_seconds, false).await
+}
+
+/// An agent's send from an account that lets it go after an undo window
+/// (ADR-0012 §3): it waits `window` seconds, which the person is told of
+/// and can call it back in, then goes. The agent cannot call it back.
+pub(crate) async fn send_for_agent(
+    state: &Arc<State>,
+    params: DraftSendParams,
+    window: u32,
+) -> Result<Value, RpcError> {
+    queue_send(state, params, None, window, true).await
+}
+
+/// Agents' sends that go without approval, per account and hour; past them,
+/// a send waits for approval again.
+const AGENT_SENDS_PER_HOUR: u32 = 20;
+
+/// The undo window an agent's send of `draft_id` goes with, or `None`: it
+/// waits for approval (the default, or past [`AGENT_SENDS_PER_HOUR`]).
+pub(crate) async fn agent_send_window(state: &State, draft_id: i64) -> Result<Option<u32>, RpcError> {
+    let now = now_ms();
+    state
+        .store
+        .read(move |conn| {
+            let Some(draft) = drafts::get(conn, draft_id)? else {
+                return Ok(None);
+            };
+            let Some(window) = accounts::agent_send_window(conn, &draft.account_id)? else {
+                return Ok(None);
+            };
+            let sent = notices::count_since(conn, &draft.account_id, Kind::AgentSending, now - 3_600_000)?;
+            Ok((sent < AGENT_SENDS_PER_HOUR).then_some(window))
+        })
+        .await
+        .map_err(crate::session::internal)
+}
+
+/// Freeze the draft into the outbox, to go after `undo_seconds`; `agent`:
+/// the person is told an agent's message is on its way.
+async fn queue_send(
+    state: &Arc<State>,
+    params: DraftSendParams,
+    version: Option<i64>,
+    undo_seconds: u32,
+    agent: bool,
+) -> Result<Value, RpcError> {
     let (id, send_at, remind_at) = (params.id, params.send_at, params.remind_at);
     let now = now_ms();
     if let Some(at) = send_at {
@@ -540,6 +588,17 @@ pub(crate) async fn send_unchanged(
             // Keyed by the new Message-ID, so it applies to the copy in Sent.
             if remind_at.is_some() {
                 marks::set(tx, &account.id, &entry.message_id, Mark::Remind, remind_at)?;
+            }
+            if agent {
+                let notice = NewNotice {
+                    account_id: account.id.clone(),
+                    kind: Kind::AgentSending,
+                    message_id: None,
+                    outbox_id: Some(queued),
+                    people: entry.recipients.clone(),
+                    subject: entry.subject.clone(),
+                };
+                notices::add(tx, &notice, now)?;
             }
             Ok(queued)
         })

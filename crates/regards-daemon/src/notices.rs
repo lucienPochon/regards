@@ -51,6 +51,7 @@ fn view(notice: Notice) -> NoticeView {
             Kind::ReminderDue => NoticeKind::ReminderDue,
             Kind::SendHeld => NoticeKind::SendHeld,
             Kind::AgentAsks => NoticeKind::AgentAsks,
+            Kind::AgentSending => NoticeKind::AgentSending,
             Kind::SendFailed => NoticeKind::SendFailed,
             Kind::SendUncertain => NoticeKind::SendUncertain,
         },

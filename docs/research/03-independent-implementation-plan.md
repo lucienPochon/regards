@@ -428,7 +428,12 @@ flowchart LR
     - The agent gets `HELD` with the hold's id, and follows it with `hold.get`. The person is told (a notice, “An agent is waiting for you”) and approves or rejects it in the app (`hold.list`, `hold.approve`, `hold.reject`); only the app decides.
     - Approving runs the request as the agent made it. A send goes only if its draft is still as it was when held; otherwise the hold fails and nothing is sent.
     - Undecided holds expire after a day. The activity entry follows the decision: held, then approved or rejected.
-    - Not yet: “send with an undo window instead” per account, and deciding from the CLI. The CLI is an agent, so it cannot approve.
+    - **Send with an undo window instead** (migration 0028, `account.set_agent_send`):
+      - **The setting:** per account, 10 s to 10 min. An agent's send then waits in the Outbox for that long, whatever undo it asked for.
+      - **Telling the person:** a notice, “An agent is sending a message”, links to its Outbox entry. Only the person can call it back.
+      - **A cap:** at most 20 an hour per account go so; past that, sends are held again.
+      - **The default:** off, so each send waits for approval.
+    - Not yet: deciding from the CLI. The CLI is an agent, so it cannot approve.
 - **Audit log** with before-state and undo.
   - **As built (2026-10-19):**
     - Every agent request but the handshake is recorded once answered (migration 0024): when, the connection and what it came through (CLI, MCP), the method and its parameters, the account it named and what that account allowed then, the decision (allowed or denied), any error, and how long it took.
