@@ -59,6 +59,10 @@ if (params.get("agentsend") === "1" && accounts[0]) {
     });
   });
 }
+// `?autocopy=bcc` (or cc): the first account copies every new message to an archive address.
+if ((params.get("autocopy") === "bcc" || params.get("autocopy") === "cc") && accounts[0]) {
+  (accounts[0].account as { auto_copy?: unknown }).auto_copy = { kind: params.get("autocopy"), address: "archive@example.org" };
+}
 // The address a sign-in was started for; `?signin=1` signs the first account out of Microsoft.
 let oauthEmail: string | null = null;
 if (params.get("signin") === "1" && accounts[0]) {
@@ -609,6 +613,10 @@ function newDraftFor(accountId: string, fields: Partial<Draft>): Draft {
     attachments: [],
     ...fields,
   };
+  // The account's automatic copy, unless that address is already a recipient.
+  const copy = (owner.account as { auto_copy?: { kind: "cc" | "bcc"; address: string } }).auto_copy;
+  const present = [...draft.to, ...draft.cc, ...draft.bcc].some((p) => p.address?.toLowerCase() === copy?.address.toLowerCase());
+  if (copy && !present) draft[copy.kind] = [...draft[copy.kind], { name: null, address: copy.address }];
   drafts.unshift(draft);
   changed();
   return draft;
@@ -705,6 +713,11 @@ function handle(cmd: string, args: Args): unknown {
     case "account_set_auto_copy": {
       const owner = accounts.find((a) => a.account.id === args.accountId);
       if (!owner) throw "No such account.";
+      const wanted = args.autoCopy as { kind: string; address: string } | null;
+      if (wanted) {
+        wanted.address = wanted.address.trim();
+        if (!/^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(wanted.address)) throw "Enter one email address to copy.";
+      }
       (owner.account as { auto_copy?: unknown }).auto_copy = args.autoCopy ?? undefined;
       changed();
       return { auto_copy: args.autoCopy ?? null };

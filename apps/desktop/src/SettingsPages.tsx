@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { AccountSummary } from "./accounts";
+import { type AccountSummary, type AutoCopy, setAutoCopy } from "./accounts";
 import { Avatar } from "./Avatar";
 import {
   type BackgroundSettings,
@@ -667,6 +667,90 @@ export function PriorityRows() {
 }
 
 /** Composer: who a new message is from, and where addresses and signatures live. */
+/** One account's automatic copy: off, Cc or Bcc, to one address. Kept by the daemon. */
+function AutoCopyRow({ account, label }: { account: AccountSummary; label: string | null }) {
+  const [kind, setKind] = useState<AutoCopy["kind"] | "off">(account.auto_copy?.kind ?? "off");
+  const [address, setAddress] = useState(account.auto_copy?.address ?? "");
+  const [state, setState] = useState<"idle" | "saving" | "saved">("idle");
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setKind(account.auto_copy?.kind ?? "off");
+    setAddress(account.auto_copy?.address ?? "");
+  }, [account.auto_copy?.kind, account.auto_copy?.address]);
+  const save = (nextKind: AutoCopy["kind"] | "off", nextAddress: string) => {
+    const trimmed = nextAddress.trim();
+    const wanted: AutoCopy | null = nextKind === "off" || !trimmed ? null : { kind: nextKind, address: trimmed };
+    const saved = account.auto_copy ?? null;
+    if (wanted?.kind === saved?.kind && wanted?.address === saved?.address) return;
+    // Cc or Bcc chosen, no address yet: nothing to save until there is one.
+    if (nextKind !== "off" && !trimmed) return;
+    setState("saving");
+    setError(null);
+    setAutoCopy(account.id, wanted).then(
+      () => setState("saved"),
+      (failure: unknown) => {
+        setState("idle");
+        setError(String(failure));
+      },
+    );
+  };
+  return (
+    <div className="option auto-copy">
+      <span className="option-icon">
+        <Icon name="mail" size={18} />
+      </span>
+      <span className="option-text">
+        <strong>{label ?? "Every new message"}</strong>
+        <span aria-live="polite" className={error ? "error-text" : undefined}>
+          {error ??
+            (state === "saving"
+              ? "Saving…"
+              : state === "saved"
+                ? "Saved."
+                : kind === "off"
+                  ? "No copy."
+                  : address.trim()
+                    ? `${kind === "cc" ? "A copy" : "A blind copy"} to ${address.trim()}.`
+                    : "Enter the address to copy.")}
+        </span>
+      </span>
+      <span className="option-control auto-copy-control">
+        <Select
+          label={`Always copy, ${account.email}`}
+          value={kind}
+          options={[
+            { id: "off", label: "Off" },
+            { id: "cc", label: "Cc" },
+            { id: "bcc", label: "Bcc" },
+          ]}
+          onChange={(next) => {
+            setKind(next);
+            setState("idle");
+            save(next, address);
+          }}
+        />
+        {kind !== "off" && (
+          <input
+            className="input auto-copy-address"
+            type="email"
+            aria-label={`Address to copy, ${account.email}`}
+            placeholder="name@example.org"
+            value={address}
+            onChange={(event) => {
+              setAddress(event.target.value);
+              setState("idle");
+            }}
+            onBlur={() => save(kind, address)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+            }}
+          />
+        )}
+      </span>
+    </div>
+  );
+}
+
 export function ComposerPage({ accounts, onAccounts }: { accounts: AccountSummary[]; onAccounts: () => void }) {
   const prefs = usePrefs();
   return (
@@ -695,6 +779,15 @@ export function ComposerPage({ accounts, onAccounts }: { accounts: AccountSummar
         detail="Send as an alias, and the signature each address adds"
         onOpen={onAccounts}
       />
+      <h4 className="settings-subhead">Always copy</h4>
+      {accounts.map((account) => (
+        <AutoCopyRow key={account.id} account={account} label={accounts.length > 1 ? accountLabel(prefs, account) : null} />
+      ))}
+      <p className="muted settings-note">
+        Added to every new message, reply and forward from that account, those agents and the command line write too,
+        unless the address is already there. Remove it from one message in the composer like any other. Drafts already
+        written stay as they are.
+      </p>
       <p className="muted settings-note">How long you can call a message back after sending it is under General, “Undo send”.</p>
     </>
   );

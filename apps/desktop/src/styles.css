@@ -4587,6 +4587,20 @@ button.sender-row:hover:not(:disabled) {
   opacity: 0.55;
 }
 
+.auto-copy-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.auto-copy-address {
+  width: 190px;
+}
+
+.option-text .error-text {
+  color: var(--danger);
+}
+
 .help-buttons {
   display: flex;
   align-items: center;
