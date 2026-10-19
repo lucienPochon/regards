@@ -41,55 +41,28 @@ pub(crate) async fn set_flags(state: &Arc<State>, params: SetFlagsParams) -> Res
     let committed = state
         .store
         .write(move |tx| {
-            // Group by mailbox, keeping only messages whose flag really changes.
-            let mut work: BTreeMap<(i64, FlagName, bool), BTreeSet<u32>> = BTreeMap::new();
+            let mut wanted = Vec::new();
             for id in &ids {
-                let Some(message) = messages::get(tx, *id)? else {
+                if messages::get(tx, *id)?.is_none() {
                     return Err(StoreError::Conflict(format!("no message {id}")));
-                };
-                for (flag, value) in &changes {
-                    let current = match flag {
-                        FlagName::Seen => message.flags.seen,
-                        FlagName::Flagged => message.flags.flagged,
-                        _ => unreachable!("only seen and flagged are offered"),
-                    };
-                    if current != *value {
-                        work.entry((message.mailbox_id, *flag, *value))
-                            .or_default()
-                            .insert(message.uid);
-                    }
                 }
+                wanted.extend(changes.iter().map(|(flag, value)| (*id, *flag, *value)));
             }
-            let mut changed = BTreeSet::new();
-            let mut accounts = BTreeSet::new();
-            for ((mailbox_id, flag, value), uids) in work {
-                let mailbox = mailboxes::get(tx, mailbox_id)?
-                    .ok_or_else(|| StoreError::Conflict("the folder no longer exists".into()))?;
-                let uid_validity = mailbox
-                    .uid_validity
-                    .ok_or_else(|| StoreError::Conflict("the folder has not been synced yet".into()))?;
-                let uids: Vec<u32> = uids.into_iter().collect();
-                operations::apply_locally(tx, mailbox_id, &uids, &[flag], value)?;
-                operations::enqueue(
-                    tx,
-                    &NewOperation {
-                        mailbox_id,
-                        uid_validity: uid_validity as u32,
-                        kind: if value {
-                            OperationKind::AddFlags
-                        } else {
-                            OperationKind::RemoveFlags
-                        },
-                        uids: uids.clone(),
-                        flags: vec![flag],
-                        target_mailbox_id: None,
-                    },
-                    now,
-                )?;
-                changed.extend(uids.iter().map(|uid| (mailbox_id, *uid)));
-                accounts.insert(mailbox.account_id);
-            }
-            Ok((changed.len(), accounts))
+            let (done, accounts) = change_flags(tx, &wanted, now)?;
+            let changed: BTreeSet<i64> = done.iter().map(|(id, _, _)| *id).collect();
+            let undo = if done.is_empty() {
+                None
+            } else {
+                let description = describe_flags(&changes, changed.len());
+                let inverse = serde_json::to_string(&Inverse {
+                    flags: done,
+                    ..Inverse::default()
+                })
+                .expect("plain data serializes");
+                let id = undo::record(tx, &description, &inverse, now, now + UNDO_FOR_MS)?;
+                Some(UndoInfo { id, description })
+            };
+            Ok((changed.len(), undo, accounts))
         })
         .await
         .map_err(|error| match error {
@@ -97,11 +70,85 @@ pub(crate) async fn set_flags(state: &Arc<State>, params: SetFlagsParams) -> Res
             other => crate::session::internal(other),
         })?;
 
-    let (changed, accounts) = committed.value;
+    let (changed, undo, accounts) = committed.value;
     for account in accounts {
         state.queue.wake(state, &account);
     }
-    Ok(json!(SetFlagsResult { changed }))
+    Ok(json!(SetFlagsResult { changed, undo }))
+}
+
+/// A flag set on a message, as undo knows it: the message, the flag, what it was set to.
+type FlagUndo = (i64, FlagName, bool);
+
+/// Set each `(message, flag, value)` here, and queue it for the server.
+/// What really changed comes back (to undo), with the accounts to sync.
+fn change_flags(
+    tx: &rusqlite::Transaction<'_>,
+    wanted: &[FlagUndo],
+    now: i64,
+) -> Result<(Vec<FlagUndo>, BTreeSet<String>), StoreError> {
+    // Grouped by mailbox, keeping only messages whose flag really changes.
+    let mut work: BTreeMap<(i64, FlagName, bool), BTreeSet<u32>> = BTreeMap::new();
+    let mut done = Vec::new();
+    for (id, flag, value) in wanted {
+        let Some(message) = messages::get(tx, *id)? else {
+            continue;
+        };
+        let current = match flag {
+            FlagName::Seen => message.flags.seen,
+            FlagName::Flagged => message.flags.flagged,
+            _ => unreachable!("only seen and flagged are offered"),
+        };
+        if current != *value {
+            work.entry((message.mailbox_id, *flag, *value))
+                .or_default()
+                .insert(message.uid);
+            done.push((*id, *flag, *value));
+        }
+    }
+    let mut accounts = BTreeSet::new();
+    for ((mailbox_id, flag, value), uids) in work {
+        let mailbox = mailboxes::get(tx, mailbox_id)?
+            .ok_or_else(|| StoreError::Conflict("the folder no longer exists".into()))?;
+        let uid_validity = mailbox
+            .uid_validity
+            .ok_or_else(|| StoreError::Conflict("the folder has not been synced yet".into()))?;
+        let uids: Vec<u32> = uids.into_iter().collect();
+        operations::apply_locally(tx, mailbox_id, &uids, &[flag], value)?;
+        operations::enqueue(
+            tx,
+            &NewOperation {
+                mailbox_id,
+                uid_validity: uid_validity as u32,
+                kind: if value {
+                    OperationKind::AddFlags
+                } else {
+                    OperationKind::RemoveFlags
+                },
+                uids,
+                flags: vec![flag],
+                target_mailbox_id: None,
+            },
+            now,
+        )?;
+        accounts.insert(mailbox.account_id);
+    }
+    Ok((done, accounts))
+}
+
+fn describe_flags(changes: &[(FlagName, bool)], count: usize) -> String {
+    let messages = if count == 1 {
+        "1 message".to_owned()
+    } else {
+        format!("{count} messages")
+    };
+    match changes {
+        [(FlagName::Seen, true)] => format!("Marked {messages} read"),
+        [(FlagName::Seen, false)] => format!("Marked {messages} unread"),
+        [(FlagName::Flagged, true)] => format!("Flagged {messages}"),
+        [(FlagName::Flagged, false)] => format!("Unflagged {messages}"),
+        _ => format!("Changed the flags of {messages}"),
+    }
 }
 
 /// A snoozed message is back: mark every copy unread, here and (through
@@ -403,6 +450,10 @@ struct Inverse {
     /// Senders (account, address or `@domain`) to unblock.
     #[serde(default)]
     unblock: Vec<(String, String)>,
+    /// Flags to set back, where they are still as the action left them:
+    /// one changed since, by the person or another client, is theirs.
+    #[serde(default)]
+    flags: Vec<FlagUndo>,
 }
 
 pub(crate) async fn move_to(state: &Arc<State>, params: MoveParams) -> Result<Value, RpcError> {
@@ -560,7 +611,24 @@ pub(crate) async fn apply_undo(state: &Arc<State>, params: UndoParams) -> Result
             for (account, key) in &inverse.unblock {
                 regards_store::smart::set_blocked(tx, account, key, false)?;
             }
-            Ok((moved + inverse.marks.len() + inverse.unblock.len(), accounts))
+            let mut back = Vec::new();
+            for (id, flag, set_to) in &inverse.flags {
+                let still = messages::get(tx, *id)?.is_some_and(|message| match flag {
+                    FlagName::Seen => message.flags.seen == *set_to,
+                    FlagName::Flagged => message.flags.flagged == *set_to,
+                    _ => false,
+                });
+                if still {
+                    back.push((*id, *flag, !*set_to));
+                }
+            }
+            let (flags, flag_accounts) = change_flags(tx, &back, now)?;
+            let mut accounts = accounts;
+            accounts.extend(flag_accounts);
+            Ok((
+                moved + inverse.marks.len() + inverse.unblock.len() + flags.len(),
+                accounts,
+            ))
         })
         .await
         .map_err(conflict)?;
@@ -740,6 +808,7 @@ pub(crate) async fn block(state: &Arc<State>, params: SenderBlockParams) -> Resu
                 moves: inverse,
                 marks,
                 unblock: vec![(account_id.clone(), key.clone())],
+                ..Inverse::default()
             })
             .expect("plain data serializes");
             let id = undo::record(tx, &description, &inverse, now, now + UNDO_FOR_MS)?;
