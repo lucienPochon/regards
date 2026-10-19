@@ -6,6 +6,7 @@ import { Icon, type IconName } from "./icons";
 import type { AccountMail, MailState } from "./mail";
 import type { MenuEntry, MenuRequest } from "./Menu";
 import type { SidebarChanges, SidebarPrefs } from "./sidebar-prefs";
+import { accountColour, accountLabel, usePrefs } from "./prefs";
 import { useShortcuts } from "./shortcuts";
 import { MARKED_ICONS, MARKED_LABELS, ROLE_ICONS, ROLE_LABELS, type View, depth, leafName, sameView, viewKey } from "./views";
 
@@ -96,6 +97,8 @@ export function Sidebar({
   const [dropOn, setDropOn] = useState<string | null>(null);
   const accounts = mail.state === "ready" ? mail.accounts : [];
   const many = accounts.length > 1;
+  const appPrefs = usePrefs();
+  const nameOf = (account: { id: string; email: string }) => accountLabel(appPrefs, account);
   const me = accounts[0]?.account;
   const hidden = new Set(prefs.hidden);
 
@@ -106,8 +109,8 @@ export function Sidebar({
     ? inboxes.reduce((sum, m) => sum + (m.unread ?? 0), 0)
     : undefined;
   const troubled = outbox.some((e) => e.state === "failed" || e.state === "uncertain" || e.state === "held");
-  const count = (row: Row): { value: number; alert: boolean } | null => {
-    if (row.view.kind === "role" && row.view.role === "inbox" && unread) return { value: unread, alert: false };
+  const count = (row: Row): { value: number; alert: boolean; unread?: boolean } | null => {
+    if (row.view.kind === "role" && row.view.role === "inbox" && unread) return { value: unread, alert: false, unread: true };
     if (row.view.kind === "outbox" && outbox.length > 0) return { value: outbox.length, alert: troubled };
     return null;
   };
@@ -118,7 +121,7 @@ export function Sidebar({
     const account = accounts.find((a) => a.account.id === target.accountId);
     const mailbox = account?.mailboxes.find((m) => m.id === target.mailboxId);
     if (!mailbox) return null;
-    const label = many && mailbox.role ? `${leafName(mailbox)} · ${account?.account.email}` : leafName(mailbox);
+    const label = many && mailbox.role && account ? `${leafName(mailbox)} · ${nameOf(account.account)}` : leafName(mailbox);
     return { view: target, icon: mailbox.role ? ROLE_ICONS[mailbox.role] : "folder", label };
   };
 
@@ -160,7 +163,7 @@ export function Sidebar({
 
   const item = (
     row: Row,
-    options: { count?: { value: number; alert: boolean } | null; chevron?: Role; menu?: MenuEntry[]; indent?: number } = {},
+    options: { count?: { value: number; alert: boolean; unread?: boolean } | null; chevron?: Role; menu?: MenuEntry[]; indent?: number } = {},
   ) => {
     const active = sameView(view, row.view);
     const key = viewKey(row.view);
@@ -202,7 +205,9 @@ export function Sidebar({
           <Icon name={row.icon} size={16} />
           {expanded && <span className="label">{row.label}</span>}
           {expanded && options.count && (
-            <span className={options.count.alert ? "count alert" : "count"}>{options.count.value}</span>
+            <span className={options.count.alert ? "count alert" : options.count.unread ? "count unread-count" : "count"}>
+              {options.count.value}
+            </span>
           )}
         </button>
       </li>
@@ -224,13 +229,13 @@ export function Sidebar({
           <button
             type="button"
             className={active ? "side-item active" : "side-item"}
-            title={expanded ? undefined : account.account.email}
+            title={expanded ? undefined : nameOf(account.account)}
             onClick={() => go(target)}
             {...dragProps(target)}
           >
-            <Avatar person={person} size="xs" ring />
-            {expanded && <span className="label">{account.account.email}</span>}
-            {expanded && r === "inbox" && mailbox.unread ? <span className="count">{mailbox.unread}</span> : null}
+            <Avatar person={person} size="xs" ring colour={accountColour(appPrefs, account.account.id)} />
+            {expanded && <span className="label">{nameOf(account.account)}</span>}
+            {expanded && r === "inbox" && mailbox.unread ? <span className="count unread-count">{mailbox.unread}</span> : null}
           </button>
         </li>,
       ];
@@ -399,6 +404,8 @@ function FolderPanel({
   onClose: () => void;
 }) {
   useShortcuts({ Escape: onClose }, { modal: true });
+  const appPrefs = usePrefs();
+  const nameOf = (account: { id: string; email: string }) => accountLabel(appPrefs, account);
   const hidden = new Set(prefs.hidden);
   const starred = new Set(prefs.starred.map(viewKey));
   const roleExists = (r: Role) => accounts.some((a) => a.mailboxes.some((m) => m.role === r && m.selectable));
@@ -459,8 +466,12 @@ function FolderPanel({
           {accounts.map((account) => (
             <section key={account.account.id} className="panel-account">
               <h3 className="panel-head account">
-                <Avatar person={{ name: account.account.display_name, address: account.account.email }} size="xs" />
-                <span className="label">{account.account.email}</span>
+                <Avatar
+                  person={{ name: account.account.display_name, address: account.account.email }}
+                  size="xs"
+                  colour={accountColour(appPrefs, account.account.id)}
+                />
+                <span className="label">{nameOf(account.account)}</span>
               </h3>
               <ul>
                 {tree(account.mailboxes).map((mailbox) =>

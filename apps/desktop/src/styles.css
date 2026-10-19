@@ -480,8 +480,9 @@ button.link:hover {
 }
 
 /* A thin ring in the person's colour, with a gap. */
+/* The ring: the person's colour, or their account's when accounts are colour-coded. */
 .avatar.ring {
-  box-shadow: 0 0 0 1.5px var(--bg), 0 0 0 3px var(--hue);
+  box-shadow: 0 0 0 1.5px var(--bg), 0 0 0 3px var(--ring, var(--hue));
 }
 
 .hue-0 { --hue: #2f9e8a; }
@@ -1551,6 +1552,70 @@ button.list-title:hover {
 }
 
 /* Rows. "tall": three lines, full width, beside the reader. "wide": one line, alone. */
+
+/* Settings › Appearance, as classes on the window. Pictures in the list or not: */
+.avatars-reader .rows .row:not(.bundle):not(.skeleton) .row-avatar,
+.avatars-nowhere .rows .row:not(.bundle):not(.skeleton) .row-avatar {
+  display: none;
+}
+
+.avatars-reader .rows.tall .row:not(.bundle) > .row-main,
+.avatars-nowhere .rows.tall .row:not(.bundle) > .row-main {
+  grid-template-areas:
+    "dot from date"
+    "dot subject marks"
+    "dot preview preview"
+    "dot extra extra";
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+}
+
+.avatars-reader .rows.wide .row:not(.bundle) > .row-main,
+.avatars-nowhere .rows.wide .row:not(.bundle) > .row-main {
+  grid-template-areas: "dot from subject marks date";
+  grid-template-columns: 8px minmax(0, 168px) minmax(0, 1fr) auto auto;
+}
+
+/* …and in the reader or not. */
+.avatars-list .mail-head .avatar,
+.avatars-list .mail-avatar,
+.avatars-list .mail-line .avatar,
+.avatars-nowhere .mail-head .avatar,
+.avatars-nowhere .mail-avatar,
+.avatars-nowhere .mail-line .avatar {
+  display: none;
+}
+
+/* The list alone: compact rows. */
+.density-compact .rows.wide .row-main {
+  height: 32px;
+}
+
+.density-compact .rows.wide .row .from,
+.density-compact .rows.wide .row .subject {
+  font-size: 13.5px;
+}
+
+/* Beside the reader: no line of the message's start, or two. */
+.preview-0 .rows.tall .row .preview {
+  display: none;
+}
+
+.preview-0 .rows.tall .row-main {
+  min-height: 56px;
+}
+
+.preview-2 .rows.tall .row .preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+}
+
+/* Settings › Notifications: no unread counts in the sidebar (the Outbox's count stays). */
+.no-counts .count.unread-count {
+  display: none;
+}
+
 
 .rows {
   padding: 0 0 96px;
@@ -4462,6 +4527,135 @@ button.sender-row:hover:not(:disabled) {
 
 .server-settings[open] > summary {
   margin-bottom: 12px;
+}
+
+/* Settings controls: a switch, a dropdown, a row that opens a page, and that page's head. */
+.switch {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 999px;
+}
+
+.settings-select {
+  max-width: 260px;
+  height: 32px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.option.link-row {
+  width: 100%;
+  color: var(--text);
+  text-align: left;
+}
+
+.option.link-row:hover {
+  background: var(--row-hover);
+}
+
+.option.link-row > .icon:last-child {
+  flex: none;
+  color: var(--muted);
+}
+
+.subpage-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px -8px;
+}
+
+.subpage-head h3 {
+  margin: 0;
+}
+
+.settings-subhead {
+  margin: 22px 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Colours to pick from. */
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
+}
+
+.swatch.chosen {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--text-2);
+}
+
+/* Scheduling: each quick choice, with its time and whether it shows. */
+.preset-row {
+  gap: 12px;
+}
+
+.preset-time {
+  width: 110px;
+}
+
+.preset-time:disabled {
+  opacity: 0.5;
+}
+
+/* Support: where to get help. */
+.help-url {
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+  font-size: 12px !important;
+  user-select: text;
+}
+
+.help-row .btn {
+  flex: none;
+  margin-top: 0;
+}
+
+/* Accounts: an account's options in Regards. */
+.account-options {
+  display: grid;
+  gap: 12px;
+  padding: 12px 16px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.account-title {
+  display: grid;
+  gap: 5px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.account-colour {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.account-options .option {
+  padding: 8px 0 0;
+  border-bottom: 0;
 }
 
 /* Settings › About: the version, checking for updates, and a newer version to download. */

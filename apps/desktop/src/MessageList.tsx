@@ -16,6 +16,7 @@ import { dateSection, laterDate, listDate, peopleShort, personName } from "./for
 import { Icon, type IconName } from "./icons";
 import type { ListItem, MessageFeed } from "./mail";
 import { type Anchor, anchorOf } from "./Menu";
+import { accountColour, usePrefs } from "./prefs";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { DRAG_TYPE, type DragPayload } from "./Sidebar";
 
@@ -79,6 +80,8 @@ export interface Bundle {
   unread: boolean;
   /** Its newest messages, for the senders' chips. */
   messages: { from: Person | null }[];
+  /** When its newest message came: where the group sits when groups follow the dates. */
+  newest?: number;
   onOpen: () => void;
 }
 
@@ -187,6 +190,7 @@ export function MessageList({
   /** Every row here is a new sender (the screener's own list): Accept and Block on each. */
   screenAll?: boolean;
 }) {
+  const prefs = usePrefs();
   const searching = search.query !== null;
   const query = search.query?.trim() ?? "";
   const field = useRef<HTMLInputElement>(null);
@@ -339,9 +343,23 @@ export function MessageList({
     if (last?.label === label) last.items.push(item);
     else sections.push({ label, items: [item] });
   }
-  // Groups sit in the first section, as if they had come today.
+  // Groups sit with today (or the first day), or, as the person chose, at their newest message's day.
   const bundles = showSmart ? (smart?.bundles ?? []).filter((bundle) => bundle.count > 0) : [];
-  if (bundles.length > 0 && sections[0]?.label !== "Today") sections.unshift({ label: "Today", items: [] });
+  const bundlesIn = new Map<string, Bundle[]>();
+  for (const bundle of bundles) {
+    let label = "Today";
+    if (prefs.groupsPosition === "chronological" && bundle.newest !== undefined) {
+      label = dateSection(bundle.newest);
+      if (!sections.some((section) => section.label === label)) {
+        // A day of its own, in date order among the others.
+        const at = sections.findIndex((section) => (section.items[0]?.listed_at ?? Number.MAX_SAFE_INTEGER) < (bundle.newest ?? 0));
+        sections.splice(at === -1 ? sections.length : at, 0, { label, items: [] });
+      }
+    } else if (sections[0]?.label !== "Today") {
+      if (!sections.some((section) => section.label === "Today")) sections.unshift({ label: "Today", items: [] });
+    }
+    bundlesIn.set(label, [...(bundlesIn.get(label) ?? []), bundle]);
+  }
 
   const row = (item: ListItem, screen = false) => {
     const isPicked = picked.has(item.id);
@@ -415,7 +433,7 @@ export function MessageList({
         >
           <span className="dot" aria-label={item.seen ? undefined : "Unread"} />
           <span className="row-avatar">
-            <Avatar person={correspondent(item, own)} size="sm" />
+            <Avatar person={correspondent(item, own)} size="sm" colour={accountColour(prefs, item.accountId)} />
           </span>
           <span className="from">{who(item, own)}</span>
           <span className="subject">
@@ -645,11 +663,13 @@ export function MessageList({
                 )}
               </section>
             )}
-            {sections.map((section, sectionIndex) => (
+            {sections.map((section) => (
               <section key={section.label} className="day" aria-label={section.label}>
                 <h3 className="day-head">{section.label}</h3>
                 <ul>
-                  {sectionIndex === 0 && bundles.map((bundle) => <BundleRow key={bundle.key} bundle={bundle} />)}
+                  {(bundlesIn.get(section.label) ?? []).map((bundle) => (
+                    <BundleRow key={bundle.key} bundle={bundle} />
+                  ))}
                   {section.items.map((item) => row(item, screenAll))}
                 </ul>
               </section>

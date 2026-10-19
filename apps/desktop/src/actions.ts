@@ -10,6 +10,7 @@ import {
   setFlags,
   trashMessages,
 } from "./accounts";
+import { getPrefs } from "./prefs";
 import { type Draft, forwardDraft, replyDraft } from "./compose";
 import type { ConfirmRequest } from "./Confirm";
 import type { IconName } from "./icons";
@@ -189,7 +190,20 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
           .catch(host.failed);
       },
     },
-    { id: "archive", label: "Archive", icon: "archive", keys: ["e"], shown: true, run: () => move(() => archiveMessages(ids)) },
+    {
+      id: "archive",
+      label: "Archive",
+      icon: "archive",
+      keys: ["e"],
+      shown: true,
+      // Settings › General: archiving a pinned message can also unpin it.
+      run: () =>
+        move(() =>
+          target.pinned && getPrefs().pinnedArchive === "unpin"
+            ? pinMessages(ids, false).then(() => archiveMessages(ids))
+            : archiveMessages(ids),
+        ),
+    },
   );
   if (target.accountId !== null) {
     const account = target.accountId;

@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { Person } from "./accounts";
 
 /** How many avatar colours the stylesheet defines (`.avatar.hue-0` …). */
@@ -34,13 +35,20 @@ export function Avatar({
   person,
   size = "md",
   ring = false,
+  colour = null,
 }: {
   person: Person | null;
   size?: "xs" | "sm" | "md" | "lg";
   ring?: boolean;
+  /** An account's colour (colour coding): drawn as the ring. */
+  colour?: string | null;
 }) {
   return (
-    <span className={`avatar ${size} hue-${hue(person)}${ring ? " ring" : ""}`} aria-hidden="true">
+    <span
+      className={`avatar ${size} hue-${hue(person)}${ring || colour ? " ring" : ""}`}
+      style={colour ? ({ "--ring": colour } as CSSProperties) : undefined}
+      aria-hidden="true"
+    >
       {initials(person)}
     </span>
   );

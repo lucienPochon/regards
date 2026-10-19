@@ -68,7 +68,8 @@ import { type Template, listTemplates, saveTemplate } from "./templates";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { type DragPayload, Sidebar } from "./Sidebar";
 import { useSidebarPrefs } from "./sidebar-prefs";
-import { presets, reminderPresets, snoozeMessages } from "./snooze";
+import { presets, reminderPresets, sendPresets, snoozeMessages } from "./snooze";
+import { accountLabel, getPrefs, usePrefs } from "./prefs";
 import { applyTheme } from "./theme";
 import { TimePicker } from "./TimePicker";
 import { PLATFORM, TitleBar } from "./TitleBar";
@@ -141,21 +142,6 @@ function timeHint(until: number | "someday"): string | undefined {
   return date.toDateString() === new Date().toDateString()
     ? time
     : `${date.toLocaleDateString([], { weekday: "short" })} ${time}`;
-}
-
-/** When to send later: built from calendar days and hours, so 08:00 stays 08:00 across a clock change. */
-function sendPresets(now = new Date()): { label: string; until: number }[] {
-  const at = (days: number, hour: number) =>
-    new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, hour, 0, 0, 0).getTime();
-  const list: { label: string; until: number }[] = [];
-  const later = new Date(now.getTime() + 3 * 3600_000);
-  later.setMinutes(Math.ceil(later.getMinutes() / 15) * 15, 0, 0);
-  if (later.getDate() === now.getDate() && later.getHours() < 21) list.push({ label: "Later today", until: later.getTime() });
-  if (now.getHours() < 17) list.push({ label: "This evening", until: at(0, 18) });
-  list.push({ label: "Tomorrow morning", until: at(1, 8) });
-  const toMonday = ((8 - now.getDay()) % 7) || 7;
-  if (toMonday > 1) list.push({ label: "Monday morning", until: at(toMonday, 8) });
-  return list;
 }
 
 /** The palette's order of message actions; archive is Done. */
@@ -234,6 +220,17 @@ export function App() {
 
   const accounts = useMemo(() => (mail.state === "ready" ? mail.accounts : []), [mail]);
   const ownAddresses = useMemo(() => new Set(accounts.map((entry) => entry.account.email.toLowerCase())), [accounts]);
+  const appPrefs = usePrefs();
+  // Settings › Accessibility: the whole window larger or smaller.
+  useEffect(() => {
+    document.documentElement.style.setProperty("zoom", appPrefs.zoom === 1 ? "" : String(appPrefs.zoom));
+  }, [appPrefs.zoom]);
+  // Accounts the person keeps out of the unified inbox (Settings › Inbox › Email groups).
+  const hiddenKey = appPrefs.hiddenAccounts.join(",");
+  const unified = useMemo(
+    () => accounts.filter((entry) => !hiddenKey.split(",").includes(entry.account.id)),
+    [accounts, hiddenKey],
+  );
   // Accounts whose Microsoft or Google sign-in expired: nothing syncs or sends until they sign in again.
   const signedOut = accounts.filter((entry) => entry.account.needs_sign_in);
   const inInbox = view.kind === "role" && view.role === "inbox";
@@ -246,14 +243,25 @@ export function App() {
         )
       : undefined;
   const smartScope = useMemo(
-    () => (layout.inboxView !== "smart" ? null : inInbox ? accounts : accountInbox ? [accountInbox] : null),
-    [layout.inboxView, inInbox, accounts, accountInbox],
+    () => (layout.inboxView !== "smart" ? null : inInbox ? unified : accountInbox ? [accountInbox] : null),
+    [layout.inboxView, inInbox, unified, accountInbox],
   );
   const smartOn = smartScope !== null && search === null;
   const found = useSearch(accounts, search ? searchFor : "", search?.accountId ?? null, searchRound);
+  // The Smart Inbox's list: People, and any group the person chose to see ungrouped.
+  const ungroupNotifications = !appPrefs.grouped.notifications;
+  const ungroupNewsletters = !appPrefs.grouped.newsletters;
   const sources = useMemo(
-    () => found.sources ?? (smartScope ? sectionSources(smartScope, "people") : sourcesFor(accounts, view)),
-    [found.sources, smartScope, accounts, view],
+    () =>
+      found.sources ??
+      (smartScope
+        ? [
+            ...sectionSources(smartScope, "people"),
+            ...(ungroupNotifications ? sectionSources(smartScope, "notifications") : []),
+            ...(ungroupNewsletters ? sectionSources(smartScope, "newsletters") : []),
+          ]
+        : sourcesFor(view.kind === "role" ? unified : accounts, view)),
+    [found.sources, smartScope, accounts, unified, view, ungroupNotifications, ungroupNewsletters],
   );
   const listed = useFeed(sources);
   // The last results stay while the next ones come, so typing doesn't flash the list.
@@ -312,7 +320,11 @@ export function App() {
   };
   const scope = useMemo(() => smartScope ?? [], [smartScope]);
   const overview = useSmartOverview(scope, smartOn);
-  const priorityItems = useFirstPage(useMemo(() => sectionSources(scope, "priority"), [scope]), 3, smartOn);
+  const priorityItems = useFirstPage(
+    useMemo(() => sectionSources(scope, "priority"), [scope]),
+    appPrefs.priorityRows > 0 ? appPrefs.priorityRows : 50,
+    smartOn,
+  );
   const newSenderItems = useFirstPage(
     useMemo(() => sectionSources(scope, "new_senders"), [scope]),
     3,
@@ -399,16 +411,19 @@ export function App() {
       if (!current || !gone.has(current.id)) return current;
       const list = items.current;
       const index = list.findIndex((item) => item.id === current.id);
+      const afterMove = getPrefs().afterMove;
+      if (afterMove === "list") return null;
       if (index === -1) {
         const near = around.current?.id === current.id ? around.current : null;
-        return [near?.after, near?.before].find((item) => item && !gone.has(item.id)) ?? null;
+        const order = afterMove === "previous" ? [near?.before, near?.after] : [near?.after, near?.before];
+        return order.find((item) => item && !gone.has(item.id)) ?? null;
       }
       const after = list.slice(index + 1).find((item) => !gone.has(item.id));
       const before = list
         .slice(0, index)
         .reverse()
         .find((item) => !gone.has(item.id));
-      return after ?? before ?? null;
+      return afterMove === "previous" ? (before ?? after ?? null) : (after ?? before ?? null);
     });
     if (result?.undo) setUndo(result.undo);
   }, []);
@@ -446,10 +461,10 @@ export function App() {
       }),
     [],
   );
-  const pickSnooze = useCallback(() => pickTime("Snooze until", "Snooze", presets()), [pickTime]);
+  const pickSnooze = useCallback(() => pickTime("Snooze until", "Snooze", presets(new Date(), getPrefs().snoozePresets)), [pickTime]);
   const pickReminder = useCallback(
     () =>
-      pickTime("Remind me if no reply by", "Remind me", reminderPresets()).then((time) =>
+      pickTime("Remind me if no reply by", "Remind me", reminderPresets(new Date(), getPrefs().reminderPresets)).then((time) =>
         typeof time === "number" ? time : null,
       ),
     [pickTime],
@@ -514,7 +529,7 @@ export function App() {
     [failed],
   );
   const pickSendTime = useCallback(
-    () => pickTime("Send at", "Schedule", sendPresets()).then((time) => (typeof time === "number" ? time : null)),
+    () => pickTime("Send at", "Schedule", sendPresets(new Date(), getPrefs().sendPresets)).then((time) => (typeof time === "number" ? time : null)),
     [pickTime],
   );
   const junkFolder = useCallback((accountId: string) => folderOf(accountId, "junk"), [folderOf]);
@@ -577,8 +592,9 @@ export function App() {
     takeLink().then((link) => link && linkTo.current(link), () => {});
   }, [mailReady]);
 
+  const defaultFrom = accounts.some((entry) => entry.account.id === appPrefs.defaultFrom) ? appPrefs.defaultFrom : null;
   const composeFrom =
-    openItem?.accountId ?? (view.kind === "mailbox" ? view.accountId : accounts[0]?.account.id) ?? null;
+    openItem?.accountId ?? (view.kind === "mailbox" ? view.accountId : (defaultFrom ?? accounts[0]?.account.id)) ?? null;
 
   // Files dropped on the window while no message is being written: a new message
   // with them (the composer takes its own drops). Paths never reach this side.
@@ -791,7 +807,7 @@ export function App() {
       anchor,
       label: "Regards",
       entries: [
-        { label: "About Regards", onSelect: () => setSettings("about") },
+        { label: "About Regards", onSelect: () => setSettings("support") },
         "separator",
         { label: "Settings…", hint: `${MOD_KEY}+,`, onSelect: () => setSettings("accounts") },
         { label: "Accounts…", onSelect: () => setSettings("accounts") },
@@ -922,9 +938,9 @@ export function App() {
             : "Outbox";
   const subtitle =
     view.kind === "section"
-      ? `Inbox${view.inbox ? ` · ${accounts.find((entry) => entry.account.id === view.inbox?.accountId)?.account.email ?? ""}` : ""}`
+      ? `Inbox${view.inbox ? ` · ${(() => { const owner = accounts.find((entry) => entry.account.id === view.inbox?.accountId); return owner ? accountLabel(appPrefs, owner.account) : ""; })()}` : ""}`
       : view.kind === "mailbox"
-        ? `${viewAccount?.account.email ?? ""}${accountInbox ? (smartOn ? " · Smart" : " · By date") : ""}`
+        ? `${viewAccount ? accountLabel(appPrefs, viewAccount.account) : ""}${accountInbox ? (smartOn ? " · Smart" : " · By date") : ""}`
         : view.kind === "drafts"
           ? `${drafts.length} ${drafts.length === 1 ? "draft" : "drafts"}`
           : view.kind === "outbox"
@@ -1003,7 +1019,8 @@ export function App() {
                 held: screen === "hold",
                 onAll: openSection("new_senders"),
               },
-        bundles: [
+        bundles: (
+          [
           {
             key: "notifications",
             label: "Notifications",
@@ -1011,6 +1028,7 @@ export function App() {
             count: overview.notifications?.total ?? 0,
             unread: (overview.notifications?.unread ?? 0) > 0,
             messages: notificationItems,
+            newest: notificationItems[0]?.listed_at,
             onOpen: openSection("notifications"),
           },
           {
@@ -1020,6 +1038,7 @@ export function App() {
             count: overview.newsletters?.total ?? 0,
             unread: (overview.newsletters?.unread ?? 0) > 0,
             messages: newsletterItems,
+            newest: newsletterItems[0]?.listed_at,
             onOpen: openSection("newsletters"),
           },
           {
@@ -1029,9 +1048,11 @@ export function App() {
             count: pinnedItems.length,
             unread: pinnedItems.some((message) => !message.seen),
             messages: pinnedItems,
+            newest: pinnedItems[0]?.listed_at,
             onOpen: () => changeView({ kind: "marked", mark: "pinned" }),
           },
-        ] satisfies Bundle[],
+          ] satisfies Bundle[]
+        ).filter((bundle) => appPrefs.grouped[bundle.key as keyof typeof appPrefs.grouped]),
       }
     : null;
   // A new sender: accepted into People, or blocked (their mail goes to Junk, undoably).
@@ -1082,7 +1103,7 @@ export function App() {
         actionsFor={actionsForItems}
         onPalette={(actions, paletteTitle, about) => palette(actions, paletteTitle, about ? [senderEntry(about)] : [])}
         empty={empty}
-        onSplit={layout.mode === "single" ? () => setLayout({ mode: "split" }) : undefined}
+        onSplit={layout.mode === "single" && layout.handle ? () => setLayout({ mode: "split" }) : undefined}
         own={ownAddresses}
         smart={smart}
         search={{
@@ -1212,7 +1233,18 @@ export function App() {
   };
 
   return (
-    <div className={["app", layout.locked ? "locked" : "", framed ? "framed" : "", PLATFORM].join(" ")}>
+    <div
+      className={[
+        "app",
+        layout.locked ? "locked" : "",
+        framed ? "framed" : "",
+        PLATFORM,
+        `avatars-${appPrefs.avatars}`,
+        `density-${appPrefs.density}`,
+        `preview-${appPrefs.previewLines}`,
+        appPrefs.sidebarCounts ? "" : "no-counts",
+      ].join(" ")}
+    >
       {banner}
       <Sidebar
         {...sidebarProps}
@@ -1286,7 +1318,7 @@ export function App() {
             />
           )}
           {updates.status?.available && composer?.mode !== "full" && (
-            <button type="button" className="aside-bubble update" onClick={() => setSettings("about")}>
+            <button type="button" className="aside-bubble update" onClick={() => setSettings("support")}>
               <Icon name="refresh" size={15} />
               Regards {updates.status.available.version} is available
             </button>

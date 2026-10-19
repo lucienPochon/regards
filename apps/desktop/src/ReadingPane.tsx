@@ -17,6 +17,7 @@ import { fileKind, fileSize, fullDate, peopleFull, personName } from "./format";
 import { Icon } from "./icons";
 import type { ListItem } from "./mail";
 import { type Anchor, type MenuEntry, anchorOf } from "./Menu";
+import { getPrefs, usePrefs } from "./prefs";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 
 type Load = { state: "loading" } | { state: "ready"; detail: MessageDetail } | { state: "failed"; message: string };
@@ -89,6 +90,7 @@ export function ReadingPane({
   const load = useDetail(item.id, true);
   const [thread, setThread] = useState<ThreadEntry[]>([]);
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set([item.id]));
+  const prefs = usePrefs();
   const currentCard = useRef<HTMLLIElement>(null);
   const markedRead = useRef(false);
 
@@ -143,6 +145,12 @@ export function ReadingPane({
     thread.length > 0 && thread.some((entry) => entry.message.id === item.id)
       ? thread
       : [{ message, mailbox_id: mailboxId, mailbox_name: folder?.name ?? "", mailbox_role: folder?.role ?? null }];
+
+  // Settings › General: older messages folded to one line, or all open.
+  const allIds = entries.map((entry) => entry.message.id).join(",");
+  useEffect(() => {
+    if (!prefs.collapseOlder && allIds) setExpanded(new Set(allIds.split(",").map(Number)));
+  }, [prefs.collapseOlder, allIds]);
 
   const toggle = (id: number) =>
     setExpanded((now) => {
@@ -265,7 +273,8 @@ function ThreadMessage({
   const own = useDetail(entry.message.id, given === null && expanded);
   const load = given ?? own;
   const [showText, setShowText] = useState(false);
-  const [allowRemote, setAllowRemote] = useState(false);
+  // Settings › General: images from the web load in every message, or only when asked.
+  const [allowRemote, setAllowRemote] = useState(() => getPrefs().remoteImages);
   const [details, setDetails] = useState(false);
   const { message } = entry;
   const ready = load.state === "ready" ? load.detail : null;

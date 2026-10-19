@@ -1,10 +1,9 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { useState } from "react";
 import { type AccountSummary, removeAccount, syncAccount } from "./accounts";
 import { AgentActivity } from "./AgentActivity";
 import { AgentHolds } from "./AgentHolds";
 import { leafName } from "./views";
 import { AGENT_ACCESS_LEVELS, AGENT_SEND_WINDOW, type AgentAccess, setAgentAccess, setAgentSend } from "./agents";
-import { backgroundMode, notificationsShown, setBackgroundMode, setNotificationsShown } from "./background";
 import { AccountForm } from "./AccountForm";
 import { IdentitiesEditor } from "./IdentitiesEditor";
 import { OauthWaiting, PROVIDERS, useOauth } from "./OauthSignIn";
@@ -14,12 +13,35 @@ import { Icon, type IconName } from "./icons";
 import type { Layout } from "./layout";
 import { type Screening, setScreening } from "./smart";
 import { TemplatesEditor } from "./TemplatesEditor";
-import { AboutUpdates } from "./UpdateCheck";
 import type { AccountMail, MailState, ServiceCheck } from "./mail";
 import { MOD_KEY, SHORTCUTS, useShortcuts } from "./shortcuts";
-import { type Theme, applyTheme, savedTheme } from "./theme";
+import { ACCOUNT_COLOURS, accountColour, setPrefs, usePrefs } from "./prefs";
+import { Choice, LinkRow, Option, Toggle } from "./SettingsControls";
+import {
+  AccessibilityPage,
+  AppearancePage,
+  ComposerPage,
+  EmailGroupsPage,
+  GeneralPage,
+  NotificationsPage,
+  PriorityRows,
+  SchedulingPage,
+  SupportPage,
+} from "./SettingsPages";
 
-export type SettingsTab = "general" | "accounts" | "agents" | "inbox" | "templates" | "appearance" | "shortcuts" | "about";
+export type SettingsTab =
+  | "accounts"
+  | "agents"
+  | "general"
+  | "appearance"
+  | "notifications"
+  | "scheduling"
+  | "inbox"
+  | "composer"
+  | "templates"
+  | "accessibility"
+  | "shortcuts"
+  | "support";
 
 /** Grouped as in the nav; each item has its own colour. Accounts is the person's card above them. */
 const GROUPS: { id: SettingsTab; label: string; icon: IconName; tone: string }[][] = [
@@ -27,13 +49,19 @@ const GROUPS: { id: SettingsTab; label: string; icon: IconName; tone: string }[]
   [
     { id: "general", label: "General", icon: "settings", tone: "tone-slate" },
     { id: "appearance", label: "Appearance", icon: "sun", tone: "tone-violet" },
+    { id: "notifications", label: "Notifications", icon: "bell", tone: "tone-blue" },
+    { id: "scheduling", label: "Scheduling", icon: "clock", tone: "tone-blue" },
   ],
   [
     { id: "inbox", label: "Inbox", icon: "inbox", tone: "tone-blue" },
+    { id: "composer", label: "Composer", icon: "compose", tone: "tone-blue" },
     { id: "templates", label: "Templates", icon: "text", tone: "tone-rose" },
   ],
-  [{ id: "shortcuts", label: "Shortcuts", icon: "keyboard", tone: "tone-amber" }],
-  [{ id: "about", label: "About", icon: "info", tone: "tone-green" }],
+  [
+    { id: "accessibility", label: "Accessibility", icon: "user", tone: "tone-green" },
+    { id: "shortcuts", label: "Shortcuts", icon: "keyboard", tone: "tone-amber" },
+  ],
+  [{ id: "support", label: "Support", icon: "help", tone: "tone-green" }],
 ];
 
 export function Settings({
@@ -66,6 +94,7 @@ export function Settings({
 }) {
   useShortcuts({ Escape: onClose }, { modal: true });
   const me = mail.state === "ready" ? mail.accounts[0]?.account : undefined;
+  const accounts = mail.state === "ready" ? mail.accounts.map((entry) => entry.account) : [];
   return (
     <div className="backdrop sheet" onMouseDown={onClose}>
       <section
@@ -112,118 +141,23 @@ export function Settings({
           <button type="button" className="icon-btn settings-close" aria-label="Close" title="Close (Esc)" onClick={onClose}>
             <Icon name="close" />
           </button>
-          {tab === "general" && <GeneralTab />}
+          {tab === "general" && <GeneralPage />}
           {tab === "accounts" && <AccountsTab mail={mail} confirm={confirm} />}
           {tab === "agents" && <AgentsTab mail={mail} confirm={confirm} focusHold={focusHold} />}
           {tab === "inbox" && (
-            <InboxTab layout={layout} onLayout={onLayout} screening={screening} onScreening={onScreening} />
+            <InboxTab layout={layout} onLayout={onLayout} screening={screening} onScreening={onScreening} accounts={accounts} />
           )}
           {tab === "templates" && <TemplatesTab />}
-          {tab === "appearance" && <AppearanceTab layout={layout} onLayout={onLayout} />}
+          {tab === "appearance" && <AppearancePage layout={layout} onLayout={onLayout} accounts={accounts} />}
+          {tab === "notifications" && <NotificationsPage />}
+          {tab === "scheduling" && <SchedulingPage />}
+          {tab === "composer" && <ComposerPage accounts={accounts} onAccounts={() => onTab("accounts")} />}
+          {tab === "accessibility" && <AccessibilityPage />}
           {tab === "shortcuts" && <ShortcutsTab />}
-          {tab === "about" && <AboutTab service={service} onRecheck={onRecheck} />}
+          {tab === "support" && <SupportPage service={service} onRecheck={onRecheck} />}
         </div>
       </section>
     </div>
-  );
-}
-
-/** A setting: what it is on the left, the control on the right. */
-function Option({ icon, label, description, children }: { icon: IconName; label: string; description?: string; children: ReactNode }) {
-  return (
-    <div className="option">
-      <span className="option-icon">
-        <Icon name={icon} size={18} />
-      </span>
-      <span className="option-text">
-        <strong>{label}</strong>
-        {description && <span>{description}</span>}
-      </span>
-      <span className="option-control">{children}</span>
-    </div>
-  );
-}
-
-function Choice<T extends string>({
-  value,
-  options,
-  onChange,
-  label,
-}: {
-  value: T;
-  options: { id: T; label: string }[];
-  onChange: (value: T) => void;
-  label: string;
-}) {
-  return (
-    <span className="choice" role="radiogroup" aria-label={label}>
-      {options.map((option) => (
-        <button
-          key={option.id}
-          type="button"
-          role="radio"
-          aria-checked={value === option.id}
-          className={value === option.id ? "chosen" : undefined}
-          onClick={() => onChange(option.id)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </span>
-  );
-}
-
-/**
- * Background mode and notifications: kept by the app (desktop.json), and
- * also in the tray menu.
- */
-function GeneralTab() {
-  const [background, setBackground] = useState<boolean | null>(null);
-  const [notifications, setNotifications] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    backgroundMode().then(setBackground, (failure: unknown) => setError(String(failure)));
-    notificationsShown().then(setNotifications, (failure: unknown) => setError(String(failure)));
-  }, []);
-  const change = (save: (on: boolean) => Promise<unknown>, show: (on: boolean) => void) => (value: "on" | "off") => {
-    const on = value === "on";
-    setError(null);
-    save(on).then(
-      () => show(on),
-      (failure: unknown) => setError(String(failure)),
-    );
-  };
-  const onOff = [
-    { id: "on" as const, label: "On" },
-    { id: "off" as const, label: "Off" },
-  ];
-  return (
-    <>
-      <h3>General</h3>
-      {error && <p className="error">{error}</p>}
-      <Option
-        icon="clock"
-        label="Run in the background"
-        description={
-          background === false
-            ? "Off: closing the window quits Regards. Snoozed mail, reminders and scheduled messages then wait until it is open again."
-            : "Regards starts when you log in and stays in the tray when you close its window, so snoozed mail comes back and scheduled messages go. They need this computer to be on."
-        }
-      >
-        {background !== null && (
-          <Choice label="Run in the background" value={background ? "on" : "off"} options={onOff} onChange={change(setBackgroundMode, setBackground)} />
-        )}
-      </Option>
-      <Option
-        icon="bell"
-        label="Notifications"
-        description="When a snooze ends, nobody has replied by a reminder, or a message could not be sent. They show who and the subject, never the message."
-      >
-        {notifications !== null && (
-          <Choice label="Notifications" value={notifications ? "on" : "off"} options={onOff} onChange={change(setNotificationsShown, setNotifications)} />
-        )}
-      </Option>
-    </>
   );
 }
 
@@ -237,7 +171,7 @@ function AccountsTab({ mail, confirm }: { mail: MailState; confirm: (request: Co
       {accounts.length > 0 && (
         <ul className="account-list">
           {accounts.map((entry) => (
-            <AccountRow key={entry.account.id} entry={entry} confirm={confirm} />
+            <AccountRow key={entry.account.id} entry={entry} confirm={confirm} many={accounts.length > 1} />
           ))}
         </ul>
       )}
@@ -427,11 +361,23 @@ function AgentsTab({
   );
 }
 
-function AccountRow({ entry, confirm }: { entry: AccountMail; confirm: (request: ConfirmRequest) => Promise<boolean> }) {
+function AccountRow({
+  entry,
+  confirm,
+  many,
+}: {
+  entry: AccountMail;
+  confirm: (request: ConfirmRequest) => Promise<boolean>;
+  /** Several accounts: the unified inbox can leave this one out. */
+  many: boolean;
+}) {
   const { account, sync } = entry;
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addresses, setAddresses] = useState(false);
+  const [options, setOptions] = useState(false);
+  const prefs = usePrefs();
+  const colour = accountColour(prefs, account.id);
   // A sign-in with Microsoft or Google that expired or was withdrawn: sign in again.
   const oauth = useOauth(() => setError(null));
   const provider = account.sign_in && account.sign_in !== "password" ? account.sign_in : null;
@@ -498,6 +444,9 @@ function AccountRow({ entry, confirm }: { entry: AccountMail; confirm: (request:
         <button type="button" className="btn small" aria-expanded={addresses} onClick={() => setAddresses(!addresses)}>
           Addresses &amp; signatures
         </button>
+        <button type="button" className="btn small" aria-expanded={options} onClick={() => setOptions(!options)}>
+          In Regards
+        </button>
         <button type="button" className="btn small danger" onClick={remove}>
           Remove
         </button>
@@ -513,6 +462,60 @@ function AccountRow({ entry, confirm }: { entry: AccountMail; confirm: (request:
         <IdentitiesEditor accountId={account.id} />
       </li>
     )}
+    {options && (
+      <li className="account-options">
+        <label className="account-title">
+          Name in Regards
+          <input
+            className="input"
+            placeholder={account.email}
+            value={prefs.accountTitles[account.id] ?? ""}
+            onChange={(event) => setPrefs({ accountTitles: { ...prefs.accountTitles, [account.id]: event.target.value } })}
+          />
+          <span className="muted small">Shown in the sidebar and above the list instead of the address. Only on this computer.</span>
+        </label>
+        {prefs.colourCoding ? (
+          <div className="account-colour">
+            <span>Colour</span>
+            <span className="swatches" role="radiogroup" aria-label={`Colour of ${account.email}`}>
+              {ACCOUNT_COLOURS.map((swatch) => (
+                <button
+                  key={swatch}
+                  type="button"
+                  role="radio"
+                  aria-checked={swatch === colour}
+                  aria-label={swatch}
+                  className={swatch === colour ? "swatch chosen" : "swatch"}
+                  style={{ background: swatch }}
+                  onClick={() => setPrefs({ accountColours: { ...prefs.accountColours, [account.id]: swatch } })}
+                />
+              ))}
+            </span>
+          </div>
+        ) : (
+          <p className="muted small">To give each account a colour, turn on colour coding in Appearance.</p>
+        )}
+        {many && (
+          <Option
+            icon="inbox"
+            label="In the unified inbox"
+            description="Off: this account's mail shows only in its own inbox, under the sidebar's Inbox."
+          >
+            <Toggle
+              label="In the unified inbox"
+              on={!prefs.hiddenAccounts.includes(account.id)}
+              onChange={(on) =>
+                setPrefs({
+                  hiddenAccounts: on
+                    ? prefs.hiddenAccounts.filter((id) => id !== account.id)
+                    : [...prefs.hiddenAccounts.filter((id) => id !== account.id), account.id],
+                })
+              }
+            />
+          </Option>
+        )}
+      </li>
+    )}
     </>
   );
 }
@@ -523,13 +526,17 @@ function InboxTab({
   onLayout,
   screening,
   onScreening,
+  accounts,
 }: {
   layout: Layout;
   onLayout: (change: Partial<Layout>) => void;
   screening: Screening;
   onScreening: (mode: Screening) => void;
+  accounts: AccountSummary[];
 }) {
   const [problem, setProblem] = useState<string | null>(null);
+  const [groups, setGroups] = useState(false);
+  if (groups) return <EmailGroupsPage accounts={accounts} onBack={() => setGroups(false)} />;
   const screen = (mode: Screening) => {
     const before = screening;
     onScreening(mode);
@@ -576,6 +583,13 @@ function InboxTab({
         />
       </Option>
       {problem && <p className="error">{problem}</p>}
+      <PriorityRows />
+      <LinkRow
+        icon="newspaper"
+        label="Email groups"
+        detail="Where Notifications, Newsletters and Pinned sit, and which accounts are in the unified inbox"
+        onOpen={() => setGroups(true)}
+      />
       <p className="muted settings-note">
         Sorting happens on this computer, from the headers and who you have written to. Nothing is sent anywhere. Open a
         sender from a message to choose where their mail goes, or to see why a message is where it is.
@@ -594,56 +608,6 @@ function TemplatesTab() {
         what you have written as a new template.
       </p>
       <TemplatesEditor />
-    </>
-  );
-}
-
-function AppearanceTab({ layout, onLayout }: { layout: Layout; onLayout: (change: Partial<Layout>) => void }) {
-  const [theme, setTheme] = useState<Theme>(savedTheme);
-  return (
-    <>
-      <h3>Appearance</h3>
-      <Option icon="sun" label="Theme" description="Light, dark, or as this computer is set.">
-        <Choice
-          label="Theme"
-          value={theme}
-          options={[
-            { id: "system", label: "System" },
-            { id: "light", label: "Light" },
-            { id: "dark", label: "Dark" },
-          ]}
-          onChange={(next) => {
-            setTheme(next);
-            applyTheme(next, true);
-          }}
-        />
-      </Option>
-      <Option
-        icon={layout.mode === "split" ? "split" : "single"}
-        label="Layout"
-        description="A message opens in place of the list, or beside it."
-      >
-        <Choice
-          label="Layout"
-          value={layout.mode}
-          options={[
-            { id: "single", label: "In place" },
-            { id: "split", label: "Split view" },
-          ]}
-          onChange={(mode) => onLayout({ mode })}
-        />
-      </Option>
-      <Option icon="sidebar" label="Sidebar" description="Keep the folders open beside the mail, or fold them to icons (/).">
-        <Choice
-          label="Sidebar"
-          value={layout.locked ? "open" : "icons"}
-          options={[
-            { id: "icons", label: "Icons" },
-            { id: "open", label: "Open" },
-          ]}
-          onChange={(value) => onLayout({ locked: value === "open" })}
-        />
-      </Option>
     </>
   );
 }
@@ -667,51 +631,3 @@ export function ShortcutsTab() {
   );
 }
 
-function AboutTab({ service, onRecheck }: { service: ServiceCheck; onRecheck: () => void }) {
-  return (
-    <>
-      <div className="about-head">
-        <span className="app-mark">
-          <Icon name="logo" size={30} />
-        </span>
-        <div>
-          <h3>Regards</h3>
-          <p className="muted">Pre-alpha · local-first email</p>
-        </div>
-      </div>
-      <AboutUpdates />
-      <h4>Background service</h4>
-      <ServiceStatus check={service} />
-      <button type="button" className="btn" onClick={onRecheck} disabled={service.state === "checking"}>
-        <Icon name="refresh" size={15} />
-        Check again
-      </button>
-    </>
-  );
-}
-
-function ServiceStatus({ check }: { check: ServiceCheck }) {
-  if (check.state === "checking") return <p className="muted">Checking…</p>;
-  if (check.state === "failed") return <p className="error">Could not check the service: {check.message}</p>;
-  const { status } = check;
-  if (status.error || !status.running) {
-    return (
-      <p className="error">
-        <span className="status-dot bad" aria-hidden="true" /> The service could not be started. {status.error}
-      </p>
-    );
-  }
-  return (
-    <>
-      <p>
-        <span className="status-dot ok" aria-hidden="true" /> Running · version {status.version} · pid {status.pid} · up{" "}
-        {status.uptimeSecs ?? 0}s
-      </p>
-      <p className="muted small">
-        {status.desktopAccess ? "This app has desktop access." : "This app has agent access only."}
-        {status.started && " Started by this app."}
-        {status.replaced && " An older or separately started service was replaced."}
-      </p>
-    </>
-  );
-}

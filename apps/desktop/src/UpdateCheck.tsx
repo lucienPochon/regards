@@ -9,6 +9,7 @@ import {
   setUpdateChecks,
   updateStatus,
 } from "./updates";
+import { Toggle } from "./SettingsControls";
 
 /**
  * Whether Regards checks for updates, the running version and any newer one,
@@ -62,7 +63,7 @@ export function AboutUpdates() {
 
   return (
     <section className="about-updates" aria-label="Updates">
-      <h4>Updates</h4>
+      <h4 className="settings-subhead">Updates</h4>
       <p className="about-version">
         Version <strong>{status.current}</strong>
       </p>
@@ -75,23 +76,7 @@ export function AboutUpdates() {
           <span>Once a day, Regards asks GitHub for the latest version. GitHub sees this computer's address; nothing else is sent.</span>
         </span>
         <span className="option-control">
-          <span className="choice" role="radiogroup" aria-label="Check for updates automatically">
-            {[
-              { on: true, label: "On" },
-              { on: false, label: "Off" },
-            ].map((option) => (
-              <button
-                key={option.label}
-                type="button"
-                role="radio"
-                aria-checked={status.checks === option.on}
-                className={status.checks === option.on ? "chosen" : undefined}
-                onClick={() => choose(option.on)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </span>
+          <Toggle label="Check for updates automatically" on={status.checks === true} onChange={choose} />
         </span>
       </div>
       <div className="update-now">

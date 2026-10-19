@@ -26,6 +26,7 @@ import type { Template } from "./templates";
 import { fileKind, fileSize, laterDate } from "./format";
 import { Icon } from "./icons";
 import { type Anchor, anchorOf } from "./Menu";
+import { getPrefs } from "./prefs";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 
 // The editor (Tiptap and ProseMirror) loads when a message is first written.
@@ -234,7 +235,7 @@ export function Composer({
     setBusy(true);
     try {
       if (!(await flush())) return;
-      onQueued(await sendDraft(draft.id, 10, sendAt, remindAt));
+      onQueued(await sendDraft(draft.id, getPrefs().undoSeconds, sendAt, remindAt));
     } catch (failure) {
       setError(String(failure));
     } finally {
