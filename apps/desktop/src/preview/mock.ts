@@ -635,6 +635,7 @@ const draftById = (id: number) => {
 };
 
 let detailedLogs = false;
+let prefetch = false;
 let mailApp = params.get("mailapp") === "1";
 
 /** A link as the desktop reads it: `message:5`, `hold:2`, or a mailto: link. */
@@ -756,8 +757,9 @@ function handle(cmd: string, args: Args): unknown {
       return owner.account;
     }
     case "prefetch_get":
-      return false;
+      return prefetch;
     case "prefetch_set":
+      prefetch = args.on as boolean;
       return null;
     case "mail_app_status":
       // `?platform=macos`: Mail's settings choose the mail app; Regards cannot.

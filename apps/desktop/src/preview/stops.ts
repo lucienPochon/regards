@@ -153,6 +153,7 @@ export const TOUR: Group[] = [
       { id: "s-general", label: "General", note: "Login, the tray, after archiving, pins, undo send, folding, images.", steps: settings("General") },
       { id: "s-mail-app", label: "General › Mail app", note: "Make Regards your mail app: only when you click; Windows then asks to confirm.", steps: settings("General", "text:.settings-pane button=Make Regards") },
       { id: "s-mail-app-mac", label: "General › Mail app, on a Mac", note: "Mail's own settings choose the mail app there.", params: { platform: "macos" }, steps: settings("General") },
+      { id: "s-prefetch", label: "General › Download recent mail ahead", note: "The last 30 days, so it opens at once and offline. Off by default.", steps: settings("General", "see:.option=Download recent mail") },
       { id: "s-image-senders", label: "General › Senders whose images load", note: "Each with Block again.", steps: settings("General", "text:.link-row=Senders") },
       { id: "s-appearance", label: "Appearance", note: "Theme, layout, sidebar, density, pictures, preview lines.", steps: settings("Appearance") },
       { id: "s-colours", label: "Appearance › Colour for each account", note: "Colour coding, and a colour per account.", params: { accounts: "2" }, prefs: { colourCoding: true }, steps: settings("Appearance", "text:.link-row=Colour") },

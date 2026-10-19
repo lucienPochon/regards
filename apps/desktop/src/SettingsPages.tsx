@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { type AccountSummary, type AutoCopy, setAutoCopy } from "./accounts";
+import { type AccountSummary, type AutoCopy, prefetchOn, setAutoCopy, setPrefetch } from "./accounts";
 import { Avatar } from "./Avatar";
 import {
   type BackgroundSettings,
@@ -36,10 +36,12 @@ const PROJECT_URL = "https://github.com/lucienPochon/regards";
 export function GeneralPage({ accounts }: { accounts: AccountSummary[] }) {
   const prefs = usePrefs();
   const [background, setBackground] = useState<BackgroundSettings | null>(null);
+  const [prefetch, setPrefetchShown] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [senders, setSenders] = useState(false);
   useEffect(() => {
     backgroundSettings().then(setBackground, (failure: unknown) => setError(String(failure)));
+    prefetchOn().then(setPrefetchShown, (failure: unknown) => setError(String(failure)));
   }, []);
   const changeBackground = (key: keyof BackgroundSettings, on: boolean) => {
     if (!background) return;
@@ -142,6 +144,29 @@ export function GeneralPage({ accounts }: { accounts: AccountSummary[] }) {
           onOpen={() => setSenders(true)}
         />
       )}
+      <Option
+        icon="archive"
+        label="Download recent mail ahead of time"
+        description={
+          prefetch
+            ? "Your inboxes' mail from the last 30 days (up to 25 MB each) is downloaded now, then every 10 minutes: it opens at once, even offline, and all its text is searchable. Uses data and disk space."
+            : "Off: a message is downloaded when you open it. On: the last 30 days of your inboxes, so they open at once, even offline, and all their text is searchable. Uses data and disk space."
+        }
+      >
+        {prefetch !== null && (
+          <Toggle
+            label="Download recent mail ahead of time"
+            on={prefetch}
+            onChange={(on) => {
+              setError(null);
+              setPrefetch(on).then(
+                () => setPrefetchShown(on),
+                (failure: unknown) => setError(String(failure)),
+              );
+            }}
+          />
+        )}
+      </Option>
     </>
   );
 }
