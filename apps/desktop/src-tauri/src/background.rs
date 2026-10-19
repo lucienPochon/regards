@@ -15,6 +15,7 @@
 //!   default; and whether to check for updates ([`crate::updates`]), not
 //!   asked yet by default.
 
+use crate::badge::BadgeChoices;
 use crate::notify::NotifyChoices;
 use regards_core::paths::DataDirs;
 use serde::{Deserialize, Serialize};
@@ -48,6 +49,8 @@ struct Settings {
     notify: NotifyChoices,
     /// The service logs in detail (Settings › Support).
     detailed_logs: bool,
+    /// The unread count on the taskbar or dock.
+    badge: BadgeChoices,
 }
 
 impl Default for Settings {
@@ -61,6 +64,7 @@ impl Default for Settings {
             told_update: None,
             notify: NotifyChoices::default(),
             detailed_logs: false,
+            badge: BadgeChoices::default(),
         }
     }
 }
@@ -75,6 +79,7 @@ pub(crate) struct Background {
     told_update: Mutex<Option<String>>,
     notify: Mutex<NotifyChoices>,
     detailed_logs: AtomicBool,
+    badge: Mutex<BadgeChoices>,
     /// The tray menu's check marks, kept in step with the settings.
     check: Mutex<Option<CheckMenuItem<Wry>>>,
     notify_check: Mutex<Option<CheckMenuItem<Wry>>>,
@@ -99,6 +104,7 @@ impl Background {
             told_update: Mutex::new(settings.told_update),
             notify: Mutex::new(settings.notify),
             detailed_logs: AtomicBool::new(settings.detailed_logs),
+            badge: Mutex::new(settings.badge),
             check: Mutex::new(None),
             notify_check: Mutex::new(None),
         }
@@ -175,6 +181,20 @@ impl Background {
         Ok(())
     }
 
+    pub(crate) fn badge_choices(&self) -> BadgeChoices {
+        self.badge.lock().expect("never poisoned").clone()
+    }
+
+    /// What the taskbar or dock counts: saved.
+    pub(crate) fn set_badge_choices(&self, choices: BadgeChoices) -> Result<(), String> {
+        self.save(Settings {
+            badge: choices.clone(),
+            ..self.current()
+        })?;
+        *self.badge.lock().expect("never poisoned") = choices;
+        Ok(())
+    }
+
     pub(crate) fn detailed_logs(&self) -> bool {
         self.detailed_logs.load(Ordering::SeqCst)
     }
@@ -248,6 +268,7 @@ impl Background {
             told_update: self.told_update(),
             notify: self.notify_choices(),
             detailed_logs: self.detailed_logs(),
+            badge: self.badge_choices(),
         }
     }
 
