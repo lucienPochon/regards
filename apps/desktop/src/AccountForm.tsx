@@ -83,15 +83,17 @@ export function AccountForm({ onDone, onCancel }: { onDone: () => void; onCancel
       (found) => {
         if (asked.current !== address) return;
         setLookup({ email: address, found, busy: false });
-        // Fill what the person hasn't changed. The form's incoming mail is TLS only.
+        // Fill what the person hasn't changed. Incoming mail is TLS only, here and in the daemon:
+        // anything else counts as not found.
+        const imap = found.imap?.security === "tls" ? found.imap : null;
         setInput((current) => {
           const next = { ...current };
           const fill = <K extends ServerField>(key: K, value: AccountInput[K]) => {
             if (!edited.current.has(key)) next[key] = value;
           };
-          if (found.imap) {
-            fill("imapHost", found.imap.host);
-            if (found.imap.security === "tls") fill("imapPort", found.imap.port);
+          if (imap) {
+            fill("imapHost", imap.host);
+            fill("imapPort", imap.port);
           }
           if (found.smtp) {
             fill("smtpHost", found.smtp.host);
@@ -100,7 +102,7 @@ export function AccountForm({ onDone, onCancel }: { onDone: () => void; onCancel
           }
           return next;
         });
-        if (found.source === null) setServersOpen(true);
+        if (found.source === null || (!imap && !found.oauth_only)) setServersOpen(true);
       },
       () => {
         // Not an address the lookup takes: the manual form, as before.
