@@ -3,9 +3,12 @@
 use crate::ImapError;
 use imap_next::client::{Client, Event, Options};
 use imap_next::stream::{Error as StreamError, Stream};
+use imap_types::auth::{AuthMechanism, AuthenticateData};
 use imap_types::command::{Command, CommandBody};
 use imap_types::core::{Tag, TagGenerator};
 use imap_types::response::{Data, Greeting, Status, StatusBody, Tagged};
+use imap_types::secret::Secret;
+use std::borrow::Cow;
 use std::future::Future;
 use std::time::Duration;
 
@@ -66,6 +69,50 @@ impl Conn {
     /// a sync (spike 07 §7).
     pub(crate) async fn run_skipping(&mut self, body: CommandBody<'static>) -> Result<Reply, ImapError> {
         self.run_with(body, true).await
+    }
+
+    /// AUTHENTICATE XOAUTH2 with `sasl` (sent at once with SASL-IR, else
+    /// when asked). A failed sign-in comes as a challenge carrying the
+    /// error, answered with nothing to end it (RFC 7628 §3.2.3).
+    pub(crate) async fn authenticate_xoauth2(
+        &mut self,
+        sasl: Vec<u8>,
+        initial: bool,
+    ) -> Result<StatusBody<'static>, ImapError> {
+        let tag = self.tags.generate();
+        let initial_response = initial.then(|| Secret::new(Cow::Owned(sasl.clone())));
+        self.client.enqueue_command(Command {
+            tag: tag.clone(),
+            body: CommandBody::Authenticate {
+                mechanism: AuthMechanism::XOAuth2,
+                initial_response,
+            },
+        });
+        let mut sent = initial;
+        let exchange = async {
+            loop {
+                match self.stream.next(&mut self.client).await.map_err(stream_error)? {
+                    Event::AuthenticateContinuationRequestReceived { .. } => {
+                        let data = if sent { Vec::new() } else { sasl.clone() };
+                        sent = true;
+                        let _ = self
+                            .client
+                            .set_authenticate_data(AuthenticateData::Continue(Secret::new(Cow::Owned(data))));
+                    }
+                    Event::AuthenticateStatusReceived {
+                        status: Status::Tagged(Tagged { tag: done_tag, body }),
+                        ..
+                    } if done_tag == tag => return Ok(body),
+                    Event::AuthenticateStatusReceived { status, .. } => {
+                        return Err(ImapError::Protocol(format!("unexpected answer to sign-in: {status:?}")));
+                    }
+                    _ => {}
+                }
+            }
+        };
+        tokio::time::timeout(COMMAND_TIMEOUT, exchange)
+            .await
+            .map_err(|_| ImapError::Timeout("AUTHENTICATE"))?
     }
 
     async fn run_with(&mut self, body: CommandBody<'static>, skip_malformed: bool) -> Result<Reply, ImapError> {

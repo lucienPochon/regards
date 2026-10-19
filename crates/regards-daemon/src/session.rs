@@ -1,7 +1,8 @@
 //! One client connection: handshake, then request dispatch.
 
 use crate::{
-    State, access, accounts, actions, audit, compose, draft_sync, holds, identities, mail, notices, smart, templates,
+    State, access, accounts, actions, audit, compose, draft_sync, holds, identities, mail, notices, oauth, smart,
+    templates,
 };
 use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
@@ -244,6 +245,22 @@ impl Session {
             methods::ACCOUNT_REMOVE => {
                 self.require_ui()?;
                 accounts::remove(&self.state, params(request)?).await
+            }
+            methods::ACCOUNT_OAUTH_PROVIDERS => {
+                self.require_ui()?;
+                Ok(oauth::providers(&self.state))
+            }
+            methods::ACCOUNT_OAUTH_START => {
+                self.require_ui()?;
+                oauth::start(&self.state, params(request)?).await
+            }
+            methods::ACCOUNT_OAUTH_FINISH => {
+                self.require_ui()?;
+                oauth::finish(&self.state, params(request)?).await
+            }
+            methods::ACCOUNT_OAUTH_CANCEL => {
+                self.require_ui()?;
+                Ok(oauth::cancel(&self.state, params(request)?))
             }
             methods::ACCOUNT_SYNC => {
                 self.require_ui()?;

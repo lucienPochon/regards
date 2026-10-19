@@ -6,8 +6,8 @@ use crate::{State, sync};
 use regards_imap::{ImapError, ImapServer};
 use regards_ipc::protocol::{
     AccountAddParams, AccountCheckFailure, AccountRef, AccountRemoveParams, AccountSummary, AgentAccess,
-    AgentAccessParams, ConnectionSecurity, MailboxListResult, MailboxSummary, RpcError, ServerSettings, SyncResult,
-    codes,
+    AgentAccessParams, ConnectionSecurity, MailboxListResult, MailboxSummary, RpcError, ServerSettings, SignIn,
+    SyncResult, codes,
 };
 use regards_store::StoreError;
 use regards_store::accounts::{self, Account, AuthKind, NewAccount, Security, Server};
@@ -30,6 +30,7 @@ pub(crate) async fn list(state: &State, agent: bool) -> Result<Value, RpcError> 
             let access = levels.get(&account.id).copied().unwrap_or_default();
             AccountSummary {
                 agent_access: access,
+                needs_sign_in: state.oauth.needs_sign_in(&account.id),
                 ..summary(account)
             }
         })
@@ -130,6 +131,7 @@ pub(crate) async fn remove(state: &State, params: AccountRemoveParams) -> Result
         Err(error) => tracing::warn!(account = %id, ?error, "account removed, but the credential store is unavailable"),
     }
     state.sync.forget(&id);
+    state.oauth.forget(&id);
     state.watchers.stop(&id);
     state.backfills.stop(&id);
     tracing::info!(account = %id, "account removed");
@@ -181,7 +183,7 @@ fn validate(params: AccountAddParams) -> Result<Validated, RpcError> {
     })
 }
 
-fn server(settings: ServerSettings, label: &str) -> Result<Server, RpcError> {
+pub(crate) fn server(settings: ServerSettings, label: &str) -> Result<Server, RpcError> {
     let host = settings.host.trim().to_ascii_lowercase();
     if host.is_empty() || host.chars().any(|c| c.is_whitespace() || c == '/' || c == ':') {
         return Err(invalid(&format!(
@@ -201,7 +203,22 @@ fn server(settings: ServerSettings, label: &str) -> Result<Server, RpcError> {
     })
 }
 
-fn summary(account: Account) -> AccountSummary {
+/// One account as `account.list` gives it.
+pub(crate) async fn summary_of(state: &State, account: Account) -> Result<Value, RpcError> {
+    let levels = state.store.read(accounts::agent_access).await.map_err(store_error)?;
+    let access = levels
+        .into_iter()
+        .find(|(id, _)| *id == account.id)
+        .map(|(_, access)| access)
+        .unwrap_or_default();
+    Ok(json!(AccountSummary {
+        agent_access: access,
+        needs_sign_in: state.oauth.needs_sign_in(&account.id),
+        ..summary(account)
+    }))
+}
+
+pub(crate) fn summary(account: Account) -> AccountSummary {
     let settings = |server: Server| ServerSettings {
         host: server.host,
         port: server.port,
@@ -220,6 +237,12 @@ fn summary(account: Account) -> AccountSummary {
         imap_capabilities: account.imap_capabilities,
         created_at: account.created_at,
         agent_access: AgentAccess::Off,
+        sign_in: match account.auth_kind {
+            AuthKind::Password => SignIn::Password,
+            AuthKind::OauthMicrosoft => SignIn::Microsoft,
+            AuthKind::OauthGoogle => SignIn::Google,
+        },
+        needs_sign_in: false,
     }
 }
 
@@ -242,7 +265,7 @@ pub(crate) async fn vault(state: &State) -> Result<Vault, RpcError> {
         })
 }
 
-fn check_failed(error: ImapError) -> RpcError {
+pub(crate) fn check_failed(error: ImapError) -> RpcError {
     let reason = match error {
         ImapError::Connect(_) => AccountCheckFailure::Connect,
         ImapError::Tls(_) => AccountCheckFailure::Tls,
@@ -257,11 +280,11 @@ fn check_failed(error: ImapError) -> RpcError {
     rpc
 }
 
-fn vault_error(error: VaultError) -> RpcError {
+pub(crate) fn vault_error(error: VaultError) -> RpcError {
     RpcError::new(codes::CREDENTIAL_STORE, error.to_string())
 }
 
-fn store_error(error: StoreError) -> RpcError {
+pub(crate) fn store_error(error: StoreError) -> RpcError {
     match error {
         StoreError::Conflict(message) => RpcError::new(codes::CONFLICT, message),
         other => crate::session::internal(other),

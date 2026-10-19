@@ -49,6 +49,8 @@ pub struct SmtpServer {
 pub struct Credentials<'a> {
     pub username: &'a str,
     pub password: &'a Secret,
+    /// `password` is an OAuth 2.0 access token, for SASL XOAUTH2 (ADR-0018).
+    pub oauth: bool,
 }
 
 /// Who the message is from and who receives it (To, Cc and Bcc), as plain addresses.
@@ -72,6 +74,11 @@ pub enum SubmitError {
     /// change first (password, an address, the size).
     #[error("{reason}")]
     NotSent { reason: String, retry: bool },
+    /// The server turned the sign-in down: a wrong password, or an OAuth
+    /// token that expired or was withdrawn. Nothing was sent; a fresh token
+    /// may work, the same password will not.
+    #[error("{0}")]
+    SignIn(String),
     /// The connection failed after the whole message was handed over: it may
     /// or may not have been sent. Never resend without asking.
     #[error("{0}")]
@@ -266,7 +273,21 @@ impl Session {
             .flat_map(|list| list.split_whitespace().map(str::to_owned).collect::<Vec<_>>())
             .collect();
         let password = credentials.password.expose();
-        let reply = if mechanisms.iter().any(|m| m == "PLAIN") {
+        let reply = if credentials.oauth {
+            if !mechanisms.iter().any(|m| m == "XOAUTH2") {
+                return Err(SubmitError::refused(
+                    "this server does not take OAuth sign-in (AUTH XOAUTH2)",
+                ));
+            }
+            let sasl = base64(format!("user={}\u{1}auth=Bearer {password}\u{1}\u{1}", credentials.username).as_bytes());
+            let reply = self.command(&format!("AUTH XOAUTH2 {sasl}"), "AUTH").await?;
+            // A refusal first comes as a challenge carrying the error, ended with an empty line.
+            if reply.code == 334 {
+                self.command("", "AUTH").await?
+            } else {
+                reply
+            }
+        } else if mechanisms.iter().any(|m| m == "PLAIN") {
             let token = base64(format!("\0{}\0{password}", credentials.username).as_bytes());
             self.command(&format!("AUTH PLAIN {token}"), "AUTH").await?
         } else if mechanisms.iter().any(|m| m == "LOGIN") {
@@ -287,7 +308,11 @@ impl Session {
         match reply.code {
             235 => Ok(()),
             code if (400..500).contains(&code) => Err(reply.refusal("sign-in failed for now")),
-            _ => Err(SubmitError::refused(format!(
+            _ if credentials.oauth => Err(SubmitError::SignIn(format!(
+                "the server refused the sign-in: {}",
+                reply.text()
+            ))),
+            _ => Err(SubmitError::SignIn(format!(
                 "the server refused the user name or password: {}",
                 reply.text()
             ))),

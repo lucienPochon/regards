@@ -164,7 +164,45 @@ where
             break;
         }
         let reply = match verb.as_deref() {
-            Some("CAPABILITY") => format!("* CAPABILITY IMAP4rev1 AUTH=PLAIN\r\n{tag} OK done\r\n"),
+            Some("CAPABILITY") => {
+                format!("* CAPABILITY IMAP4rev1 AUTH=PLAIN AUTH=XOAUTH2 SASL-IR\r\n{tag} OK done\r\n")
+            }
+            // OAuth: the token is the script's password.
+            Some("AUTHENTICATE") if args.get(2).is_some_and(|m| m.eq_ignore_ascii_case("XOAUTH2")) => {
+                let initial = match args.get(3) {
+                    Some(initial) => initial.clone(),
+                    None => {
+                        if write.write_all(b"+ \r\n").await.is_err() {
+                            break;
+                        }
+                        match read_command(&mut read, &mut write).await {
+                            Some(line) => String::from_utf8_lossy(&line).trim().to_owned(),
+                            None => break,
+                        }
+                    }
+                };
+                let sasl = regards_core::encoding::base64_decode(&initial).unwrap_or_default();
+                let sasl = String::from_utf8_lossy(&sasl).into_owned();
+                let token = sasl
+                    .split('\u{1}')
+                    .find_map(|part| part.strip_prefix("auth=Bearer "))
+                    .unwrap_or_default()
+                    .to_owned();
+                given = Some(token.clone());
+                if token == script.password && sasl.starts_with("user=") {
+                    format!("{tag} OK [CAPABILITY IMAP4rev1 IDLE MOVE UIDPLUS SPECIAL-USE] Logged in\r\n")
+                } else {
+                    // XOAUTH2 errors come as a challenge the client answers with an empty line.
+                    let error = regards_core::encoding::base64(br#"{"status":"401","schemes":"Bearer"}"#);
+                    if write.write_all(format!("+ {error}\r\n").as_bytes()).await.is_err() {
+                        break;
+                    }
+                    if read_command(&mut read, &mut write).await.is_none() {
+                        break;
+                    }
+                    format!("{tag} NO [AUTHENTICATIONFAILED] Invalid credentials\r\n")
+                }
+            }
             Some("LOGIN") => {
                 let attempt = args.get(3).cloned().unwrap_or_default();
                 let ok = attempt == script.password;

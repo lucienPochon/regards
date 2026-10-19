@@ -20,6 +20,13 @@ pub struct Pki {
     server: Arc<ServerConfig>,
 }
 
+impl Pki {
+    /// TLS as this certificate's server, for other fakes.
+    pub fn acceptor(&self) -> TlsAcceptor {
+        TlsAcceptor::from(Arc::clone(&self.server))
+    }
+}
+
 /// A fresh CA and a certificate for 127.0.0.1.
 pub fn pki() -> Pki {
     let ca_key = KeyPair::generate().unwrap();
@@ -238,6 +245,33 @@ where
                         script.password,
                     )
                 }
+                // OAuth: the token is the script's password.
+                Some("XOAUTH2") => {
+                    let sasl = lossy(&decode(words.next().unwrap_or("")));
+                    let user = sasl
+                        .split('\u{1}')
+                        .find_map(|part| part.strip_prefix("user="))
+                        .unwrap_or_default()
+                        .to_owned();
+                    let token = sasl
+                        .split('\u{1}')
+                        .find_map(|part| part.strip_prefix("auth=Bearer "))
+                        .unwrap_or_default()
+                        .to_owned();
+                    if token == script.password {
+                        login(session, user, token, tls, script.password)
+                    } else {
+                        // The error as a challenge; an empty line ends it (RFC 7628 §3.2.3).
+                        let error = regards_core::encoding::base64(br#"{"status":"401","schemes":"bearer"}"#);
+                        if stream.write_all(format!("334 {error}\r\n").as_bytes()).await.is_err() {
+                            return;
+                        }
+                        let Some(_) = read_line(stream).await else { return };
+                        session.login = Some((user, token));
+                        session.tls_at_login = tls;
+                        "535 5.7.3 Authentication unsuccessful\r\n".into()
+                    }
+                }
                 _ => "504 unknown mechanism\r\n".into(),
             },
             "MAIL" => {
@@ -314,6 +348,8 @@ async fn read_line<R: tokio::io::AsyncBufRead + Unpin>(stream: &mut R) -> Option
 fn redact(line: &str) -> String {
     if line.to_ascii_uppercase().starts_with("AUTH PLAIN ") {
         "AUTH PLAIN <secret>".into()
+    } else if line.to_ascii_uppercase().starts_with("AUTH XOAUTH2 ") {
+        "AUTH XOAUTH2 <secret>".into()
     } else {
         line.to_owned()
     }

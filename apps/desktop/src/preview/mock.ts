@@ -542,6 +542,17 @@ function handle(cmd: string, args: Args): unknown {
       return accounts.map((a) => a.account);
     case "account_add":
       throw new Error("The preview cannot sign in to a real server.");
+    case "account_oauth_providers":
+      return { providers: ["microsoft", "google"] };
+    case "account_oauth_start":
+      return { flow_id: "preview-flow", url: "https://login.example.test/authorize" };
+    case "account_oauth_finish":
+      // Waits like a person in the browser, then says what the preview cannot do.
+      return new Promise((_, reject) =>
+        window.setTimeout(() => reject(new Error("The preview cannot sign in to a real provider.")), 1500),
+      );
+    case "account_oauth_cancel":
+      return null;
     case "account_remove": {
       const index = accounts.findIndex((a) => a.account.id === args.id);
       if (index !== -1) accounts.splice(index, 1);

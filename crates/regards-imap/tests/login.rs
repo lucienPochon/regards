@@ -5,7 +5,7 @@ mod fake_imap;
 
 use fake_imap::{PASSWORD, Pki, fake_server, pki};
 use regards_core::secret::Secret;
-use regards_imap::{ImapError, ImapServer, MessageSet, Session, Since, SystemFlag, TlsOptions, verify_login};
+use regards_imap::{Auth, ImapError, ImapServer, MessageSet, Session, Since, SystemFlag, TlsOptions, verify_login};
 use tokio::net::TcpListener;
 
 fn trusting(pki: &Pki) -> TlsOptions {
@@ -33,6 +33,44 @@ async fn signs_in_and_reports_the_post_login_capabilities() {
         ["IMAP4REV1", "IDLE", "MOVE", "UIDPLUS", "SPECIAL-USE"]
     );
     assert_eq!(password.next().await.as_deref(), Some(PASSWORD));
+}
+
+#[tokio::test]
+async fn an_oauth_token_signs_in_with_xoauth2_and_a_refused_one_ends_cleanly() {
+    let pki = pki(&["localhost"]);
+    let (port, mut tokens) = fake_server(&pki, "* OK ready\r\n", PASSWORD).await;
+    let token = Secret::new(PASSWORD);
+    let session = Session::sign_in(
+        &localhost(port),
+        "ada@outlook.com",
+        Auth::Bearer(&token),
+        &trusting(&pki),
+    )
+    .await
+    .unwrap();
+    assert!(session.has_capability("UIDPLUS"), "the capabilities after sign-in");
+    session.logout().await;
+    assert_eq!(
+        tokens.next().await.as_deref(),
+        Some(PASSWORD),
+        "the token went as the bearer"
+    );
+
+    // A token the server refuses: its error challenge is answered, and the sign-in fails.
+    let stale = Secret::new("expired-token");
+    let refused = Session::sign_in(
+        &localhost(port),
+        "ada@outlook.com",
+        Auth::Bearer(&stale),
+        &trusting(&pki),
+    )
+    .await;
+    assert!(
+        matches!(&refused, Err(ImapError::AuthFailed(text)) if text.contains("Invalid credentials")),
+        "{:?}",
+        refused.err()
+    );
+    assert_eq!(tokens.next().await.as_deref(), Some("expired-token"));
 }
 
 #[tokio::test]

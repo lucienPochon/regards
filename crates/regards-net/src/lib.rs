@@ -3,6 +3,9 @@
 //! certificate verifier, either from the first byte or after STARTTLS.
 //! Validation is always on; there is no way to accept an invalid certificate.
 
+pub mod https;
+pub mod loopback;
+
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;

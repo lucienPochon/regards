@@ -5,6 +5,7 @@ pub use regards_core::agents::Access as AgentAccess;
 use regards_core::body::Attachment;
 use regards_core::headers::Person;
 use regards_core::mailbox::Role;
+pub use regards_core::oauth::Provider;
 use regards_core::secret::Secret;
 pub use regards_core::smart::{Policy, Reason, Screening, Section};
 use serde::{Deserialize, Serialize};
@@ -30,6 +31,16 @@ pub mod methods {
     pub const ACCOUNT_ADD: &str = "account.add";
     /// Remove an account and its stored password. `ui` only (ADR-0006).
     pub const ACCOUNT_REMOVE: &str = "account.remove";
+    /// The providers this build can sign in with (ADR-0018). `ui` only.
+    pub const ACCOUNT_OAUTH_PROVIDERS: &str = "account.oauth_providers";
+    /// Begin signing in with a provider: the daemon waits for the browser to
+    /// come back and answers with the page to open in it. `ui` only.
+    pub const ACCOUNT_OAUTH_START: &str = "account.oauth_start";
+    /// Wait for the browser, then add the account, or renew the sign-in of
+    /// the account already there. `ui` only.
+    pub const ACCOUNT_OAUTH_FINISH: &str = "account.oauth_finish";
+    /// Give up a sign-in that was started. `ui` only.
+    pub const ACCOUNT_OAUTH_CANCEL: &str = "account.oauth_cancel";
     /// Sync an account now and wait for the result. `ui` only for now.
     pub const ACCOUNT_SYNC: &str = "account.sync";
     /// The mailboxes of an account and its sync state. `ui` only for now.
@@ -207,6 +218,9 @@ pub mod codes {
     /// An agent asked too much too fast (ADR-0012 §5): `data.retry_after_ms`
     /// says when to try again. Or too many of its requests wait for the person.
     pub const RATE_LIMITED: i32 = -32015;
+    /// A sign-in with a provider did not complete. `data.reason` is an
+    /// [`OauthFailure`](super::OauthFailure).
+    pub const OAUTH_FAILED: i32 = -32016;
 }
 
 /// A client request.
@@ -400,6 +414,75 @@ pub struct AccountSummary {
     /// What agents may do with it (ADR-0012); `off` until its owner allows them.
     #[serde(default)]
     pub agent_access: AgentAccess,
+    /// How it signs in.
+    #[serde(default)]
+    pub sign_in: SignIn,
+    /// Its OAuth sign-in expired or was withdrawn: sign in again
+    /// (`account.oauth_start` with its address) before it syncs or sends.
+    #[serde(default)]
+    pub needs_sign_in: bool,
+}
+
+/// How an account signs in (ADR-0018).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SignIn {
+    /// A password or app password.
+    #[default]
+    Password,
+    /// OAuth with Microsoft.
+    Microsoft,
+    /// OAuth with Google.
+    Google,
+}
+
+/// The result of [`methods::ACCOUNT_OAUTH_PROVIDERS`]: those this build has
+/// a registered app for. Others sign in with a password.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OauthProvidersResult {
+    pub providers: Vec<Provider>,
+}
+
+/// Parameters of [`methods::ACCOUNT_OAUTH_START`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OauthStartParams {
+    pub provider: Provider,
+    /// The address, when known, so the provider offers it first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+}
+
+/// The result of [`methods::ACCOUNT_OAUTH_START`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OauthStartResult {
+    /// For [`methods::ACCOUNT_OAUTH_FINISH`] and [`methods::ACCOUNT_OAUTH_CANCEL`].
+    pub flow_id: String,
+    /// The provider's sign-in page, to open in the system browser.
+    pub url: String,
+}
+
+/// Parameters of [`methods::ACCOUNT_OAUTH_FINISH`] and [`methods::ACCOUNT_OAUTH_CANCEL`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OauthFlowRef {
+    pub flow_id: String,
+}
+
+/// Why a sign-in failed: `data.reason` of [`codes::OAUTH_FAILED`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OauthFailure {
+    /// This build has no app registered with the provider.
+    NotAvailable,
+    /// The person said no in the browser, or the sign-in was given up.
+    Cancelled,
+    /// Nobody came back from the browser in time.
+    TimedOut,
+    /// The provider refused (the message says how).
+    Refused,
+    /// The provider could not be reached.
+    Offline,
+    /// The provider did not say which address signed in.
+    NoAddress,
 }
 
 /// Parameters of [`methods::HOLD_LIST`].

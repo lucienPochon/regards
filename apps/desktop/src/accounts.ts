@@ -9,6 +9,12 @@ export interface ServerSettings {
   security: ConnectionSecurity;
 }
 
+/** Providers Regards can sign in with by OAuth (ADR-0018). */
+export type Provider = "microsoft" | "google";
+
+/** How an account signs in. */
+export type SignIn = "password" | Provider;
+
 /** Mirrors `AccountSummary` in `regards-ipc` (wire names are snake_case). */
 export interface AccountSummary {
   id: string;
@@ -21,6 +27,13 @@ export interface AccountSummary {
   created_at: number;
   /** What agents may do with it (see agents.ts); "off" until its owner allows them. */
   agent_access?: import("./agents").AgentAccess;
+  /** How it signs in; "password" when the daemon does not say. */
+  sign_in?: SignIn;
+  /**
+   * Its OAuth sign-in expired or was withdrawn: it neither syncs nor sends
+   * until signed in again (`startOauth` with its provider and address).
+   */
+  needs_sign_in?: boolean;
 }
 
 /** Mirrors `AccountInput` in `src-tauri/src/main.rs`. IMAP always uses TLS. */
@@ -47,6 +60,67 @@ export function addAccount(input: AccountInput): Promise<AccountSummary> {
 
 export function removeAccount(id: string): Promise<void> {
   return invoke<void>("account_remove", { id });
+}
+
+/** The providers this version can sign in with; the others take a password (or app password). */
+export async function oauthProviders(): Promise<Provider[]> {
+  const result = await invoke<{ providers: Provider[] }>("account_oauth_providers");
+  return result.providers;
+}
+
+export interface OauthStarted {
+  /** For `finishOauth` and `cancelOauth`. */
+  flow_id: string;
+  /** The provider's sign-in page, already opened in the browser; to show if none opened. */
+  url: string;
+}
+
+/**
+ * Begin signing in with a provider: its page opens in the system browser.
+ * Then call `finishOauth`, and offer to cancel while it waits.
+ */
+export function startOauth(provider: Provider, email: string | null): Promise<OauthStarted> {
+  return invoke<OauthStarted>("account_oauth_start", { provider, email });
+}
+
+/**
+ * Waits for the person to sign in in the browser (up to 10 minutes), then
+ * adds the account, or renews the sign-in of the account with that address.
+ * Rejects with the reason if they said no, gave up or took too long.
+ */
+export function finishOauth(flowId: string): Promise<AccountSummary> {
+  return invoke<AccountSummary>("account_oauth_finish", { flowId });
+}
+
+/** Give up a sign-in; the waiting `finishOauth` rejects. */
+export function cancelOauth(flowId: string): Promise<void> {
+  return invoke<void>("account_oauth_cancel", { flowId });
+}
+
+const PROVIDER_DOMAINS: Record<string, Provider> = {
+  "outlook.com": "microsoft",
+  "hotmail.com": "microsoft",
+  "live.com": "microsoft",
+  "msn.com": "microsoft",
+  "outlook.fr": "microsoft",
+  "hotmail.fr": "microsoft",
+  "live.fr": "microsoft",
+  "hotmail.co.uk": "microsoft",
+  "outlook.de": "microsoft",
+  "hotmail.de": "microsoft",
+  "gmail.com": "google",
+  "googlemail.com": "google",
+};
+
+/**
+ * The provider whose sign-in to offer for an address, as the daemon judges
+ * it (`Provider::for_address`). Work and school addresses on Microsoft 365 or
+ * Google Workspace are not recognised: offer the buttons anyway.
+ */
+export function providerFor(email: string): Provider | null {
+  const at = email.lastIndexOf("@");
+  if (at === -1) return null;
+  return PROVIDER_DOMAINS[email.slice(at + 1).trim().toLowerCase()] ?? null;
 }
 
 export type Role = "inbox" | "sent" | "drafts" | "trash" | "junk" | "archive" | "all" | "flagged";
