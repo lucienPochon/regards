@@ -14,6 +14,7 @@ import { Icon, type IconName } from "./icons";
 import type { Layout } from "./layout";
 import { type Screening, setScreening } from "./smart";
 import { TemplatesEditor } from "./TemplatesEditor";
+import { AboutUpdates } from "./UpdateCheck";
 import type { AccountMail, MailState, ServiceCheck } from "./mail";
 import { MOD_KEY, SHORTCUTS, useShortcuts } from "./shortcuts";
 import { type Theme, applyTheme, savedTheme } from "./theme";
@@ -678,6 +679,7 @@ function AboutTab({ service, onRecheck }: { service: ServiceCheck; onRecheck: ()
           <p className="muted">Pre-alpha · local-first email</p>
         </div>
       </div>
+      <AboutUpdates />
       <h4>Background service</h4>
       <ServiceStatus check={service} />
       <button type="button" className="btn" onClick={onRecheck} disabled={service.state === "checking"}>

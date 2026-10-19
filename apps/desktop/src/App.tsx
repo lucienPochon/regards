@@ -17,6 +17,7 @@ import {
 } from "./accounts";
 import { type Action, type ActionHost, type Target, choose, messageActions } from "./actions";
 import { usePendingHolds } from "./AgentHolds";
+import { AskUpdates, useUpdateStatus } from "./UpdateCheck";
 import { Avatar } from "./Avatar";
 import { Composer } from "./Composer";
 import {
@@ -217,6 +218,12 @@ export function App() {
   const [chooser, setChooser] = useState<Anchor | null>(null);
   // What agents asked for and is waiting for the person (Settings › Agents).
   const holds = usePendingHolds();
+  // Checking for updates: asked once, and a newer version shown when one is found.
+  const updates = useUpdateStatus();
+  const refreshUpdates = updates.refresh;
+  useEffect(() => {
+    if (!settings) refreshUpdates();
+  }, [settings, refreshUpdates]);
   // A hold a link asked to see, in Settings › Agents.
   const [focusHold, setFocusHold] = useState<number | null>(null);
   const [sender, setSenderCard] = useState<SenderRequest | null>(null);
@@ -1272,6 +1279,17 @@ export function App() {
                 if (draftId !== null) editDraft(draftId);
               }}
             />
+          )}
+          {updates.status?.checks === null && accounts.length > 0 && composer?.mode !== "full" && (
+            <AskUpdates
+              onAnswer={(on) => updates.status && updates.setStatus({ ...updates.status, checks: on })}
+            />
+          )}
+          {updates.status?.available && composer?.mode !== "full" && (
+            <button type="button" className="aside-bubble update" onClick={() => setSettings("about")}>
+              <Icon name="refresh" size={15} />
+              Regards {updates.status.available.version} is available
+            </button>
           )}
           {signedOut.length > 0 && composer?.mode !== "full" && (
             <button

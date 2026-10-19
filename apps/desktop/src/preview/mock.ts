@@ -34,6 +34,10 @@ const parked = (m: FixtureMessage) => m.aside === true || (m.snoozed_until ?? 0)
 const inboxPlace = (m: FixtureMessage) =>
   m.surfaced_at && (m.reminded || m.surfaced_at > m.received_at) ? m.surfaced_at : m.received_at;
 let nextId = 10_000;
+// Checking for updates: not asked yet (`?updates=on` or `off` answers it), and what a check found.
+let updateChecks: boolean | null = params.get("updates") === "on" ? true : params.get("updates") === "off" ? false : null;
+let updateFound: { version: string; url: string; published_at: string | null } | null = null;
+let updateCheckedAt: number | null = null;
 // `?agentsend=1`: an agent's send waits out its delay in the Outbox, to be called back.
 if (params.get("agentsend") === "1" && accounts[0]) {
   window.setTimeout(() => {
@@ -657,11 +661,18 @@ function handle(cmd: string, args: Args): unknown {
         : { source: null, imap: null, smtp: null, oauth_only: false };
     }
     case "update_status":
-      return { checks: null, current: "0.1.0", available: null, checked_at: null };
+      return { checks: updateChecks, current: "0.1.0", available: updateFound, checked_at: updateCheckedAt };
     case "update_set_checks":
+      updateChecks = Boolean(args.on);
       return null;
     case "update_check":
-      return { version: "0.2.0", url: "https://github.com/lucienPochon/regards/releases/tag/v0.2.0", published_at: null };
+      // `?updates=none`: already the latest.
+      updateCheckedAt = Date.now();
+      updateFound =
+        params.get("updates") === "none"
+          ? null
+          : { version: "0.2.0", url: "https://github.com/lucienPochon/regards/releases/tag/v0.2.0", published_at: null };
+      return updateFound;
     case "update_open":
       return null;
     case "account_oauth_providers":

@@ -4464,6 +4464,89 @@ button.sender-row:hover:not(:disabled) {
   margin-bottom: 12px;
 }
 
+/* Settings › About: the version, checking for updates, and a newer version to download. */
+.about-updates {
+  display: grid;
+  gap: 4px;
+  margin: 18px 0 22px;
+}
+
+.about-updates h4 {
+  margin: 0;
+}
+
+.about-version {
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+
+.update-now {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 12px;
+}
+
+.update-now .btn {
+  margin-top: 0;
+}
+
+.update-now .muted {
+  font-size: 12.5px;
+}
+
+.update-available {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--pill);
+  font-size: 13.5px;
+}
+
+.update-available > .icon {
+  color: var(--accent);
+}
+
+.update-available > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.update-available .btn {
+  margin-top: 0;
+}
+
+/* Asked once in the main window: check for updates? */
+.toast.ask-updates {
+  align-items: center;
+  max-width: min(560px, calc(100vw - 120px));
+}
+
+.toast.ask-updates > span:not(.muted) {
+  display: grid;
+  gap: 1px;
+  padding-right: 4px;
+}
+
+.toast.ask-updates .muted {
+  font-size: 12px;
+}
+
+.toast.ask-updates button.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+/* In the main window: a newer version, which leads to Settings › About. */
+.aside-bubble.update > .icon {
+  color: var(--accent);
+}
+
 /* In the main window: an account that must sign in again. */
 .aside-bubble.signed-out {
   border-color: var(--danger);

@@ -536,6 +536,8 @@ flowchart LR
 - From 1.1, every remote-executor send notifies.
 - Unread counts appear in the tray.
 
+- **Updates in the app** (Settings › About): the running version; "Check for updates automatically" (on or off); Check now, with when it last checked; and, when a newer version is found, "Regards X is available" with Download. Checking stays off until the person is asked, once, in the main window after the first account ("Check for updates once a day? Regards asks GitHub for the latest version, and GitHub sees this computer's address."). A newer version found by the daily check shows as a pill in the main window that opens Settings › About.
+
 ## 6. Roadmap
 
 The sizes are relative, not time estimates. Each phase ends with a usable build.
