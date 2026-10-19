@@ -213,6 +213,8 @@ const PATHS = {
   ),
   // Words as written: two quotation marks.
   quote: <path d="M5.5 17c2-1 3-2.8 3-5H5.5V7.5h4.5V12c0 3.3-1.5 5.6-4.5 6.5M14 17c2-1 3-2.8 3-5h-3V7.5h4.5V12c0 3.3-1.5 5.6-4.5 6.5" />,
+  // An agent: a four-pointed spark.
+  agent: <path d="M12 3.5c.6 4.4 2.6 6.9 8.5 8.5-5.9 1.6-7.9 4.1-8.5 8.5-.6-4.4-2.6-6.9-8.5-8.5 5.9-1.6 7.9-4.1 8.5-8.5z" />,
   clock: (
     <>
       <circle cx="12" cy="12" r="8.5" />

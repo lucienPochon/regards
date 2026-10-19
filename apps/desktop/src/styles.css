@@ -3479,6 +3479,7 @@ button.sender-row:hover:not(:disabled) {
 .tone-violet { color: #8b5cc8; }
 .tone-amber { color: #d4891f; }
 .tone-rose { color: #c8507a; }
+.tone-indigo { color: #5b6bd6; }
 .tone-green { color: var(--accent); }
 
 .settings-pane {
@@ -3600,6 +3601,65 @@ button.sender-row:hover:not(:disabled) {
 
 .account-buttons .btn {
   margin-top: 0;
+}
+
+/* Agents: each account's level, a dropdown at the end of its row. */
+.agent-row {
+  align-items: flex-start;
+}
+
+.account-text > .agent-allows {
+  margin-top: 2px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.agent-level {
+  flex: none;
+  height: 32px;
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.agent-heading {
+  margin: 22px 0 8px;
+  font-size: 13px;
+}
+
+.agent-levels {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.agent-levels > div {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.agent-levels dt {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.agent-levels dd {
+  margin: 0;
+  color: var(--muted);
+}
+
+.chip.coming {
+  height: 18px;
+  padding: 0 6px;
+  font-size: 10.5px;
 }
 
 .panel {

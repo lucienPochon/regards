@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useState } from "react";
-import { removeAccount, syncAccount } from "./accounts";
+import { type AccountSummary, removeAccount, syncAccount } from "./accounts";
+import { AGENT_ACCESS_LEVELS, type AgentAccess, setAgentAccess } from "./agents";
 import { backgroundMode, notificationsShown, setBackgroundMode, setNotificationsShown } from "./background";
 import { AccountForm } from "./AccountForm";
 import { IdentitiesEditor } from "./IdentitiesEditor";
@@ -13,10 +14,11 @@ import type { AccountMail, MailState, ServiceCheck } from "./mail";
 import { MOD_KEY, SHORTCUTS, useShortcuts } from "./shortcuts";
 import { type Theme, applyTheme, savedTheme } from "./theme";
 
-export type SettingsTab = "general" | "accounts" | "inbox" | "templates" | "appearance" | "shortcuts" | "about";
+export type SettingsTab = "general" | "accounts" | "agents" | "inbox" | "templates" | "appearance" | "shortcuts" | "about";
 
 /** Grouped as in the nav; each item has its own colour. Accounts is the person's card above them. */
 const GROUPS: { id: SettingsTab; label: string; icon: IconName; tone: string }[][] = [
+  [{ id: "agents", label: "Agents", icon: "agent", tone: "tone-indigo" }],
   [
     { id: "general", label: "General", icon: "settings", tone: "tone-slate" },
     { id: "appearance", label: "Appearance", icon: "sun", tone: "tone-violet" },
@@ -104,6 +106,7 @@ export function Settings({
           </button>
           {tab === "general" && <GeneralTab />}
           {tab === "accounts" && <AccountsTab mail={mail} confirm={confirm} />}
+          {tab === "agents" && <AgentsTab mail={mail} confirm={confirm} />}
           {tab === "inbox" && (
             <InboxTab layout={layout} onLayout={onLayout} screening={screening} onScreening={onScreening} />
           )}
@@ -241,6 +244,104 @@ function AccountsTab({ mail, confirm }: { mail: MailState; confirm: (request: Co
           Add account
         </button>
       )}
+    </>
+  );
+}
+
+/** Levels kept for each account but not yet giving agents more than Read (ADR-0012). */
+const COMING: ReadonlySet<AgentAccess> = new Set(["triage", "send"]);
+
+/**
+ * What agents (AI assistants and other programs using Regards through its
+ * command line) may do with each account. Only this page changes it; an
+ * agent that is refused is sent here, by this name.
+ */
+function AgentsTab({ mail, confirm }: { mail: MailState; confirm: (request: ConfirmRequest) => Promise<boolean> }) {
+  const accounts = mail.state === "ready" ? mail.accounts : [];
+  // What was chosen here, until the accounts are read again.
+  const [chosen, setChosen] = useState<Record<string, AgentAccess>>({});
+  const [error, setError] = useState<string | null>(null);
+  const levelOf = (account: AccountSummary) => chosen[account.id] ?? account.agent_access ?? "off";
+
+  const choose = async (account: AccountSummary, access: AgentAccess) => {
+    if (access === "send") {
+      const ok = await confirm({
+        title: `Let agents send from ${account.email}?`,
+        body: "They could then send mail as you from this account. For now this is only recorded: no agent can send until each send waits for your approval on this page.",
+        confirm: "Allow sending",
+      });
+      if (!ok) return;
+    }
+    const before = levelOf(account);
+    setChosen((now) => ({ ...now, [account.id]: access }));
+    setError(null);
+    setAgentAccess(account.id, access).then(
+      (stored) => setChosen((now) => ({ ...now, [account.id]: stored })),
+      (failure: unknown) => {
+        setChosen((now) => ({ ...now, [account.id]: before }));
+        setError(String(failure));
+      },
+    );
+  };
+
+  return (
+    <>
+      <h3>Agents</h3>
+      <p className="muted settings-lead">
+        Agents are AI assistants and other programs that work with your mail through Regards&apos; command line. Each
+        account decides what they may do. Only this page can change it: an agent can&apos;t give itself more.
+      </p>
+      {error && <p className="error">{error}</p>}
+      {accounts.length === 0 ? (
+        <p className="muted">Add an account first.</p>
+      ) : (
+        <ul className="account-list">
+          {accounts.map(({ account }) => {
+            const level = levelOf(account);
+            const info = AGENT_ACCESS_LEVELS.find((entry) => entry.value === level);
+            return (
+              <li key={account.id} className="account-row agent-row">
+                <Avatar person={{ name: account.display_name, address: account.email }} size="md" />
+                <span className="account-text">
+                  <strong>{account.email}</strong>
+                  <span className="muted agent-allows">
+                    {info?.allows}
+                    {COMING.has(level) && " For now, agents can only read."}
+                  </span>
+                </span>
+                <select
+                  className="agent-level"
+                  aria-label={`What agents may do with ${account.email}`}
+                  value={level}
+                  onChange={(event) => void choose(account, event.target.value as AgentAccess)}
+                >
+                  {AGENT_ACCESS_LEVELS.map((entry) => (
+                    <option key={entry.value} value={entry.value}>
+                      {entry.label}
+                    </option>
+                  ))}
+                </select>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <h4 className="agent-heading">The levels</h4>
+      <dl className="agent-levels">
+        {AGENT_ACCESS_LEVELS.map((entry) => (
+          <div key={entry.value}>
+            <dt>
+              {entry.label}
+              {COMING.has(entry.value) && <span className="chip coming">Coming</span>}
+            </dt>
+            <dd>{entry.allows}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="muted settings-note">
+        Each level allows what the one before it does. Triage and Send are kept for each account now and take effect
+        with the next steps: a list here of what agents did, with undo, and each send waiting for your approval.
+      </p>
     </>
   );
 }

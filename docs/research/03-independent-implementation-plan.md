@@ -433,6 +433,11 @@ flowchart LR
     - A refusal names the setting (`data.setting = "agent_access"`, with the level needed and the current one). An account closed to agents is not named in it.
     - Read opens accounts, folders, message lists, the Pinned / Set aside / Snoozed / Reminders views, messages and conversations, Smart Inbox counts and explanations, and search. Reading never marks mail read.
     - Triage and Send come with the audit log and holds; until then, everything else stays with the app.
+  - **In the app (Settings › Agents):**
+    - Each account has a dropdown of the four levels, and the chosen one is explained under the address.
+    - Choosing Send asks first.
+    - Triage and Send are marked as coming until they take effect.
+    - The page sits at the top of the settings, under the person's card, where the reference app keeps its AI agents.
 - **Holds** for send-tier and bulk or destructive intents.
 - **Audit log** with before-state and undo.
 - **Interfaces:** stable `--json` contracts, `regards mcp`, `regards skill`, and deep links `regards://…`.

@@ -8,6 +8,7 @@ import type { MessageSummary, Person } from "../accounts";
 import type { Draft, OutboxEntry } from "../compose";
 import type { Identity } from "../identities";
 import type { Template } from "../templates";
+import type { AgentAccess } from "../agents";
 import { type Explanation, type Policy, type Screening, SECTIONS, type Section } from "../smart";
 import { type FixtureAccount, type FixtureMessage, ME, PERSONAL, WORK, fixtureMessages } from "./fixtures";
 
@@ -426,6 +427,13 @@ function handle(cmd: string, args: Args): unknown {
       if (index !== -1) accounts.splice(index, 1);
       changed();
       return null;
+    }
+    case "account_set_agent_access": {
+      const owner = accounts.find((a) => a.account.id === args.accountId);
+      if (!owner) throw new Error("That account is gone.");
+      owner.account = { ...owner.account, agent_access: args.access as AgentAccess };
+      changed();
+      return { agent_access: owner.account.agent_access };
     }
     case "account_sync":
       return new Promise((resolve) => window.setTimeout(() => resolve(null), 900));
