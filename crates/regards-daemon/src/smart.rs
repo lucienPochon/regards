@@ -8,9 +8,10 @@
 use crate::State;
 use crate::compose::now_ms;
 use regards_core::mailbox::Role;
+use regards_core::smart::{Screening, Section};
 use regards_ipc::protocol::{
-    AccountRef, ExplainResult, MessageRef, RpcError, SectionCount, SenderSetParams, SenderSetResult, SenderView,
-    SmartOverviewResult, codes,
+    AccountRef, ExplainResult, MessageRef, RpcError, ScreeningParams, SectionCount, SenderSetParams, SenderSetResult,
+    SenderView, SmartOverviewResult, codes,
 };
 use regards_store::{StoreError, mailboxes, messages, smart};
 use serde_json::{Value, json};
@@ -29,7 +30,8 @@ pub(crate) async fn overview(state: &State, params: AccountRef) -> Result<Value,
                 .into_iter()
                 .find(|m| m.role == Some(Role::Inbox));
             let Some(inbox) = inbox else { return Ok(None) };
-            Ok(Some(smart::overview(conn, inbox.id, &account_id, now)?))
+            let counts = smart::overview(conn, inbox.id, &account_id, now)?;
+            Ok(Some(fold(counts, smart::screening(conn)?)))
         })
         .await
         .map_err(crate::session::internal)?
@@ -40,6 +42,49 @@ pub(crate) async fn overview(state: &State, params: AccountRef) -> Result<Value,
             .map(|(section, total, unread)| SectionCount { section, total, unread })
             .collect(),
     }))
+}
+
+/// Without screening, new senders count with People.
+fn fold(counts: Vec<(Section, u32, u32)>, screening: Screening) -> Vec<(Section, u32, u32)> {
+    if screening != Screening::Off {
+        return counts;
+    }
+    let mut folded: Vec<(Section, u32, u32)> = Vec::new();
+    for (section, total, unread) in counts {
+        let section = if section == Section::NewSenders {
+            Section::People
+        } else {
+            section
+        };
+        match folded.iter_mut().find(|(s, _, _)| *s == section) {
+            Some(entry) => {
+                entry.1 += total;
+                entry.2 += unread;
+            }
+            None => folded.push((section, total, unread)),
+        }
+    }
+    folded.sort_by_key(|(section, _, _)| Section::ALL.iter().position(|s| s == section));
+    folded
+}
+
+pub(crate) async fn screening(state: &State) -> Result<Value, RpcError> {
+    let mode = state
+        .store
+        .read(smart::screening)
+        .await
+        .map_err(crate::session::internal)?;
+    Ok(json!(ScreeningParams { mode }))
+}
+
+pub(crate) async fn set_screening(state: &State, params: ScreeningParams) -> Result<Value, RpcError> {
+    let mode = params.mode;
+    state
+        .store
+        .write(move |tx| smart::set_screening(tx, mode))
+        .await
+        .map_err(crate::session::internal)?;
+    Ok(json!(ScreeningParams { mode }))
 }
 
 /// "Why is this here?": the rule that placed a message, and what is known
@@ -69,6 +114,7 @@ pub(crate) async fn explain(state: &State, params: MessageRef) -> Result<Value, 
                         policy: known.policy,
                         priority: known.priority,
                         written_to: known.written_to,
+                        blocked: known.blocked,
                     })
                 }
                 None => None,

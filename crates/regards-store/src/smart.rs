@@ -14,23 +14,96 @@ use crate::StoreError;
 use regards_core::smart::{self, Policy, Reason, Section, Sender};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
-/// What is known about `address` (any case) for an account.
+/// What is known about `address` (any case) for an account: its own entry,
+/// and its domain's (`@example.org`) where its own says nothing. A choice
+/// for the address wins over one for its domain.
 pub fn sender(conn: &Connection, account_id: &str, address: &str) -> Result<Sender, StoreError> {
+    let own = entry(conn, account_id, address)?;
+    let domain = match smart::domain_key(address) {
+        Some(key) if !address.starts_with('@') => entry(conn, account_id, &key)?,
+        _ => Sender::default(),
+    };
+    Ok(Sender {
+        policy: own.policy.or(domain.policy),
+        priority: own.priority || domain.priority,
+        written_to: own.written_to,
+        blocked: own.blocked || domain.blocked,
+    })
+}
+
+/// One entry of the senders table, by address or `@domain` key.
+fn entry(conn: &Connection, account_id: &str, key: &str) -> Result<Sender, StoreError> {
     let found = conn
         .prepare_cached(
-            "SELECT policy, priority, written_to_at FROM senders WHERE account_id = ?1 AND address = lower(?2)",
+            "SELECT policy, priority, written_to_at, blocked FROM senders WHERE account_id = ?1 AND address = lower(?2)",
         )?
-        .query_row(params![account_id, address], |row| {
+        .query_row(params![account_id, key], |row| {
             let policy: Option<String> = row.get(0)?;
             let written_to: Option<i64> = row.get(2)?;
             Ok(Sender {
                 policy: policy.as_deref().and_then(Policy::parse),
                 priority: row.get(1)?,
                 written_to: written_to.is_some(),
+                blocked: row.get(3)?,
             })
         })
         .optional()?;
     Ok(found.unwrap_or_default())
+}
+
+/// The messages of an account from `key`: an address, or every address of
+/// an `@domain`. With `mailbox`, only those in that folder.
+pub fn from_sender(
+    conn: &Connection,
+    account_id: &str,
+    key: &str,
+    mailbox: Option<i64>,
+) -> Result<Vec<i64>, StoreError> {
+    let (pattern, exact) = match key.strip_prefix('@') {
+        Some(_) => (format!("%{}", key.to_lowercase()), false),
+        None => (key.to_lowercase(), true),
+    };
+    let sql = format!(
+        "SELECT m.id FROM messages m JOIN mailboxes b ON b.id = m.mailbox_id \
+         WHERE b.account_id = ?1 AND {} AND (?3 IS NULL OR m.mailbox_id = ?3) AND m.deleted = 0",
+        if exact {
+            "lower(m.from_address) = ?2"
+        } else {
+            "lower(m.from_address) LIKE ?2"
+        }
+    );
+    let rows = conn
+        .prepare_cached(&sql)?
+        .query_map(params![account_id, pattern, mailbox], |row| row.get(0))?
+        .collect::<Result<Vec<i64>, _>>()?;
+    Ok(rows)
+}
+
+/// Block or unblock a sender (or `@domain`). Moving their mail is the caller's.
+pub fn set_blocked(tx: &Transaction<'_>, account_id: &str, key: &str, blocked: bool) -> Result<(), StoreError> {
+    tx.execute(
+        "INSERT INTO senders (account_id, address, blocked) VALUES (?1, lower(?2), ?3) \
+         ON CONFLICT (account_id, address) DO UPDATE SET blocked = ?3",
+        params![account_id, key, blocked],
+    )?;
+    Ok(())
+}
+
+/// How new senders' mail is shown.
+pub fn screening(conn: &Connection) -> Result<smart::Screening, StoreError> {
+    let value: Option<String> = conn
+        .prepare_cached("SELECT value FROM settings WHERE key = 'screening'")?
+        .query_row([], |row| row.get(0))
+        .optional()?;
+    Ok(value.as_deref().and_then(smart::Screening::parse).unwrap_or_default())
+}
+
+pub fn set_screening(tx: &Transaction<'_>, mode: smart::Screening) -> Result<(), StoreError> {
+    tx.execute(
+        "INSERT INTO settings (key, value) VALUES ('screening', ?1) ON CONFLICT (key) DO UPDATE SET value = ?1",
+        [mode.as_str()],
+    )?;
+    Ok(())
 }
 
 /// The account's own addresses, lowercase: its identities and its login address.
@@ -111,13 +184,7 @@ pub fn set_sender(
         params![account_id, address, policy.map(Policy::as_str), priority],
     )?;
     let own = own_addresses(tx, account_id)?;
-    let ids: Vec<i64> = tx
-        .prepare_cached(
-            "SELECT m.id FROM messages m JOIN mailboxes b ON b.id = m.mailbox_id \
-             WHERE b.account_id = ?1 AND lower(m.from_address) = lower(?2)",
-        )?
-        .query_map(params![account_id, address], |row| row.get(0))?
-        .collect::<Result<_, _>>()?;
+    let ids = from_sender(tx, account_id, address, None)?;
     let before = changes(tx)?;
     for id in &ids {
         reclassify(tx, account_id, &own, *id)?;
@@ -423,5 +490,67 @@ mod tests {
             .unwrap();
         assert_eq!(sections(&f).await, named(&[("sale", "newsletters")]));
         assert!(f.store.read(|c| unclassified(c, 10)).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_domain_can_be_sorted_or_blocked_and_an_address_overrides_it() {
+        let f = fixture().await;
+        let inbox = f.inbox;
+        let arriving = vec![
+            mail(1, "news@shop.example", "ada@example.test", "sale", 0),
+            mail(2, "help@Shop.example", "ada@example.test", "ticket", 0),
+            mail(3, "bob@example.org", "ada@example.test", "quote", 0),
+        ];
+        f.store
+            .write(move |tx| messages::upsert(tx, inbox, &arriving))
+            .await
+            .unwrap();
+
+        // The whole shop is a newsletter, except its help desk.
+        let a = f.account.clone();
+        f.store
+            .write(move |tx| {
+                set_sender(tx, &a, "@shop.example", Some(Policy::Newsletters), false)?;
+                set_sender(tx, &a, "help@shop.example", Some(Policy::People), false)
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            sections(&f).await,
+            named(&[("sale", "newsletters"), ("ticket", "people"), ("quote", "new_senders")])
+        );
+
+        // Blocking the domain: both addresses count as blocked; Bob does not.
+        let a = f.account.clone();
+        let (shop, help, bob, from_shop) = f
+            .store
+            .write(move |tx| {
+                set_blocked(tx, &a, "@SHOP.example", true)?;
+                Ok((
+                    sender(tx, &a, "news@shop.example")?.blocked,
+                    sender(tx, &a, "help@shop.example")?.blocked,
+                    sender(tx, &a, "bob@example.org")?.blocked,
+                    from_sender(tx, &a, "@shop.example", Some(inbox))?.len(),
+                ))
+            })
+            .await
+            .unwrap()
+            .value;
+        assert_eq!((shop, help, bob, from_shop), (true, true, false, 2));
+        let a = f.account.clone();
+        let exact = f
+            .store
+            .read(move |c| from_sender(c, &a, "NEWS@shop.example", None))
+            .await
+            .unwrap();
+        assert_eq!(exact.len(), 1);
+
+        // The screening setting: section unless chosen otherwise.
+        assert_eq!(f.store.read(screening).await.unwrap(), smart::Screening::Section);
+        f.store
+            .write(|tx| set_screening(tx, smart::Screening::Hold))
+            .await
+            .unwrap();
+        assert_eq!(f.store.read(screening).await.unwrap(), smart::Screening::Hold);
     }
 }

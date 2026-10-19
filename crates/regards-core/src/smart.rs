@@ -99,6 +99,46 @@ pub struct Sender {
     pub priority: bool,
     /// The account has written to them.
     pub written_to: bool,
+    /// The person blocked them: their mail goes to Junk (the section still
+    /// says what it would be).
+    pub blocked: bool,
+}
+
+/// How mail from new senders is shown (plan §5.4, screening).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Screening {
+    /// No screening: new senders' mail shows with People.
+    Off,
+    /// In its own section, New senders.
+    #[default]
+    Section,
+    /// Kept out of the inbox until the sender is accepted.
+    Hold,
+}
+
+impl Screening {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Section => "section",
+            Self::Hold => "hold",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        [Self::Off, Self::Section, Self::Hold]
+            .into_iter()
+            .find(|mode| mode.as_str() == text)
+    }
+}
+
+/// The key a whole domain's choices are kept under: `@example.org`, for
+/// `ada@example.org` or `@Example.org`. `None` for something that is not an
+/// address or a domain.
+pub fn domain_key(address: &str) -> Option<String> {
+    let domain = address.trim().rsplit_once('@')?.1.trim().to_ascii_lowercase();
+    (!domain.is_empty() && !domain.contains(char::is_whitespace)).then(|| format!("@{domain}"))
 }
 
 /// Why a message is in its section: the rule that placed it.

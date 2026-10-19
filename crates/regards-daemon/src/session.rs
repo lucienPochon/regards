@@ -279,6 +279,18 @@ impl Session {
                 self.require_ui()?;
                 smart::explain(&self.state, params(request)?).await
             }
+            methods::SENDER_BLOCK => {
+                self.require_ui()?;
+                actions::block(&self.state, params(request)?).await
+            }
+            methods::SMART_SCREENING => {
+                self.require_ui()?;
+                smart::screening(&self.state).await
+            }
+            methods::SMART_SET_SCREENING => {
+                self.require_ui()?;
+                smart::set_screening(&self.state, params(request)?).await
+            }
             methods::SENDER_SET => {
                 self.require_ui()?;
                 smart::set_sender(&self.state, params(request)?).await

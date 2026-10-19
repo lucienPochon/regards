@@ -331,12 +331,20 @@ fn list_sql() -> String {
 ///
 /// With `section`, only that Smart Inbox section (?7): the first half then
 /// walks `messages_by_section`.
-fn inbox_sql(section: bool) -> String {
+fn inbox_sql(sections: &Sections<'_>) -> String {
     // Listed by its own time: not parked, and not come back since it arrived.
     const PLAIN: &str = "NOT EXISTS (SELECT 1 FROM marks k WHERE k.account_id = ?5 \
         AND k.message_id = messages.message_id_header AND (k.aside_at IS NOT NULL OR k.snoozed_until > ?6 \
         OR k.reminded_at IS NOT NULL OR k.surfaced_at > messages.received_at))";
-    let only = if section { "AND messages.section = ?7" } else { "" };
+    // Sections from ?7 on: those shown, then the one left out.
+    let mut only = String::new();
+    if !sections.only.is_empty() {
+        let places: Vec<String> = (0..sections.only.len()).map(|i| format!("?{}", 7 + i)).collect();
+        only = format!("AND messages.section IN ({})", places.join(", "));
+    }
+    if sections.except.is_some() {
+        only.push_str(&format!(" AND messages.section IS NOT ?{}", 7 + sections.only.len()));
+    }
     format!(
         "SELECT * FROM (SELECT {COLUMNS}, received_at AS listed_at FROM messages \
              WHERE mailbox_id = ?1 AND moving_to IS NULL AND deleted = 0 AND (received_at, id) < (?2, ?3) {only} \
@@ -392,7 +400,7 @@ pub fn list_without_parked(
             .collect::<Result<Vec<_>, _>>()?;
         return Ok(messages);
     };
-    inbox_page(conn, mailbox_id, limit, before, account, now, None)
+    inbox_page(conn, mailbox_id, limit, before, account, now, &Sections::default())
 }
 
 /// A page of an inbox, as [`list_without_parked`] shows it, of one Smart
@@ -404,22 +412,35 @@ pub fn inbox_page(
     before: Option<Cursor>,
     account: &str,
     now: i64,
-    section: Option<Section>,
+    sections: &Sections<'_>,
 ) -> Result<Vec<Message>, StoreError> {
+    use rusqlite::types::Value;
     let (received_at, id) = before.map_or((i64::MAX, i64::MAX), |c| (c.received_at, c.id));
     let listed = |row: &Row<'_>| {
         let listed_at: i64 = row.get(LISTED_AT)?;
         Ok(from_row(row)?.map(|message| Message { listed_at, ..message }))
     };
-    let mut statement = conn.prepare_cached(&inbox_sql(section.is_some()))?;
-    let rows = match section {
-        None => statement.query_map(params![mailbox_id, received_at, id, limit, account, now], listed)?,
-        Some(section) => statement.query_map(
-            params![mailbox_id, received_at, id, limit, account, now, section.as_str()],
-            listed,
-        )?,
-    };
+    let mut values: Vec<Value> = vec![
+        mailbox_id.into(),
+        received_at.into(),
+        id.into(),
+        i64::from(limit).into(),
+        account.to_owned().into(),
+        now.into(),
+    ];
+    values.extend(sections.only.iter().map(|s| Value::from(s.as_str().to_owned())));
+    values.extend(sections.except.map(|s| Value::from(s.as_str().to_owned())));
+    let mut statement = conn.prepare_cached(&inbox_sql(sections))?;
+    let rows = statement.query_map(rusqlite::params_from_iter(values), listed)?;
     rows.map(|row| row?).collect()
+}
+
+/// Which Smart Inbox sections an inbox page shows: those in `only` (all
+/// when empty), less `except`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Sections<'a> {
+    pub only: &'a [Section],
+    pub except: Option<Section>,
 }
 
 /// Where `listed_at` follows [`COLUMNS`] in [`inbox_sql`].
@@ -572,7 +593,13 @@ mod tests {
                     Ok(details.collect::<Result<_, _>>()?)
                 };
                 // One section's page walks the section index, not the whole inbox.
-                let mut statement = conn.prepare(&format!("EXPLAIN QUERY PLAN {}", inbox_sql(true)))?;
+                let mut statement = conn.prepare(&format!(
+                    "EXPLAIN QUERY PLAN {}",
+                    inbox_sql(&Sections {
+                        only: &[Section::People],
+                        except: None
+                    })
+                ))?;
                 let section: Vec<String> = statement
                     .query_map(params![1, i64::MAX, i64::MAX, 50, "account", 0, "people"], |row| {
                         row.get::<_, String>(3)
@@ -584,7 +611,7 @@ mod tests {
                         .any(|step| step.contains("USING INDEX messages_by_section")),
                     "{section:#?}"
                 );
-                Ok((plan(list_sql(), false)?, plan(inbox_sql(false), true)?))
+                Ok((plan(list_sql(), false)?, plan(inbox_sql(&Sections::default()), true)?))
             })
             .await
             .unwrap();

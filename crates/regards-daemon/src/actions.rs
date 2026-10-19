@@ -6,11 +6,12 @@ use crate::State;
 use regards_core::mailbox::Role;
 use regards_ipc::protocol::{
     AsideParams, DeleteResult, MarkResult, MessageIds, MoveParams, MoveResult, PinParams, RemindParams, RpcError,
-    SetFlagsParams, SetFlagsResult, SnoozeParams, UndoInfo, UndoParams, UndoResult, codes,
+    SenderBlockParams, SetFlagsParams, SetFlagsResult, SnoozeParams, UndoInfo, UndoParams, UndoResult, codes,
 };
 use regards_store::marks::{self, Mark};
 use regards_store::operations::{self, FlagName, NewOperation, OperationKind};
 use regards_store::{StoreError, mailboxes, messages, undo};
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -369,8 +370,8 @@ async fn mark_messages(
                     format!("{done} ({changed} messages)")
                 };
                 let inverse = serde_json::to_string(&Inverse {
-                    moves: Vec::new(),
                     marks: inverse,
+                    ..Inverse::default()
                 })
                 .expect("plain data serializes");
                 let id = undo::record(tx, &description, &inverse, now, now + UNDO_FOR_MS)?;
@@ -392,13 +393,16 @@ const UNDO_FOR_MS: i64 = 10 * 60 * 1000;
 type MarkUndo = (String, String, Mark, Option<i64>);
 
 /// What reverses a set of moves: put each message (id) back where it was seen (folder id).
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 struct Inverse {
     #[serde(default)]
     moves: Vec<(i64, i64)>,
     /// Marks to put back: account, Message-ID, which mark, what it was.
     #[serde(default)]
     marks: Vec<MarkUndo>,
+    /// Senders (account, address or `@domain`) to unblock.
+    #[serde(default)]
+    unblock: Vec<(String, String)>,
 }
 
 pub(crate) async fn move_to(state: &Arc<State>, params: MoveParams) -> Result<Value, RpcError> {
@@ -509,7 +513,12 @@ async fn run_moves(
                 } else {
                     format!("{done} ({moved} messages)")
                 };
-                let inverse = serde_json::to_string(&Inverse { moves: inverse, marks }).expect("plain data serializes");
+                let inverse = serde_json::to_string(&Inverse {
+                    moves: inverse,
+                    marks,
+                    ..Inverse::default()
+                })
+                .expect("plain data serializes");
                 let id = undo::record(tx, &description, &inverse, now, now + UNDO_FOR_MS)?;
                 Some(UndoInfo { id, description })
             } else {
@@ -548,7 +557,10 @@ pub(crate) async fn apply_undo(state: &Arc<State>, params: UndoParams) -> Result
             for (account, message_id, mark, before) in &inverse.marks {
                 marks::set(tx, account, message_id, *mark, *before)?;
             }
-            Ok((moved + inverse.marks.len(), accounts))
+            for (account, key) in &inverse.unblock {
+                regards_store::smart::set_blocked(tx, account, key, false)?;
+            }
+            Ok((moved + inverse.marks.len() + inverse.unblock.len(), accounts))
         })
         .await
         .map_err(conflict)?;
@@ -685,4 +697,95 @@ fn conflict(error: StoreError) -> RpcError {
         StoreError::Conflict(message) => RpcError::new(codes::CONFLICT, message),
         other => crate::session::internal(other),
     }
+}
+
+/// Block a sender, or every address of an `@domain`: their mail in the inbox
+/// goes to Junk, and so does what arrives from them later (see
+/// [`junk_blocked`]). Undo brings the mail back and unblocks. Unblocking
+/// moves nothing back by itself.
+pub(crate) async fn block(state: &Arc<State>, params: SenderBlockParams) -> Result<Value, RpcError> {
+    let raw = params.address.trim();
+    let key = if raw.starts_with('@') {
+        regards_core::smart::domain_key(raw)
+    } else {
+        raw.contains('@').then(|| raw.to_lowercase())
+    }
+    .ok_or_else(|| RpcError::new(codes::INVALID_PARAMS, "give an address, or a domain as @example.org"))?;
+    let (account_id, blocked, now) = (params.account_id, params.blocked, now_ms());
+    let committed = state
+        .store
+        .write(move |tx| {
+            let folders = mailboxes::list(tx, &account_id)?;
+            if folders.is_empty() && regards_store::accounts::get(tx, &account_id)?.is_none() {
+                return Err(StoreError::Conflict("no such account".into()));
+            }
+            regards_store::smart::set_blocked(tx, &account_id, &key, blocked)?;
+            if !blocked {
+                return Ok((0, None, BTreeSet::new()));
+            }
+            let role = |role| folders.iter().find(|m| m.role == Some(role)).map(|m| m.id);
+            let junk =
+                role(Role::Junk).ok_or_else(|| StoreError::Conflict("This account has no Junk folder".into()))?;
+            let requests: Vec<(i64, i64)> = match role(Role::Inbox) {
+                Some(inbox) => regards_store::smart::from_sender(tx, &account_id, &key, Some(inbox))?
+                    .into_iter()
+                    .map(|id| (id, junk))
+                    .collect(),
+                None => Vec::new(),
+            };
+            let (moved, inverse, accounts) = plan_moves(tx, &requests, now)?;
+            let marks = leave_the_inbox(tx, &inverse)?;
+            let description = format!("Blocked {key}");
+            let inverse = serde_json::to_string(&Inverse {
+                moves: inverse,
+                marks,
+                unblock: vec![(account_id.clone(), key.clone())],
+            })
+            .expect("plain data serializes");
+            let id = undo::record(tx, &description, &inverse, now, now + UNDO_FOR_MS)?;
+            Ok((moved, Some(UndoInfo { id, description }), accounts))
+        })
+        .await
+        .map_err(conflict)?;
+    let (moved, undo, accounts) = committed.value;
+    for account in accounts {
+        state.queue.wake(state, &account);
+    }
+    Ok(json!(MoveResult { moved, undo }))
+}
+
+/// New mail in an inbox from a blocked sender goes to Junk, as a move the
+/// queue tells the server about. Returns the accounts whose queue to wake.
+pub(crate) fn junk_blocked(
+    tx: &rusqlite::Transaction<'_>,
+    mailbox_id: i64,
+    uids: &[u32],
+    now: i64,
+) -> Result<BTreeSet<String>, StoreError> {
+    let Some(inbox) = mailboxes::get(tx, mailbox_id)?.filter(|m| m.role == Some(Role::Inbox)) else {
+        return Ok(BTreeSet::new());
+    };
+    let Some(junk) = mailboxes::list(tx, &inbox.account_id)?
+        .into_iter()
+        .find(|m| m.role == Some(Role::Junk))
+    else {
+        return Ok(BTreeSet::new());
+    };
+    let mut requests = Vec::new();
+    let mut lookup = tx.prepare_cached("SELECT id, from_address FROM messages WHERE mailbox_id = ?1 AND uid = ?2")?;
+    for uid in uids {
+        let found: Option<(i64, Option<String>)> = lookup
+            .query_row(rusqlite::params![mailbox_id, uid], |row| Ok((row.get(0)?, row.get(1)?)))
+            .optional()?;
+        if let Some((id, Some(from))) = found
+            && regards_store::smart::sender(tx, &inbox.account_id, &from)?.blocked
+        {
+            requests.push((id, junk.id));
+        }
+    }
+    if requests.is_empty() {
+        return Ok(BTreeSet::new());
+    }
+    let (_, _, accounts) = plan_moves(tx, &requests, now)?;
+    Ok(accounts)
 }
