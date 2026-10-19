@@ -635,6 +635,29 @@ const draftById = (id: number) => {
 };
 
 let detailedLogs = false;
+let mailApp = params.get("mailapp") === "1";
+
+/** A link as the desktop reads it: `message:5`, `hold:2`, or a mailto: link. */
+function parseLink(link: string) {
+  if (link.startsWith("mailto:")) {
+    const url = new URL(link);
+    const list = (value: string | null) =>
+      (value ?? "")
+        .split(",")
+        .map((address) => address.trim())
+        .filter(Boolean);
+    return {
+      kind: "compose",
+      to: [...list(decodeURIComponent(url.pathname)), ...list(url.searchParams.get("to"))],
+      cc: list(url.searchParams.get("cc")),
+      bcc: list(url.searchParams.get("bcc")),
+      subject: url.searchParams.get("subject") ?? "",
+      body: url.searchParams.get("body") ?? "",
+    };
+  }
+  const [kind, id] = link.split(":");
+  return { kind, id: Number(id) };
+}
 let badgeChoices: { on: boolean; accounts: string[] | null } = { on: true, accounts: null };
 
 let notificationChoices = {
@@ -733,8 +756,12 @@ function handle(cmd: string, args: Args): unknown {
       return owner.account;
     }
     case "mail_app_status":
-      return { registered: false, can_register: true };
+      // `?platform=macos`: Mail's settings choose the mail app; Regards cannot.
+      return { registered: mailApp, can_register: params.get("platform") !== "macos" };
     case "make_mail_app":
+      if (params.get("platform") === "macos")
+        throw "On macOS, choose Regards as the default mail app in Mail, under Settings › General.";
+      mailApp = true;
       return null;
     case "badge_settings":
       return badgeChoices;
@@ -815,9 +842,9 @@ function handle(cmd: string, args: Args): unknown {
       return { entries: page, next: after.length > limit ? page[page.length - 1].id : null };
     }
     case "link_take": {
-      // `?link=message:3`, `draft:…` or `hold:2`: what Regards was started with.
-      const [kind, id] = (params.get("link") ?? "").split(":");
-      return kind && id ? { kind, id: Number(id) } : null;
+      // `?link=message:3`, `draft:…`, `hold:2` or `mailto:…`: what Regards was started with.
+      const link = params.get("link");
+      return link ? parseLink(link) : null;
     }
     case "draft_attach_image": {
       // An image in the text: kept with the draft under a Content-ID, its bytes as base64.
@@ -1329,9 +1356,9 @@ mockIPC(
 };
 
 // A link opened while Regards runs, as the desktop sends it: regardsOpenLink("message:5") in the console.
+// A mailto: one too: regardsOpenLink("mailto:ada@example.org?subject=Hello").
 (window as unknown as { regardsOpenLink: (link: string) => void }).regardsOpenLink = (link) => {
-  const [kind, id] = link.split(":");
-  void emit("link_open", { kind, id: Number(id) });
+  void emit("link_open", parseLink(link));
 };
 
 // Message bodies: the HTML straight into the sandboxed frame.

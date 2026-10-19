@@ -164,6 +164,15 @@ const PALETTE_ACTIONS = [
 
 type Picking = { title: string; confirm: string; initial: number; resolve: (time: number | null) => void };
 
+/** Plain text as HTML paragraphs, for a draft written with formatting. */
+function paragraphs(text: string): string {
+  const escape = (line: string) => line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return text
+    .split(/\n{2,}/)
+    .map((block) => `<p>${block.split("\n").map(escape).join("<br>")}</p>`)
+    .join("");
+}
+
 export function App() {
   const { check, recheck } = useService();
   const mail = useMail();
@@ -549,10 +558,16 @@ export function App() {
     setOverlay(false);
   }, []);
 
-  // A regards:// link (agents give them, so the person can see what they found or did).
-  // It only ever opens a view: any web page can open such a link, so it never acts.
+  // A regards:// link (agents give them, so the person can see what they found or did),
+  // or a mailto: one once Regards is the mail app. Any web page can open a link, so it
+  // only ever opens a view, or a new message to look over: nothing is sent.
   const openLink = (link: OpenLink) => {
     setOverlay(false);
+    if (link.kind === "compose") {
+      setSettings(null);
+      writeFromLink(link);
+      return;
+    }
     if (link.kind === "hold") {
       setFocusHold(link.id);
       setSettings("agents");
@@ -623,6 +638,36 @@ export function App() {
   }, []);
   const writeNew = () => {
     if (composeFrom) startDraft(newDraft(composeFrom), "full");
+  };
+  /**
+   * A new message from a mailto: link, from the default account. The draft keeps what
+   * the daemon put in it (an automatic copy, a signature); the link's fields join them.
+   */
+  const writeFromLink = (link: Extract<OpenLink, { kind: "compose" }>) => {
+    const from = defaultFrom ?? accounts[0]?.account.id;
+    if (!from) {
+      setNotice("Add an account first: then email links open a new message here.");
+      return;
+    }
+    const people = (addresses: string[]): Person[] => addresses.map((address) => ({ name: null, address }));
+    const join = (had: Person[], more: string[]) => [
+      ...had,
+      ...people(more).filter((person) => !had.some((one) => one.address?.toLowerCase() === person.address?.toLowerCase())),
+    ];
+    startDraft(
+      newDraft(from).then((draft) =>
+        saveDraft({
+          id: draft.id,
+          to: join(draft.to, link.to),
+          cc: join(draft.cc, link.cc),
+          bcc: join(draft.bcc, link.bcc),
+          subject: link.subject || draft.subject,
+          body: link.body ? (draft.body ? `${link.body}\n\n${draft.body}` : link.body) : draft.body,
+          html: draft.html && link.body ? `${paragraphs(link.body)}${draft.html}` : draft.html,
+        }),
+      ),
+      "full",
+    );
   };
   /** A new message to someone, from the account they wrote to (the sender card's Write to them). */
   const writeTo = (person: Person, accountId: string) =>

@@ -12,6 +12,7 @@ import {
   setStartAtLogin,
 } from "./background";
 import { type BadgeSettings, badgeSettings, setBadgeSettings } from "./badge";
+import { type MailAppStatus, mailAppStatus, makeMailApp } from "./links";
 import { Icon, type IconName } from "./icons";
 import type { Layout } from "./layout";
 import { type NewMail, type NotificationSettings, notificationSettings, setNotificationSettings } from "./notifications";
@@ -83,6 +84,7 @@ export function GeneralPage({ accounts }: { accounts: AccountSummary[] }) {
           />
         )}
       </Option>
+      <MailApp />
       <Option icon="archive" label="After archiving or deleting a message">
         <Select
           label="After archiving or deleting a message"
@@ -141,6 +143,60 @@ export function GeneralPage({ accounts }: { accounts: AccountSummary[] }) {
         />
       )}
     </>
+  );
+}
+
+/**
+ * Regards as the mail app: email links (mailto:) on web pages and in other apps
+ * open a new message here. Registered only when the person asks; on Windows the
+ * system's Default apps then opens to confirm, and on macOS Mail's settings choose.
+ */
+function MailApp() {
+  const [status, setStatus] = useState<MailAppStatus | null>(null);
+  const [asked, setAsked] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const check = () => mailAppStatus().then(setStatus, (failure: unknown) => setError(String(failure)));
+    check();
+    // Back from the system's settings: see whether it took.
+    window.addEventListener("focus", check);
+    return () => window.removeEventListener("focus", check);
+  }, []);
+  const make = () => {
+    setError(null);
+    makeMailApp().then(
+      () => {
+        setAsked(true);
+        mailAppStatus().then(setStatus, () => {});
+      },
+      (failure: unknown) => setError(String(failure)),
+    );
+  };
+  if (!status) return null;
+  const description = error
+    ? error
+    : status.registered
+      ? "Email links on web pages and in other apps open a new message here. Nothing is sent until you send it."
+      : !status.can_register
+        ? "On a Mac, the mail app is chosen in Mail, under Settings › General: choose Regards there."
+        : asked && /Win/.test(navigator.platform)
+          ? "Confirm it in Default apps, which just opened: choose Regards for MAILTO."
+          : "Email links on web pages and in other apps would open a new message here.";
+  return (
+    <Option icon="mail" label="Mail app" description={description}>
+      {status.registered ? (
+        <span className="muted mail-app-yes">
+          <Icon name="check" size={15} />
+          Regards
+        </span>
+      ) : (
+        status.can_register && (
+          <button type="button" className="btn small" onClick={make}>
+            Make Regards your mail app
+          </button>
+        )
+      )}
+    </Option>
   );
 }
 

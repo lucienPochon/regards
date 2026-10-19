@@ -4587,6 +4587,14 @@ button.sender-row:hover:not(:disabled) {
   opacity: 0.55;
 }
 
+.mail-app-yes {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .auto-copy-control {
   display: flex;
   align-items: center;
