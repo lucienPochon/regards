@@ -1,4 +1,5 @@
 import { type RefObject, useEffect, useRef } from "react";
+import { getPrefs } from "./prefs";
 
 /**
  * Keyboard shortcuts. Each component that offers some registers a layer; the
@@ -10,7 +11,8 @@ import { type RefObject, useEffect, useRef } from "react";
  * "Mod+z" for Ctrl+Z (Cmd+Z on macOS).
  *
  * Keys typed into a field are left alone, and so are combinations with Alt or
- * with Ctrl/Cmd other than our own "Mod+" ones.
+ * with Ctrl/Cmd other than our own "Mod+" ones. With single-key shortcuts off
+ * (Settings › Accessibility), one-character keys are left alone too.
  */
 export type Shortcuts = Partial<Record<string, () => void>>;
 
@@ -43,6 +45,7 @@ function onKeyDown(event: KeyboardEvent) {
   if (event.defaultPrevented || event.isComposing || typing(event.target)) return;
   const name = keyName(event);
   if (!name) return;
+  if (characterKey(name) && !getPrefs().singleKeys) return;
   for (let index = layers.length - 1; index >= 0; index--) {
     const layer = layers[index];
     const action = layer.keys.current[name];
@@ -54,6 +57,9 @@ function onKeyDown(event: KeyboardEvent) {
     if (layer.modal) return;
   }
 }
+
+/** A shortcut of one character, shifted or not ("e", "#", "Shift+R"): not Escape, arrows or "Mod+" ones. */
+export const characterKey = (name: string) => /^(Shift\+)?.$/u.test(name);
 
 export function keyName(event: KeyboardEvent): string | null {
   let key = event.key;

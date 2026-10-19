@@ -40,6 +40,12 @@ export interface Prefs {
   defaultFrom: string | null;
   /** The whole window's size, for reading comfort. */
   zoom: number;
+  /**
+   * Shortcuts of one character ("e", "#", "Shift+R"). Off: only those with
+   * Ctrl/Cmd and named keys (Escape, arrows) act, so speech input or a stray
+   * key cannot archive or delete mail (WCAG 2.1.4).
+   */
+  singleKeys: boolean;
   /** The unread counts beside the folders. */
   sidebarCounts: boolean;
   /** The quick choices of each time picker: shown or not, and at what time. */
@@ -66,11 +72,22 @@ export const DEFAULT_PREFS: Prefs = {
   grouped: { notifications: true, newsletters: true, pinned: true },
   defaultFrom: null,
   zoom: 1,
+  singleKeys: true,
   sidebarCounts: true,
   snoozePresets: {},
   sendPresets: {},
   reminderPresets: {},
 };
+
+/** The zoom steps offered in Settings and by Ctrl + / Ctrl −. */
+export const ZOOMS = [0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
+
+/** The next zoom step up (1) or down (-1) from where the window is. */
+export function zoomStep(now: number, direction: 1 | -1): number {
+  const index = ZOOMS.findIndex((zoom) => Math.abs(zoom - now) < 0.001);
+  if (index === -1) return direction > 0 ? (ZOOMS.find((zoom) => zoom > now) ?? now) : ([...ZOOMS].reverse().find((zoom) => zoom < now) ?? now);
+  return ZOOMS[Math.min(ZOOMS.length - 1, Math.max(0, index + direction))];
+}
 
 /** The colours an account can take, readable on both themes. */
 export const ACCOUNT_COLOURS = ["#1d7a61", "#3b7dd8", "#8b5cc8", "#c8507a", "#d4891f", "#2a9d9a", "#66717f", "#b5562f"];

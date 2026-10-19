@@ -170,7 +170,7 @@ export const TOUR: Group[] = [
       { id: "s-composer", label: "Composer", note: "The account new messages are from, and copies every new message gets.", params: { accounts: "2" }, steps: settings("Composer") },
       { id: "s-auto-copy", label: "Composer › Always copy", note: "A blind copy of every new message to an archive address.", params: { autocopy: "bcc" }, steps: settings("Composer") },
       { id: "s-templates", label: "Templates", note: "Write, rename and delete templates.", steps: settings("Templates") },
-      { id: "s-accessibility", label: "Accessibility", note: "Zoom.", steps: settings("Accessibility") },
+      { id: "s-accessibility", label: "Accessibility", note: "Zoom up to 200 % (also Ctrl + / − / 0), and single-key shortcuts on or off.", steps: settings("Accessibility") },
       { id: "s-shortcuts", label: "Shortcuts", note: "Every key.", steps: settings("Shortcuts") },
       { id: "s-support", label: "Support", note: "Updates, the background service, troubleshooting, help.", steps: settings("Support") },
       { id: "s-diagnostics", label: "Support › Save diagnostics", note: "A file to attach to a report: no mail, addresses or passwords.", steps: settings("Support", "text:.settings-pane button=Save diagnostics") },
