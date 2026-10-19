@@ -407,6 +407,11 @@ flowchart LR
     - Triage and Send come with the audit log and holds; until then, everything else stays with the app.
 - **Holds** for send-tier and bulk or destructive intents.
 - **Audit log** with before-state and undo.
+  - **As built (2026-10-19):**
+    - Every agent request but the handshake is recorded once answered (migration 0024): when, the connection and what it came through (CLI, MCP), the method and its parameters, the account it named and what that account allowed then, the decision (allowed or denied), any error, and how long it took.
+    - Secrets (keys naming a password, secret or token) are taken out of the parameters, and long ones are cut at 4 KB.
+    - Records are quiet writes, so an agent's requests do not make clients refetch. The app lists them (`agent.activity`, newest first, by account), and they are kept 90 days.
+    - Before-state and undo come with Triage, the first level that changes anything.
 - **Interfaces:** stable `--json` contracts, `regards mcp`, `regards skill`, and deep links `regards://…`.
 - **Prompt-injection posture:** content is passed as data, drafts never auto-send, and agents cannot change their own access.
 

@@ -7,6 +7,7 @@
 mod access;
 mod accounts;
 mod actions;
+mod audit;
 mod backfill;
 mod compose;
 mod details;
@@ -275,6 +276,7 @@ impl Daemon {
         let sending = tokio::spawn(sender::run(Arc::clone(&state)));
         let scheduling = tokio::spawn(scheduler::run(Arc::clone(&state)));
         let indexing = tokio::spawn(search::run(Arc::clone(&state)));
+        let pruning = tokio::spawn(audit::prune(Arc::clone(&state)));
         tracing::info!(%endpoint, "daemon listening");
 
         tokio::pin!(shutdown);
@@ -309,6 +311,7 @@ impl Daemon {
         sending.abort();
         scheduling.abort();
         indexing.abort();
+        pruning.abort();
         drop(listener);
         // Releasing the lock last lets a replacement daemon start only after we stopped listening.
         drop(lock);
