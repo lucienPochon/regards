@@ -460,6 +460,7 @@ flowchart LR
   - **In the app (Settings › Agents):**
     - Each account has a dropdown of the four levels, and the chosen one is explained under the address.
     - Choosing Send asks first.
+    - **In the Outbox**, a message an agent asked to send says so, and while it waits out its delay it counts down ("Goes in 25 s unless you call it back") with **Call it back**, which takes it back to Drafts.
     - **At Send**, "Sends" chooses how an agent's sends go: "Ask me each time" (the default), or "Send after 10 s to 10 min unless I call it back" (`setAgentSend`). Choosing a delay asks first and says that at most 20 an hour go so.
     - **Waiting for you**, at the top of the page: what agents asked for that needs the person, which is every send, more than 50 messages at once, and deleting for good.
       - A send shows its draft (From, To, Cc, Bcc, subject, text, files) before Send or Reject.

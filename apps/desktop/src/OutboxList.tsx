@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Avatar } from "./Avatar";
 import { type OutboxEntry, dismissOutbox, reschedule, sendAgain, undoSend } from "./compose";
 import { fullDate, peopleShort } from "./format";
@@ -19,6 +20,15 @@ export function OutboxList({
   /** Where to sign an account in again (Settings › Accounts). */
   onSignIn?: () => void;
 }) {
+  // While a message can still be called back, count down to when it goes.
+  const [now, setNow] = useState(() => Date.now());
+  const counting = entries.some((entry) => entry.state === "queued" && entry.undo_until > now);
+  useEffect(() => {
+    if (!counting) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [counting]);
+
   if (entries.length === 0) {
     return (
       <div className="list-scroll">
@@ -48,6 +58,8 @@ export function OutboxList({
           {entries.map((entry) => {
             const trouble = entry.state === "failed" || entry.state === "uncertain" || entry.state === "held";
             const waiting = entry.state === "held" || scheduled(entry);
+            // Within its undo window (an agent's send waits there to be called back): take it back to Drafts.
+            const callable = entry.state === "queued" && entry.undo_until > now && !scheduled(entry);
             return (
               <li key={entry.id} className="row outbox-row">
                 <div className="row-main">
@@ -58,7 +70,13 @@ export function OutboxList({
                   <span className="from">to {peopleShort(entry.recipients)}</span>
                   <span className="subject">{entry.subject || "(no subject)"}</span>
                   <span className="row-extra">
-                    <span className={trouble ? "outbox-state bad" : "outbox-state"}>{describe(entry)}</span>
+                    {entry.by_agent && (
+                      <span className="chip agent-chip">
+                        <Icon name="agent" size={11} />
+                        An agent asked to send this
+                      </span>
+                    )}
+                    <span className={trouble ? "outbox-state bad" : "outbox-state"}>{describe(entry, now)}</span>
                     <span className="outbox-actions">
                       {waiting && (
                         <button type="button" className="btn small" onClick={() => act(() => reschedule(entry.id, null))}>
@@ -68,6 +86,11 @@ export function OutboxList({
                       {(waiting || entry.state === "failed" || (entry.state === "queued" && entry.attempts > 0)) && (
                         <button type="button" className="btn small" onClick={() => edit(entry)}>
                           Edit
+                        </button>
+                      )}
+                      {callable && (
+                        <button type="button" className="btn small primary" onClick={() => act(() => undoSend(entry.id))}>
+                          Call it back
                         </button>
                       )}
                       {signedOut(entry) && onSignIn && (
@@ -112,7 +135,7 @@ function signedOut(entry: OutboxEntry): boolean {
   return entry.state === "queued" && entry.waiting_for_sign_in === true;
 }
 
-function describe(entry: OutboxEntry): string {
+function describe(entry: OutboxEntry, now: number): string {
   switch (entry.state) {
     case "sending":
       return "Sending…";
@@ -133,7 +156,10 @@ function describe(entry: OutboxEntry): string {
           ? `Sends ${fullDate(entry.send_at!)}.`
           : `Sends ${fullDate(entry.send_at!)}. This computer must be on then.`;
       }
-      if (entry.attempts === 0) return "Sending soon…";
+      if (entry.attempts === 0) {
+        const left = Math.ceil((entry.undo_until - now) / 1000);
+        return left > 0 ? `Goes in ${left} s unless you call it back.` : "Sending soon…";
+      }
       return `Not sent yet, trying again at ${new Date(entry.next_attempt_at).toLocaleTimeString()}${
         entry.last_error ? `: ${entry.last_error}` : ""
       }`;

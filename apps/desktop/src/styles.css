@@ -1430,6 +1430,18 @@ button.list-title:hover {
   text-underline-offset: 2px;
 }
 
+/* In the Outbox: a message an agent asked to send. */
+.chip.agent-chip {
+  justify-self: start;
+  margin-bottom: 2px;
+  background: var(--warm-soft);
+  color: var(--text-2);
+}
+
+.chip.agent-chip .icon {
+  color: var(--warm);
+}
+
 /* Searching the servers: an offer at the end of the summary, then what it found. */
 .server-ask,
 .server-status {

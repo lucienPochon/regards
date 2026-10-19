@@ -34,6 +34,27 @@ const parked = (m: FixtureMessage) => m.aside === true || (m.snoozed_until ?? 0)
 const inboxPlace = (m: FixtureMessage) =>
   m.surfaced_at && (m.reminded || m.surfaced_at > m.received_at) ? m.surfaced_at : m.received_at;
 let nextId = 10_000;
+// `?agentsend=1`: an agent's send waits out its delay in the Outbox, to be called back.
+if (params.get("agentsend") === "1" && accounts[0]) {
+  window.setTimeout(() => {
+    outbox.push({
+      id: 901,
+      account_id: accounts[0].account.id,
+      draft_id: null,
+      subject: "Re: Book club: next pick",
+      recipients: [{ name: "Hannah Weiss", address: "hannah.weiss@example.org" }],
+      state: "queued",
+      undo_until: Date.now() + 30_000,
+      send_at: null,
+      next_attempt_at: Date.now() + 30_000,
+      attempts: 0,
+      last_error: null,
+      executor: "device",
+      needs_this_computer: true,
+      by_agent: true,
+    });
+  });
+}
 // The address a sign-in was started for; `?signin=1` signs the first account out of Microsoft.
 let oauthEmail: string | null = null;
 if (params.get("signin") === "1" && accounts[0]) {
