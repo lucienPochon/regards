@@ -73,6 +73,7 @@ export function ReadingPane({
   actionsFor,
   onPalette,
   onSender,
+  onAssistant,
   onClose,
   onStep,
 }: {
@@ -84,6 +85,8 @@ export function ReadingPane({
   actionsFor: (target: Target) => Action[];
   onPalette: Palette;
   onSender?: SenderOpener;
+  /** Ask the assistant about a message; absent while it is off. */
+  onAssistant?: (messageId: number, kind: "summary" | "reply") => void;
   onClose: () => void;
   /** The next (1) or previous (-1) message of the list, when the list is not beside it. */
   onStep?: (by: number) => void;
@@ -235,6 +238,7 @@ export function ReadingPane({
                   actionsFor={actionsFor}
                   onPalette={onPalette}
                   onSender={onSender}
+                  onAssistant={onAssistant}
                 />
               );
             })}
@@ -256,6 +260,7 @@ function ThreadMessage({
   actionsFor,
   onPalette,
   onSender,
+  onAssistant,
 }: {
   ref?: Ref<HTMLLIElement>;
   entry: ThreadEntry;
@@ -270,6 +275,7 @@ function ThreadMessage({
   actionsFor: (target: Target) => Action[];
   onPalette: Palette;
   onSender?: SenderOpener;
+  onAssistant?: (messageId: number, kind: "summary" | "reply") => void;
 }) {
   const own = useDetail(entry.message.id, given === null && expanded);
   const load = given ?? own;
@@ -358,6 +364,12 @@ function ThreadMessage({
     }
     if (ready?.has_html && trusted) {
       extra.push({ label: "Stop loading images from this sender", icon: "shield", onSelect: stopFrom });
+    }
+    if (onAssistant) {
+      extra.push(
+        { label: "Summarise with the assistant…", icon: "bolt", onSelect: () => onAssistant(message.id, "summary") },
+        { label: "Draft a reply with the assistant…", icon: "bolt", onSelect: () => onAssistant(message.id, "reply") },
+      );
     }
     extra.push({ label: details ? "Hide details" : "Show details", icon: "info", onSelect: () => setDetails(!details) });
     const from = message.from;
