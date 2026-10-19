@@ -6,6 +6,7 @@ import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { MessageSummary, Person } from "../accounts";
 import type { Draft, OutboxEntry } from "../compose";
+import type { Identity } from "../identities";
 import { type FixtureAccount, type FixtureMessage, ME, PERSONAL, WORK, fixtureMessages } from "./fixtures";
 
 type Args = Record<string, unknown>;
@@ -96,11 +97,38 @@ if (params.get("outbox") === "1" && accounts.length > 0) {
   outbox.push(waiting("Monday's rota", started - 3 * 3600_000, "held"));
 }
 
+// Each account sends as its own address; the first also as a work alias.
+const identities: Identity[] = accounts.flatMap((owner, index) => [
+  {
+    id: nextId++,
+    account_id: owner.account.id,
+    name: owner.account.display_name,
+    email: owner.account.email,
+    signature: "",
+    is_default: true,
+  },
+  ...(index === 0
+    ? [
+        {
+          id: nextId++,
+          account_id: owner.account.id,
+          name: `${owner.account.display_name} (work)`,
+          email: "sam@studio.example",
+          signature: "Sam Rivera · Studio Kiln",
+          is_default: false,
+        },
+      ]
+    : []),
+]);
+const identityFor = (accountId: string, id: number | null | undefined) =>
+  identities.find((i) => i.account_id === accountId && (id == null ? i.is_default : i.id === id));
+
 if (accounts.length > 0) {
   drafts.push({
     id: nextId++,
     account_id: PERSONAL.account.id,
     from: ME,
+    identity_id: identityFor(PERSONAL.account.id, null)?.id ?? null,
     to: [{ name: "Hannah Weiss", address: "hannah.weiss@example.org" }],
     cc: [],
     bcc: [],
@@ -185,10 +213,12 @@ const roleBox = (message: FixtureMessage, role: string) =>
 
 function newDraftFor(accountId: string, fields: Partial<Draft>): Draft {
   const owner = accounts.find((a) => a.account.id === accountId) ?? accounts[0];
+  const identity = identityFor(owner.account.id, null);
   const draft: Draft = {
     id: nextId++,
     account_id: owner.account.id,
-    from: { name: owner.account.display_name, address: owner.account.email },
+    from: { name: identity?.name ?? owner.account.display_name, address: identity?.email ?? owner.account.email },
+    identity_id: identity?.id ?? null,
     to: [],
     cc: [],
     bcc: [],
@@ -459,6 +489,41 @@ function handle(cmd: string, args: Args): unknown {
       sendWhenDue(entry);
       changed();
       return { rescheduled: true };
+    }
+    case "identity_list":
+      return { identities: identities.filter((i) => i.account_id === args.accountId) };
+    case "identity_save": {
+      const saved = args.identity as Omit<Identity, "is_default"> & { id?: number };
+      const existing = identities.find((i) => i.id === saved.id);
+      if (existing) return Object.assign(existing, { name: saved.name, email: saved.email, signature: saved.signature });
+      const added: Identity = { ...saved, id: nextId++, is_default: false };
+      identities.push(added);
+      return added;
+    }
+    case "identity_remove": {
+      const index = identities.findIndex((i) => i.id === args.id);
+      if (identities[index]?.is_default) throw new Error("The default address cannot be removed; make another one the default first.");
+      if (index !== -1) identities.splice(index, 1);
+      return null;
+    }
+    case "identity_make_default": {
+      const chosen = identities.find((i) => i.id === args.id);
+      for (const i of identities) if (i.account_id === chosen?.account_id) i.is_default = i === chosen;
+      return null;
+    }
+    case "draft_set_from": {
+      const draft = draftById(args.id as number);
+      const old = identityFor(draft.account_id, draft.identity_id);
+      const next = identities.find((i) => i.id === args.identityId);
+      if (!next) throw new Error("That address is not one of this account's.");
+      const block = (signature: string) => (signature ? `\n\n${signature}` : "");
+      const body =
+        old?.signature && draft.body.includes(block(old.signature))
+          ? draft.body.replace(block(old.signature), block(next.signature))
+          : `${draft.body}${block(next.signature)}`;
+      Object.assign(draft, { identity_id: next.id, from: { name: next.name, address: next.email }, body, updated_at: Date.now() });
+      changed();
+      return draft;
     }
     case "background_get":
       return background;

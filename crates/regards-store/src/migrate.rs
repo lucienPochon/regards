@@ -24,6 +24,9 @@ const MIGRATIONS: &[M<'static>] = &[
     M::up(include_str!("../migrations/0013_send_later.sql")),
     M::up(include_str!("../migrations/0014_reminders.sql")),
     M::up(include_str!("../migrations/0015_notices.sql")),
+    M::up(include_str!("../migrations/0016_identities.sql")),
+    M::up(include_str!("../migrations/0017_smart_inbox.sql")),
+    M::up(include_str!("../migrations/0018_list_details.sql")),
 ];
 
 /// Backups kept before older ones are deleted.
@@ -161,6 +164,45 @@ mod tests {
         conn.execute("DELETE FROM drafts WHERE id = 7", []).unwrap();
         let draft: Option<i64> = conn.query_row("SELECT draft_id FROM outbox", [], |r| r.get(0)).unwrap();
         assert_eq!(draft, None, "ON DELETE SET NULL still holds");
+    }
+
+    #[test]
+    fn the_smart_inbox_knows_who_the_account_wrote_to_from_mail_already_stored() {
+        let temp = tempfile::tempdir().unwrap();
+        let backups = temp.path().join("backups");
+        let mut conn = Connection::open(temp.path().join("mail.db")).unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        run(&Migrations::from_slice(&MIGRATIONS[..16]), &mut conn, &backups).unwrap();
+        conn.execute_batch(
+            "INSERT INTO accounts (id, display_name, email, auth_kind, username, secret_key, imap_host, imap_port, \
+             imap_security, smtp_host, smtp_port, smtp_security, created_at, position) \
+             VALUES ('a', 'Ada', 'ada@example.test', 'password', 'ada', 'a/mail-password', 'h', 993, 'tls', 'h', 587, \
+             'starttls', 0, 0); \
+             INSERT INTO identities (account_id, name, email, is_default, created_at) \
+             VALUES ('a', 'Ada', 'ada@example.test', 1, 0), ('a', 'Work', 'work@example.test', 0, 0); \
+             INSERT INTO mailboxes (id, account_id, remote_name, name, selectable) VALUES (1, 'a', x'53656e74', 'Sent', 1); \
+             INSERT INTO messages (mailbox_id, uid, received_at, from_address, to_json, cc_json) VALUES \
+             (1, 1, 50, 'Ada@example.test', '[{\"name\":null,\"address\":\"Lena@example.net\"}]', \
+              '[{\"name\":null,\"address\":\"bob@example.org\"}]'), \
+             (1, 2, 30, 'work@example.test', '[{\"name\":null,\"address\":\"lena@example.net\"}]', '[]'), \
+             (1, 3, 10, 'someone@else.test', '[{\"name\":null,\"address\":\"cy@example.org\"}]', '[]');",
+        )
+        .unwrap();
+
+        to_latest(&mut conn, &backups).unwrap();
+        let mut statement = conn
+            .prepare("SELECT address, written_to_at FROM senders ORDER BY address")
+            .unwrap();
+        let senders: Vec<(String, i64)> = statement
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        // Lena first written to at 30 (from the alias), Bob at 50; not Cy.
+        assert_eq!(
+            senders,
+            [("bob@example.org".to_owned(), 50), ("lena@example.net".to_owned(), 30)]
+        );
     }
 
     #[test]

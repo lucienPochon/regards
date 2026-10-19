@@ -5,8 +5,10 @@ import type { Person } from "./accounts";
 export interface Draft {
   id: number;
   account_id: string;
-  /** Who it goes out from: the account's name and address. */
+  /** Who it goes out from: its identity's name and address. */
   from: Person;
+  /** That identity (see identities.ts). */
+  identity_id: number | null;
   to: Person[];
   cc: Person[];
   bcc: Person[];
@@ -64,6 +66,8 @@ export const attachFiles = (draftId: number) => invoke<Draft | null>("draft_atta
 export const detachFile = (draftId: number, attachmentId: number) =>
   invoke<Draft>("draft_detach", { draftId, attachmentId });
 export const deleteDraft = (id: number) => invoke("draft_delete", { id });
+/** Send it from another of the account's identities; a plain-text draft's signature is swapped. */
+export const setDraftFrom = (id: number, identityId: number) => invoke<Draft>("draft_set_from", { id, identityId });
 
 export function saveDraft(
   draft: Pick<Draft, "id" | "to" | "cc" | "bcc" | "subject" | "body"> & { html?: string | null },
@@ -142,6 +146,21 @@ export function invalidAddresses(people: Person[]): string[] {
 }
 
 /** A plain-text draft (a new reply's quote, say) as editor HTML: paragraphs, and "> " lines as quotes. */
+/**
+ * The draft's HTML sent from another identity: the old signature becomes the
+ * new one. Where the old one is not found (none, or edited), the new one goes
+ * above the quoted ("On …, Bob wrote:") or forwarded message, or at the end.
+ * Signatures are plain text, put in as `textToHtml` does.
+ */
+export function swapSignatureHtml(html: string, old: string, next: string): string {
+  const block = (signature: string) => (signature.trim() ? textToHtml(signature.trimEnd()) : "");
+  const [from, to] = [block(old), block(next)];
+  if (from && html.includes(from)) return html.replace(from, () => to);
+  if (!to) return html;
+  const quote = html.search(/<p>[^<]*wrote:<\/p><blockquote>|<p>---------- Forwarded message ----------/);
+  return quote === -1 ? html + to : html.slice(0, quote) + to + html.slice(quote);
+}
+
 export function textToHtml(text: string): string {
   const escape = (line: string) =>
     line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

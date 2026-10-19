@@ -5,6 +5,7 @@ use regards_core::body::Attachment;
 use regards_core::headers::Person;
 use regards_core::mailbox::Role;
 use regards_core::secret::Secret;
+pub use regards_core::smart::{Policy, Reason, Section};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -60,6 +61,14 @@ pub mod methods {
     pub const MESSAGE_SET_ASIDE: &str = "message.set_aside";
     /// Snooze messages until a time, or "someday"; or end a snooze. Undoable.
     pub const MESSAGE_SNOOZE: &str = "message.snooze";
+    /// The Smart Inbox (plan §5.4): an account's inbox by section, with counts.
+    pub const SMART_OVERVIEW: &str = "smart.overview";
+    /// Why a message is in its section ("why is this here?"), and what is
+    /// known about its sender.
+    pub const MESSAGE_EXPLAIN: &str = "message.explain";
+    /// The person's choice for a sender: a section (or the rules), and whether
+    /// they are a priority. Their mail follows.
+    pub const SENDER_SET: &str = "sender.set";
     /// "Remind me if no reply by" a time, or no reminder (also: done with one
     /// that came due). Undoable.
     pub const MESSAGE_REMIND: &str = "message.remind";
@@ -81,6 +90,18 @@ pub mod methods {
     /// only: an agent must never make the daemon read and send local files.
     pub const DRAFT_ATTACH_FILE: &str = "draft.attach_file";
     pub const DRAFT_DETACH: &str = "draft.detach";
+    /// An account's identities: the names and addresses it sends as, each with
+    /// its signature, the default first. `ui` only.
+    pub const IDENTITY_LIST: &str = "identity.list";
+    /// Add an identity (without `id`) or change one.
+    pub const IDENTITY_SAVE: &str = "identity.save";
+    /// Remove an identity; not the default.
+    pub const IDENTITY_REMOVE: &str = "identity.remove";
+    /// Make an identity its account's default (new messages go out from it).
+    pub const IDENTITY_MAKE_DEFAULT: &str = "identity.make_default";
+    /// Send a draft from another of its account's identities; the signature
+    /// in a plain-text draft is swapped for the new one's.
+    pub const DRAFT_SET_FROM: &str = "draft.set_from";
     /// Freeze the draft into the outbox; it goes once the undo window is over,
     /// or at the time asked for (send later).
     pub const DRAFT_SEND: &str = "draft.send";
@@ -362,6 +383,9 @@ pub struct MailboxSummary {
     pub delimiter: Option<char>,
     pub role: Option<Role>,
     pub selectable: bool,
+    /// Unread messages; for the inbox, leaving out what is set aside or snoozed.
+    #[serde(default)]
+    pub unread: u32,
 }
 
 /// Result of [`methods::MAILBOX_LIST`].
@@ -413,6 +437,9 @@ pub struct MessageListParams {
     pub limit: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub before: Option<MessageCursor>,
+    /// In the inbox: only this Smart Inbox section.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section: Option<Section>,
 }
 
 /// A message in a list.
@@ -453,10 +480,26 @@ pub struct MessageSummary {
     /// message is filed, until it is done ([`methods::MESSAGE_REMIND`] with no time).
     #[serde(default)]
     pub reminded: bool,
+    /// Its Smart Inbox section (none until sorted).
+    #[serde(default)]
+    pub section: Option<Section>,
+    /// How many messages its conversation has (1 when alone).
+    #[serde(default = "one")]
+    pub thread_size: u32,
+    /// It has attached files (not inline images).
+    #[serde(default)]
+    pub has_attachments: bool,
+    /// The start of its text, whitespace collapsed (about 140 characters).
+    #[serde(default)]
+    pub preview: Option<String>,
     /// Its place in the list: `received_at`, except in the inbox for what came
     /// back to it (a snooze that ended, a reminder), listed by when it did.
     #[serde(default)]
     pub listed_at: i64,
+}
+
+fn one() -> u32 {
+    1
 }
 
 /// Parameters naming one message: [`methods::MESSAGE_GET`].
@@ -590,6 +633,59 @@ pub struct SnoozeParams {
     pub someday: bool,
 }
 
+/// One section of the Smart Inbox: how many messages, how many unread.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SectionCount {
+    pub section: Section,
+    pub total: u32,
+    pub unread: u32,
+}
+
+/// Result of [`methods::SMART_OVERVIEW`]: the sections with mail, in order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SmartOverviewResult {
+    pub sections: Vec<SectionCount>,
+}
+
+/// What is known about a sender, for one account.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SenderView {
+    pub address: String,
+    /// The section the person chose for them, if any.
+    pub policy: Option<Policy>,
+    pub priority: bool,
+    /// The account has written to them.
+    pub written_to: bool,
+}
+
+/// Result of [`methods::MESSAGE_EXPLAIN`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExplainResult {
+    pub section: Section,
+    /// The rule that placed it.
+    pub reason: Reason,
+    /// None for a message without a sender's address.
+    pub sender: Option<SenderView>,
+}
+
+/// Parameters of [`methods::SENDER_SET`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SenderSetParams {
+    pub account_id: String,
+    pub address: String,
+    /// Where their mail goes; none to let the rules decide.
+    #[serde(default)]
+    pub policy: Option<Policy>,
+    #[serde(default)]
+    pub priority: bool,
+}
+
+/// Result of [`methods::SENDER_SET`]: how many messages changed section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SenderSetResult {
+    pub changed: usize,
+}
+
 /// Parameters of [`methods::MESSAGE_REMIND`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemindParams {
@@ -635,8 +731,11 @@ pub struct ViewParams {
 pub struct DraftView {
     pub id: i64,
     pub account_id: String,
-    /// Who it goes out from: the account's name and address.
+    /// Who it goes out from: its identity's name and address.
     pub from: Person,
+    /// That identity (`None` only for an account without one).
+    #[serde(default)]
+    pub identity_id: Option<i64>,
     pub to: Vec<Person>,
     pub cc: Vec<Person>,
     pub bcc: Vec<Person>,
@@ -709,6 +808,9 @@ pub struct DraftCreateParams {
     pub subject: String,
     #[serde(default)]
     pub body: String,
+    /// Who it is from; the account's default identity when not given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_id: Option<i64>,
 }
 
 /// Parameters of [`methods::DRAFT_REPLY`].
@@ -740,6 +842,51 @@ pub struct DraftUpdateParams {
     /// The formatted version; the daemon sanitises it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub html: Option<String>,
+}
+
+/// One of the names and addresses an account sends as.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IdentityView {
+    pub id: i64,
+    pub account_id: String,
+    pub name: String,
+    pub email: String,
+    /// Plain text, put below what is written and above a quote.
+    pub signature: String,
+    pub is_default: bool,
+}
+
+/// Result of [`methods::IDENTITY_LIST`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IdentityListResult {
+    pub identities: Vec<IdentityView>,
+}
+
+/// Parameters of [`methods::IDENTITY_SAVE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IdentitySaveParams {
+    /// The identity to change; none to add one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    pub account_id: String,
+    #[serde(default)]
+    pub name: String,
+    pub email: String,
+    #[serde(default)]
+    pub signature: String,
+}
+
+/// Names an identity: [`methods::IDENTITY_REMOVE`], [`methods::IDENTITY_MAKE_DEFAULT`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IdentityRef {
+    pub id: i64,
+}
+
+/// Parameters of [`methods::DRAFT_SET_FROM`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftSetFromParams {
+    pub id: i64,
+    pub identity_id: i64,
 }
 
 /// Parameters of [`methods::DRAFT_SEND`].

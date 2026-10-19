@@ -15,7 +15,8 @@ use imap_types::search::SearchKey;
 use imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
 use std::num::{NonZeroU32, NonZeroU64};
 
-/// The headers Regards keeps for lists and threading.
+/// The headers Regards keeps for lists and threading, and those the Smart
+/// Inbox reads to tell newsletters and notifications from people.
 const HEADER_FIELDS: &[&str] = &[
     "DATE",
     "FROM",
@@ -25,6 +26,15 @@ const HEADER_FIELDS: &[&str] = &[
     "MESSAGE-ID",
     "IN-REPLY-TO",
     "REFERENCES",
+    "LIST-ID",
+    "LIST-UNSUBSCRIBE",
+    "LIST-POST",
+    "PRECEDENCE",
+    "AUTO-SUBMITTED",
+    "X-AUTO-RESPONSE-SUPPRESS",
+    "X-AUTOREPLY",
+    "CONTENT-TYPE",
+    "FEEDBACK-ID",
 ];
 
 /// What SELECT reported about a mailbox.
@@ -541,7 +551,7 @@ impl Session {
     }
 }
 
-fn ok(reply: &Reply, command: &str) -> Result<(), ImapError> {
+pub(crate) fn ok(reply: &Reply, command: &str) -> Result<(), ImapError> {
     if reply.done.kind == StatusKind::Ok {
         Ok(())
     } else {
@@ -599,7 +609,7 @@ fn uid_ranges(set: &SequenceSet) -> Vec<(u32, u32)> {
         .collect()
 }
 
-fn sequence_set(set: &str) -> Result<SequenceSet, ImapError> {
+pub(crate) fn sequence_set(set: &str) -> Result<SequenceSet, ImapError> {
     SequenceSet::try_from(set).map_err(|_| ImapError::Protocol(format!("invalid message set {set:?}")))
 }
 

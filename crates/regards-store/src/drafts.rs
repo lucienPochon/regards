@@ -26,9 +26,11 @@ pub struct Draft {
     pub updated_at: i64,
     /// An outbox entry exists: the draft is frozen.
     pub sending: bool,
+    /// Who it is from; the account's default identity when `None`.
+    pub identity_id: Option<i64>,
 }
 
-/// What a draft says; everything but its identity and times.
+/// What a draft says; everything but its id and times.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Content {
     pub to: Vec<Person>,
@@ -39,12 +41,13 @@ pub struct Content {
     pub in_reply_to: Option<String>,
     pub references: Vec<String>,
     pub replying_to: Option<i64>,
+    pub identity_id: Option<i64>,
 }
 
 pub fn create(tx: &Transaction<'_>, account_id: &str, content: &Content, now: i64) -> Result<i64, StoreError> {
     tx.execute(
         "INSERT INTO drafts (account_id, to_json, cc_json, bcc_json, subject, body, in_reply_to, references_json, \
-         replying_to, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
+         replying_to, created_at, updated_at, identity_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, ?11)",
         params![
             account_id,
             json(&content.to),
@@ -56,9 +59,25 @@ pub fn create(tx: &Transaction<'_>, account_id: &str, content: &Content, now: i6
             json(&content.references),
             content.replying_to,
             now,
+            content.identity_id,
         ],
     )?;
     Ok(tx.last_insert_rowid())
+}
+
+/// Send it from another identity, with `body` (its signature swapped).
+/// Refused while it is being sent.
+pub fn set_identity(tx: &Transaction<'_>, id: i64, identity_id: i64, body: &str, now: i64) -> Result<(), StoreError> {
+    if get(tx, id)?.is_none_or(|draft| draft.sending) {
+        return Err(StoreError::Conflict(
+            "this message is being sent; undo or cancel it first".into(),
+        ));
+    }
+    tx.execute(
+        "UPDATE drafts SET identity_id = ?2, body = ?3, updated_at = ?4 WHERE id = ?1",
+        params![id, identity_id, body, now],
+    )?;
+    Ok(())
 }
 
 /// What the person writing can change: recipients, subject and text.
@@ -100,7 +119,7 @@ pub fn update(tx: &Transaction<'_>, id: i64, edit: &Edit<'_>, now: i64) -> Resul
 
 const COLUMNS: &str = "d.id, d.account_id, d.to_json, d.cc_json, d.bcc_json, d.subject, d.body, d.in_reply_to, \
     d.references_json, d.replying_to, d.created_at, d.updated_at, \
-    EXISTS (SELECT 1 FROM outbox o WHERE o.draft_id = d.id), d.html";
+    EXISTS (SELECT 1 FROM outbox o WHERE o.draft_id = d.id), d.html, d.identity_id";
 
 pub fn get(conn: &Connection, id: i64) -> Result<Option<Draft>, StoreError> {
     conn.query_row(
@@ -231,6 +250,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Draft, StoreError>> {
             updated_at: row.get(11)?,
             sending: row.get(12)?,
             html: row.get(13)?,
+            identity_id: row.get(14)?,
         })
     };
     Ok(parse())

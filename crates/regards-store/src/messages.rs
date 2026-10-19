@@ -2,6 +2,7 @@
 
 use crate::StoreError;
 use regards_core::headers::{Headers, Person};
+use regards_core::smart::Section;
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 use serde::{Deserialize, Serialize};
 
@@ -57,6 +58,12 @@ pub struct Message {
     pub moving_to: Option<i64>,
     /// Its conversation (ADR-0009 §5); `None` until threaded.
     pub thread_id: Option<i64>,
+    /// Its Smart Inbox section; `None` until sorted.
+    pub section: Option<Section>,
+    /// It has attached files; `None` until its structure is known.
+    pub has_attachments: Option<bool>,
+    /// The start of its text, whitespace collapsed; `None` until fetched.
+    pub preview: Option<String>,
     /// Its place in the list it was read from: `received_at`, except in the
     /// inbox for what came back to it (a snooze that ended, a reminder).
     pub listed_at: i64,
@@ -77,16 +84,18 @@ pub fn upsert(tx: &Transaction<'_>, mailbox_id: i64, messages: &[NewMessage]) ->
     let mut statement = tx.prepare_cached(
         "INSERT INTO messages (mailbox_id, uid, modseq, seen, answered, flagged, draft, deleted, keywords, \
          received_at, size, sent_at, subject, from_name, from_address, to_json, cc_json, message_id_header, \
-         in_reply_to, references_ids) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20) \
+         in_reply_to, references_ids, traits) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21) \
          ON CONFLICT (mailbox_id, uid) DO UPDATE SET modseq = excluded.modseq, seen = excluded.seen, \
          answered = excluded.answered, flagged = excluded.flagged, draft = excluded.draft, \
          deleted = excluded.deleted, keywords = excluded.keywords, received_at = excluded.received_at, \
          size = excluded.size, sent_at = excluded.sent_at, subject = excluded.subject, \
          from_name = excluded.from_name, from_address = excluded.from_address, to_json = excluded.to_json, \
          cc_json = excluded.cc_json, message_id_header = excluded.message_id_header, \
-         in_reply_to = excluded.in_reply_to, references_ids = excluded.references_ids RETURNING id",
+         in_reply_to = excluded.in_reply_to, references_ids = excluded.references_ids, traits = excluded.traits \
+         RETURNING id",
     )?;
+    let own = crate::smart::own_addresses(tx, &account_id)?;
     for message in messages {
         let headers = &message.headers;
         let received_at = message.received_at.or(headers.date).unwrap_or(0);
@@ -112,12 +121,25 @@ pub fn upsert(tx: &Transaction<'_>, mailbox_id: i64, messages: &[NewMessage]) ->
                 headers.message_id,
                 json(&headers.in_reply_to),
                 json(&headers.references),
+                headers.traits,
             ],
             |r| r.get(0),
         )?;
         let mut references = headers.in_reply_to.clone();
         references.extend(headers.references.iter().cloned());
         crate::threads::assign(tx, &account_id, row, headers.message_id.as_deref(), &references)?;
+        // Mail from the account itself: everyone it went to is someone it writes to.
+        let from = headers.from.as_ref().and_then(|p| p.address.as_deref());
+        if from.is_some_and(|address| own.iter().any(|mine| mine.eq_ignore_ascii_case(address))) {
+            let recipients: Vec<String> = headers
+                .to
+                .iter()
+                .chain(&headers.cc)
+                .filter_map(|p| p.address.clone())
+                .collect();
+            crate::smart::note_written_to(tx, &account_id, &recipients, received_at)?;
+        }
+        crate::smart::reclassify(tx, &account_id, &own, row)?;
     }
     Ok(messages.len())
 }
@@ -145,6 +167,63 @@ pub fn apply_flags(tx: &Transaction<'_>, mailbox_id: i64, changes: &[FlagChange]
         ])?;
     }
     Ok(changed)
+}
+
+/// Unread messages per folder of an account, by folder id, where it shows
+/// (a message being moved counts in its target). The inbox leaves out what
+/// is set aside or snoozed past `now`, as it does in its list.
+pub fn unread_counts(
+    conn: &Connection,
+    account_id: &str,
+    inbox_id: Option<i64>,
+    now: i64,
+) -> Result<std::collections::HashMap<i64, u32>, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT COALESCE(m.moving_to, m.mailbox_id) AS shown, COUNT(*) FROM messages m \
+         WHERE m.seen = 0 AND m.deleted = 0 AND m.mailbox_id IN (SELECT id FROM mailboxes WHERE account_id = ?1) \
+         AND NOT (COALESCE(m.moving_to, m.mailbox_id) IS ?2 AND EXISTS (SELECT 1 FROM marks k \
+             WHERE k.account_id = ?1 AND k.message_id = m.message_id_header \
+             AND (k.aside_at IS NOT NULL OR k.snoozed_until > ?3))) \
+         GROUP BY shown",
+    )?;
+    let rows = statement.query_map(params![account_id, inbox_id, now], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// What a list row shows beyond the headers: whether the message carries
+/// files, and the start of its text.
+pub fn set_details(
+    tx: &Transaction<'_>,
+    mailbox_id: i64,
+    uid: u32,
+    has_attachments: bool,
+    preview: Option<&str>,
+) -> Result<(), StoreError> {
+    tx.prepare_cached("UPDATE messages SET has_attachments = ?3, preview = ?4 WHERE mailbox_id = ?1 AND uid = ?2")?
+        .execute(params![mailbox_id, uid, has_attachments, preview])?;
+    Ok(())
+}
+
+/// Messages of a folder whose details were not fetched yet, newest first.
+pub fn details_unknown(conn: &Connection, mailbox_id: i64, limit: u32) -> Result<Vec<u32>, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT uid FROM messages WHERE mailbox_id = ?1 AND has_attachments IS NULL ORDER BY uid DESC LIMIT ?2",
+    )?;
+    let rows = statement.query_map(params![mailbox_id, limit], |row| row.get(0))?;
+    Ok(rows.collect::<Result<Vec<u32>, _>>()?)
+}
+
+/// How many messages each conversation has (one per Message-ID, not deleted).
+pub fn thread_sizes(conn: &Connection, threads: &[i64]) -> Result<std::collections::HashMap<i64, u32>, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT COUNT(DISTINCT COALESCE(message_id_header, '#' || id)) FROM messages \
+         WHERE thread_id = ?1 AND deleted = 0",
+    )?;
+    let mut sizes = std::collections::HashMap::new();
+    for thread in threads {
+        sizes.insert(*thread, statement.query_row([thread], |row| row.get(0))?);
+    }
+    Ok(sizes)
 }
 
 /// UIDs stored for a mailbox, ascending.
@@ -213,7 +292,8 @@ pub fn clear(tx: &Transaction<'_>, mailbox_id: i64) -> Result<usize, StoreError>
 }
 
 const COLUMNS: &str = "id, mailbox_id, uid, modseq, seen, answered, flagged, draft, deleted, keywords, \
-    received_at, size, sent_at, subject, from_name, from_address, to_json, cc_json, message_id_header, blob_hash, moving_to, thread_id";
+    received_at, size, sent_at, subject, from_name, from_address, to_json, cc_json, message_id_header, blob_hash, moving_to, thread_id, \
+    section, has_attachments, preview";
 
 /// Record where the downloaded source of message `id` is stored.
 pub fn set_blob(tx: &Transaction<'_>, id: i64, hash: &str) -> Result<(), StoreError> {
@@ -248,18 +328,22 @@ fn list_sql() -> String {
 /// The third half walks the marks of what came back, newest first; a copy in
 /// the inbox is preferred over one elsewhere, and copies on their way out are
 /// left out.
-fn inbox_sql() -> String {
+///
+/// With `section`, only that Smart Inbox section (?7): the first half then
+/// walks `messages_by_section`.
+fn inbox_sql(section: bool) -> String {
     // Listed by its own time: not parked, and not come back since it arrived.
     const PLAIN: &str = "NOT EXISTS (SELECT 1 FROM marks k WHERE k.account_id = ?5 \
         AND k.message_id = messages.message_id_header AND (k.aside_at IS NOT NULL OR k.snoozed_until > ?6 \
         OR k.reminded_at IS NOT NULL OR k.surfaced_at > messages.received_at))";
+    let only = if section { "AND messages.section = ?7" } else { "" };
     format!(
         "SELECT * FROM (SELECT {COLUMNS}, received_at AS listed_at FROM messages \
-             WHERE mailbox_id = ?1 AND moving_to IS NULL AND deleted = 0 AND (received_at, id) < (?2, ?3) \
+             WHERE mailbox_id = ?1 AND moving_to IS NULL AND deleted = 0 AND (received_at, id) < (?2, ?3) {only} \
              AND {PLAIN} ORDER BY received_at DESC, id DESC LIMIT ?4) \
          UNION ALL \
          SELECT * FROM (SELECT {COLUMNS}, received_at AS listed_at FROM messages \
-             WHERE moving_to = ?1 AND deleted = 0 AND (received_at, id) < (?2, ?3) \
+             WHERE moving_to = ?1 AND deleted = 0 AND (received_at, id) < (?2, ?3) {only} \
              AND {PLAIN} ORDER BY received_at DESC, id DESC LIMIT ?4) \
          UNION ALL \
          SELECT * FROM (SELECT {COLUMNS}, k.surfaced_at AS listed_at FROM marks k \
@@ -272,7 +356,7 @@ fn inbox_sql() -> String {
              WHERE k.account_id = ?5 AND k.surfaced_at IS NOT NULL AND k.aside_at IS NULL \
              AND (k.snoozed_until IS NULL OR k.snoozed_until <= ?6) \
              AND (k.reminded_at IS NOT NULL OR k.surfaced_at > messages.received_at) \
-             AND (k.surfaced_at, messages.id) < (?2, ?3) \
+             AND (k.surfaced_at, messages.id) < (?2, ?3) {only} \
              ORDER BY k.surfaced_at DESC, messages.id DESC LIMIT ?4) \
          ORDER BY listed_at DESC, id DESC LIMIT ?4"
     )
@@ -299,27 +383,47 @@ pub fn list_without_parked(
     before: Option<Cursor>,
     parked: Option<(&str, i64)>,
 ) -> Result<Vec<Message>, StoreError> {
-    let (received_at, id) = before.map_or((i64::MAX, i64::MAX), |c| (c.received_at, c.id));
-    let messages = match parked {
-        None => conn
+    let Some((account, now)) = parked else {
+        let (received_at, id) = before.map_or((i64::MAX, i64::MAX), |c| (c.received_at, c.id));
+        let messages = conn
             .prepare_cached(&list_sql())?
             .query_map(params![mailbox_id, received_at, id, limit], from_row)?
             .map(|row| row?)
-            .collect::<Result<Vec<_>, _>>()?,
-        Some((account, now)) => conn
-            .prepare_cached(&inbox_sql())?
-            .query_map(params![mailbox_id, received_at, id, limit, account, now], |row| {
-                let listed_at: i64 = row.get(LISTED_AT)?;
-                Ok(from_row(row)?.map(|message| Message { listed_at, ..message }))
-            })?
-            .map(|row| row?)
-            .collect::<Result<Vec<_>, _>>()?,
+            .collect::<Result<Vec<_>, _>>()?;
+        return Ok(messages);
     };
-    Ok(messages)
+    inbox_page(conn, mailbox_id, limit, before, account, now, None)
+}
+
+/// A page of an inbox, as [`list_without_parked`] shows it, of one Smart
+/// Inbox section or all.
+pub fn inbox_page(
+    conn: &Connection,
+    mailbox_id: i64,
+    limit: u32,
+    before: Option<Cursor>,
+    account: &str,
+    now: i64,
+    section: Option<Section>,
+) -> Result<Vec<Message>, StoreError> {
+    let (received_at, id) = before.map_or((i64::MAX, i64::MAX), |c| (c.received_at, c.id));
+    let listed = |row: &Row<'_>| {
+        let listed_at: i64 = row.get(LISTED_AT)?;
+        Ok(from_row(row)?.map(|message| Message { listed_at, ..message }))
+    };
+    let mut statement = conn.prepare_cached(&inbox_sql(section.is_some()))?;
+    let rows = match section {
+        None => statement.query_map(params![mailbox_id, received_at, id, limit, account, now], listed)?,
+        Some(section) => statement.query_map(
+            params![mailbox_id, received_at, id, limit, account, now, section.as_str()],
+            listed,
+        )?,
+    };
+    rows.map(|row| row?).collect()
 }
 
 /// Where `listed_at` follows [`COLUMNS`] in [`inbox_sql`].
-const LISTED_AT: usize = 22;
+const LISTED_AT: usize = 25;
 
 /// The account's messages carrying `mark` (snoozed: until after `now`), one per
 /// Message-ID, newest first: the Pinned, Set aside, Snoozed and Reminders views.
@@ -426,6 +530,9 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Message, StoreError>> {
             blob_hash: row.get(19)?,
             moving_to: row.get(20)?,
             thread_id: row.get(21)?,
+            section: row.get::<_, Option<String>>(22)?.as_deref().and_then(Section::parse),
+            has_attachments: row.get(23)?,
+            preview: row.get(24)?,
             listed_at: row.get(10)?,
         })
     })();
@@ -464,7 +571,20 @@ mod tests {
                     };
                     Ok(details.collect::<Result<_, _>>()?)
                 };
-                Ok((plan(list_sql(), false)?, plan(inbox_sql(), true)?))
+                // One section's page walks the section index, not the whole inbox.
+                let mut statement = conn.prepare(&format!("EXPLAIN QUERY PLAN {}", inbox_sql(true)))?;
+                let section: Vec<String> = statement
+                    .query_map(params![1, i64::MAX, i64::MAX, 50, "account", 0, "people"], |row| {
+                        row.get::<_, String>(3)
+                    })?
+                    .collect::<Result<_, _>>()?;
+                assert!(
+                    section
+                        .iter()
+                        .any(|step| step.contains("USING INDEX messages_by_section")),
+                    "{section:#?}"
+                );
+                Ok((plan(list_sql(), false)?, plan(inbox_sql(false), true)?))
             })
             .await
             .unwrap();

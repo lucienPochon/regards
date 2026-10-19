@@ -28,6 +28,9 @@ pub struct Headers {
     /// Where replies should go, when the sender asked for somewhere else.
     #[serde(default)]
     pub reply_to: Vec<Person>,
+    /// How it was sent, for the Smart Inbox ([`crate::smart::traits`]).
+    #[serde(default)]
+    pub traits: u32,
 }
 
 /// Parse a header block (for example `BODY[HEADER.FIELDS (…)]`). Never fails:
@@ -46,6 +49,18 @@ pub fn parse(raw: &[u8]) -> Headers {
         in_reply_to: ids(message.in_reply_to()),
         references: ids(message.references()),
         reply_to: people(message.reply_to()),
+        traits: crate::smart::traits_of(&crate::smart::HeaderValues {
+            from: message.from().and_then(Address::first).and_then(|addr| addr.address()),
+            list_id: message.header_raw("List-Id"),
+            list_unsubscribe: message.header_raw("List-Unsubscribe"),
+            list_post: message.header_raw("List-Post"),
+            precedence: message.header_raw("Precedence"),
+            auto_submitted: message.header_raw("Auto-Submitted"),
+            auto_response_suppress: message.header_raw("X-Auto-Response-Suppress"),
+            autoreply: message.header_raw("X-Autoreply"),
+            content_type: message.header_raw("Content-Type"),
+            feedback_id: message.header_raw("Feedback-ID"),
+        }),
     }
 }
 

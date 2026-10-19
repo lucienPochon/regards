@@ -11,11 +11,14 @@ use regards_imap::{ImapServer, Session, SystemFlag, TlsOptions};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountSummary, AsideParams, ClientKind, ConnectionSecurity, DeleteResult,
     DraftAttachFileParams, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult, DraftRef,
-    DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MailboxListResult, MarkResult,
-    MessageDetail, MessageHtml, MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef,
-    MoveResult, NoticeKind, NoticeListResult, OutboxEntryView, OutboxListResult, OutboxRef, OutboxState,
-    OutboxUndoResult, PinParams, RemindParams, ServerSettings, SetFlagsParams, SetFlagsResult, SnoozeParams,
-    SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
+    DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, IdentitySaveParams, IdentityView,
+    MailboxListResult, MarkResult, MessageDetail, MessageHtml, MessageHtmlParams, MessageIds, MessageListParams,
+    MessageListResult, MessageRef, MoveResult, NoticeKind, NoticeListResult, OutboxEntryView, OutboxListResult,
+    OutboxRef, OutboxState, OutboxUndoResult, PinParams, RemindParams, ServerSettings, SetFlagsParams, SetFlagsResult,
+    SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
+};
+use regards_ipc::protocol::{
+    ExplainResult, Policy, Reason, Section, SenderSetParams, SenderSetResult, SmartOverviewResult,
 };
 use regards_ipc::{Client, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -98,6 +101,7 @@ async fn messages(desktop: &mut Client, mailbox_id: i64) -> MessageListResult {
                 mailbox_id,
                 limit: None,
                 before: None,
+                section: None,
             },
         )
         .await
@@ -286,6 +290,7 @@ async fn live_sync_follows_new_flagged_expunged_and_reset_mailboxes() {
                 mailbox_id: inbox,
                 limit: Some(2),
                 before: None,
+                section: None,
             },
         )
         .await
@@ -298,6 +303,7 @@ async fn live_sync_follows_new_flagged_expunged_and_reset_mailboxes() {
                 mailbox_id: inbox,
                 limit: Some(2),
                 before: first.next,
+                section: None,
             },
         )
         .await
@@ -1800,6 +1806,243 @@ async fn live_a_reminder_with_no_reply_comes_back_on_top_and_a_reply_ends_it() {
     let shown = subjects(messages(&mut desktop, inbox).await);
     assert!(shown.contains(&"Re: Lunch on Friday?".to_owned()), "{shown:?}");
     assert!(!shown.contains(&"Lunch on Friday?".to_owned()), "{shown:?}");
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_a_reply_goes_out_from_the_address_it_was_written_to() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let to_alias = b"From: Bob <bob@example.test>\r\nTo: Work <work@example.test>\r\nCc: Cy <cy@example.test>\r\n\
+        Subject: Quote\r\nMessage-ID: <quote@example.test>\r\nDate: Sun, 18 Oct 2026 09:00:00 +0000\r\n\r\nHow much?\r\n";
+    seed.append(b"INBOX", &[], to_alias).await.unwrap();
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
+    let alias: IdentityView = desktop
+        .call(
+            methods::IDENTITY_SAVE,
+            IdentitySaveParams {
+                id: None,
+                account_id: account.id.clone(),
+                name: "Work".into(),
+                email: "work@example.test".into(),
+                signature: "The Workshop".into(),
+            },
+        )
+        .await
+        .unwrap();
+    let id = messages(&mut desktop, inbox).await.messages[0].id;
+    let reply: DraftView = desktop
+        .call(
+            methods::DRAFT_REPLY,
+            DraftReplyParams {
+                message_id: id,
+                all: true,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(reply.identity_id, Some(alias.id));
+    assert_eq!(reply.from.address.as_deref(), Some("work@example.test"));
+    assert!(reply.body.starts_with("\n\nThe Workshop\n\nOn "), "{:?}", reply.body);
+    let everyone: Vec<_> = reply
+        .to
+        .iter()
+        .chain(&reply.cc)
+        .filter_map(|p| p.address.clone())
+        .collect();
+    assert!(everyone.contains(&"bob@example.test".to_owned()) && everyone.contains(&"cy@example.test".to_owned()));
+    assert!(
+        !everyone.contains(&"work@example.test".to_owned()),
+        "not to itself: {everyone:?}"
+    );
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_the_smart_inbox_sorts_by_section_and_follows_corrections() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let _ = seed.create_mailbox(b"Sent").await;
+    let me = format!("{}@example.test", live.user);
+    let raw = |id: &str, from: &str, subject: &str, extra: &str| {
+        format!(
+            "From: {from}\r\nTo: {me}\r\nSubject: {subject}\r\nMessage-ID: <{id}@example.test>\r\n\
+             Date: Sun, 18 Oct 2026 09:00:00 +0000\r\n{extra}\r\nBody\r\n"
+        )
+        .into_bytes()
+    };
+    seed.append(
+        b"INBOX",
+        &[],
+        &raw(
+            "n1",
+            "Shop <news@shop.example>",
+            "Sale",
+            "List-Unsubscribe: <https://shop.example/u>\r\n",
+        ),
+    )
+    .await
+    .unwrap();
+    seed.append(b"INBOX", &[], &raw("a1", "Bank <no-reply@bank.example>", "Alert", ""))
+        .await
+        .unwrap();
+    seed.append(b"INBOX", &[], &raw("p1", "Lena <lena@example.net>", "Garden", ""))
+        .await
+        .unwrap();
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
+    let section_of = |page: &MessageListResult, subject: &str| {
+        page.messages
+            .iter()
+            .find(|m| m.subject == subject)
+            .and_then(|m| m.section)
+    };
+    let page = messages(&mut desktop, inbox).await;
+    assert_eq!(section_of(&page, "Sale"), Some(Section::Newsletters));
+    assert_eq!(section_of(&page, "Alert"), Some(Section::Notifications));
+    assert_eq!(section_of(&page, "Garden"), Some(Section::NewSenders));
+
+    // One section's page.
+    let newsletters: MessageListResult = desktop
+        .call(
+            methods::MESSAGE_LIST,
+            MessageListParams {
+                mailbox_id: inbox,
+                limit: None,
+                before: None,
+                section: Some(Section::Newsletters),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(newsletters.messages.len(), 1);
+    let overview: SmartOverviewResult = desktop
+        .call(
+            methods::SMART_OVERVIEW,
+            AccountRef {
+                account_id: account.id.clone(),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(overview.sections.len(), 3);
+
+    // Why is the sale there? Its unsubscribe link.
+    let sale = page.messages.iter().find(|m| m.subject == "Sale").unwrap().id;
+    let why: ExplainResult = desktop
+        .call(methods::MESSAGE_EXPLAIN, MessageRef { id: sale })
+        .await
+        .unwrap();
+    assert_eq!((why.section, why.reason), (Section::Newsletters, Reason::MailingList));
+    assert_eq!(why.sender.unwrap().address, "news@shop.example");
+
+    // The person wants the shop in People; it stays there for new mail too.
+    let moved: SenderSetResult = desktop
+        .call(
+            methods::SENDER_SET,
+            SenderSetParams {
+                account_id: account.id.clone(),
+                address: "News@Shop.example".into(),
+                policy: Some(Policy::People),
+                priority: false,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(moved.changed, 1);
+    seed.append(
+        b"INBOX",
+        &[],
+        &raw(
+            "n2",
+            "Shop <news@shop.example>",
+            "Sale again",
+            "List-Unsubscribe: <https://shop.example/u>\r\n",
+        ),
+    )
+    .await
+    .unwrap();
+    // A message from the account to Lena, filed in Sent: she is no longer new.
+    seed.append(
+        b"Sent",
+        &[SystemFlag::Seen],
+        &format!(
+            "From: {me}\r\nTo: Lena <lena@example.net>\r\nSubject: Re: Garden\r\nMessage-ID: <s1@example.test>\r\n\
+         Date: Sun, 18 Oct 2026 10:00:00 +0000\r\n\r\nYes\r\n"
+        )
+        .into_bytes(),
+    )
+    .await
+    .unwrap();
+    sync(&mut desktop, &account.id).await;
+    let page = messages(&mut desktop, inbox).await;
+    assert_eq!(section_of(&page, "Sale again"), Some(Section::People));
+    assert_eq!(section_of(&page, "Garden"), Some(Section::People));
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_rows_show_a_preview_a_paperclip_a_thread_size_and_unread_counts() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let with_file = b"From: Lena <lena@example.net>\r\nTo: Live <live@example.test>\r\nSubject: Tickets\r\n\
+        Message-ID: <tickets@example.test>\r\nDate: Sun, 18 Oct 2026 09:00:00 +0000\r\nMIME-Version: 1.0\r\n\
+        Content-Type: multipart/mixed; boundary=\"b\"\r\n\r\n--b\r\nContent-Type: text/plain; charset=utf-8\r\n\
+        Content-Transfer-Encoding: quoted-printable\r\n\r\nHere are the tickets for Z=C3=BCrich.\r\n> old quote\r\n\r\n\
+        --b\r\nContent-Type: application/pdf; name=\"t.pdf\"\r\nContent-Disposition: attachment; filename=\"t.pdf\"\r\n\
+        Content-Transfer-Encoding: base64\r\n\r\nJVBERi0xLjQK\r\n--b--\r\n";
+    let html_only = b"From: Shop <news@shop.example>\r\nTo: Live <live@example.test>\r\nSubject: Weekly\r\n\
+        Message-ID: <weekly@example.test>\r\nDate: Sun, 18 Oct 2026 10:00:00 +0000\r\nMIME-Version: 1.0\r\n\
+        Content-Type: text/html; charset=utf-8\r\n\r\n<html><head><style>p{color:red}</style></head>\
+        <body><p>This week: <b>seeds</b> and tools.</p></body></html>\r\n";
+    let reply = b"From: Lena <lena@example.net>\r\nTo: Live <live@example.test>\r\nSubject: Re: Tickets\r\n\
+        Message-ID: <tickets-2@example.test>\r\nIn-Reply-To: <tickets@example.test>\r\n\
+        References: <tickets@example.test>\r\nDate: Sun, 18 Oct 2026 11:00:00 +0000\r\n\r\nAnd the seats.\r\n";
+    seed.append(b"INBOX", &[], with_file).await.unwrap();
+    seed.append(b"INBOX", &[], html_only).await.unwrap();
+    seed.append(b"INBOX", &[SystemFlag::Seen], reply).await.unwrap();
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
+
+    let page = messages(&mut desktop, inbox).await;
+    let row = |subject: &str| page.messages.iter().find(|m| m.subject == subject).unwrap().clone();
+    let tickets = row("Tickets");
+    assert!(tickets.has_attachments);
+    assert_eq!(tickets.preview.as_deref(), Some("Here are the tickets for Zürich."));
+    assert_eq!(tickets.thread_size, 2);
+    let weekly = row("Weekly");
+    assert!(!weekly.has_attachments);
+    assert_eq!(weekly.preview.as_deref(), Some("This week: seeds and tools."));
+    assert_eq!(weekly.thread_size, 1);
+    assert_eq!(row("Re: Tickets").preview.as_deref(), Some("And the seats."));
+
+    // Two unread in the inbox; one set aside leaves one.
+    let unread = |listed: &MailboxListResult| listed.mailboxes.iter().find(|m| m.id == inbox).unwrap().unread;
+    assert_eq!(unread(&folders(&mut desktop, &account.id).await), 2);
+    let _: MarkResult = desktop
+        .call(
+            methods::MESSAGE_SET_ASIDE,
+            AsideParams {
+                ids: vec![weekly.id],
+                aside: true,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(unread(&folders(&mut desktop, &account.id).await), 1);
 
     seed.logout().await;
     handle.abort();

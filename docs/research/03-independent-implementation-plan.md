@@ -214,6 +214,27 @@ flowchart LR
   5. optional local ML later
 - **New-sender screening:** *off* / *section* / *hold until accepted*; accept or block a sender or domain.
 - **Accepted when:** every placement answers "why is this here?", corrections persist, and nothing leaves the device.
+- **Built so far (Phase 4, classifier and API; the sections' UI is still to come):**
+  - **The rules** (`regards_core::smart::classify`) run in order, and the first that applies wins:
+    1. the section the person chose for the sender
+    2. priority sender
+    3. from one of the account's own addresses (People)
+    4. delivery report, sent automatically, or no-reply address (Notifications)
+    5. mailing list or bulk (Newsletters)
+    6. sent through a bulk-mail service (Notifications)
+    7. someone the account has written to (People)
+    8. anyone else (New senders)
+  - **One function gives the section and the reason**, so "why is this here?" (`message.explain`) cannot disagree with the placement.
+  - **Header traits:** the sync also fetches `List-Id`, `List-Unsubscribe`, `List-Post`, `Precedence`, `Auto-Submitted`, `X-Auto-Response-Suppress`, `X-Autoreply`, `Content-Type` and `Feedback-ID`. From them each message gets traits as bit flags. A twelve-case corpus test covers newsletters, receipts, code-review notifications, bounces, auto-replies and people.
+  - **State (migration 0017):**
+    - every message's `section`, kept current
+    - a `senders` table per account: the person's choice, priority, and when the account first wrote to them
+  - **The relationship graph:** a message from one of the account's addresses marks its recipients as written to, and their New senders mail moves to People. The migration seeds this from mail already stored.
+  - **Mail stored before** is sorted at start from what is known. The backfill then reads the inbox's headers again, newest first.
+  - **API:**
+    - `message.list` takes a `section`; its page walks `messages_by_section`
+    - `smart.overview` gives counts and unread per section
+    - `sender.set` records a correction, and the sender's mail, old and new, follows it
 
 ### 5.5 Done / Pin / Set aside / Seen (P1, 1.0)
 
@@ -319,7 +340,13 @@ flowchart LR
   - **The composer in the app:** new message, reply, reply all and forward; Cc/Bcc; autosave; a list of drafts; undo send; the Outbox with its actions.
   - **Attachments:** picked with the system dialog and read by the daemon (ADR-0006 §4), at most 25 MB per message, frozen into the MIME at send. A forward carries the original's files (not its inline images).
   - **Formatting:** a Tiptap (ProseMirror) editor with bold, italic, underline, strikethrough, links, lists and quotes. The daemon sanitises the HTML (an allowlist of formatting tags; web and mail links only) and derives the text part from it, so a message goes as `multipart/alternative`. The editor loads on demand, and ProseMirror's styles ship as a file because the app's CSP allows no injected styles.
-- **Still to come in Phase 2:** checking the HTML in major clients (the acceptance test), inline images, identities and signatures, templates, IMAP draft sync, and dropping files onto the composer.
+  - **Identities and signatures:**
+    - **What they are:** an account sends as its own address (the default at first) or an alias. Each has a name and a plain-text signature, in migration 0016 and `identity.*`.
+    - **New drafts:** a new message, reply or forward starts with the identity's signature, above any quote.
+    - **Replies:** a reply goes out from the address it was written to, and none of the account's addresses is answered.
+    - **Changing From** in the composer swaps the signature: the daemon swaps it in plain text (`draft.set_from`), the app in the editor's HTML.
+    - **What changes on the wire:** the envelope, From and the Message-ID's domain follow the identity.
+- **Still to come in Phase 2:** checking the HTML in major clients (the acceptance test), inline images, templates, IMAP draft sync, and dropping files onto the composer.
 
 ### 5.10 Search (P0 keyword, P2 semantic, 1.0)
 

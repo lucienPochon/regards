@@ -13,6 +13,7 @@ pub mod html;
 pub mod mailbox;
 pub mod paths;
 pub mod secret;
+pub mod smart;
 
 /// Human-readable product name.
 pub const PRODUCT_NAME: &str = "Regards";

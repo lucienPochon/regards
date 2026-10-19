@@ -1,6 +1,6 @@
 //! One client connection: handshake, then request dispatch.
 
-use crate::{State, accounts, actions, compose, mail, notices};
+use crate::{State, accounts, actions, compose, identities, mail, notices, smart};
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_ipc::framing::{self, FrameError};
 use regards_ipc::protocol::{
@@ -211,6 +211,26 @@ impl Session {
                 self.require_ui()?;
                 compose::detach(&self.state, params(request)?).await
             }
+            methods::IDENTITY_LIST => {
+                self.require_ui()?;
+                identities::list(&self.state, params(request)?).await
+            }
+            methods::IDENTITY_SAVE => {
+                self.require_ui()?;
+                identities::save(&self.state, params(request)?).await
+            }
+            methods::IDENTITY_REMOVE => {
+                self.require_ui()?;
+                identities::remove(&self.state, params(request)?).await
+            }
+            methods::IDENTITY_MAKE_DEFAULT => {
+                self.require_ui()?;
+                identities::make_default(&self.state, params(request)?).await
+            }
+            methods::DRAFT_SET_FROM => {
+                self.require_ui()?;
+                compose::set_from(&self.state, params(request)?).await
+            }
             methods::DRAFT_SEND => {
                 self.require_ui()?;
                 compose::send(&self.state, params(request)?).await
@@ -250,6 +270,18 @@ impl Session {
             methods::MESSAGE_SET_ASIDE => {
                 self.require_ui()?;
                 actions::set_aside(&self.state, params(request)?).await
+            }
+            methods::SMART_OVERVIEW => {
+                self.require_ui()?;
+                smart::overview(&self.state, params(request)?).await
+            }
+            methods::MESSAGE_EXPLAIN => {
+                self.require_ui()?;
+                smart::explain(&self.state, params(request)?).await
+            }
+            methods::SENDER_SET => {
+                self.require_ui()?;
+                smart::set_sender(&self.state, params(request)?).await
             }
             methods::MESSAGE_REMIND => {
                 self.require_ui()?;

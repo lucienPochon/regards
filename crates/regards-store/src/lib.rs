@@ -13,6 +13,7 @@
 pub mod accounts;
 pub mod blobs;
 pub mod drafts;
+pub mod identities;
 pub mod mailboxes;
 pub mod marks;
 pub mod messages;
@@ -20,6 +21,7 @@ mod migrate;
 pub mod notices;
 pub mod operations;
 pub mod outbox;
+pub mod smart;
 pub mod threads;
 pub mod undo;
 
