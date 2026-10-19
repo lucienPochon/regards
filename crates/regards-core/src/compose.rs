@@ -590,7 +590,7 @@ fn quote_start(body: &str) -> Option<usize> {
 }
 
 /// "2026-10-18 10:05 UTC".
-fn utc(ms: i64) -> String {
+pub(crate) fn utc(ms: i64) -> String {
     let secs = ms.div_euclid(1000);
     let (days, rest) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
     // Civil date from days since 1970-01-01 (H. Hinnant's algorithm).

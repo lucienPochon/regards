@@ -19,6 +19,10 @@ const ALLOWED: &[(&str, &str)] = &[
     ("outlook.office.com", "a Microsoft OAuth scope's name, not a connection"),
     ("mail.google.com", "a Google OAuth scope's name, not a connection"),
     ("api.github.com", "the update check, when the person turns it on"),
+    (
+        "api.anthropic.com",
+        "the assistant, when the person chooses Anthropic with their key",
+    ),
     ("github.com", "release pages, opened in the browser"),
     ("localhost", "this computer"),
     ("127.0.0.1", "this computer"),

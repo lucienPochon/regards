@@ -1,8 +1,8 @@
 //! One client connection: handshake, then request dispatch.
 
 use crate::{
-    State, access, accounts, actions, audit, compose, discover, draft_sync, holds, identities, mail, notices, oauth,
-    people, prefetch, smart, templates,
+    State, access, accounts, actions, assistant, audit, compose, discover, draft_sync, holds, identities, mail,
+    notices, oauth, people, prefetch, smart, templates,
 };
 use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
@@ -462,6 +462,22 @@ impl Session {
             methods::READING_SET_SETTINGS => {
                 self.require_ui()?;
                 mail::set_reading_settings(&self.state, params(request)?).await
+            }
+            methods::ASSISTANT_SETTINGS => {
+                self.require_ui()?;
+                assistant::settings(&self.state).await
+            }
+            methods::ASSISTANT_SET_SETTINGS => {
+                self.require_ui()?;
+                assistant::set_settings(&self.state, params(request)?).await
+            }
+            methods::ASSISTANT_PREVIEW => {
+                self.require_ui()?;
+                assistant::preview(&self.state, params(request)?).await
+            }
+            methods::ASSISTANT_RUN => {
+                self.require_ui()?;
+                assistant::run(&self.state, params(request)?).await
             }
             methods::PREFETCH_GET => {
                 self.require_ui()?;

@@ -15,9 +15,10 @@ Regards makes these connections, and no others:
 | **Microsoft or Google sign-in**, if you add an account that way | When you sign in, and about once an hour after | Signing in, then renewing the sign-in. Your password goes to Microsoft or Google in your browser, never to Regards |
 | **Web servers named in a message**, only if you ask | When you choose *Load images* for a message, or open one from a sender whose images you chose to always load | Showing that message's remote images. They can tell the sender you opened it, which is why they stay blocked until you ask. No referrer is sent |
 | **Web pages you open from a message** | When you click a link | Links open in your own browser. Their tracking parameters (such as `utm_…` or `fbclid`) are removed first, unless you turn that off |
+| **The AI provider you choose**, only if you turn the assistant on: Anthropic (`api.anthropic.com`) with your own key, or any OpenAI-compatible server you name, including one on your computer | Only when you ask it to summarise a conversation or draft a reply | Sending that conversation to the model, and getting its answer back. At most its latest 8 messages and 40,000 characters go, without the parts they quote. Messages that look like they carry a sign-in or verification code never go. Before anything goes, Regards shows you how many messages, how many characters, and where to. Your key goes only to the server you gave it for. What the provider does with the conversation is governed by your agreement with them |
 | **GitHub** (`api.github.com`), only if you allow it | Once a day if you turn on update checks, or when you check by hand | Asking for the latest version of Regards. GitHub sees your computer's internet address and that the request comes from Regards; nothing else is sent |
 
-Every connection to a mail server or a sign-in service uses TLS, and the certificate is always checked. There is no setting to turn that off.
+Every connection to a mail server, a sign-in service or a hosted AI provider uses TLS, and the certificate is always checked. There is no setting to turn that off.
 
 **Not included:**
 - analytics, telemetry or crash reporting;
@@ -28,7 +29,7 @@ Every connection to a mail server or a sign-in service uses TLS, and the certifi
 ## What Regards keeps on your computer
 
 - **Your mail:** messages, folders, drafts, the search index and attachments you downloaded, in Regards' data folder on your computer.
-- **Passwords and sign-in tokens:** only in your operating system's credential store (Windows Credential Manager, the macOS Keychain, or the Secret Service on Linux). They never go into Regards' database or logs.
+- **Passwords, sign-in tokens and your AI key:** only in your operating system's credential store (Windows Credential Manager, the macOS Keychain, or the Secret Service on Linux). They never go into Regards' database or logs.
 - **Settings and history:** your settings, the Outbox, and a record of what agents asked (kept 90 days), in the same folder.
 - **A log:** Regards' own log, for diagnosing problems. It never contains message content, passwords or tokens. It is kept small: one older copy at most.
   - **Detailed logging** (Settings › Support) makes it say more about what Regards does, under the same rules.

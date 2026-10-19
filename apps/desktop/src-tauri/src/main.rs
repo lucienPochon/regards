@@ -408,6 +408,72 @@ async fn set_reading_settings(
     Ok(())
 }
 
+/// The assistant (ADR-0015 §5): which AI model, if any, with the person's own key.
+#[tauri::command]
+async fn assistant_settings(bridge: State<'_, Bridge>) -> Result<regards_ipc::protocol::AssistantSettings, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::ASSISTANT_SETTINGS, Value::Null)
+        .await
+        .map_err(describe)
+}
+
+/// Choose the provider, model and key (kept in the credential store), or turn it off.
+#[tauri::command]
+async fn set_assistant_settings(
+    bridge: State<'_, Bridge>,
+    settings: regards_ipc::protocol::AssistantSetSettingsParams,
+) -> Result<regards_ipc::protocol::AssistantSettings, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::ASSISTANT_SET_SETTINGS, settings)
+        .await
+        .map_err(describe)
+}
+
+/// What a task would send, and where, before anything is sent.
+#[tauri::command]
+async fn assistant_preview(
+    bridge: State<'_, Bridge>,
+    message_id: i64,
+    task: regards_ipc::protocol::AssistantTask,
+) -> Result<regards_ipc::protocol::AssistantPreview, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::ASSISTANT_PREVIEW,
+            regards_ipc::protocol::AssistantParams {
+                message_id,
+                task,
+                all: false,
+            },
+        )
+        .await
+        .map_err(describe)
+}
+
+/// A conversation summarised, or a reply drafted (never sent).
+#[tauri::command]
+async fn assistant_run(
+    bridge: State<'_, Bridge>,
+    message_id: i64,
+    task: regards_ipc::protocol::AssistantTask,
+    all: Option<bool>,
+) -> Result<regards_ipc::protocol::AssistantResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::ASSISTANT_RUN,
+            regards_ipc::protocol::AssistantParams {
+                message_id,
+                task,
+                all: all.unwrap_or(false),
+            },
+        )
+        .await
+        .map_err(describe)
+}
+
 /// Whether recent inbox mail is downloaded ahead (off by default).
 #[tauri::command]
 async fn prefetch_get(bridge: State<'_, Bridge>) -> Result<bool, String> {
@@ -1312,6 +1378,10 @@ fn main() {
             draft_check,
             reading_settings,
             set_reading_settings,
+            assistant_settings,
+            set_assistant_settings,
+            assistant_preview,
+            assistant_run,
             prefetch_get,
             prefetch_set,
             account_set_auto_copy,
