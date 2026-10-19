@@ -757,6 +757,18 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return owner.account;
     }
+    case "draft_check": {
+      const draft = draftById(args.id as number);
+      const checks: Array<Record<string, string>> = [];
+      if (draft.to.length + draft.cc.length + draft.bcc.length === 0) checks.push({ kind: "no_recipients" });
+      if (!draft.subject.trim()) checks.push({ kind: "no_subject" });
+      const written = draft.body.split(/\n\n.* wrote:\n|\n\n-{5,} Forwarded/)[0].toLowerCase();
+      const word = ["attached", "attachment", "enclosed", "pièce jointe", "anbei"].find((w) => written.includes(w));
+      if (word && (draft.attachments ?? []).length === 0) checks.push({ kind: "missing_attachment", word });
+      const hole = /\{\{[^}\n]{0,60}\}\}|\[\[[^\]\n]{0,60}\]\]/.exec(written);
+      if (hole) checks.push({ kind: "placeholder", text: hole[0] });
+      return { checks };
+    }
     case "people_suggest": {
       const typed = String(args.query ?? "").trim().toLowerCase();
       const known = [

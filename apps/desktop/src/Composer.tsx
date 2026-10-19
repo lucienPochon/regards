@@ -3,7 +3,10 @@ import { type KeyboardEvent, Suspense, lazy, useCallback, useEffect, useRef, use
 import {
   type Draft,
   type Queued,
+  type SendCheck,
   attachDropped,
+  checkDraft,
+  describeCheck,
   attachFiles,
   deleteDraft,
   detachFile,
@@ -81,7 +84,9 @@ export function Composer({
   const [copies, setCopies] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
-  const [askSubject, setAskSubject] = useState(false);
+  // What the daemon asked about before sending (send again to go anyway), and what was asked already.
+  const [warnings, setWarnings] = useState<SendCheck[]>([]);
+  const asked = useRef<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   // "Remind me if no reply by" this time, once it has gone.
   const [remindAt, setRemindAt] = useState<number | null>(null);
@@ -206,11 +211,11 @@ export function Composer({
 
   const change = (name: keyof Fields) => (event: { target: { value: string } }) => {
     setError(null);
-    setAskSubject(false);
+    setWarnings([]);
     setFields((current) => (current ? { ...current, [name]: event.target.value } : current));
   };
 
-  /** Whether it can go: someone to send to, valid addresses, and a subject (or a second press). */
+  /** Whether it can go as far as the fields show: someone to send to, and valid addresses. */
   const checked = (): boolean => {
     if (!fields || !draft || busy) return false;
     const everyone = [...parseRecipients(fields.to), ...parseRecipients(fields.cc), ...parseRecipients(fields.bcc)];
@@ -223,18 +228,34 @@ export function Composer({
       setError(`Check ${invalid.length === 1 ? "this address" : "these addresses"}: ${invalid.join(", ")}`);
       return false;
     }
-    if (!fields.subject.trim() && !askSubject) {
-      setAskSubject(true);
+    return true;
+  };
+
+  /**
+   * The daemon's checks on the saved draft (no subject, an attachment it
+   * speaks of but lacks, something left to fill in): each is asked about
+   * once, and a second press sends it anyway. True when nothing new is asked.
+   */
+  const confirmed = async (): Promise<boolean> => {
+    if (!draft) return false;
+    const key = (check: SendCheck) => (check.kind === "placeholder" ? `placeholder:${check.text}` : check.kind);
+    const checks = await checkDraft(draft.id);
+    if (checks.some((check) => check.kind === "no_recipients")) {
+      setError(describeCheck({ kind: "no_recipients" }));
       return false;
     }
-    return true;
+    const fresh = checks.filter((check) => !asked.current.has(key(check)));
+    if (fresh.length === 0) return true;
+    for (const check of fresh) asked.current.add(key(check));
+    setWarnings(fresh);
+    return false;
   };
 
   const send = async (sendAt: number | null = null) => {
     if (!draft || !checked()) return;
     setBusy(true);
     try {
-      if (!(await flush())) return;
+      if (!(await flush()) || !(await confirmed())) return;
       onQueued(await sendDraft(draft.id, getPrefs().undoSeconds, sendAt, remindAt));
     } catch (failure) {
       setError(String(failure));
@@ -245,6 +266,12 @@ export function Composer({
 
   const later = async (button: HTMLElement) => {
     if (!checked()) return;
+    try {
+      if (!(await flush()) || !(await confirmed())) return;
+    } catch (failure) {
+      setError(String(failure));
+      return;
+    }
     const at = await pickSendTime(anchorOf(button, "end"));
     if (at !== null) await send(at);
   };
@@ -597,7 +624,11 @@ export function Composer({
               </div>
             )}
           </fieldset>
-          {askSubject && <p className="composer-note">There is no subject. Press Send again to send it anyway.</p>}
+          {warnings.length > 0 && (
+            <p className="composer-note" role="status">
+              {warnings.map(describeCheck).join(" ")} Press Send again to send it anyway.
+            </p>
+          )}
           {error && <p className="composer-note error">{error}</p>}
           {mode === "panel" && tools}
         </>

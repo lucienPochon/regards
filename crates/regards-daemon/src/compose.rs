@@ -8,10 +8,10 @@ use regards_core::compose::{self, Outgoing};
 use regards_core::executor::Executor;
 use regards_core::headers::{self, Person};
 use regards_ipc::protocol::{
-    DraftAttachFileParams, DraftAttachImageParams, DraftAttachment, DraftCreateParams, DraftDetachParams, DraftImage,
-    DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult,
-    DraftSetFromParams, DraftUpdateParams, DraftView, MessageRef, OutboxEntryView, OutboxListResult, OutboxRef,
-    OutboxRescheduleParams, OutboxState, OutboxUndoResult, RpcError, codes,
+    DraftAttachFileParams, DraftAttachImageParams, DraftAttachment, DraftCheckResult, DraftCreateParams,
+    DraftDetachParams, DraftImage, DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams,
+    DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView, MessageRef, OutboxEntryView,
+    OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxState, OutboxUndoResult, RpcError, codes,
 };
 use regards_store::drafts::{self, Content, Draft, Edit};
 use regards_store::identities::{self, Identity};
@@ -194,6 +194,37 @@ async fn store_new(state: &State, account_id: String, content: Content) -> Resul
 
 pub(crate) async fn get(state: &State, params: DraftRef) -> Result<Value, RpcError> {
     view(state, params.id).await
+}
+
+/// `draft.check`: what to ask about before it goes (plan §5.9).
+pub(crate) async fn check(state: &State, params: DraftRef) -> Result<Value, RpcError> {
+    let id = params.id;
+    let found = state
+        .store
+        .read(move |conn| {
+            let Some(draft) = drafts::get(conn, id)? else {
+                return Ok(None);
+            };
+            Ok(Some((draft, drafts::attachments(conn, id)?.len())))
+        })
+        .await
+        .map_err(crate::session::internal)?;
+    let (draft, attachments) = found.ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such draft"))?;
+    let recipients = draft
+        .to
+        .iter()
+        .chain(&draft.cc)
+        .chain(&draft.bcc)
+        .filter(|person| {
+            person
+                .address
+                .as_deref()
+                .is_some_and(|address| !address.trim().is_empty())
+        })
+        .count();
+    Ok(json!(DraftCheckResult {
+        checks: compose::send_checks(recipients, &draft.subject, &draft.body, attachments),
+    }))
 }
 
 /// The drafts of the account asked for, or all; `scope` (an agent's): of these accounts only.

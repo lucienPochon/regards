@@ -81,6 +81,35 @@ export interface Queued {
   needs_this_computer?: boolean;
 }
 
+/** Something to ask about before a draft goes (`checkDraft`). */
+export type SendCheck =
+  | { kind: "no_recipients" }
+  | { kind: "no_subject" }
+  | { kind: "missing_attachment"; word: string }
+  | { kind: "placeholder"; text: string };
+
+/**
+ * What to ask about before a saved draft goes: none when it can go as it is.
+ * `no_recipients` stops it; for the others the person confirms (send again).
+ * Only what was written counts, not a quoted reply or forwarded message.
+ */
+export const checkDraft = (id: number) =>
+  invoke<{ checks: SendCheck[] }>("draft_check", { id }).then((result) => result.checks);
+
+/** What a check says, for the composer. */
+export function describeCheck(check: SendCheck): string {
+  switch (check.kind) {
+    case "no_recipients":
+      return "Add at least one recipient.";
+    case "no_subject":
+      return "There is no subject.";
+    case "missing_attachment":
+      return `It mentions “${check.word}”, but nothing is attached.`;
+    case "placeholder":
+      return `“${check.text}” is still to be filled in.`;
+  }
+}
+
 /**
  * Whom to write to, as a recipient is typed: the start of an address or of
  * a word of a name; empty gives those written with most. Best first: those

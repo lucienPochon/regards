@@ -12,9 +12,9 @@ mod world;
 use regards_core::headers::{self, Person};
 use regards_daemon::DEFAULT_LATE_SEND_GRACE;
 use regards_ipc::protocol::{
-    AccountRef, AccountSummary, AccountUpdateParams, AutoCopy, AutoCopyParams, CopyKind, DraftCreateParams,
-    DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView, IdentityListResult,
-    IdentityRef, IdentitySaveParams, IdentityView, codes, methods,
+    AccountRef, AccountSummary, AccountUpdateParams, AutoCopy, AutoCopyParams, CopyKind, DraftCheckResult,
+    DraftCreateParams, DraftRef, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
+    IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView, SendCheck, codes, methods,
 };
 use regards_ipc::{Client, ClientError};
 use serde_json::Value;
@@ -347,5 +347,55 @@ async fn every_new_draft_gets_the_accounts_automatic_copy() {
     );
     let _: Value = desktop.call(methods::ACCOUNT_SET_AUTO_COPY, set(None)).await.unwrap();
     assert!(new_draft(&mut desktop, &account.id).await.bcc.is_empty());
+    handle.abort();
+}
+
+#[tokio::test]
+async fn a_draft_says_what_to_ask_before_it_goes() {
+    let world = World::new(DEFAULT_LATE_SEND_GRACE).await;
+    let Running {
+        mut desktop, handle, ..
+    } = world.start().await;
+    let account = world.add_account(&mut desktop).await;
+    let draft: DraftView = desktop
+        .call(
+            methods::DRAFT_CREATE,
+            DraftCreateParams {
+                account_id: account.id.clone(),
+                to: vec![Person {
+                    name: None,
+                    address: Some("bob@example.test".into()),
+                }],
+                subject: String::new(),
+                body: "Hi {{name}}, the plan is attached.".into(),
+                ..DraftCreateParams::default()
+            },
+        )
+        .await
+        .unwrap();
+    let checked: DraftCheckResult = desktop
+        .call(methods::DRAFT_CHECK, DraftRef { id: draft.id })
+        .await
+        .unwrap();
+    assert_eq!(
+        checked.checks,
+        [
+            SendCheck::NoSubject,
+            SendCheck::MissingAttachment {
+                word: "attached".into()
+            },
+            SendCheck::Placeholder {
+                text: "{{name}}".into()
+            },
+        ]
+    );
+    assert_eq!(
+        code(
+            desktop
+                .call::<_, DraftCheckResult>(methods::DRAFT_CHECK, DraftRef { id: 999 })
+                .await
+        ),
+        codes::NOT_FOUND
+    );
     handle.abort();
 }

@@ -29,6 +29,7 @@ const READING: &[&str] = &[
     methods::MESSAGE_EXPLAIN,
     methods::DRAFT_LIST,
     methods::DRAFT_GET,
+    methods::DRAFT_CHECK,
     methods::HOLD_GET,
 ];
 

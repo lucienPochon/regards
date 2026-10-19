@@ -354,6 +354,16 @@ async fn account_set_auto_copy(
         .map_err(describe)
 }
 
+/// What to ask about before a draft goes.
+#[tauri::command]
+async fn draft_check(bridge: State<'_, Bridge>, id: i64) -> Result<regards_ipc::protocol::DraftCheckResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::DRAFT_CHECK, DraftRef { id })
+        .await
+        .map_err(describe)
+}
+
 /// Whom to write to, as one types a recipient: best first.
 #[tauri::command]
 async fn people_suggest(
@@ -1299,6 +1309,7 @@ fn main() {
             system::open_url,
             account_update,
             people_suggest,
+            draft_check,
             reading_settings,
             set_reading_settings,
             prefetch_get,

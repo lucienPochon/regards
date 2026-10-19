@@ -3,7 +3,7 @@
 use crate::token::UiToken;
 pub use regards_core::agents::Access as AgentAccess;
 use regards_core::body::Attachment;
-pub use regards_core::compose::{AutoCopy, CopyKind};
+pub use regards_core::compose::{AutoCopy, CopyKind, SendCheck};
 pub use regards_core::executor::Executor;
 use regards_core::headers::Person;
 use regards_core::mailbox::Role;
@@ -114,6 +114,9 @@ pub mod methods {
     /// Start forwarding a stored message.
     pub const DRAFT_FORWARD: &str = "draft.forward";
     pub const DRAFT_GET: &str = "draft.get";
+    /// What to ask about before a draft goes: no recipients, no subject, an
+    /// attachment it speaks of but lacks, something left to fill in.
+    pub const DRAFT_CHECK: &str = "draft.check";
     /// Drafts not being sent, most recently changed first; of one account, or all.
     pub const DRAFT_LIST: &str = "draft.list";
     /// Save what the draft says (autosave). Refused while it is being sent.
@@ -1596,6 +1599,13 @@ pub struct NoticeView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NoticeListResult {
     pub notices: Vec<NoticeView>,
+}
+
+/// The result of [`methods::DRAFT_CHECK`]: nothing when it can go as it is.
+/// `no_recipients` stops it; the others are for the person to confirm.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftCheckResult {
+    pub checks: Vec<SendCheck>,
 }
 
 /// Parameters of [`methods::PEOPLE_SUGGEST`].
