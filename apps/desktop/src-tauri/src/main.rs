@@ -23,17 +23,17 @@ use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, AgentAccess, AgentAccessParams,
     AgentActivityParams, AgentActivityResult, AgentSendParams, AsideParams, ClientKind, ConnectionSecurity,
-    DeleteResult, DraftAttachFileParams, DraftAttachImageParams, DraftCreateParams, DraftDetachParams,
-    DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams,
-    DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView, ExplainResult, HoldListParams,
-    HoldListResult, HoldRef, HoldView, IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView,
-    MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult,
-    MessageRef, MoveParams, MoveResult, OauthFlowRef, OauthProvidersResult, OauthStartParams, OauthStartResult,
-    OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams,
-    Screening, ScreeningParams, SearchParams, SearchResult, Section, SenderBlockParams, SenderSetParams,
-    SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SmartOverviewResult,
-    SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView,
-    UndoParams, UndoResult, View, ViewParams, methods,
+    DeleteResult, DiscoverParams, DiscoverResult, DraftAttachFileParams, DraftAttachImageParams, DraftCreateParams,
+    DraftDetachParams, DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult, DraftRef,
+    DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
+    ExplainResult, HoldListParams, HoldListResult, HoldRef, HoldView, IdentityListResult, IdentityRef,
+    IdentitySaveParams, IdentityView, MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds,
+    MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult, OauthFlowRef, OauthProvidersResult,
+    OauthStartParams, OauthStartResult, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult,
+    PinParams, Principal, RemindParams, Screening, ScreeningParams, SearchParams, SearchResult, Section,
+    SenderBlockParams, SenderSetParams, SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams,
+    SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams,
+    TemplateView, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -320,6 +320,17 @@ async fn account_remove(bridge: State<'_, Bridge>, id: String) -> Result<(), Str
         .await
         .map_err(describe)?;
     Ok(())
+}
+
+/// An address's mail servers, to fill in the form with: known providers,
+/// DNS, then the usual names, each checked. Takes a few seconds at most.
+#[tauri::command]
+async fn account_discover(bridge: State<'_, Bridge>, email: String) -> Result<DiscoverResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::ACCOUNT_DISCOVER, DiscoverParams { email })
+        .await
+        .map_err(describe)
 }
 
 /// The providers this version can sign in with (ADR-0018); others use a password.
@@ -1130,6 +1141,7 @@ fn main() {
             notifications_set,
             account_list,
             account_add,
+            account_discover,
             account_oauth_providers,
             account_oauth_start,
             account_oauth_finish,

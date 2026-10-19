@@ -11,6 +11,7 @@ mod audit;
 mod backfill;
 mod compose;
 mod details;
+mod discover;
 mod draft_sync;
 mod feed;
 mod holds;

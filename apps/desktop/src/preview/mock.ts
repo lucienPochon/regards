@@ -631,6 +631,27 @@ function handle(cmd: string, args: Args): unknown {
       return accounts.map((a) => a.account);
     case "account_add":
       throw new Error("The preview cannot sign in to a real server.");
+    case "account_discover": {
+      const domain = String(args.email ?? "").split("@")[1]?.toLowerCase() ?? "";
+      if (domain === "gmail.com") {
+        return {
+          source: "known",
+          imap: { host: "imap.gmail.com", port: 993, security: "tls" },
+          smtp: { host: "smtp.gmail.com", port: 587, security: "starttls" },
+          oauth: "google",
+          oauth_only: false,
+          password_help: "Gmail takes an app password, not your Google password.",
+        };
+      }
+      return domain.includes(".")
+        ? {
+            source: "guess",
+            imap: { host: `imap.${domain}`, port: 993, security: "tls" },
+            smtp: { host: `smtp.${domain}`, port: 587, security: "starttls" },
+            oauth_only: false,
+          }
+        : { source: null, imap: null, smtp: null, oauth_only: false };
+    }
     case "account_oauth_providers":
       return { providers: ["microsoft", "google"] };
     case "account_oauth_start":

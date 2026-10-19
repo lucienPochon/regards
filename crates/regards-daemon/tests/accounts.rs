@@ -10,8 +10,8 @@ use regards_core::secret::Secret;
 use regards_daemon::Daemon;
 use regards_imap::TlsOptions;
 use regards_ipc::protocol::{
-    AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity,
-    MailboxListResult, ServerSettings, SyncResult, codes, methods,
+    AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity, DiscoverParams,
+    DiscoverResult, DiscoverSource, MailboxListResult, Provider, ServerSettings, SyncResult, codes, methods,
 };
 use regards_ipc::{Client, ClientError, Endpoint, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -426,4 +426,59 @@ async fn subscribers_are_told_about_changes_and_agents_cannot_subscribe() {
         latest = change;
     }
     assert!(latest.revision > start.revision);
+}
+
+async fn discover(client: &mut Client, email: &str) -> Result<DiscoverResult, ClientError> {
+    client
+        .call(methods::ACCOUNT_DISCOVER, DiscoverParams { email: email.into() })
+        .await
+}
+
+#[tokio::test]
+async fn an_address_tells_its_servers_before_any_are_typed() {
+    let running = start(TlsOptions::platform()).await;
+    let mut desktop = running.desktop().await;
+
+    // A known provider: at once, no lookup, with what to say of the password.
+    let gmail = discover(&mut desktop, "ada@gmail.com").await.unwrap();
+    assert_eq!(gmail.source, Some(DiscoverSource::Known));
+    let (imap, smtp) = (gmail.imap.unwrap(), gmail.smtp.unwrap());
+    assert_eq!(
+        (imap.host.as_str(), imap.port, imap.security),
+        ("imap.gmail.com", 993, ConnectionSecurity::Tls)
+    );
+    assert_eq!(
+        (smtp.host.as_str(), smtp.port, smtp.security),
+        ("smtp.gmail.com", 587, ConnectionSecurity::Starttls)
+    );
+    assert_eq!(gmail.oauth, Some(Provider::Google));
+    assert!(gmail.password_help.unwrap().contains("app password"));
+    assert!(discover(&mut desktop, "ada@hotmail.com").await.unwrap().oauth_only);
+
+    let refused = discover(&mut desktop, "not an address").await.unwrap_err();
+    assert!(matches!(refused, ClientError::Rpc(ref e) if e.code == codes::INVALID_PARAMS));
+    // It reaches out to servers: the app's to ask, not an agent's.
+    let mut agent = Client::connect(&running.endpoint, ClientKind::Cli).await.unwrap();
+    let refused = discover(&mut agent, "ada@gmail.com").await.unwrap_err();
+    assert!(matches!(refused, ClientError::Rpc(ref e) if e.code == codes::FORBIDDEN));
+}
+
+/// Against the real internet: DNS and public mail servers, no sign-in.
+#[tokio::test]
+#[ignore = "network: cargo test -p regards-daemon --test accounts -- --ignored real_"]
+async fn real_domains_by_their_mx_and_their_usual_names() {
+    let running = start(TlsOptions::platform()).await;
+    let mut desktop = running.desktop().await;
+    // Microsoft 365 behind the organisation's own domain.
+    let hosted = discover(&mut desktop, "someone@microsoft.com").await.unwrap();
+    assert_eq!(hosted.source, Some(DiscoverSource::Mx), "{hosted:?}");
+    assert_eq!(hosted.oauth, Some(Provider::Microsoft));
+    // A provider not in the list, found by DNS or its usual names.
+    let other = discover(&mut desktop, "someone@mailbox.org").await.unwrap();
+    assert!(
+        matches!(other.source, Some(DiscoverSource::Dns | DiscoverSource::Guess)),
+        "{other:?}"
+    );
+    assert!(other.imap.as_ref().unwrap().host.ends_with("mailbox.org"));
+    println!("{hosted:?}\n{other:?}");
 }

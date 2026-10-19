@@ -75,6 +75,23 @@ pub async fn verify_login(
     verify_sign_in(server, username, Auth::Password(password), tls).await
 }
 
+/// Connect over TLS, read the greeting and the capabilities offered before
+/// sign-in, and leave: whether an IMAP server answers at `server`, with a
+/// certificate valid for it (finding an address's servers).
+pub async fn probe(server: &ImapServer, tls: &TlsOptions) -> Result<Vec<String>, ImapError> {
+    let stream = tls::connect(&server.host, server.port, tls).await?;
+    let (mut conn, greeting) = Conn::open(Stream::tls(stream.into())).await?;
+    if let GreetingKind::Bye = greeting.kind {
+        return Err(ImapError::NotImap(clean(greeting.text.as_ref())));
+    }
+    let capabilities = match greeting.code {
+        Some(Code::Capability(caps)) => names(caps.as_ref()),
+        _ => names_from(&conn.run(CommandBody::Capability).await?),
+    };
+    let _ = conn.run(CommandBody::Logout).await;
+    Ok(capabilities)
+}
+
 /// [`verify_login`], with a password or an OAuth token.
 pub async fn verify_sign_in(
     server: &ImapServer,

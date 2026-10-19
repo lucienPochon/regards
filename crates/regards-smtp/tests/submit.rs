@@ -349,3 +349,28 @@ async fn nothing_listening_or_an_untrusted_certificate() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn a_probe_greets_and_leaves_without_signing_in() {
+    let pki = pki();
+    let (port, mut sessions) = serve(&pki, Script::new(Mode::Tls)).await;
+    regards_smtp::probe(&server(port, Security::Tls), &trusting(&pki))
+        .await
+        .unwrap();
+    let session = sessions.next().await;
+    assert!(session.login.is_none() && session.from.is_none());
+
+    let (port, _) = serve(
+        &pki,
+        Script::new(Mode::StartTls {
+            offer: true,
+            inject: false,
+        }),
+    )
+    .await;
+    regards_smtp::probe(&server(port, Security::StartTls), &trusting(&pki))
+        .await
+        .unwrap();
+    let untrusted = regards_smtp::probe(&server(port, Security::StartTls), &TlsOptions::platform()).await;
+    assert!(untrusted.is_err(), "a certificate not valid for it: not offered");
+}

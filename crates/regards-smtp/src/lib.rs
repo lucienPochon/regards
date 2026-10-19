@@ -147,6 +147,15 @@ pub async fn verify_login(
     Ok(())
 }
 
+/// Connect (with STARTTLS when that is the security), greet, and leave:
+/// whether a submission server answers at `server`, with a certificate
+/// valid for it (finding an address's servers).
+pub async fn probe(server: &SmtpServer, tls: &TlsOptions) -> Result<(), SubmitError> {
+    let session = Session::open(server, tls).await?;
+    session.quit().await;
+    Ok(())
+}
+
 /// An address for MAIL FROM or RCPT TO. Anything that could end the command
 /// line or the angle brackets is refused, so no command can be smuggled in.
 fn check_address(address: &str) -> Result<(), SubmitError> {

@@ -67,6 +67,33 @@ export function removeAccount(id: string): Promise<void> {
   return invoke<void>("account_remove", { id });
 }
 
+/** Where `discoverAccount` found the servers. */
+export type DiscoverSource = "known" | "mx" | "dns" | "guess";
+
+/** Mirrors `DiscoverResult`: a proposal for the form, checked when the account is added. */
+export interface Discovered {
+  /** `null`: nothing found; ask for the servers. */
+  source: DiscoverSource | null;
+  imap: ServerSettings | null;
+  smtp: ServerSettings | null;
+  /** The provider's OAuth sign-in, if Regards knows one: offer it when `oauthProviders()` has it. */
+  oauth?: Provider;
+  /** Only OAuth works (Outlook.com, Hotmail): no password form. */
+  oauth_only: boolean;
+  /** What to tell the person about the password, such as making an app password. */
+  password_help?: string;
+}
+
+/**
+ * An address's mail servers, before the person types any: known providers
+ * at once; otherwise DNS (Microsoft 365 or Google Workspace behind a
+ * domain, SRV records) and the usual names (`imap.`, `mail.`, `smtp.`),
+ * each checked. A few seconds at most; call it once the address is typed.
+ */
+export function discoverAccount(email: string): Promise<Discovered> {
+  return invoke<Discovered>("account_discover", { email });
+}
+
 /** The providers this version can sign in with; the others take a password (or app password). */
 export async function oauthProviders(): Promise<Provider[]> {
   const result = await invoke<{ providers: Provider[] }>("account_oauth_providers");

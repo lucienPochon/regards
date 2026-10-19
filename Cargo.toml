@@ -39,6 +39,8 @@ clap = { version = "4.6", features = ["derive", "string"] }
 dirs = "7"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 getrandom = "0.4"
+# DNS for finding an address's mail servers (MX, SRV); the system's resolvers.
+hickory-resolver = { version = "=0.26.3", default-features = false, features = ["system-config", "tokio"] }
 keyring-core = "1"
 libc = "0.2"
 mail-builder = { version = "1", default-features = false }
