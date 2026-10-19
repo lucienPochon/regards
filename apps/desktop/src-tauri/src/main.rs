@@ -12,6 +12,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod background;
+mod links;
 mod mail_frame;
 mod notify;
 
@@ -39,6 +40,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_deep_link::DeepLinkExt;
 use tokio::sync::Mutex;
 
 /// Overrides where the `regards` program is looked for (development and tests).
@@ -948,6 +950,8 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             background::show(app)
         }))
+        // regards:// links; one opened while Regards runs reaches it through the above.
+        .plugin(tauri_plugin_deep_link::init())
         // Used from Rust only: the WebView is granted none of its commands.
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
@@ -957,12 +961,23 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .manage(notify::Notifier::default())
         .manage(Bridge::new())
+        .manage(links::Pending::default())
         .manage(background::Background::load(DataDirs::resolve().ok().as_ref()))
         .register_asynchronous_uri_scheme_protocol(mail_frame::SCHEME, mail_frame::handle)
         .setup(|app| {
             tauri::async_runtime::spawn(forward_changes(app.handle().clone()));
             tauri::async_runtime::spawn(notify::run(app.handle().clone()));
             background::setup(app)?;
+            // Installers register the scheme; a development build does it itself.
+            #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
+            let _ = app.deep_link().register_all();
+            let handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                links::open(&handle, event.urls().iter().map(ToString::to_string), false);
+            });
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                links::open(app.handle(), urls.iter().map(ToString::to_string), true);
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -978,6 +993,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             daemon_status,
             app_quit,
+            links::link_take,
             background_get,
             background_set,
             notifications_get,

@@ -20,7 +20,11 @@ regards-ipc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2.12", features = ["tray-icon"] }
-tauri-plugin-single-instance = "2.5"
+# With deep-link: a regards:// link opened while the app runs reaches it.
+tauri-plugin-single-instance = { version = "2.5", features = ["deep-link"] }
+# regards:// links (ADR-0012 §5): they open a message, draft or hold, never act.
+# 2.6.1 is the newest older than two weeks.
+tauri-plugin-deep-link = "=2.6.1"
 # The file picker, used from Rust only: the WebView is granted none of its commands.
 tauri-plugin-dialog = "2.8"
 # Start at login for background mode (ADR-0017 §1), used from Rust only.
