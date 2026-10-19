@@ -1426,6 +1426,10 @@ pub struct OutboxEntryView {
     /// ([`AccountSummary::needs_sign_in`]): it goes as soon as that is done.
     #[serde(default)]
     pub waiting_for_sign_in: bool,
+    /// An agent asked for it (ADR-0012): it goes after the account's undo
+    /// window for agents, or the person approved it.
+    #[serde(default)]
+    pub by_agent: bool,
 }
 
 /// Result of [`methods::OUTBOX_LIST`].

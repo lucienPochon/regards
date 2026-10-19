@@ -14,7 +14,7 @@ use regards_ipc::protocol::{
     AccountSummary, AgentAccess, AgentAccessParams, AgentActivityParams, AgentActivityResult, AgentDecision,
     AgentSendParams, ClientKind, DraftCreateParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView,
     HoldListParams, HoldListResult, HoldReason, HoldRef, HoldStatus, HoldView, MessageIds, NoticeKind,
-    NoticeListResult, OutboxRef, RpcError, codes, methods,
+    NoticeListResult, OutboxListResult, OutboxRef, RpcError, codes, methods,
 };
 use regards_ipc::{Client, ClientError};
 use serde_json::Value;
@@ -264,6 +264,8 @@ async fn with_an_undo_window_an_agents_send_goes_unless_the_person_calls_it_back
             && n.subject == "Regret"
             && n.outbox_id == Some(queued.outbox_id))
     );
+    let waiting: OutboxListResult = desktop.call(methods::OUTBOX_LIST, Value::Null).await.unwrap();
+    assert!(waiting.entries.iter().any(|e| e.id == queued.outbox_id && e.by_agent));
     let undo = OutboxRef { id: queued.outbox_id };
     assert_eq!(
         refusal(agent.call::<_, Value>(methods::OUTBOX_UNDO, undo).await).code,
