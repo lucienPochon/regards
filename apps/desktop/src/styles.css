@@ -4582,6 +4582,11 @@ button.sender-row:hover:not(:disabled) {
   text-transform: uppercase;
 }
 
+/* Settings that wait on a switch that is off: still editable, shown as resting. */
+.settings-group.dimmed {
+  opacity: 0.55;
+}
+
 /* An address as a heading: kept as written. */
 .settings-subhead.plain {
   font-size: 12.5px;

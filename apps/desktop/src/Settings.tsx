@@ -149,7 +149,7 @@ export function Settings({
           )}
           {tab === "templates" && <TemplatesTab />}
           {tab === "appearance" && <AppearancePage layout={layout} onLayout={onLayout} accounts={accounts} />}
-          {tab === "notifications" && <NotificationsPage />}
+          {tab === "notifications" && <NotificationsPage accounts={accounts} />}
           {tab === "scheduling" && <SchedulingPage />}
           {tab === "composer" && <ComposerPage accounts={accounts} onAccounts={() => onTab("accounts")} />}
           {tab === "accessibility" && <AccessibilityPage />}

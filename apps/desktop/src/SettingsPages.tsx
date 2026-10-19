@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import type { AccountSummary } from "./accounts";
 import { Avatar } from "./Avatar";
 import { backgroundMode, notificationsShown, setBackgroundMode, setNotificationsShown } from "./background";
-import { Icon } from "./icons";
+import { Icon, type IconName } from "./icons";
 import type { Layout } from "./layout";
+import { type NewMail, type NotificationSettings, notificationSettings, setNotificationSettings } from "./notifications";
 import type { ServiceCheck } from "./mail";
 import { ACCOUNT_COLOURS, type Prefs, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
 import { LinkRow, Option, Select, SubPageHead, Toggle } from "./SettingsControls";
@@ -343,37 +344,121 @@ function AccountColours({ accounts, onBack }: { accounts: AccountSummary[]; onBa
   );
 }
 
-/** Notifications: what Regards tells you, and the sidebar's counts. */
-export function NotificationsPage() {
+const NEW_MAIL: { id: NewMail; label: string; detail: string }[] = [
+  { id: "all", label: "All new mail", detail: "Everything that arrives in the inbox." },
+  { id: "smart", label: "People and Priority", detail: "Mail from people and Priority; not new senders, notifications or newsletters." },
+  { id: "priority", label: "Priority only", detail: "Only mail in Priority." },
+  { id: "none", label: "None", detail: "Nothing for new mail." },
+];
+
+/** The notices besides new mail, each its own switch. */
+const NOTICES: { id: Exclude<keyof NotificationSettings, "new_mail">; label: string; description: string; icon: IconName }[] = [
+  { id: "snooze_ended", label: "Snoozed mail comes back", description: "When its time comes.", icon: "clock" },
+  { id: "reminder_due", label: "Nobody has replied", description: "By the time a reminder was set for.", icon: "bell" },
+  {
+    id: "sending",
+    label: "A message did not go",
+    description: "Not sent, perhaps not sent, or held because this computer was off when it was due.",
+    icon: "alert",
+  },
+  { id: "agents", label: "Agents", description: "An agent waits for your answer, or is sending a message.", icon: "agent" },
+];
+
+/**
+ * Notifications: the switch for all of them (the tray's), which new mail
+ * of each account, the other notices one by one, and the sidebar's counts.
+ * Notices show who and the subject, never the message.
+ */
+export function NotificationsPage({ accounts }: { accounts: AccountSummary[] }) {
   const prefs = usePrefs();
-  const [notifications, setNotifications] = useState<boolean | null>(null);
+  const [shown, setShown] = useState<boolean | null>(null);
+  const [settings, setSettings] = useState<NotificationSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    notificationsShown().then(setNotifications, (failure: unknown) => setError(String(failure)));
+    notificationsShown().then(setShown, (failure: unknown) => setError(String(failure)));
+    notificationSettings().then(setSettings, (failure: unknown) => setError(String(failure)));
   }, []);
+  const change = (next: NotificationSettings) => {
+    const before = settings;
+    setError(null);
+    setSettings(next);
+    setNotificationSettings(next).catch((failure: unknown) => {
+      setSettings(before);
+      setError(String(failure));
+    });
+  };
+  const off = shown === false;
   return (
     <>
       <h3>Notifications</h3>
       {error && <p className="error">{error}</p>}
       <Option
         icon="bell"
-        label="Snoozes, reminders and sending problems"
-        description="When a snooze ends, nobody has replied by a reminder, an agent is waiting for you, or a message could not be sent. They show who and the subject, never the message."
+        label="Show notifications"
+        description={
+          off
+            ? "Off: Regards shows none, whatever is chosen below. The tray icon's menu has the same switch."
+            : "They show who and the subject, never the message. The tray icon's menu has the same switch."
+        }
       >
-        {notifications !== null && (
+        {shown !== null && (
           <Toggle
-            label="Snoozes, reminders and sending problems"
-            on={notifications}
+            label="Show notifications"
+            on={shown}
             onChange={(on) => {
               setError(null);
               setNotificationsShown(on).then(
-                () => setNotifications(on),
+                () => setShown(on),
                 (failure: unknown) => setError(String(failure)),
               );
             }}
           />
         )}
       </Option>
+      {settings && (
+        <div className={off ? "settings-group dimmed" : "settings-group"} aria-disabled={off || undefined}>
+          <h4 className="settings-subhead">New mail</h4>
+          {accounts.map((account) => {
+            const choice = settings.new_mail[account.id] ?? "smart";
+            return (
+              <div key={account.id} className="option">
+                <Avatar
+                  person={{ name: account.display_name, address: account.email }}
+                  size="sm"
+                  colour={accountColour(prefs, account.id)}
+                />
+                <span className="option-text">
+                  <strong>{accounts.length > 1 ? accountLabel(prefs, account) : "New mail"}</strong>
+                  <span>{NEW_MAIL.find((option) => option.id === choice)?.detail}</span>
+                </span>
+                <span className="option-control">
+                  <Select
+                    label={`New mail in ${account.email}`}
+                    value={choice}
+                    options={NEW_MAIL}
+                    onChange={(next) => change({ ...settings, new_mail: { ...settings.new_mail, [account.id]: next } })}
+                  />
+                </span>
+              </div>
+            );
+          })}
+          <p className="muted settings-note">
+            Not for the mail already there when an account is added, nor for what you already read elsewhere. When several
+            arrive at once, they come as one.
+          </p>
+          <h4 className="settings-subhead">Also tell me when</h4>
+          {NOTICES.map((notice) => (
+            <Option key={notice.id} icon={notice.icon} label={notice.label} description={notice.description}>
+              <Toggle
+                label={notice.label}
+                on={settings[notice.id]}
+                onChange={(on) => change({ ...settings, [notice.id]: on })}
+              />
+            </Option>
+          ))}
+        </div>
+      )}
+      <h4 className="settings-subhead">In Regards</h4>
       <Option icon="inbox" label="Unread counts in the sidebar" description="Beside the inbox and each account's inbox.">
         <Toggle label="Unread counts in the sidebar" on={prefs.sidebarCounts} onChange={(sidebarCounts) => setPrefs({ sidebarCounts })} />
       </Option>
