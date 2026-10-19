@@ -2636,6 +2636,62 @@ button.list-title:hover {
   outline: none;
 }
 
+.address-input {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.address-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: -8px;
+  z-index: 30;
+  display: grid;
+  gap: 1px;
+  width: min(360px, calc(100vw - 32px));
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-md);
+}
+
+.address-suggestions li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.address-suggestions li.active {
+  background: var(--pill);
+}
+
+.address-suggestion-text {
+  display: grid;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.address-suggestion-text strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.address-suggestion-text span {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .address-line input::placeholder {
   color: var(--muted);
   font-weight: 400;

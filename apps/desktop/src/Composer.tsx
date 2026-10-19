@@ -1,4 +1,5 @@
 import type { Editor } from "@tiptap/core";
+import { AddressInput } from "./AddressInput";
 import { type KeyboardEvent, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import {
   type Draft,
@@ -381,7 +382,8 @@ export function Composer({
   // Escape closes, even from the text: the editor would otherwise take it (to select the
   // enclosing block). The link field keeps it, to cancel the link.
   const escape = (event: KeyboardEvent) => {
-    if (event.key !== "Escape" || (event.target as HTMLElement).closest(".link-input")) return;
+    // A link being typed, or an open list of people, takes Escape itself.
+    if (event.key !== "Escape" || (event.target as HTMLElement).closest(".link-input, .address-input.suggesting")) return;
     event.preventDefault();
     event.stopPropagation();
     void close();
@@ -526,7 +528,14 @@ export function Composer({
             />
             <label className="address-line">
               <span>To</span>
-              <input ref={toField} value={fields.to} onChange={change("to")} placeholder="name@example.org, …" />
+              <AddressInput
+                inputRef={toField}
+                label="To"
+                value={fields.to}
+                onChange={(to) => change("to")({ target: { value: to } })}
+                accountId={accountId ?? null}
+                placeholder="name@example.org, …"
+              />
               {!copies && (
                 <button type="button" className="link" onClick={() => setCopies(true)}>
                   Cc Bcc
@@ -537,11 +546,21 @@ export function Composer({
               <>
                 <label className="address-line">
                   <span>Cc</span>
-                  <input value={fields.cc} onChange={change("cc")} />
+                  <AddressInput
+                    label="Cc"
+                    value={fields.cc}
+                    onChange={(cc) => change("cc")({ target: { value: cc } })}
+                    accountId={accountId ?? null}
+                  />
                 </label>
                 <label className="address-line">
                   <span>Bcc</span>
-                  <input value={fields.bcc} onChange={change("bcc")} />
+                  <AddressInput
+                    label="Bcc"
+                    value={fields.bcc}
+                    onChange={(bcc) => change("bcc")({ target: { value: bcc } })}
+                    accountId={accountId ?? null}
+                  />
                 </label>
               </>
             )}
