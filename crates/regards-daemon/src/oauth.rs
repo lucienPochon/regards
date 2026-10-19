@@ -170,6 +170,11 @@ impl Oauth {
         *self.slot(account_id).lock().await = Some(Access::of(tokens));
         lock(&self.expired).remove(account_id);
     }
+
+    /// Mark an account as signed out; true if it was not yet.
+    fn expire(&self, account_id: &str) -> bool {
+        lock(&self.expired).insert(account_id.to_owned())
+    }
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -382,6 +387,14 @@ pub(crate) async fn finish(state: &Arc<State>, params: OauthFlowRef) -> Result<V
         vault.set(&key, &refresh).await.map_err(account_methods::vault_error)?;
         state.oauth.keep(&account.id, &tokens).await;
         tracing::info!(account = %account.id, provider = label, "signed in again");
+        // What waited for the sign-in goes now; the write tells clients the account changed.
+        let id = account.id.clone();
+        state
+            .store
+            .write(move |tx| regards_store::outbox::retry_now(tx, &id, crate::compose::now_ms()))
+            .await
+            .map_err(store_error)?;
+        state.outbox.wake();
         sync::spawn_one(Arc::clone(state), account.id.clone());
         return account_methods::summary_of(state, account).await;
     }
@@ -451,9 +464,10 @@ pub(crate) enum TokenError {
 }
 
 impl TokenError {
-    /// Trying again later may work without the person.
+    /// Trying again later may work: by itself, or once the person signs in
+    /// again (a message then waits in the outbox, as when offline).
     pub(crate) fn passes(&self) -> bool {
-        matches!(self, Self::Offline(..) | Self::Vault(_))
+        matches!(self, Self::Offline(..) | Self::Vault(_) | Self::SignInAgain(_))
     }
 }
 
@@ -496,7 +510,10 @@ pub(crate) async fn access_token(
         Err(Request::Offline(reason)) => return Err(TokenError::Offline(label, reason)),
         Err(Request::Refused(OauthError::SignInAgain)) => {
             *kept = None;
-            lock(&state.oauth.expired).insert(account.id.clone());
+            if state.oauth.expire(&account.id) {
+                // Not a database change: clients learn of it from the feed.
+                state.feed.bump();
+            }
             tracing::warn!(account = %account.id, provider = label, "the sign-in expired");
             return Err(TokenError::SignInAgain(label));
         }

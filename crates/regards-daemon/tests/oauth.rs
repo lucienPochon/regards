@@ -19,8 +19,8 @@ use regards_core::oauth::{Client as OauthClient, Provider};
 use regards_daemon::{DEFAULT_LATE_SEND_GRACE, OauthApp};
 use regards_ipc::protocol::{
     AccountRef, AccountSummary, ClientKind, ConnectionSecurity, DraftCreateParams, DraftSendParams, DraftView,
-    OauthFlowRef, OauthProvidersResult, OauthStartParams, OauthStartResult, ServerSettings, SignIn, SyncResult, codes,
-    methods,
+    OauthFlowRef, OauthProvidersResult, OauthStartParams, OauthStartResult, OutboxEntryView, OutboxListResult,
+    OutboxState, ServerSettings, SignIn, SyncResult, codes, methods,
 };
 use regards_ipc::{Client, ClientError};
 use regards_net::loopback::parse_query;
@@ -169,6 +169,60 @@ async fn sync(desktop: &mut Client, account: &AccountSummary) -> Result<SyncResu
     panic!("the sync never ended");
 }
 
+/// Write a message and send it at once.
+async fn send(desktop: &mut Client, account: &AccountSummary, subject: &str) {
+    let draft: DraftView = desktop
+        .call(
+            methods::DRAFT_CREATE,
+            DraftCreateParams {
+                account_id: account.id.clone(),
+                to: vec![Person {
+                    name: None,
+                    address: Some("bob@example.test".into()),
+                }],
+                subject: subject.into(),
+                body: "Hi".into(),
+                ..DraftCreateParams::default()
+            },
+        )
+        .await
+        .unwrap();
+    let _: Value = desktop
+        .call(
+            methods::DRAFT_SEND,
+            DraftSendParams {
+                id: draft.id,
+                undo_seconds: Some(0),
+                send_at: None,
+                remind_at: None,
+            },
+        )
+        .await
+        .unwrap();
+}
+
+/// The next SMTP session that handed over a message.
+async fn sent(world: &mut World) -> fake_smtp::Session {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let session = world.sent.next().await;
+            if session.data.is_some() {
+                break session;
+            }
+        }
+    })
+    .await
+    .expect("nothing was sent")
+}
+
+async fn outbox(desktop: &mut Client) -> Vec<OutboxEntryView> {
+    desktop
+        .call::<_, OutboxListResult>(methods::OUTBOX_LIST, Value::Null)
+        .await
+        .unwrap()
+        .entries
+}
+
 async fn refresh_token(world: &World, account: &AccountSummary) -> Option<String> {
     world
         .vault
@@ -222,44 +276,8 @@ async fn signing_in_adds_an_account_that_syncs_and_sends_with_its_tokens() {
     assert_eq!(tokens.grants(), ["authorization_code"]);
 
     // So does SMTP.
-    let draft: DraftView = desktop
-        .call(
-            methods::DRAFT_CREATE,
-            DraftCreateParams {
-                account_id: account.id.clone(),
-                to: vec![Person {
-                    name: None,
-                    address: Some("bob@example.test".into()),
-                }],
-                subject: "Signed in".into(),
-                body: "Hi".into(),
-                ..DraftCreateParams::default()
-            },
-        )
-        .await
-        .unwrap();
-    let _: Value = desktop
-        .call(
-            methods::DRAFT_SEND,
-            DraftSendParams {
-                id: draft.id,
-                undo_seconds: Some(0),
-                send_at: None,
-                remind_at: None,
-            },
-        )
-        .await
-        .unwrap();
-    let session = tokio::time::timeout(Duration::from_secs(15), async {
-        loop {
-            let session = world.sent.next().await;
-            if session.data.is_some() {
-                break session;
-            }
-        }
-    })
-    .await
-    .expect("nothing was sent");
+    send(&mut desktop, &account, "Signed in").await;
+    let session = sent(&mut world).await;
     assert_eq!(session.login, Some((EMAIL.into(), fake_imap::PASSWORD.into())));
     assert!(session.commands.iter().any(|c| c == "AUTH XOAUTH2 <secret>"));
 
@@ -284,7 +302,7 @@ async fn signing_in_adds_an_account_that_syncs_and_sends_with_its_tokens() {
 
 #[tokio::test]
 async fn a_withdrawn_sign_in_asks_to_sign_in_again_which_keeps_the_account() {
-    let (world, tokens) = world().await;
+    let (mut world, tokens) = world().await;
     let first = world.start().await;
     let mut desktop = first.desktop;
     let account = sign_in(&mut desktop, &tokens).await.unwrap();
@@ -309,9 +327,32 @@ async fn a_withdrawn_sign_in_asks_to_sign_in_again_which_keeps_the_account() {
         "a refused refresh token is not tried again"
     );
 
+    // A message sent meanwhile waits in the outbox, as when offline.
+    send(&mut desktop, &account, "Written while signed out").await;
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let waiting = loop {
+        let entries = outbox(&mut desktop).await;
+        if entries.first().is_some_and(|entry| entry.attempts > 0) || std::time::Instant::now() > deadline {
+            break entries;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    assert_eq!(waiting[0].state, OutboxState::Queued);
+    assert!(
+        waiting[0]
+            .last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("sign in again")),
+        "{waiting:?}"
+    );
+    assert!(world.nothing_sent());
+
     let again = sign_in(&mut desktop, &tokens).await.unwrap();
     assert_eq!(again.id, account.id, "the same account, signed in anew");
     assert!(!again.needs_sign_in);
+    // It goes at once, not at its next retry.
+    let session = sent(&mut world).await;
+    assert!(String::from_utf8_lossy(&session.data.unwrap()).contains("Written while signed out"));
     sync(&mut desktop, &account).await.unwrap();
     let listed = accounts(&mut desktop).await;
     assert_eq!(listed.len(), 1);
