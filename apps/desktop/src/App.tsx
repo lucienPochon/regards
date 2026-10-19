@@ -69,7 +69,7 @@ import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { type DragPayload, Sidebar } from "./Sidebar";
 import { useSidebarPrefs } from "./sidebar-prefs";
 import { presets, reminderPresets, sendPresets, snoozeMessages } from "./snooze";
-import { accountLabel, getPrefs, usePrefs } from "./prefs";
+import { accountLabel, getPrefs, setPrefs, usePrefs, zoomStep } from "./prefs";
 import { applyTheme } from "./theme";
 import { TimePicker } from "./TimePicker";
 import { PLATFORM, TitleBar } from "./TitleBar";
@@ -234,6 +234,28 @@ export function App() {
   useEffect(() => {
     document.documentElement.style.setProperty("zoom", appPrefs.zoom === 1 ? "" : String(appPrefs.zoom));
   }, [appPrefs.zoom]);
+  // Ctrl + / Ctrl − / Ctrl 0 (Cmd on a Mac): zoom from anywhere, a field included.
+  useEffect(() => {
+    const keys = (event: globalThis.KeyboardEvent) => {
+      const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? event.metaKey : event.ctrlKey;
+      if (!mod || event.altKey) return;
+      const now = getPrefs().zoom;
+      const zoom =
+        event.key === "+" || event.key === "="
+          ? zoomStep(now, 1)
+          : event.key === "-"
+            ? zoomStep(now, -1)
+            : event.key === "0"
+              ? 1
+              : null;
+      if (zoom === null) return;
+      event.preventDefault();
+      setPrefs({ zoom });
+      setSaid(`Zoom ${Math.round(zoom * 100)} %`);
+    };
+    window.addEventListener("keydown", keys);
+    return () => window.removeEventListener("keydown", keys);
+  }, []);
   // Accounts the person keeps out of the unified inbox (Settings › Inbox › Email groups).
   const hiddenKey = appPrefs.hiddenAccounts.join(",");
   const unified = useMemo(
@@ -1329,7 +1351,7 @@ export function App() {
             pickTemplate={pickTemplate}
           />
         )}
-        <div className="dock">
+        <div className="dock" aria-live="polite">
           {notice && (
             <div className="toast error" role="alert">
               <Icon name="alert" size={16} />
@@ -1340,7 +1362,7 @@ export function App() {
             </div>
           )}
           {said && (
-            <div className="toast" role="status">
+            <div className="toast">
               <Icon name="check" size={16} />
               <span>{said}</span>
             </div>

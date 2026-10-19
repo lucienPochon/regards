@@ -1,4 +1,6 @@
+import { useRef } from "react";
 import { useShortcuts } from "./shortcuts";
+import { useDialogFocus } from "./dialogFocus";
 
 export interface ConfirmRequest {
   title: string;
@@ -11,9 +13,13 @@ export interface ConfirmRequest {
 /** Asks before something that cannot be undone. Cancel has the focus, so a stray Enter cancels. */
 export function Confirm({ request, onAnswer }: { request: ConfirmRequest; onAnswer: (ok: boolean) => void }) {
   useShortcuts({ Escape: () => onAnswer(false) }, { modal: true });
+  const box = useRef<HTMLElement>(null);
+  useDialogFocus(box);
   return (
     <div className="backdrop" onMouseDown={() => onAnswer(false)}>
       <section
+        ref={box}
+        tabIndex={-1}
         className="dialog confirm-dialog"
         role="alertdialog"
         aria-modal="true"

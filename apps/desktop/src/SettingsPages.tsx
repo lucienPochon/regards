@@ -26,7 +26,8 @@ import { Icon, type IconName } from "./icons";
 import type { Layout } from "./layout";
 import { type NewMail, type NotificationSettings, notificationSettings, setNotificationSettings } from "./notifications";
 import type { ServiceCheck } from "./mail";
-import { ACCOUNT_COLOURS, COLOUR_NAMES, type Prefs, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
+import { ACCOUNT_COLOURS, COLOUR_NAMES, type Prefs, ZOOMS, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
+import { MOD_KEY } from "./shortcuts";
 import { LinkRow, Option, Select, SubPageHead, Toggle } from "./SettingsControls";
 import { senderImages, setSenderImages } from "./smart";
 import { exportDiagnostics, setDetailedLogs, supportSettings } from "./support";
@@ -66,7 +67,7 @@ export function GeneralPage({ accounts }: { accounts: AccountSummary[] }) {
   return (
     <>
       <h3>General</h3>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
       <Option
         icon="logo"
         label="Start Regards when you log in"
@@ -282,7 +283,7 @@ function ImageSendersPage({ accounts, onBack }: { accounts: AccountSummary[]; on
         Their messages show images from the web without asking, so they can tell when you open them. To add one, open a
         message from them and choose “Always from this sender”.
       </p>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
       {lists === null && !error && <p className="muted">Loading…</p>}
       {none && <p className="muted">Nobody yet: every message asks before loading images.</p>}
       {lists !== null &&
@@ -554,7 +555,7 @@ export function NotificationsPage({ accounts }: { accounts: AccountSummary[] }) 
   return (
     <>
       <h3>Notifications</h3>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
       <Option
         icon="bell"
         label="Show notifications"
@@ -973,13 +974,28 @@ export function AccessibilityPage() {
   return (
     <>
       <h3>Accessibility</h3>
-      <Option icon="text" label="Zoom" description="Makes everything in the window larger or smaller.">
+      <Option
+        icon="search"
+        label="Zoom"
+        description={`Makes everything in the window larger or smaller. ${MOD_KEY} + and ${MOD_KEY} − change it from anywhere; ${MOD_KEY} 0 goes back to 100 %.`}
+      >
         <Select
           label="Zoom"
           value={prefs.zoom}
-          options={[0.9, 1, 1.1, 1.25, 1.5].map((zoom) => ({ id: zoom, label: `${Math.round(zoom * 100)} %` }))}
+          options={ZOOMS.map((zoom) => ({ id: zoom, label: `${Math.round(zoom * 100)} %` }))}
           onChange={(zoom) => setPrefs({ zoom })}
         />
+      </Option>
+      <Option
+        icon="keyboard"
+        label="Single-key shortcuts"
+        description={
+          prefs.singleKeys
+            ? "Keys such as e (archive) and # (delete) act on their own."
+            : `Off: only shortcuts with ${MOD_KEY}, and keys such as Escape and the arrows, act. Speech input or a stray key can't archive or delete mail.`
+        }
+      >
+        <Toggle label="Single-key shortcuts" on={prefs.singleKeys} onChange={(singleKeys) => setPrefs({ singleKeys })} />
       </Option>
     </>
   );
@@ -1010,7 +1026,7 @@ function Troubleshooting() {
   return (
     <>
       <h4 className="settings-subhead">Troubleshooting</h4>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
       <Option
         icon="text"
         label="Detailed logs"
@@ -1096,7 +1112,7 @@ export function SupportPage({ service, onRecheck }: { service: ServiceCheck; onR
       </button>
       <Troubleshooting />
       <h4 className="settings-subhead">Get help</h4>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
       {links.map((link) => (
         <div key={link.url} className="option help-row">
           <span className="option-icon">
@@ -1128,11 +1144,11 @@ export function SupportPage({ service, onRecheck }: { service: ServiceCheck; onR
 
 function ServiceStatus({ check }: { check: ServiceCheck }) {
   if (check.state === "checking") return <p className="muted">Checking…</p>;
-  if (check.state === "failed") return <p className="error">Could not check the service: {check.message}</p>;
+  if (check.state === "failed") return <p className="error" role="alert">Could not check the service: {check.message}</p>;
   const { status } = check;
   if (status.error || !status.running) {
     return (
-      <p className="error">
+      <p className="error" role="alert">
         <span className="status-dot bad" aria-hidden="true" /> The service could not be started. {status.error}
       </p>
     );

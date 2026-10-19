@@ -15,10 +15,10 @@ export function TemplatesEditor() {
   }, []);
   useEffect(reload, [reload]);
 
-  if (templates === null) return error ? <p className="error small">{error}</p> : null;
+  if (templates === null) return error ? <p className="error small" role="alert">{error}</p> : null;
   return (
     <div className="account-form">
-      {error && <p className="error small">{error}</p>}
+      {error && <p className="error small" role="alert">{error}</p>}
       {templates.length === 0 && !adding && (
         <p className="muted small">No templates yet. They start a message with text you write often.</p>
       )}

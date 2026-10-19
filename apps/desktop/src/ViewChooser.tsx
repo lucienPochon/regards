@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { Icon } from "./icons";
 import type { Anchor } from "./Menu";
 import { useShortcuts } from "./shortcuts";
+import { useDialogFocus } from "./dialogFocus";
 import { radioKeys, radioTab } from "./radios";
 
 export type InboxView = "smart" | "date";
@@ -35,6 +36,7 @@ export function ViewChooser({
 }) {
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const card = useRef<HTMLDivElement>(null);
+  useDialogFocus(card);
   useShortcuts({ Escape: onClose }, { modal: true });
 
   useLayoutEffect(() => {
@@ -55,6 +57,7 @@ export function ViewChooser({
         className={position ? "view-chooser" : "view-chooser measuring"}
         role="dialog"
         aria-label="Inbox view"
+        tabIndex={-1}
         style={position ?? undefined}
         onMouseDown={(event) => event.stopPropagation()}
       >

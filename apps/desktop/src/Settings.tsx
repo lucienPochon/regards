@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type AccountSummary, removeAccount, syncAccount, updateAccount } from "./accounts";
 import { AgentActivity } from "./AgentActivity";
 import { AgentHolds } from "./AgentHolds";
@@ -28,6 +28,7 @@ import {
   SchedulingPage,
   SupportPage,
 } from "./SettingsPages";
+import { useDialogFocus } from "./dialogFocus";
 
 export type SettingsTab =
   | "accounts"
@@ -93,15 +94,19 @@ export function Settings({
   onClose: () => void;
 }) {
   useShortcuts({ Escape: onClose }, { modal: true });
+  const sheet = useRef<HTMLElement>(null);
+  useDialogFocus(sheet);
   const me = mail.state === "ready" ? mail.accounts[0]?.account : undefined;
   const accounts = mail.state === "ready" ? mail.accounts.map((entry) => entry.account) : [];
   return (
     <div className="backdrop sheet" onMouseDown={onClose}>
       <section
+        ref={sheet}
         className="dialog settings"
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <nav className="settings-nav" aria-label="Settings">
@@ -167,7 +172,7 @@ function AccountsTab({ mail, confirm }: { mail: MailState; confirm: (request: Co
   return (
     <>
       <h3>Accounts</h3>
-      {mail.state === "failed" && <p className="error">{mail.message}</p>}
+      {mail.state === "failed" && <p className="error" role="alert">{mail.message}</p>}
       {accounts.length > 0 && (
         <ul className="account-list">
           {accounts.map((entry) => (
@@ -272,7 +277,7 @@ function AgentsTab({
         Agents are AI assistants and other programs that work with your mail through Regards&apos; command line. Each
         account decides what they may do. Only this page can change it: an agent can&apos;t give itself more.
       </p>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
       <AgentHolds accounts={accounts.map(({ account }) => ({ id: account.id, email: account.email }))} focus={focusHold} />
       {accounts.length === 0 ? (
         <p className="muted">Add an account first.</p>
@@ -634,7 +639,7 @@ function InboxTab({
           onChange={screen}
         />
       </Option>
-      {problem && <p className="error">{problem}</p>}
+      {problem && <p className="error" role="alert">{problem}</p>}
       <PriorityRows />
       <LinkRow
         icon="newspaper"
@@ -665,9 +670,16 @@ function TemplatesTab() {
 }
 
 export function ShortcutsTab() {
+  const prefs = usePrefs();
   return (
     <>
       <h3>Keyboard shortcuts</h3>
+      {!prefs.singleKeys && (
+        <p className="muted settings-note">
+          Single-key shortcuts are off (Settings › Accessibility): only those with {MOD_KEY}, and keys such as Escape and
+          the arrows, act.
+        </p>
+      )}
       <dl className="shortcut-list">
         {SHORTCUTS.map((shortcut) => (
           <div key={shortcut.keys}>

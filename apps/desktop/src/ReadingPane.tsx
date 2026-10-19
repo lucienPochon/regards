@@ -217,7 +217,7 @@ export function ReadingPane({
       <div className="reader-scroll">
         <h1 className="reader-subject">{subject}</h1>
         {load.state === "failed" ? (
-          <p className="error reader-error">{load.message}</p>
+          <p className="error reader-error" role="alert">{load.message}</p>
         ) : (
           <ol className="thread">
             {entries.map((entry) => {
@@ -413,7 +413,7 @@ function ThreadMessage({
       {details && ready && <Details detail={ready} />}
       <div className="mail-body">
         {load.state === "loading" && <p className="muted">Opening…</p>}
-        {load.state === "failed" && <p className="error">{load.message}</p>}
+        {load.state === "failed" && <p className="error" role="alert">{load.message}</p>}
         {ready && (
           <>
             {ready.has_html && !showText && ready.remote_images > 0 && !allowRemote && !trusted && (
@@ -433,7 +433,7 @@ function ThreadMessage({
                 )}
               </div>
             )}
-            {imagesError && <p className="error">{imagesError}</p>}
+            {imagesError && <p className="error" role="alert">{imagesError}</p>}
             {ready.has_html && !showText ? (
               // No scripts, no same-origin access, no popups or navigation: an empty sandbox.
               <iframe

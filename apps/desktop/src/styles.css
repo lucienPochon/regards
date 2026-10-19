@@ -8,6 +8,8 @@
   --pill: #ebf5f1;
   --pill-strong: #d8ece4;
   --warm: #d7812a;
+  /* Warm as text: 4.5:1 on white and on --warm-soft. */
+  --warm-text: #9a5a12;
   --warm-soft: #fcefe1;
   --warm-line: rgb(215 129 42 / 0.22);
   --warm-hover: rgb(215 129 42 / 0.08);
@@ -23,9 +25,10 @@
   --notice: #f4f6f5;
   --text: #1a1d1c;
   --text-2: #4a514e;
-  --muted: #7c837f;
+  --muted: #5f6763;
   --border: #e8eae9;
-  --border-strong: #d7dbd9;
+  /* Borders of controls (fields, switches, checks): 3:1 against the page. */
+  --border-strong: #8a918d;
 
   /* The sidebar is dark in both themes. */
   --rail: #1d2023;
@@ -36,7 +39,7 @@
   --rail-dim: #8d949a;
   --rail-hover: rgb(255 255 255 / 0.08);
   --rail-line: rgb(255 255 255 / 0.08);
-  --rail-active: #1f8a69;
+  --rail-active: #1a7a5c;
 
   /* The reader's very light grey, a row under the pointer, the command palette. */
   --reader-bg: #f4f6f5;
@@ -44,7 +47,7 @@
   --palette: #173f36;
   --palette-accent: #5fd0aa;
 
-  --flag: #df8a00;
+  --flag: #b86e00;
   --danger: #c63a2f;
   --danger-soft: #fbeceb;
   --ok: #2c9a5f;
@@ -71,6 +74,7 @@
     --pill: #1d2b26;
     --pill-strong: #24372f;
     --warm: #eb9a48;
+    --warm-text: #eb9a48;
     --warm-soft: #3a2a1a;
     --warm-line: rgb(235 154 72 / 0.25);
     --warm-hover: rgb(235 154 72 / 0.1);
@@ -87,7 +91,7 @@
     --text-2: #bcc3bf;
     --muted: #8a928e;
     --border: #2a2e2c;
-    --border-strong: #3a3f3c;
+    --border-strong: #636a66;
     --rail: #121415;
     --rail-2: #1b1e20;
     --rail-3: #24282b;
@@ -113,6 +117,7 @@
   --pill: #1d2b26;
   --pill-strong: #24372f;
   --warm: #eb9a48;
+  --warm-text: #eb9a48;
   --warm-soft: #3a2a1a;
   --warm-line: rgb(235 154 72 / 0.25);
   --warm-hover: rgb(235 154 72 / 0.1);
@@ -129,7 +134,7 @@
   --text-2: #bcc3bf;
   --muted: #8a928e;
   --border: #2a2e2c;
-  --border-strong: #3a3f3c;
+  --border-strong: #636a66;
   --rail: #121415;
   --rail-2: #1b1e20;
   --rail-3: #24282b;
@@ -185,6 +190,19 @@ button:disabled {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Read out, not shown. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 input,
@@ -989,13 +1007,13 @@ button.link:hover {
   margin-right: 2px;
   border-radius: 6px;
   color: var(--rail-dim);
-  visibility: hidden;
+  opacity: 0;
 }
 
 .panel-row:hover .panel-star,
 .panel-star.on,
 .panel-star:focus-visible {
-  visibility: visible;
+  opacity: 1;
 }
 
 .panel-star.on {
@@ -1402,7 +1420,7 @@ button.list-title:hover {
   display: inline-flex;
   align-items: baseline;
   gap: 8px;
-  color: var(--warn);
+  color: var(--warm-text);
   font-size: 12.5px;
   font-weight: 400;
 }
@@ -1506,7 +1524,7 @@ button.list-title:hover {
 
 .server-unreachable {
   display: block;
-  color: var(--warn);
+  color: var(--warm-text);
 }
 
 .server-search.alone {
@@ -1671,9 +1689,11 @@ button.list-title:hover {
   background: var(--pill-strong);
 }
 
-/* The highlighted row's tint shows the keyboard focus. */
+/* The keyboard's row: its tint, and a ring inside its edge. */
 .row-main:focus-visible {
-  outline: none;
+  border-radius: inherit;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .row-main {
@@ -1844,11 +1864,13 @@ button.list-title:hover {
 }
 
 .rows.tall .row:hover .row-gutter,
+.rows.tall .row:focus-within .row-gutter,
 .rows.tall .row.picked .row-gutter {
   display: flex;
 }
 
 .rows.tall .row:hover .dot,
+.rows.tall .row:focus-within .dot,
 .rows.tall .row.picked .dot {
   visibility: hidden;
 }
@@ -1896,6 +1918,7 @@ button.list-title:hover {
 }
 
 .row:hover .row-check,
+.row:focus-within .row-check,
 .picking .row-check {
   visibility: visible;
 }
@@ -1929,11 +1952,13 @@ button.list-title:hover {
   background: linear-gradient(to right, transparent, var(--pill-strong) 28px);
 }
 
-.rows.wide .row:hover .row-actions {
+.rows.wide .row:hover .row-actions,
+.rows.wide .row:focus-within .row-actions {
   display: flex;
 }
 
-.rows.wide .row:hover .date {
+.rows.wide .row:hover .date,
+.rows.wide .row:focus-within .date {
   visibility: hidden;
 }
 
@@ -1950,7 +1975,8 @@ button.list-title:hover {
   transform: none;
 }
 
-.rows.tall .row:hover > .row-actions {
+.rows.tall .row:hover > .row-actions,
+.rows.tall .row:focus-within > .row-actions {
   display: flex;
 }
 
@@ -2605,7 +2631,7 @@ button.list-title:hover {
 }
 
 .subject-field::placeholder {
-  color: var(--border-strong);
+  color: var(--muted);
 }
 
 .panel .subject-field {
@@ -2618,6 +2644,15 @@ button.list-title:hover {
   gap: 10px;
   min-height: 40px;
   border-bottom: 1px solid var(--border);
+}
+
+.address-line:focus-within {
+  border-bottom-color: var(--accent);
+  box-shadow: 0 1px 0 var(--accent);
+}
+
+.subject-field:focus-visible {
+  box-shadow: 0 2px 0 var(--accent);
 }
 
 .address-line > span {
@@ -2784,6 +2819,11 @@ button.list-title:hover {
   line-height: 1.6;
   outline: none;
   overflow-wrap: anywhere;
+}
+
+/* Writing: a thin accent bar just left of the text. */
+.compose-body.ProseMirror:focus-visible {
+  box-shadow: -12px 0 0 -10px var(--accent);
 }
 
 /* Images in the text: within the page; a chosen one outlined. */
@@ -2962,7 +3002,7 @@ button.list-title:hover {
   margin: 0 16px;
   padding: 11px 1px 8px;
   border-bottom: 1px solid var(--warm-line);
-  color: var(--warm);
+  color: var(--warm-text);
   font-size: 13.5px;
   font-weight: 600;
 }
@@ -2995,7 +3035,7 @@ button.list-title:hover {
   gap: 10px;
   width: 100%;
   padding: 7px 17px 11px 32px;
-  color: var(--warm);
+  color: var(--warm-text);
   font-size: 13px;
   font-weight: 600;
   text-align: left;
@@ -4003,7 +4043,7 @@ button.sender-row:hover:not(:disabled) {
 
 .chip.activity-decision.held {
   background: var(--warm-soft);
-  color: var(--warm);
+  color: var(--warm-text);
 }
 
 .chip.activity-decision.approved {
@@ -4910,6 +4950,13 @@ button.sender-row:hover:not(:disabled) {
   outline: none;
 }
 
+/* The item the keys are on: a ring as well as the tint. */
+.menu-item:focus-visible,
+.menu-item.highlighted {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .menu-item.danger,
 .menu-item.danger .icon {
   color: var(--danger);
@@ -5053,6 +5100,11 @@ button.sender-row:hover:not(:disabled) {
 .palette .menu-item:focus-visible,
 .palette .menu-item.highlighted {
   background: rgb(255 255 255 / 0.12);
+}
+
+.palette .menu-item:focus-visible,
+.palette .menu-item.highlighted {
+  outline-color: rgb(255 255 255 / 0.85);
 }
 
 .palette .menu-item.danger,

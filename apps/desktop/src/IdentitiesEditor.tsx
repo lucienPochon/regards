@@ -16,10 +16,10 @@ export function IdentitiesEditor({ accountId }: { accountId: string }) {
   }, [accountId]);
   useEffect(reload, [reload]);
 
-  if (identities === null) return error ? <p className="error small">{error}</p> : null;
+  if (identities === null) return error ? <p className="error small" role="alert">{error}</p> : null;
   return (
     <div className="account-form">
-      {error && <p className="error small">{error}</p>}
+      {error && <p className="error small" role="alert">{error}</p>}
       {identities.map((identity) => (
         <IdentityForm key={identity.id} accountId={accountId} identity={identity} onDone={reload} onError={setError} />
       ))}
