@@ -235,6 +235,16 @@ flowchart LR
     - `message.list` takes a `section`; its page walks `messages_by_section`
     - `smart.overview` gives counts and unread per section
     - `sender.set` records a correction, and the sender's mail, old and new, follows it
+  - **Domains:** a correction can name a whole domain (`@shop.example`); a choice for an address wins over its domain's.
+  - **Screening** (`smart.screening`, migration 0019):
+    - **off:** New senders fold into People
+    - **section:** the default
+    - **hold:** the inbox leaves New senders out until accepted (a `people` choice); their section is the screener
+  - **Blocking** (`sender.block`, an address or a domain):
+    - the sender's inbox mail moves to Junk on the server, through the queue
+    - what they send later goes there as it arrives
+    - undo brings the mail back and unblocks
+  - **App API:** `smart.ts`, with `reasonText` for the "why is this here?" sentences.
 
 ### 5.5 Done / Pin / Set aside / Seen (P1, 1.0)
 

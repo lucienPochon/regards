@@ -5,7 +5,7 @@ use regards_core::body::Attachment;
 use regards_core::headers::Person;
 use regards_core::mailbox::Role;
 use regards_core::secret::Secret;
-pub use regards_core::smart::{Policy, Reason, Section};
+pub use regards_core::smart::{Policy, Reason, Screening, Section};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -69,6 +69,12 @@ pub mod methods {
     /// The person's choice for a sender: a section (or the rules), and whether
     /// they are a priority. Their mail follows.
     pub const SENDER_SET: &str = "sender.set";
+    /// Block a sender or `@domain` (their inbox mail goes to Junk, and what
+    /// arrives later; undoable), or unblock.
+    pub const SENDER_BLOCK: &str = "sender.block";
+    /// How new senders' mail is shown: off, section or hold.
+    pub const SMART_SCREENING: &str = "smart.screening";
+    pub const SMART_SET_SCREENING: &str = "smart.set_screening";
     /// "Remind me if no reply by" a time, or no reminder (also: done with one
     /// that came due). Undoable.
     pub const MESSAGE_REMIND: &str = "message.remind";
@@ -656,6 +662,24 @@ pub struct SenderView {
     pub priority: bool,
     /// The account has written to them.
     pub written_to: bool,
+    /// Blocked, by address or domain: their mail goes to Junk.
+    #[serde(default)]
+    pub blocked: bool,
+}
+
+/// Parameters of [`methods::SENDER_BLOCK`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SenderBlockParams {
+    pub account_id: String,
+    /// An address, or a whole domain as `@example.org`.
+    pub address: String,
+    pub blocked: bool,
+}
+
+/// Parameters and result of [`methods::SMART_SET_SCREENING`] and [`methods::SMART_SCREENING`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScreeningParams {
+    pub mode: Screening,
 }
 
 /// Result of [`methods::MESSAGE_EXPLAIN`].

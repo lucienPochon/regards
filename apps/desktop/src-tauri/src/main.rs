@@ -24,9 +24,10 @@ use regards_ipc::protocol::{
     DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
     ExplainResult, IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView, MailboxListResult, MarkResult,
     MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult,
-    OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams, Section,
-    SenderSetParams, SenderSetResult, ServerSettings, SetFlagsParams, SetFlagsResult, SmartOverviewResult,
-    SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
+    OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams,
+    Screening, ScreeningParams, Section, SenderBlockParams, SenderSetParams, SenderSetResult, ServerSettings,
+    SetFlagsParams, SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult,
+    View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -285,6 +286,32 @@ async fn message_explain(bridge: State<'_, Bridge>, id: i64) -> Result<ExplainRe
     let mut client = bridge.connect().await?.client;
     client
         .call(methods::MESSAGE_EXPLAIN, MessageRef { id })
+        .await
+        .map_err(describe)
+}
+
+/// Block a sender or `@domain` (their inbox mail goes to Junk; undoable), or unblock.
+#[tauri::command]
+async fn sender_block(bridge: State<'_, Bridge>, sender: SenderBlockParams) -> Result<MoveResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::SENDER_BLOCK, sender).await.map_err(describe)
+}
+
+/// How new senders' mail is shown: off, section or hold.
+#[tauri::command]
+async fn smart_screening(bridge: State<'_, Bridge>) -> Result<ScreeningParams, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::SMART_SCREENING, Value::Null)
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn smart_set_screening(bridge: State<'_, Bridge>, mode: Screening) -> Result<ScreeningParams, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::SMART_SET_SCREENING, ScreeningParams { mode })
         .await
         .map_err(describe)
 }
@@ -805,6 +832,9 @@ fn main() {
             smart_overview,
             message_explain,
             sender_set,
+            sender_block,
+            smart_screening,
+            smart_set_screening,
             message_get,
             thread_get,
             message_set_flags,

@@ -4,6 +4,7 @@
 use crate::State;
 use crate::sync;
 use regards_core::mailbox::Role;
+use regards_core::smart::{Screening, Section};
 use regards_core::{body, html};
 use regards_ipc::protocol::{
     MessageCursor, MessageDetail, MessageHtml, MessageHtmlParams, MessageListParams, MessageListResult, MessageRef,
@@ -50,7 +51,10 @@ pub(crate) async fn list(state: &State, params: MessageListParams) -> Result<Val
             // One extra row tells whether another page exists.
             let rows = match parked {
                 Some((account, now)) => {
-                    messages::inbox_page(conn, mailbox_id, limit + 1, before, account, now, section)?
+                    let screening = regards_store::smart::screening(conn)?;
+                    let (only, except) = shown_sections(section, screening);
+                    let sections = messages::Sections { only: &only, except };
+                    messages::inbox_page(conn, mailbox_id, limit + 1, before, account, now, &sections)?
                 }
                 None => messages::list(conn, mailbox_id, limit + 1, before)?,
             };
@@ -421,5 +425,17 @@ pub(crate) async fn thread_backfill(state: std::sync::Arc<State>) {
     }
     if total > 0 {
         tracing::info!(messages = total, "threaded stored messages");
+    }
+}
+
+/// Which sections an inbox list shows, for `asked` (all when none) under a
+/// screening mode: off folds new senders into People, hold keeps them out
+/// of everything but their own section.
+fn shown_sections(asked: Option<Section>, screening: Screening) -> (Vec<Section>, Option<Section>) {
+    match (asked, screening) {
+        (None, Screening::Hold) => (Vec::new(), Some(Section::NewSenders)),
+        (None, _) => (Vec::new(), None),
+        (Some(Section::People), Screening::Off) => (vec![Section::People, Section::NewSenders], None),
+        (Some(section), _) => (vec![section], None),
     }
 }

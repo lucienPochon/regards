@@ -26,9 +26,23 @@ const MAX_RETRY: Duration = Duration::from_secs(10 * 60);
 #[derive(Default)]
 pub(crate) struct Queue {
     runners: Mutex<HashMap<String, Arc<Notify>>>,
+    /// The daemon's state, for waking from code that holds only a reference to it.
+    state: std::sync::OnceLock<std::sync::Weak<State>>,
 }
 
 impl Queue {
+    /// Remember the daemon's state, once it is shared (at start).
+    pub(crate) fn attach(&self, state: &Arc<State>) {
+        let _ = self.state.set(Arc::downgrade(state));
+    }
+
+    /// [`Queue::wake`], from code without the shared state at hand (a sync).
+    pub(crate) fn wake_account(&self, account_id: &str) {
+        if let Some(state) = self.state.get().and_then(std::sync::Weak::upgrade) {
+            self.wake(&state, account_id);
+        }
+    }
+
     /// Make sure a runner is working on `account_id`'s operations now.
     pub(crate) fn wake(&self, state: &Arc<State>, account_id: &str) {
         let mut runners = self.lock();

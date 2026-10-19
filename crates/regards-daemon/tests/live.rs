@@ -18,7 +18,8 @@ use regards_ipc::protocol::{
     SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::protocol::{
-    ExplainResult, Policy, Reason, Section, SenderSetParams, SenderSetResult, SmartOverviewResult,
+    ExplainResult, Policy, Reason, Screening, ScreeningParams, Section, SenderBlockParams, SenderSetParams,
+    SenderSetResult, SmartOverviewResult,
 };
 use regards_ipc::{Client, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -2043,6 +2044,125 @@ async fn live_rows_show_a_preview_a_paperclip_a_thread_size_and_unread_counts() 
         .await
         .unwrap();
     assert_eq!(unread(&folders(&mut desktop, &account.id).await), 1);
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_new_senders_can_be_held_accepted_or_blocked() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let _ = seed.create_mailbox(b"Junk").await;
+    let me = format!("{}@example.test", live.user);
+    let raw = |id: &str, from: &str, subject: &str| {
+        format!(
+            "From: {from}\r\nTo: {me}\r\nSubject: {subject}\r\nMessage-ID: <{id}@example.test>\r\n\
+             Date: Sun, 18 Oct 2026 09:00:00 +0000\r\n\r\nBody\r\n"
+        )
+        .into_bytes()
+    };
+    seed.append(b"INBOX", &[], &raw("c1", "Cy <cy@new.example>", "Hello there"))
+        .await
+        .unwrap();
+    seed.append(b"INBOX", &[], &raw("s1", "Spam <win@spam.example>", "You won"))
+        .await
+        .unwrap();
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
+    let subjects = |page: MessageListResult| page.messages.into_iter().map(|m| m.subject).collect::<Vec<_>>();
+    let section_page = |section: Section| MessageListParams {
+        mailbox_id: inbox,
+        limit: None,
+        before: None,
+        section: Some(section),
+    };
+
+    // Held: new senders are out of the inbox, in their own section.
+    let _: ScreeningParams = desktop
+        .call(methods::SMART_SET_SCREENING, ScreeningParams { mode: Screening::Hold })
+        .await
+        .unwrap();
+    assert!(subjects(messages(&mut desktop, inbox).await).is_empty());
+    let held: MessageListResult = desktop
+        .call(methods::MESSAGE_LIST, section_page(Section::NewSenders))
+        .await
+        .unwrap();
+    assert_eq!(held.messages.len(), 2);
+
+    // Accepting Cy brings her into the inbox, with People.
+    let _: SenderSetResult = desktop
+        .call(
+            methods::SENDER_SET,
+            SenderSetParams {
+                account_id: account.id.clone(),
+                address: "cy@new.example".into(),
+                policy: Some(Policy::People),
+                priority: false,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(subjects(messages(&mut desktop, inbox).await), ["Hello there"]);
+
+    // Blocking the spammer's domain moves its mail to Junk, here and on the server.
+    let blocked: MoveResult = desktop
+        .call(
+            methods::SENDER_BLOCK,
+            SenderBlockParams {
+                account_id: account.id.clone(),
+                address: "@spam.example".into(),
+                blocked: true,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(blocked.moved, 1);
+    let junk = folders(&mut desktop, &account.id)
+        .await
+        .mailboxes
+        .into_iter()
+        .find(|m| m.role == Some(Role::Junk))
+        .unwrap()
+        .id;
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let in_junk = seed.select(b"Junk").await.unwrap();
+        if in_junk.exists == 1 {
+            break;
+        }
+        assert!(Instant::now() < deadline, "the move did not reach the server");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    // ...and what it sends next goes there too.
+    seed.append(b"INBOX", &[], &raw("s2", "Spam <again@spam.example>", "You won again"))
+        .await
+        .unwrap();
+    sync(&mut desktop, &account.id).await;
+    assert!(!subjects(messages(&mut desktop, inbox).await).contains(&"You won again".to_owned()));
+    assert!(subjects(messages(&mut desktop, junk).await).contains(&"You won again".to_owned()));
+
+    // Undo: the first comes back, and the domain is no longer blocked.
+    let _: UndoResult = desktop
+        .call(
+            methods::UNDO_APPLY,
+            UndoParams {
+                id: blocked.undo.unwrap().id,
+            },
+        )
+        .await
+        .unwrap();
+    let id = messages(&mut desktop, junk)
+        .await
+        .messages
+        .into_iter()
+        .find(|m| m.subject == "You won again")
+        .unwrap()
+        .id;
+    let why: ExplainResult = desktop.call(methods::MESSAGE_EXPLAIN, MessageRef { id }).await.unwrap();
+    assert!(!why.sender.unwrap().blocked);
 
     seed.logout().await;
     handle.abort();

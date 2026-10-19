@@ -244,6 +244,7 @@ impl Daemon {
             limits,
             late_send_grace,
         });
+        state.queue.attach(&state);
         queue::Queue::wake_all(&state);
         let follow = tokio::spawn({
             let state = Arc::clone(&state);

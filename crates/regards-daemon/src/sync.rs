@@ -435,8 +435,9 @@ pub(crate) async fn sync_mailbox(
         .collect();
     let reset = plan.reset;
     let first_look = reset || stored.uid_validity.is_none();
+    let new_uids: Vec<u32> = records.iter().map(|r| r.uid).collect();
     // The newest of what came in get their previews now; the backfill does the rest.
-    let mut detail_uids: Vec<u32> = records.iter().map(|r| r.uid).collect();
+    let mut detail_uids = new_uids.clone();
     detail_uids.sort_unstable_by(|a, b| b.cmp(a));
     detail_uids.truncate(crate::details::AT_SYNC);
     let arrived: Vec<(String, Option<String>)> = records
@@ -453,6 +454,8 @@ pub(crate) async fn sync_mailbox(
                 messages::clear(tx, mailbox_id)?;
             }
             let added = messages::upsert(tx, mailbox_id, &records)?;
+            // Mail from blocked senders goes on to Junk.
+            let junked = crate::actions::junk_blocked(tx, mailbox_id, &new_uids, now_ms())?;
             // New mail (not a first look at the folder) from someone else ends
             // the snooze of its conversation.
             if added > 0 && !first_look {
@@ -463,10 +466,13 @@ pub(crate) async fn sync_mailbox(
             // Actions the server has not heard about yet win over its older flags (ADR-0010 §2).
             operations::reapply_pending(tx, mailbox_id, point.uid_validity)?;
             mailboxes::set_sync_point(tx, mailbox_id, point)?;
-            Ok((added, flagged, removed))
+            Ok((added, flagged, removed, junked))
         })
         .await?;
-    let (added, flagged, removed) = committed.value;
+    let (added, flagged, removed, junked) = committed.value;
+    for account in junked {
+        state.queue.wake_account(&account);
+    }
     let _ = crate::details::fill(state, session, mailbox_id, &detail_uids).await;
     changes.messages_added = added;
     changes.flag_changes = flagged;

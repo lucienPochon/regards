@@ -134,12 +134,14 @@ export interface MessageListResult {
 }
 
 /** A page of a mailbox's messages, newest first; pass `next` back for the following page. */
+/** A page of a folder; in the inbox, of one Smart Inbox section (see smart.ts) when `section` is given. */
 export function listMessages(
   mailboxId: number,
   before: MessageCursor | null,
   limit: number | null = null,
+  section: string | null = null,
 ): Promise<MessageListResult> {
-  return invoke<MessageListResult>("message_list", { mailboxId, before, limit });
+  return invoke<MessageListResult>("message_list", { mailboxId, before, limit, section });
 }
 
 export interface Attachment {
