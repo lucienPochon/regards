@@ -664,9 +664,16 @@ function TemplatesTab() {
 }
 
 export function ShortcutsTab() {
+  const prefs = usePrefs();
   return (
     <>
       <h3>Keyboard shortcuts</h3>
+      {!prefs.singleKeys && (
+        <p className="muted settings-note">
+          Single-key shortcuts are off (Settings › Accessibility): only those with {MOD_KEY}, and keys such as Escape and
+          the arrows, act.
+        </p>
+      )}
       <dl className="shortcut-list">
         {SHORTCUTS.map((shortcut) => (
           <div key={shortcut.keys}>

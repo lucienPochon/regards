@@ -26,7 +26,8 @@ import { Icon, type IconName } from "./icons";
 import type { Layout } from "./layout";
 import { type NewMail, type NotificationSettings, notificationSettings, setNotificationSettings } from "./notifications";
 import type { ServiceCheck } from "./mail";
-import { ACCOUNT_COLOURS, type Prefs, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
+import { ACCOUNT_COLOURS, type Prefs, ZOOMS, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
+import { MOD_KEY } from "./shortcuts";
 import { LinkRow, Option, Select, SubPageHead, Toggle } from "./SettingsControls";
 import { senderImages, setSenderImages } from "./smart";
 import { exportDiagnostics, setDetailedLogs, supportSettings } from "./support";
@@ -972,13 +973,28 @@ export function AccessibilityPage() {
   return (
     <>
       <h3>Accessibility</h3>
-      <Option icon="text" label="Zoom" description="Makes everything in the window larger or smaller.">
+      <Option
+        icon="search"
+        label="Zoom"
+        description={`Makes everything in the window larger or smaller. ${MOD_KEY} + and ${MOD_KEY} − change it from anywhere; ${MOD_KEY} 0 goes back to 100 %.`}
+      >
         <Select
           label="Zoom"
           value={prefs.zoom}
-          options={[0.9, 1, 1.1, 1.25, 1.5].map((zoom) => ({ id: zoom, label: `${Math.round(zoom * 100)} %` }))}
+          options={ZOOMS.map((zoom) => ({ id: zoom, label: `${Math.round(zoom * 100)} %` }))}
           onChange={(zoom) => setPrefs({ zoom })}
         />
+      </Option>
+      <Option
+        icon="keyboard"
+        label="Single-key shortcuts"
+        description={
+          prefs.singleKeys
+            ? "Keys such as e (archive) and # (delete) act on their own."
+            : `Off: only shortcuts with ${MOD_KEY}, and keys such as Escape and the arrows, act. Speech input or a stray key can't archive or delete mail.`
+        }
+      >
+        <Toggle label="Single-key shortcuts" on={prefs.singleKeys} onChange={(singleKeys) => setPrefs({ singleKeys })} />
       </Option>
     </>
   );
