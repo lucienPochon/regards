@@ -270,7 +270,7 @@ const PAGE = 50;
 const MAX_PAGE = 500;
 
 /** Newest first, by place in the list; the same order as the daemon's pages. */
-function newer(a: { listed_at: number; id: number }, b: { listed_at: number; id: number }): number {
+export function newer(a: { listed_at: number; id: number }, b: { listed_at: number; id: number }): number {
   return b.listed_at - a.listed_at || b.id - a.id;
 }
 

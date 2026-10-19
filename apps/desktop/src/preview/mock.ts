@@ -111,8 +111,11 @@ const fold = (text: string) =>
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
 const stillIndexing = Number(params.get("indexing") ?? "0");
+// `?unreachable=1` pretends the second account's server can't be reached.
+const unreachableServer = params.get("unreachable") === "1";
 
-function searchSamples(query: string, accountId: string | null) {
+/** `server`: as a mail server would, also in the files' names, which the index here doesn't hold. */
+function searchSamples(query: string, accountId: string | null, server = false) {
   const terms = query.match(/-?[a-z]+:"[^"]*"|-?"[^"]*"?|\S+/gi) ?? [];
   const tests: ((m: FixtureMessage) => boolean)[] = [];
   const words: string[] = [];
@@ -154,7 +157,10 @@ function searchSamples(query: string, accountId: string | null) {
         break;
       default:
         if (!negate) words.push(value);
-        test = (m) => fold(`${m.subject} ${m.from.name} ${m.from.address} ${m.to.map((p) => p.address).join(" ")} ${m.text}`).includes(value);
+        test = (m) =>
+          fold(
+            `${m.subject} ${m.from.name} ${m.from.address} ${m.to.map((p) => p.address).join(" ")} ${m.text} ${server ? m.attachments.map((a) => a.name).join(" ") : ""}`,
+          ).includes(value);
     }
     tests.push(negate ? (m) => !test(m) : test);
   }
@@ -718,6 +724,28 @@ function handle(cmd: string, args: Args): unknown {
         next: after.length > limit && last ? { received_at: last.received_at, id: last.id } : null,
         indexing: stillIndexing,
       };
+    }
+    case "search_server": {
+      const before = args.before as { received_at: number; id: number } | null;
+      const limit = (args.limit as number | null) ?? 50;
+      const asked = (args.accountId as string | null) ?? null;
+      const away = unreachableServer && accounts.length > 1 ? [accounts[1].account.id] : [];
+      const reached = asked ? (away.includes(asked) ? [] : [asked]) : accounts.map((a) => a.account.id).filter((id) => !away.includes(id));
+      const found = reached.flatMap((id) => searchSamples(String(args.query ?? ""), id, true).found);
+      found.sort((a, b) => b.received_at - a.received_at || b.id - a.id);
+      const after = found.filter(
+        (m) => !before || m.received_at < before.received_at || (m.received_at === before.received_at && m.id < before.id),
+      );
+      const page = after.slice(0, limit);
+      const last = page[page.length - 1];
+      const result = {
+        messages: page.map((m) => summary(m)),
+        next: after.length > limit && last ? { received_at: last.received_at, id: last.id } : null,
+        not_here: found.length > 0 ? 2 : 0,
+        unreachable: away.filter((id) => !asked || id === asked),
+      };
+      // A server takes a moment.
+      return new Promise((resolve) => window.setTimeout(() => resolve(result), 900));
     }
     case "smart_overview": {
       const owner = accounts.find((a) => a.account.id === args.accountId);

@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { type CSSProperties, type KeyboardEvent, type PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type MarkResult,
+  type MessageCursor,
   type MoveResult,
   type Person,
   type UndoInfo,
@@ -24,6 +25,7 @@ import { LIST_MAX, LIST_MIN, clampList, useLayout } from "./layout";
 import {
   type ListItem,
   type MessageFeed,
+  newer,
   sectionSources,
   sourcesFor,
   useDrafts,
@@ -37,7 +39,7 @@ import {
   useSmartOverview,
 } from "./mail";
 import { useRecentSearches } from "./recent-searches";
-import { searchTerm } from "./search";
+import { searchServer, searchTerm } from "./search";
 import { type Anchor, Menu, type MenuEntry, type MenuRequest } from "./Menu";
 import { type Bundle, ListHeader, MessageList, type Screener } from "./MessageList";
 import { SenderCard, type SenderRequest } from "./SenderCard";
@@ -76,6 +78,19 @@ import { Welcome } from "./Welcome";
 const NOTICE_MS = 8000;
 
 const trashLike = (item: ListItem) => item.role === "trash" || item.role === "junk";
+
+/** A search on the servers, for words in mail not opened here: asked for, page by page. */
+interface ServerFound {
+  /** The search it answers: scope and words. */
+  key: string;
+  state: "loading" | "done" | "failed";
+  items: ListItem[];
+  next: MessageCursor | null;
+  notHere: number;
+  /** Accounts whose server could not be reached. */
+  unreachable: string[];
+  error: string | null;
+}
 
 /** While the first results of a search are on their way. */
 const SEARCHING: MessageFeed = { items: [], loading: true, error: null, more: false, loadMore: () => {} };
@@ -219,8 +234,56 @@ export function App() {
   const lastFound = useRef<MessageFeed | null>(null);
   if (!found.sources) lastFound.current = null;
   else if (!listed.loading) lastFound.current = listed;
-  const feed: MessageFeed =
+  const local: MessageFeed =
     typed && !found.sources ? SEARCHING : found.sources && listed.loading && lastFound.current ? lastFound.current : listed;
+
+  // The servers' matches join the results, once each.
+  const serverKey = search && searchFor && found.sources ? `${search.accountId ?? ""}:${searchFor}` : "";
+  const [server, setServer] = useState<ServerFound | null>(null);
+  const serverNow = server && server.key === serverKey ? server : null;
+  const feed = useMemo((): MessageFeed => {
+    if (!serverNow || serverNow.items.length === 0) return local;
+    const shown = new Set(local.items.map((item) => item.id));
+    const extra = serverNow.items.filter((item) => !shown.has(item.id));
+    return extra.length === 0 ? local : { ...local, items: [...local.items, ...extra].sort(newer) };
+  }, [local, serverNow]);
+  const placeOf = useMemo(() => {
+    const places = new Map<number, { accountId: string; role: ListItem["role"] }>();
+    for (const entry of accounts) {
+      for (const mailbox of entry.mailboxes) places.set(mailbox.id, { accountId: entry.account.id, role: mailbox.role });
+    }
+    return places;
+  }, [accounts]);
+  const askServer = () => {
+    if (!search || !serverKey) return;
+    const key = serverKey;
+    const previous = serverNow?.state === "done" || serverNow?.state === "failed" ? serverNow : null;
+    const before = previous?.state === "done" ? previous.next : null;
+    const kept = before ? (previous?.items ?? []) : [];
+    setServer({ key, state: "loading", items: kept, next: null, notHere: previous?.notHere ?? 0, unreachable: [], error: null });
+    searchServer(searchFor, { accountId: search.accountId, before }).then(
+      (result) => {
+        const items = result.messages.flatMap((message): ListItem[] => {
+          const place = placeOf.get(message.mailbox_id);
+          return place ? [{ ...message, mailboxId: message.mailbox_id, ...place }] : [];
+        });
+        setServer((now) =>
+          now?.key !== key
+            ? now
+            : {
+                key,
+                state: "done",
+                items: [...kept, ...items],
+                next: result.next,
+                notHere: result.not_here,
+                unreachable: result.unreachable,
+                error: null,
+              },
+        );
+      },
+      (error: unknown) => setServer((now) => (now?.key !== key ? now : { ...now, state: "failed", error: String(error) })),
+    );
+  };
   const scope = useMemo(() => smartScope ?? [], [smartScope]);
   const overview = useSmartOverview(scope, smartOn);
   const priorityItems = useFirstPage(useMemo(() => sectionSources(scope, "priority"), [scope]), 3, smartOn);
@@ -304,6 +367,8 @@ export function App() {
   const moved = useCallback((ids: number[], result: MoveResult | null) => {
     const gone = new Set(ids);
     setPicked(new Set());
+    // The servers' matches are not kept current: what left goes from them here.
+    setServer((now) => (now ? { ...now, items: now.items.filter((item) => !gone.has(item.id)) } : now));
     setOpen((current) => {
       if (!current || !gone.has(current.id)) return current;
       const list = items.current;
@@ -941,6 +1006,18 @@ export function App() {
           top: found.top,
           indexing: found.indexing,
           onRetry: () => setSearchRound((round) => round + 1),
+          server: {
+            state: serverNow?.state ?? "idle",
+            added: serverNow ? serverNow.items.filter((item) => !local.items.some((other) => other.id === item.id)).length : 0,
+            notHere: serverNow?.notHere ?? 0,
+            unreachable: (serverNow?.unreachable ?? []).map(
+              (id) => accounts.find((entry) => entry.account.id === id)?.account.email ?? id,
+            ),
+            more: serverNow?.state === "done" && serverNow.next !== null,
+            many: (search?.accountId ?? null) === null && accounts.length > 1,
+            error: serverNow?.error ?? null,
+            onSearch: askServer,
+          },
         }}
         screener={screener}
         screenAll={view.kind === "section" && view.section === "new_senders"}

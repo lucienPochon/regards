@@ -97,6 +97,25 @@ export interface SearchControls {
   /** Changes not indexed yet: recent mail may be missing. */
   indexing: number;
   onRetry: () => void;
+  /** Asking the servers, for words in mail not opened here. */
+  server: ServerSearch;
+}
+
+export interface ServerSearch {
+  state: "idle" | "loading" | "done" | "failed";
+  /** Matches the search here had not found. */
+  added: number;
+  /** Matches not on this device yet. */
+  notHere: number;
+  /** Addresses of the accounts whose server could not be reached. */
+  unreachable: string[];
+  /** The servers have older matches: ask again for them. */
+  more: boolean;
+  error: string | null;
+  /** More than one account is searched: "the servers". */
+  many: boolean;
+  /** The first page, the next one, or again after a failure. */
+  onSearch: () => void;
 }
 
 /** Results beyond which the best matches get a block of their own. */
@@ -535,6 +554,9 @@ export function MessageList({
                   Search again
                 </button>
               )}
+              <p className="server-search alone">
+                <ServerRow server={search.server} />
+              </p>
             </div>
           ) : (
             <div className="empty list-empty">
@@ -561,6 +583,7 @@ export function MessageList({
                     </button>
                   </span>
                 )}
+                <ServerRow server={search.server} />
               </p>
             )}
             {searching && search.top.length > 0 && items.length > TOP_AFTER && (
@@ -614,6 +637,14 @@ export function MessageList({
                 </ul>
               </section>
             ))}
+            {searching && search.server.more && !feed.more && (
+              <div className="server-more">
+                <button type="button" className="btn small" onClick={search.server.onSearch}>
+                  <Icon name="search" size={14} />
+                  More from {search.server.many ? "the servers" : "the server"}
+                </button>
+              </div>
+            )}
             {feed.more && !query && (
               <div className="row-more" aria-hidden="true">
                 <span className="spinner" />
@@ -802,6 +833,55 @@ function SearchBar({
         </button>
       </label>
     </header>
+  );
+}
+
+/**
+ * Searching the servers: offered, under way, then what it found (and what is
+ * not on this device yet, or could not be reached), or why it failed.
+ */
+function ServerRow({ server }: { server: ServerSearch }) {
+  const where = server.many ? "the servers" : "the server";
+  if (server.state === "idle") {
+    return (
+      <button type="button" className="server-ask" title="Finds words in mail not opened on this device" onClick={server.onSearch}>
+        <Icon name="search" size={13} />
+        Search on {where}
+      </button>
+    );
+  }
+  if (server.state === "loading") {
+    return (
+      <span className="server-status">
+        <span className="spinner small" aria-hidden="true" />
+        Asking {where}…
+      </span>
+    );
+  }
+  if (server.state === "failed") {
+    return (
+      <span className="server-status failed">
+        <span className="server-words">
+          {server.many ? "The servers" : "The server"} could not be searched: {server.error}{" "}
+          <button type="button" onClick={server.onSearch}>
+            Try again
+          </button>
+        </span>
+      </span>
+    );
+  }
+  const parts = [server.added > 0 ? `${server.added} more from ${where}` : `Nothing more on ${where}`];
+  if (server.notHere > 0) parts.push(`${server.notHere} more on ${where}, not on this device yet`);
+  return (
+    <span className="server-status">
+      <Icon name="check" size={13} />
+      <span className="server-words">
+        {parts.join(" · ")}
+        {server.unreachable.length > 0 && (
+          <span className="server-unreachable">Couldn't reach {server.unreachable.join(", ")}</span>
+        )}
+      </span>
+    </span>
   );
 }
 

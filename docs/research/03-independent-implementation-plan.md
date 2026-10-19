@@ -413,6 +413,10 @@ flowchart LR
       - When there are more than a few, the best three come first as "Top results".
     - **Remembering:** Enter remembers the search and goes to the first result. Opening a result remembers it too.
     - **The sender card** has "Search mail from them".
+    - **Search on the server**, offered beside the count and when nothing is found here, asks `search.server` for the same words and scope.
+      - Its matches join the results, once each.
+      - Then a line says how many it added, how many are on the server but not on this device yet, and which accounts could not be reached.
+      - Older matches come with "More from the server", on demand, since each page asks the servers again.
   - **On the servers** (`search.server`, for a "Search on the server" action):
     - The same words and filters go to each account's server as IMAP `UID SEARCH` (`TEXT`, `FROM`, `TO` or `CC`, `SUBJECT`, `NOT`, flags, `BEFORE` / `SINCE`; `CHARSET UTF-8` when needed). This finds the text of mail not opened here.
     - It searches the folders the search would, but only All Mail when the account has one and no folder is named.

@@ -1416,6 +1416,88 @@ button.list-title:hover {
   text-decoration: underline;
 }
 
+/* Searching the servers: an offer at the end of the summary, then what it found. */
+.server-ask,
+.server-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.search-summary .server-ask {
+  margin-left: auto;
+}
+
+/* What the servers found: a line of its own under the count. */
+.search-summary .server-status {
+  flex-basis: 100%;
+}
+
+.server-ask {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.server-ask:hover {
+  text-decoration: underline;
+}
+
+.server-status {
+  align-items: flex-start;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.server-status > .icon,
+.server-status > .spinner {
+  flex: none;
+  margin-top: 2px;
+}
+
+.server-status > .icon {
+  color: var(--accent);
+}
+
+.server-words {
+  min-width: 0;
+  line-height: 1.45;
+}
+
+.server-status.failed {
+  color: var(--danger);
+}
+
+.server-status button {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.server-status button:hover {
+  text-decoration: underline;
+}
+
+.server-unreachable {
+  display: block;
+  color: var(--warn);
+}
+
+.server-search.alone {
+  margin-top: 6px;
+}
+
+.server-more {
+  display: flex;
+  justify-content: center;
+  padding: 14px 0 4px;
+}
+
+.spinner.small {
+  width: 12px;
+  height: 12px;
+  border-width: 1.5px;
+}
+
 .sender-row-detail {
   display: block;
   overflow: hidden;
