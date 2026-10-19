@@ -360,7 +360,15 @@ flowchart LR
     - **Storage:** text to start a message with, by name, for every account (migration 0020, `template.*`). Formatting is sanitised like an outgoing message's.
     - **In the composer:** a template goes where one writes, above the signature and any quote, and fills an empty subject.
     - **Settings:** an editor (`TemplatesEditor`) for them.
-- **Still to come in Phase 2:** checking the HTML in major clients (the acceptance test), inline images, IMAP draft sync, and dropping files onto the composer.
+  - **IMAP draft sync:**
+    - **Upload:** a draft left alone 5 s is appended to the server's Drafts folder (`\Draft \Seen`, with its Bcc), and its previous copy is deleted. Every copy carries one Message-ID (migration 0021).
+    - **Deletion:** a trigger queues the copy whenever the draft goes (sent, discarded, account removed).
+    - **Reconciliation:**
+      - A copy gone from the server takes an unchanged draft with it (sent elsewhere); a changed draft is uploaded again.
+      - Stray copies from a crash are deleted.
+    - **Drafts from webmail or another device** are listed (`draft.elsewhere`) and picked up (`draft.adopt`).
+    - **Servers without UIDPLUS:** drafts stay on the device.
+- **Still to come in Phase 2:** checking the HTML in major clients (the acceptance test), inline images, and dropping files onto the composer.
 
 ### 5.10 Search (P0 keyword, P2 semantic, 1.0)
 
