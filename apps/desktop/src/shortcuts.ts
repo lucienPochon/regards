@@ -109,6 +109,7 @@ export const SHORTCUTS: { keys: string; action: string }[] = [
   { keys: "z", action: "Undo, while the undo bar shows (also undo send)" },
   { keys: "c", action: "New message" },
   { keys: "r / a / f", action: "Reply, reply all, forward" },
+  { keys: "Shift+O / o", action: "Open every message of the conversation, or fold the older ones" },
   { keys: `${MOD_KEY}+Enter`, action: "Send, in the composer" },
   { keys: `${MOD_KEY}+Shift+T`, action: "Insert a template, in the composer" },
   { keys: `${MOD_KEY}+,`, action: "Settings" },

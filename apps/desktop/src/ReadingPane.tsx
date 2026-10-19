@@ -19,6 +19,7 @@ import type { ListItem } from "./mail";
 import { type Anchor, type MenuEntry, anchorOf } from "./Menu";
 import { getPrefs, usePrefs } from "./prefs";
 import { senderImages, setSenderImages } from "./smart";
+import { asMarkdown, printMessage } from "./messageText";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 
 type Load = { state: "loading" } | { state: "ready"; detail: MessageDetail } | { state: "failed"; message: string };
@@ -153,6 +154,16 @@ export function ReadingPane({
     if (!prefs.collapseOlder && allIds) setExpanded(new Set(allIds.split(",").map(Number)));
   }, [prefs.collapseOlder, allIds]);
 
+  // Every message of the conversation open, or the older ones folded again (Shift+O, O).
+  const conversation =
+    entries.length > 1
+      ? {
+          openAll: () => setExpanded(new Set(entries.map((entry) => entry.message.id))),
+          foldOlder: () => setExpanded(new Set([item.id])),
+        }
+      : undefined;
+  useShortcuts(conversation ? { "Shift+O": conversation.openAll, o: conversation.foldOlder } : {});
+
   const toggle = (id: number) =>
     setExpanded((now) => {
       const next = new Set(now);
@@ -235,6 +246,7 @@ export function ReadingPane({
                   actionsFor={actionsFor}
                   onPalette={onPalette}
                   onSender={onSender}
+                  conversation={conversation}
                 />
               );
             })}
@@ -256,6 +268,7 @@ function ThreadMessage({
   actionsFor,
   onPalette,
   onSender,
+  conversation,
 }: {
   ref?: Ref<HTMLLIElement>;
   entry: ThreadEntry;
@@ -270,6 +283,8 @@ function ThreadMessage({
   actionsFor: (target: Target) => Action[];
   onPalette: Palette;
   onSender?: SenderOpener;
+  /** A conversation of several messages: open them all, or fold the older ones. */
+  conversation?: { openAll: () => void; foldOlder: () => void };
 }) {
   const own = useDetail(entry.message.id, given === null && expanded);
   const load = given ?? own;
@@ -358,6 +373,22 @@ function ThreadMessage({
     }
     if (ready?.has_html && trusted) {
       extra.push({ label: "Stop loading images from this sender", icon: "shield", onSelect: stopFrom });
+    }
+    if (conversation) {
+      extra.push(
+        { label: "Open every message", icon: "expand", keys: "Shift+O", onSelect: conversation.openAll },
+        { label: "Fold the older messages", icon: "shrink", keys: "o", onSelect: conversation.foldOlder },
+      );
+    }
+    if (ready) {
+      extra.push(
+        {
+          label: "Copy as Markdown",
+          icon: "copy",
+          onSelect: () => void navigator.clipboard?.writeText(asMarkdown(ready)).catch(() => {}),
+        },
+        { label: "Print…", icon: "text", onSelect: () => printMessage(ready) },
+      );
     }
     extra.push({ label: details ? "Hide details" : "Show details", icon: "info", onSelect: () => setDetails(!details) });
     const from = message.from;
