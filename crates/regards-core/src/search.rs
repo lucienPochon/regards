@@ -44,6 +44,9 @@ pub struct Term {
     /// Where to look; anywhere when `None`.
     pub field: Option<Field>,
     pub negated: bool,
+    /// Also matched as the start of a longer word: the word being typed,
+    /// or one with a field.
+    pub prefix: bool,
 }
 
 pub fn parse(input: &str) -> Query {
@@ -63,6 +66,7 @@ pub fn parse(input: &str) -> Query {
                         text: words.join(" "),
                         field,
                         negated,
+                        prefix: false,
                     });
                 }
             }
@@ -73,14 +77,15 @@ pub fn parse(input: &str) -> Query {
                 if pieces(&text).is_empty() {
                     continue;
                 }
+                // The last word as typed so far: also as the start of a longer
+                // one, from two letters (one would match nearly everything).
+                let typing = last_word == Some(index) || field.is_some();
                 query.terms.push(Term {
                     text: text.clone(),
                     field,
                     negated,
+                    prefix: typing && !negated,
                 });
-                // The last word as typed so far: also as the start of a longer
-                // one, from two letters (one would match nearly everything).
-                let typing = last_word == Some(index) || field.is_some();
                 for piece in pieces(&text) {
                     let prefix = if typing && piece.chars().nth(1).is_some() {
                         "*"
@@ -242,6 +247,64 @@ fn escape(text: &str) -> String {
     text.replace('"', "\"\"")
 }
 
+/// A word as the index keeps it: lower case, without the accents of Latin
+/// letters (the index's `remove_diacritics`, for those that have a base
+/// letter; others are kept, as there).
+pub fn fold(word: &str) -> String {
+    word.chars()
+        .flat_map(char::to_lowercase)
+        .map(|c| match c {
+            'à'..='å' | 'ā' | 'ă' | 'ą' => 'a',
+            'ç' | 'ć' | 'ĉ' | 'ċ' | 'č' => 'c',
+            'ď' => 'd',
+            'è'..='ë' | 'ē' | 'ĕ' | 'ė' | 'ę' | 'ě' => 'e',
+            'ĝ' | 'ğ' | 'ġ' | 'ģ' => 'g',
+            'ĥ' => 'h',
+            'ì'..='ï' | 'ĩ' | 'ī' | 'ĭ' | 'į' => 'i',
+            'ĵ' => 'j',
+            'ķ' => 'k',
+            'ĺ' | 'ļ' | 'ľ' => 'l',
+            'ñ' | 'ń' | 'ņ' | 'ň' => 'n',
+            'ò'..='ö' | 'ō' | 'ŏ' | 'ő' => 'o',
+            'ŕ' | 'ŗ' | 'ř' => 'r',
+            'ś' | 'ŝ' | 'ş' | 'š' => 's',
+            'ţ' | 'ť' => 't',
+            'ù'..='ü' | 'ũ' | 'ū' | 'ŭ' | 'ů' | 'ű' | 'ų' => 'u',
+            'ŵ' => 'w',
+            'ý' | 'ÿ' | 'ŷ' => 'y',
+            'ź' | 'ż' | 'ž' => 'z',
+            other => other,
+        })
+        .collect()
+}
+
+/// How many edits make `a` into `b` (a letter wrong, missing, extra, or
+/// two side by side swapped), if at most `max`.
+pub fn edits_within(a: &str, b: &str, max: usize) -> Option<usize> {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    if a.len().abs_diff(b.len()) > max {
+        return None;
+    }
+    // Rows of the optimal string alignment distance; the one before last for swaps.
+    let mut before: Vec<usize> = Vec::new();
+    let mut last: Vec<usize> = (0..=b.len()).collect();
+    for i in 1..=a.len() {
+        let mut row = vec![i; b.len() + 1];
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            row[j] = (last[j] + 1).min(row[j - 1] + 1).min(last[j - 1] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                row[j] = row[j].min(before[j - 2] + 1);
+            }
+        }
+        if row.iter().min().is_some_and(|&least| least > max) {
+            return None;
+        }
+        before = std::mem::replace(&mut last, row);
+    }
+    Some(last[b.len()]).filter(|&edits| edits <= max)
+}
+
 /// Midnight UTC of `YYYY-MM-DD`, Unix ms.
 fn day_start(day: &str) -> Option<i64> {
     let mut parts = day.split('-').map(|part| part.parse::<i64>().ok());
@@ -326,21 +389,36 @@ mod tests {
     #[test]
     fn terms_are_kept_as_typed_for_a_server() {
         let query = parse(r#"ada@example.org "seed order" -from:shop subject:Plan is:unread"#);
-        let term = |text: &str, field, negated| Term {
+        let term = |text: &str, field, negated, prefix| Term {
             text: text.into(),
             field,
             negated,
+            prefix,
         };
         assert_eq!(
             query.terms,
             [
-                term("ada@example.org", None, false),
-                term("seed order", None, false),
-                term("shop", Some(Field::Sender), true),
-                term("Plan", Some(Field::Subject), false),
+                term("ada@example.org", None, false, false),
+                term("seed order", None, false, false),
+                term("shop", Some(Field::Sender), true, false),
+                term("Plan", Some(Field::Subject), false, true),
             ]
         );
         assert!(parse("*** \"\"").terms.is_empty(), "nothing to search for");
+    }
+
+    #[test]
+    fn words_fold_and_typos_are_counted() {
+        assert_eq!(fold("Müller"), "muller");
+        assert_eq!(fold("CAFÉ"), "cafe");
+        assert_eq!(fold("Øre"), "øre", "no base letter, as in the index");
+        assert_eq!(edits_within("project", "project", 2), Some(0));
+        assert_eq!(edits_within("projcet", "project", 1), Some(1), "two letters swapped");
+        assert_eq!(edits_within("proect", "project", 1), Some(1), "one missing");
+        assert_eq!(edits_within("prooject", "project", 1), Some(1), "one extra");
+        assert_eq!(edits_within("prjoetc", "project", 2), Some(2));
+        assert_eq!(edits_within("budget", "project", 2), None);
+        assert_eq!(edits_within("a", "abcd", 2), None, "too different in length");
     }
 
     #[test]

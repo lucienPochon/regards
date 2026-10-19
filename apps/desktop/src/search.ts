@@ -29,6 +29,12 @@ export interface SearchResult {
   next: MessageCursor | null;
   /** Changes still to index: while above 0, recent mail may be missing (say so, search again later). */
   indexing: number;
+  /**
+   * When nothing was found: the search with its unknown words replaced by
+   * the nearest known ones, which does find something. Offer it ("Did you
+   * mean …?"); searching it is the person's choice.
+   */
+  suggestion?: string;
 }
 
 export interface SearchOptions {
