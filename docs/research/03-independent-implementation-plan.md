@@ -139,6 +139,14 @@ flowchart LR
 - **Microsoft:** OAuth 2.0 + PKCE (loopback redirect), XOAUTH2 for IMAP/SMTP.
 - **Google:** OAuth once Google approves the desktop client (the verification process **starts in Phase 0**); until then, guided app-password setup.
 - **Everyone else** (Infomaniak, iCloud, Yahoo, Fastmail, GMX, hosting providers, own servers): an app or mailbox password in the OS keychain. Autoconfig through an ISPDB-style database, DNS SRV, then manual entry, with app-password guidance.
+- **As built (2026-10-19), finding the servers** (`account.discover`, `regards_core::autoconfig`):
+  1. **Known providers:** Gmail, Outlook.com and Hotmail, iCloud, Yahoo, AOL, Fastmail, Infomaniak, GMX, WEB.DE and Bluewin. These come with what to say about the password: an app password, or Microsoft's sign-in only.
+  2. **DNS** (`hickory-resolver`, the system's DNS servers):
+     - MX records name a provider hosting the domain: Microsoft 365, Google Workspace, iCloud, Fastmail, Yahoo or Infomaniak. OAuth is then offered, not required.
+     - Otherwise, the SRV records of RFC 6186 and RFC 8314.
+  3. **The usual names:** `imap.` and `mail.` on 993; `smtp.` and `mail.` on 587, then 465. They are probed at once. A server is offered only if it greets with a certificate valid for its name; nothing signs in.
+
+  It takes 12 s at most. A real run found microsoft.com behind Microsoft 365 by its MX, and mailbox.org by its usual names (`tests/accounts.rs`, ignored by default). No ISPDB or other third party is asked.
 - **Accepted when:** setup succeeds against Microsoft 365, Outlook.com, Gmail (both paths), Infomaniak, iCloud and a self-hosted Dovecot, and no secret is ever written outside the keychain.
 
 ### 5.2 IMAP engine (P0, 1.0, ADR-0009)

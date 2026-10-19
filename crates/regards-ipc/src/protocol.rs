@@ -32,6 +32,9 @@ pub mod methods {
     pub const ACCOUNT_ADD: &str = "account.add";
     /// Remove an account and its stored password. `ui` only (ADR-0006).
     pub const ACCOUNT_REMOVE: &str = "account.remove";
+    /// An address's mail servers, found before the person types them
+    /// (known providers, DNS, then the usual names, checked). `ui` only.
+    pub const ACCOUNT_DISCOVER: &str = "account.discover";
     /// The providers this build can sign in with (ADR-0018). `ui` only.
     pub const ACCOUNT_OAUTH_PROVIDERS: &str = "account.oauth_providers";
     /// Begin signing in with a provider: the daemon waits for the browser to
@@ -443,6 +446,47 @@ pub enum SignIn {
     Microsoft,
     /// OAuth with Google.
     Google,
+}
+
+/// Parameters of [`methods::ACCOUNT_DISCOVER`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiscoverParams {
+    pub email: String,
+}
+
+/// Where [`methods::ACCOUNT_DISCOVER`] found the servers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiscoverSource {
+    /// A provider Regards knows, by the address's domain.
+    Known,
+    /// The domain's mail is hosted by a known provider (its MX records), as
+    /// with Microsoft 365 or Google Workspace.
+    Mx,
+    /// The domain's SRV records (RFC 6186), and the servers answered.
+    Dns,
+    /// The usual names on the domain (`imap.`, `mail.`, `smtp.`), which answered.
+    Guess,
+}
+
+/// What [`methods::ACCOUNT_DISCOVER`] found: a proposal to fill in the form
+/// with, checked when the account is added. Missing parts were not found.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiscoverResult {
+    /// `None`: nothing found; ask for the servers.
+    pub source: Option<DiscoverSource>,
+    pub imap: Option<ServerSettings>,
+    pub smtp: Option<ServerSettings>,
+    /// The provider's OAuth sign-in, if Regards knows one (offer it when
+    /// `account.oauth_providers` has it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<Provider>,
+    /// Only OAuth works: no password form.
+    #[serde(default)]
+    pub oauth_only: bool,
+    /// What to tell the person about the password (an app password …).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password_help: Option<String>,
 }
 
 /// The result of [`methods::ACCOUNT_OAUTH_PROVIDERS`]: those this build has

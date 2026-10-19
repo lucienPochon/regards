@@ -575,3 +575,16 @@ async fn live_server_searches_text_people_flags_and_days() {
     assert_eq!(find(&[]).await, all, "no terms: everything");
     session.logout().await;
 }
+
+#[tokio::test]
+async fn a_probe_greets_reads_the_capabilities_and_leaves() {
+    let pki = pki(&["localhost"]);
+    let (port, _) = fake_server(&pki, "* OK ready\r\n", PASSWORD).await;
+    let capabilities = regards_imap::probe(&localhost(port), &trusting(&pki)).await.unwrap();
+    assert!(capabilities.iter().any(|c| c == "AUTH=XOAUTH2"), "{capabilities:?}");
+    // A certificate not valid for it: not offered.
+    assert!(matches!(
+        regards_imap::probe(&localhost(port), &TlsOptions::platform()).await,
+        Err(ImapError::Tls(_))
+    ));
+}

@@ -12,6 +12,7 @@ regards-core.workspace = true
 regards-ipc.workspace = true
 regards-imap.workspace = true
 regards-net.workspace = true
+hickory-resolver.workspace = true
 regards-smtp.workspace = true
 regards-store.workspace = true
 regards-vault.workspace = true

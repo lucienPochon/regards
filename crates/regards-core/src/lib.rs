@@ -5,6 +5,7 @@
 //! data locations.
 
 pub mod agents;
+pub mod autoconfig;
 pub mod body;
 pub mod build_info;
 pub mod compose;
