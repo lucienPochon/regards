@@ -180,6 +180,16 @@ pub fn retry_later(tx: &Transaction<'_>, id: i64, error: &str, next: i64) -> Res
     Ok(())
 }
 
+/// An account's entries waiting to try again go at once, not before their
+/// undo window or time (its sign-in was renewed). Returns how many.
+pub fn retry_now(tx: &Transaction<'_>, account_id: &str, now: i64) -> Result<usize, StoreError> {
+    Ok(tx.execute(
+        "UPDATE outbox SET next_attempt_at = MAX(undo_until, COALESCE(send_at, 0), ?2) \
+         WHERE account_id = ?1 AND state = 'queued' AND executor = 'device' AND attempts > 0 AND next_attempt_at > ?2",
+        params![account_id, now],
+    )?)
+}
+
 /// Not sent, and something must change first.
 pub fn failed(tx: &Transaction<'_>, id: i64, error: &str) -> Result<(), StoreError> {
     set_state(tx, id, "failed", error)
