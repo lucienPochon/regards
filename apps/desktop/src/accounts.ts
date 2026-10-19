@@ -92,6 +92,20 @@ export function setAutoCopy(accountId: string, autoCopy: AutoCopy | null): Promi
  * of the last 30 days, up to 25 MB each, so they open at once, offline too,
  * and their whole text is searchable. It costs data and disk space.
  */
+/** How messages are shown, kept by the service. */
+export interface ReadingSettings {
+  /**
+   * Links in messages lose their tracking parameters (`utm_…`, `fbclid` …)
+   * before they can be opened. On by default. Links through a click-counting
+   * address stay so: only the parameters go.
+   */
+  clean_links: boolean;
+}
+
+export const readingSettings = () => invoke<ReadingSettings>("reading_settings");
+export const setReadingSettings = (settings: ReadingSettings) =>
+  invoke<void>("set_reading_settings", { settings });
+
 export const prefetchOn = () => invoke<boolean>("prefetch_get");
 export const setPrefetch = (on: boolean) => invoke<void>("prefetch_set", { on });
 

@@ -10,8 +10,8 @@ use regards_core::{body, html};
 use regards_imap::SearchTerm;
 use regards_ipc::protocol::{
     AccountRef, MessageCursor, MessageDetail, MessageHtml, MessageHtmlParams, MessageListParams, MessageListResult,
-    MessageRef, MessageSummary, RpcError, SearchParams, SearchResult, SenderImagesParams, SenderImagesResult,
-    ServerSearchResult, ThreadEntry, ThreadView, View, ViewParams, codes,
+    MessageRef, MessageSummary, ReadingSettings, RpcError, SearchParams, SearchResult, SenderImagesParams,
+    SenderImagesResult, ServerSearchResult, ThreadEntry, ThreadView, View, ViewParams, codes,
 };
 use regards_store::mailboxes::Mailbox;
 use regards_store::marks::{self, Mark, Marks};
@@ -472,6 +472,36 @@ pub(crate) async fn get(state: &State, params: MessageRef) -> Result<Value, RpcE
     }))
 }
 
+/// The daemon's key for [`ReadingSettings::clean_links`].
+const CLEAN_LINKS: &str = "clean_links";
+
+async fn reading(state: &State) -> Result<ReadingSettings, RpcError> {
+    let value = state
+        .store
+        .read(|conn| regards_store::settings::get(conn, CLEAN_LINKS))
+        .await
+        .map_err(store_error)?;
+    Ok(ReadingSettings {
+        clean_links: value.as_deref() != Some("off"),
+    })
+}
+
+/// `reading.settings`.
+pub(crate) async fn reading_settings(state: &State) -> Result<Value, RpcError> {
+    Ok(json!(reading(state).await?))
+}
+
+/// `reading.set_settings`.
+pub(crate) async fn set_reading_settings(state: &State, params: ReadingSettings) -> Result<Value, RpcError> {
+    let value = if params.clean_links { "on" } else { "off" };
+    state
+        .store
+        .write(move |tx| regards_store::settings::set(tx, CLEAN_LINKS, value))
+        .await
+        .map_err(store_error)?;
+    Ok(json!(params))
+}
+
 /// Whether the person lets the message's sender's remote images load.
 async fn sender_images(state: &State, message: &Message) -> Result<bool, RpcError> {
     let Some(address) = message.from.as_ref().and_then(|from| from.address.clone()) else {
@@ -554,10 +584,13 @@ pub(crate) async fn html(state: &State, params: MessageHtmlParams) -> Result<Val
         ..
     } = params;
     let allow_remote = allow_remote || sender_images(state, &message).await?;
-    let rendered = tokio::task::spawn_blocking(move || html::render(&source, allow_remote, link_prefix.as_deref()))
-        .await
-        .map_err(crate::session::internal)?
-        .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "this message has no HTML version"))?;
+    let clean_links = reading(state).await?.clean_links;
+    let rendered = tokio::task::spawn_blocking(move || {
+        html::render_with(&source, allow_remote, link_prefix.as_deref(), clean_links)
+    })
+    .await
+    .map_err(crate::session::internal)?
+    .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "this message has no HTML version"))?;
     Ok(json!(MessageHtml {
         html: rendered.html,
         blocked_remote: rendered.blocked_remote,

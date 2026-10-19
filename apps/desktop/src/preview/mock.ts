@@ -322,6 +322,10 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return owner.account;
     }
+    case "reading_settings":
+      return { clean_links: true };
+    case "set_reading_settings":
+      return null;
     case "prefetch_get":
       return false;
     case "prefetch_set":

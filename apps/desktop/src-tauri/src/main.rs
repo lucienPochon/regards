@@ -354,6 +354,29 @@ async fn account_set_auto_copy(
         .map_err(describe)
 }
 
+/// How messages are shown (links without their tracking parameters …).
+#[tauri::command]
+async fn reading_settings(bridge: State<'_, Bridge>) -> Result<regards_ipc::protocol::ReadingSettings, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::READING_SETTINGS, Value::Null)
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn set_reading_settings(
+    bridge: State<'_, Bridge>,
+    settings: regards_ipc::protocol::ReadingSettings,
+) -> Result<(), String> {
+    let mut client = bridge.connect().await?.client;
+    let _: Value = client
+        .call(methods::READING_SET_SETTINGS, settings)
+        .await
+        .map_err(describe)?;
+    Ok(())
+}
+
 /// Whether recent inbox mail is downloaded ahead (off by default).
 #[tauri::command]
 async fn prefetch_get(bridge: State<'_, Bridge>) -> Result<bool, String> {
@@ -1254,6 +1277,8 @@ fn main() {
             system::open_system_settings,
             system::open_url,
             account_update,
+            reading_settings,
+            set_reading_settings,
             prefetch_get,
             prefetch_set,
             account_set_auto_copy,

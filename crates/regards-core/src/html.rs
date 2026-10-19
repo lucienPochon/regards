@@ -43,6 +43,11 @@ pub struct Rendered {
 /// The sanitised HTML version of a message, or `None` if it has none. With
 /// `links`, web links become `<links><percent-encoded URL>`.
 pub fn render(raw: &[u8], allow_remote: bool, links: Option<&str>) -> Option<Rendered> {
+    render_with(raw, allow_remote, links, false)
+}
+
+/// [`render`]; with `clean_links`, links lose their tracking parameters ([`clean_link`]).
+pub fn render_with(raw: &[u8], allow_remote: bool, links: Option<&str>, clean_links: bool) -> Option<Rendered> {
     let message = MessageParser::default().parse(raw)?;
     let part = message.html_part(0).filter(|part| part.is_text_html())?;
     let html = part.text_contents()?;
@@ -80,7 +85,7 @@ pub fn render(raw: &[u8], allow_remote: bool, links: Option<&str>) -> Option<Ren
         inline.insert(key, format!("data:{mime};base64,{}", base64(bytes)));
     }
 
-    let (body, blocked_remote) = sanitize(html, allow_remote, &inline, links);
+    let (body, blocked_remote) = sanitize(html, allow_remote, &inline, links, clean_links);
     // The message's own <base> and frames were removed; these are ours.
     let html = if links.is_some() {
         document(
@@ -203,6 +208,7 @@ pub fn sanitize(
     allow_remote: bool,
     inline: &HashMap<String, String>,
     links: Option<&str>,
+    clean_links: bool,
 ) -> (String, usize) {
     let blocked = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&blocked);
@@ -268,9 +274,14 @@ pub fn sanitize(
                 // Only ordinary links: no data: or cid: targets.
                 "href" => {
                     if lower.starts_with("http:") || lower.starts_with("https:") {
+                        let target = if clean_links {
+                            clean_link(value.trim())
+                        } else {
+                            value.trim().to_owned()
+                        };
                         return Some(match &links {
-                            Some(prefix) => Cow::Owned(format!("{prefix}{}", percent_encode(value.trim()))),
-                            None => value.into(),
+                            Some(prefix) => Cow::Owned(format!("{prefix}{}", percent_encode(&target))),
+                            None => Cow::Owned(target),
                         });
                     }
                     lower.starts_with("mailto:").then(|| value.into())
@@ -282,6 +293,62 @@ pub fn sanitize(
         .to_string();
     let count = blocked.load(Ordering::Relaxed);
     (clean, count)
+}
+
+/// Query parameters that only say who clicked and from which campaign
+/// (ADR-0015 §4); `utm_` parameters too, whatever follows.
+const TRACKING: &[&str] = &[
+    "fbclid",
+    "gclid",
+    "dclid",
+    "gbraid",
+    "wbraid",
+    "msclkid",
+    "yclid",
+    "ttclid",
+    "twclid",
+    "li_fat_id",
+    "mc_cid",
+    "mc_eid",
+    "_hsenc",
+    "_hsmi",
+    "mkt_tok",
+    "igshid",
+    "oly_anon_id",
+    "oly_enc_id",
+    "vero_id",
+    "vero_conv",
+    "_kx",
+];
+
+/// A web link without its tracking parameters; the rest of it, the order
+/// of what stays, and its `#fragment` are kept. It does not follow
+/// redirects: a link through a click-counting address stays one.
+pub fn clean_link(url: &str) -> String {
+    let (before_fragment, fragment) = match url.split_once('#') {
+        Some((rest, fragment)) => (rest, Some(fragment)),
+        None => (url, None),
+    };
+    let Some((address, query)) = before_fragment.split_once('?') else {
+        return url.to_owned();
+    };
+    let kept: Vec<&str> = query
+        .split('&')
+        .filter(|pair| {
+            let name = pair.split('=').next().unwrap_or("").to_ascii_lowercase();
+            !pair.is_empty() && !name.starts_with("utm_") && !TRACKING.contains(&name.as_str())
+        })
+        .collect();
+    let mut cleaned = address.to_owned();
+    if !kept.is_empty() {
+        cleaned.push('?');
+        cleaned.push_str(&kept.join("&"));
+    }
+    if let Some(fragment) = fragment {
+        cleaned.push('#');
+        cleaned.push_str(fragment);
+    }
+    cleaned
 }
 
 /// Everything but unreserved characters (RFC 3986 §2.3) is encoded, so the
@@ -303,6 +370,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn links_lose_their_tracking_but_nothing_else() {
+        assert_eq!(
+            clean_link("https://shop.example/item?id=7&utm_source=news&UTM_Medium=mail&fbclid=abc#reviews"),
+            "https://shop.example/item?id=7#reviews"
+        );
+        assert_eq!(
+            clean_link("https://example.test/?utm_campaign=x"),
+            "https://example.test/"
+        );
+        assert_eq!(
+            clean_link("https://example.test/a?b=1&c=d"),
+            "https://example.test/a?b=1&c=d"
+        );
+        assert_eq!(clean_link("https://example.test/plain"), "https://example.test/plain");
+        assert_eq!(
+            clean_link("https://example.test/?mc_eid=1&q=utm_source"),
+            "https://example.test/?q=utm_source"
+        );
+        let source = "<a href=\"https://example.test/a?utm_source=x&amp;b=1\">a</a>";
+        let (kept, _) = sanitize(source, false, &HashMap::new(), None, false);
+        assert!(kept.contains("utm_source"), "only when asked: {kept}");
+        let (cleaned, _) = sanitize(source, false, &HashMap::new(), None, true);
+        assert!(cleaned.contains("href=\"https://example.test/a?b=1\""), "{cleaned}");
+    }
+
+    #[test]
     fn a_message_carries_its_own_images_never_ones_from_the_web() {
         let written = r#"<p>Hi <img src="cid:lake@regards" alt="Lake"><img src="https://tracker.example/p.gif"><img src="data:image/png;base64,AAAA"> <a href="cid:x">x</a></p>"#;
         let clean = sanitize_outgoing(written);
@@ -315,7 +408,7 @@ mod tests {
     }
 
     fn clean(html: &str, allow_remote: bool) -> (String, usize) {
-        sanitize(html, allow_remote, &HashMap::new(), None)
+        sanitize(html, allow_remote, &HashMap::new(), None, false)
     }
 
     #[test]
@@ -375,6 +468,7 @@ mod tests {
             false,
             &inline,
             None,
+            false,
         );
         assert!(html.contains("src=\"data:image/png;base64,AAAA\""), "{html}");
         assert!(!html.contains("cid:"));
@@ -409,6 +503,7 @@ mod tests {
             false,
             &HashMap::new(),
             Some("regards-mail://localhost/open?t=k&url="),
+            false,
         );
         // The attribute value was entity-decoded: `&amp;` is `&`, encoded here as %26.
         assert!(

@@ -21,8 +21,8 @@ use regards_ipc::protocol::{
 };
 use regards_ipc::protocol::{
     ArrivalView, ArrivedResult, ExplainResult, HoldListParams, HoldListResult, NoticeShownParams, Policy,
-    PrefetchParams, Reason, Screening, ScreeningParams, Section, SenderBlockParams, SenderImagesParams,
-    SenderImagesResult, SenderSetParams, SenderSetResult, SmartOverviewResult,
+    PrefetchParams, ReadingSettings, Reason, Screening, ScreeningParams, Section, SenderBlockParams,
+    SenderImagesParams, SenderImagesResult, SenderSetParams, SenderSetResult, SmartOverviewResult,
 };
 use regards_ipc::{Client, Endpoint, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -3050,7 +3050,8 @@ async fn live_a_senders_remote_images_load_once_the_person_allows_them() {
     let sale = b"From: Shop <news@shop.example>\r\nTo: Bob <bob@example.test>\r\nSubject: Sale\r\n\
         Date: Sun, 18 Oct 2026 11:00:00 +0000\r\nMIME-Version: 1.0\r\n\
         Content-Type: text/html; charset=utf-8\r\n\r\n\
-        <p>Sale <img src=\"https://shop.example/banner.png\" alt=\"banner\"></p>\r\n";
+        <p>Sale <img src=\"https://shop.example/banner.png\" alt=\"banner\"> \
+        <a href=\"https://shop.example/sale?id=3&amp;utm_source=news&amp;fbclid=x\">See it</a></p>\r\n";
     seed.append(b"INBOX", &[], sale).await.unwrap();
     seed.logout().await;
     let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
@@ -3072,6 +3073,18 @@ async fn live_a_senders_remote_images_load_once_the_person_allows_them() {
     let html: MessageHtml = desktop.call(methods::MESSAGE_HTML, shown(false)).await.unwrap();
     assert_eq!(html.blocked_remote, 1);
     assert!(!html.html.contains("shop.example/banner.png"));
+    // Links lose their tracking parameters, unless that is turned off.
+    assert!(
+        html.html.contains("href=\"https://shop.example/sale?id=3\""),
+        "{}",
+        html.html
+    );
+    let _: Value = desktop
+        .call(methods::READING_SET_SETTINGS, ReadingSettings { clean_links: false })
+        .await
+        .unwrap();
+    let kept: MessageHtml = desktop.call(methods::MESSAGE_HTML, shown(false)).await.unwrap();
+    assert!(kept.html.contains("utm_source=news"), "{}", kept.html);
 
     // Allowed for the sender: from then on, without asking each time.
     let allow = |address: &str, allow| SenderImagesParams {
