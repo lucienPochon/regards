@@ -1,0 +1,18 @@
+{
+  "build": {
+    "beforeBuildCommand": "node scripts/sidecar.mjs && npm run build"
+  },
+  "bundle": {
+    "externalBin": [
+      "binaries/regards"
+    ],
+    "targets": [
+      "nsis",
+      "app",
+      "dmg",
+      "deb",
+      "rpm",
+      "appimage"
+    ]
+  }
+}

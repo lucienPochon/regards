@@ -271,11 +271,28 @@ async fn daemon_status(dirs: &DataDirs, as_json: bool) -> anyhow::Result<ExitCod
     Ok(ExitCode::SUCCESS)
 }
 
+/// Until the daemon let go of its data directory, the last thing it does
+/// before it exits (at most 15 s): an installer replaces its files next.
+async fn wait_until_stopped(dirs: &DataDirs) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while std::time::Instant::now() < deadline {
+        let free = match std::fs::File::options().read(true).write(true).open(dirs.lock_file()) {
+            Ok(file) => file.try_lock().is_ok(),
+            Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+        };
+        if free {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
 async fn daemon_stop(dirs: &DataDirs, as_json: bool) -> anyhow::Result<ExitCode> {
     let endpoint = Endpoint::for_dirs(dirs);
     let stopped = match Client::connect(&endpoint, ClientKind::Cli).await {
         Ok(mut client) => {
             client.shutdown().await?;
+            wait_until_stopped(dirs).await;
             true
         }
         Err(ClientError::NotRunning { .. }) => false,

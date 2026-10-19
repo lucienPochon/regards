@@ -100,3 +100,31 @@ async fn a_missing_program_is_reported_clearly() {
     let result = spawn_daemon(&missing, &DataDirs::at(temp.path())).await;
     assert!(matches!(result, Err(LaunchError::ProgramMissing(ref path)) if *path == missing));
 }
+
+#[tokio::test]
+async fn daemon_stop_returns_once_the_daemon_let_go() {
+    let temp = tempfile::tempdir().unwrap();
+    let dirs = DataDirs::at(temp.path());
+    let _guard = StopOnDrop(dirs.clone());
+    let launcher = Launcher::new(dirs.clone(), program());
+    drop(
+        launcher
+            .connect_or_start(ClientKind::Desktop, None, true)
+            .await
+            .unwrap(),
+    );
+
+    let stopped = std::process::Command::new(program())
+        .args(["daemon", "stop"])
+        .env(DATA_DIR_ENV, dirs.data())
+        .output()
+        .unwrap();
+    assert!(stopped.status.success(), "{stopped:?}");
+    // What an installer relies on before it replaces the files: the daemon is gone.
+    let lock = std::fs::File::options()
+        .read(true)
+        .write(true)
+        .open(dirs.lock_file())
+        .unwrap();
+    assert!(lock.try_lock().is_ok(), "the daemon still holds its data directory");
+}
