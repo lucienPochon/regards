@@ -55,6 +55,14 @@ export interface AgentActivity {
   error_code: number | null;
   error: string | null;
   duration_ms: number;
+  /** For a change it made: how what it changed stood before (messages, a draft or a sender). */
+  before: unknown;
+  /**
+   * What reverses that change, for `applyUndo` (accounts.ts), while
+   * `undoable`: undo lasts ten minutes, and works once.
+   */
+  undo_id: number | null;
+  undoable: boolean;
 }
 
 export interface AgentActivityPage {

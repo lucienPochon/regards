@@ -5,8 +5,10 @@
 use crate::State;
 use regards_core::agents::Access;
 use regards_ipc::protocol::{RpcError, codes};
-use regards_store::{accounts, mailboxes, messages};
-use serde_json::json;
+use regards_store::marks::{self, Marks};
+use regards_store::{accounts, drafts, mailboxes, messages};
+use serde_json::{Value, json};
+use std::collections::BTreeSet;
 
 /// An account's address and agent access.
 pub(crate) async fn current(state: &State, account_id: &str) -> Result<(String, Access), RpcError> {
@@ -92,4 +94,83 @@ pub(crate) async fn open_to_agents(state: &State, needed: Access) -> Result<Vec<
         .filter(|(_, access)| *access >= needed)
         .map(|(id, _)| id)
         .collect())
+}
+
+/// The accounts of messages an agent is about to change, and how those
+/// messages stand now (kept with its activity).
+pub(crate) async fn messages_before(state: &State, ids: &[i64]) -> Result<(Vec<String>, Value), RpcError> {
+    let ids = ids.to_vec();
+    state
+        .store
+        .read(move |conn| {
+            let mut accounts: BTreeSet<String> = BTreeSet::new();
+            let mut before = Vec::new();
+            for id in ids {
+                let Some(message) = messages::get(conn, id)? else {
+                    return Ok(Err(id));
+                };
+                let Some(mailbox) = mailboxes::get(conn, message.mailbox_id)? else {
+                    return Ok(Err(id));
+                };
+                let marks = match &message.message_id {
+                    Some(found) => marks::of(conn, &mailbox.account_id, &[found.as_str()])?
+                        .remove(found)
+                        .unwrap_or_default(),
+                    None => Marks::default(),
+                };
+                before.push(json!({
+                    "id": id,
+                    "mailbox_id": message.moving_to.unwrap_or(message.mailbox_id),
+                    "subject": message.subject,
+                    "seen": message.flags.seen,
+                    "flagged": message.flags.flagged,
+                    "pinned": marks.pinned_at.is_some(),
+                    "aside": marks.aside_at.is_some(),
+                    "snoozed_until": marks.snoozed_until,
+                    "remind_at": marks.remind_at,
+                }));
+                accounts.insert(mailbox.account_id);
+            }
+            Ok(Ok((accounts.into_iter().collect(), Value::Array(before))))
+        })
+        .await
+        .map_err(crate::session::internal)?
+        .map_err(|id| RpcError::new(codes::NOT_FOUND, format!("no such message: {id}")))
+}
+
+/// The account of a draft an agent is about to touch, and the draft as it is.
+pub(crate) async fn draft_before(state: &State, id: i64) -> Result<(String, Value), RpcError> {
+    let draft = state
+        .store
+        .read(move |conn| drafts::get(conn, id))
+        .await
+        .map_err(crate::session::internal)?
+        .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such draft"))?;
+    let body: String = draft.body.chars().take(2_000).collect();
+    let before = json!({
+        "id": draft.id,
+        "to": draft.to,
+        "cc": draft.cc,
+        "bcc": draft.bcc,
+        "subject": draft.subject,
+        "body": body,
+        "sending": draft.sending,
+    });
+    Ok((draft.account_id, before))
+}
+
+/// How a sender stands with an account, before an agent changes it.
+pub(crate) async fn sender_before(state: &State, account_id: &str, address: &str) -> Result<Value, RpcError> {
+    let (account, who) = (account_id.to_owned(), address.to_owned());
+    let sender = state
+        .store
+        .read(move |conn| regards_store::smart::sender(conn, &account, &who))
+        .await
+        .map_err(crate::session::internal)?;
+    Ok(json!({
+        "address": address,
+        "policy": sender.policy,
+        "priority": sender.priority,
+        "blocked": sender.blocked,
+    }))
 }

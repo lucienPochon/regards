@@ -9,9 +9,10 @@ use regards_core::secret::Secret;
 use regards_daemon::{Daemon, SyncLimits};
 use regards_imap::{ImapServer, Session, SystemFlag, TlsOptions};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountRef, AccountSummary, AsideParams, ClientKind, ConnectionSecurity, DeleteResult,
-    DraftAttachFileParams, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult, DraftRef,
-    DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, IdentitySaveParams, IdentityView,
+    AccountAddParams, AccountRef, AccountSummary, AgentAccess, AgentAccessParams, AgentActivityParams,
+    AgentActivityResult, AsideParams, ClientKind, ConnectionSecurity, DeleteResult, DraftAttachFileParams,
+    DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult, DraftRef, DraftReplyParams,
+    DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, IdentitySaveParams, IdentityView,
     MailboxListResult, MarkResult, MessageDetail, MessageHtml, MessageHtmlParams, MessageIds, MessageListParams,
     MessageListResult, MessageRef, MoveResult, NoticeKind, NoticeListResult, OutboxEntryView, OutboxListResult,
     OutboxRef, OutboxState, OutboxUndoResult, PinParams, RemindParams, SearchParams, SearchResult, ServerSearchResult,
@@ -22,7 +23,7 @@ use regards_ipc::protocol::{
     ExplainResult, Policy, Reason, Screening, ScreeningParams, Section, SenderBlockParams, SenderSetParams,
     SenderSetResult, SmartOverviewResult,
 };
-use regards_ipc::{Client, UiToken};
+use regards_ipc::{Client, Endpoint, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
 use serde_json::Value;
 use std::time::{Duration, Instant};
@@ -481,6 +482,16 @@ async fn daemon_with_settings(
     tls: TlsOptions,
     configure: impl FnOnce(Daemon) -> Daemon,
 ) -> WithAccount {
+    daemon_reachable(live, smtp, tls, configure).await.0
+}
+
+/// [`daemon_with_settings`], and where other clients (agents) reach it.
+async fn daemon_reachable(
+    live: &Live,
+    smtp: ServerSettings,
+    tls: TlsOptions,
+    configure: impl FnOnce(Daemon) -> Daemon,
+) -> (WithAccount, Endpoint) {
     let temp = tempfile::tempdir().unwrap();
     let token = UiToken::generate().unwrap();
     let daemon = configure(
@@ -529,7 +540,7 @@ async fn daemon_with_settings(
         assert!(Instant::now() < deadline, "the first sync did not finish");
         tokio::time::sleep(Duration::from_millis(100)).await;
     };
-    (temp, desktop, account, inbox, handle)
+    ((temp, desktop, account, inbox, handle), endpoint)
 }
 
 /// Wait until the server's flags for the INBOX match `check`.
@@ -2554,6 +2565,150 @@ async fn live_the_server_finds_the_text_of_mail_not_opened_here() {
     let found = search_server(&mut desktop, "matterhorn in:archive").await;
     assert!(found.messages.is_empty());
     assert_eq!(found.not_here, 1);
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_agents_organise_mail_and_the_app_undoes_it() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    seed.create_mailbox(b"Archive").await.unwrap();
+    seed.create_mailbox(b"Junk").await.unwrap();
+    for (n, subject, from) in [(1, "Invoice", "billing@shop.example"), (2, "Lunch", "ann@example.test")] {
+        seed.append(b"INBOX", &[], &message(n, subject, from)).await.unwrap();
+    }
+    let smtp = ServerSettings {
+        host: live.server.host.clone(),
+        port: 587,
+        security: ConnectionSecurity::Starttls,
+    };
+    let ((_temp, mut desktop, account, inbox, handle), endpoint) =
+        daemon_reachable(&live, smtp, live.tls.clone(), |daemon| daemon).await;
+    let _: Value = desktop
+        .call(
+            methods::ACCOUNT_SET_AGENT_ACCESS,
+            AgentAccessParams {
+                account_id: account.id.clone(),
+                access: AgentAccess::Triage,
+            },
+        )
+        .await
+        .unwrap();
+    let mut agent = Client::connect(&endpoint, ClientKind::Mcp).await.unwrap();
+    let listed: MessageListResult = agent
+        .call(
+            methods::MESSAGE_LIST,
+            MessageListParams {
+                mailbox_id: inbox,
+                limit: None,
+                before: None,
+                section: None,
+            },
+        )
+        .await
+        .unwrap();
+    let id = |subject: &str| listed.messages.iter().find(|m| m.subject == subject).unwrap().id;
+    let subjects = |page: MessageListResult| {
+        let mut subjects: Vec<String> = page.messages.into_iter().map(|m| m.subject).collect();
+        subjects.sort();
+        subjects
+    };
+
+    // The agent archives, pins and flags; reading and organising mark nothing read.
+    let archived: MoveResult = agent
+        .call(methods::MESSAGE_ARCHIVE, MessageIds { ids: vec![id("Lunch")] })
+        .await
+        .unwrap();
+    let _: MarkResult = agent
+        .call(
+            methods::MESSAGE_PIN,
+            PinParams {
+                ids: vec![id("Invoice")],
+                pinned: true,
+            },
+        )
+        .await
+        .unwrap();
+    let _: SetFlagsResult = agent
+        .call(
+            methods::MESSAGE_SET_FLAGS,
+            SetFlagsParams {
+                ids: vec![id("Invoice")],
+                seen: None,
+                flagged: Some(true),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(subjects(messages(&mut desktop, inbox).await), ["Invoice"]);
+
+    // The app sees what it did, how things stood, and undoes the archiving.
+    let activity: AgentActivityResult = desktop
+        .call(methods::AGENT_ACTIVITY, AgentActivityParams::default())
+        .await
+        .unwrap();
+    let entry = |method: &str| activity.entries.iter().find(|e| e.method == method).unwrap().clone();
+    let archive = entry(methods::MESSAGE_ARCHIVE);
+    assert_eq!(archive.before.as_ref().unwrap()[0]["mailbox_id"], inbox);
+    assert_eq!(archive.before.as_ref().unwrap()[0]["subject"], "Lunch");
+    assert_eq!((archive.undo_id, archive.undoable), (archived.undo.map(|u| u.id), true));
+    let pin = entry(methods::MESSAGE_PIN);
+    assert_eq!(pin.before.as_ref().unwrap()[0]["pinned"], false);
+    let flagged = entry(methods::MESSAGE_SET_FLAGS);
+    assert_eq!(flagged.before.as_ref().unwrap()[0]["flagged"], false);
+    assert_eq!(
+        flagged.undo_id, None,
+        "flags have no undo entry; the before-state says what to set back"
+    );
+    let _: UndoResult = desktop
+        .call(
+            methods::UNDO_APPLY,
+            UndoParams {
+                id: archive.undo_id.unwrap(),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(subjects(messages(&mut desktop, inbox).await), ["Invoice", "Lunch"]);
+
+    // Blocking a sender moves their mail to Junk; the app takes it back too.
+    let blocked: MoveResult = agent
+        .call(
+            methods::SENDER_BLOCK,
+            SenderBlockParams {
+                account_id: account.id.clone(),
+                address: "billing@shop.example".into(),
+                blocked: true,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(subjects(messages(&mut desktop, inbox).await), ["Lunch"]);
+    let _: UndoResult = desktop
+        .call(
+            methods::UNDO_APPLY,
+            UndoParams {
+                id: blocked.undo.unwrap().id,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(subjects(messages(&mut desktop, inbox).await), ["Invoice", "Lunch"]);
+    let activity: AgentActivityResult = desktop
+        .call(methods::AGENT_ACTIVITY, AgentActivityParams::default())
+        .await
+        .unwrap();
+    let undoable = |method: &str| activity.entries.iter().find(|e| e.method == method).unwrap().undoable;
+    assert!(
+        !undoable(methods::MESSAGE_ARCHIVE) && !undoable(methods::SENDER_BLOCK),
+        "undone"
+    );
+    assert!(undoable(methods::MESSAGE_PIN), "the pin can still be undone");
 
     seed.logout().await;
     handle.abort();

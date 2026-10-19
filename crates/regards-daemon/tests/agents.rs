@@ -12,8 +12,9 @@ mod world;
 use regards_daemon::DEFAULT_LATE_SEND_GRACE;
 use regards_ipc::protocol::{
     AccountRef, AccountSummary, AgentAccess, AgentAccessParams, AgentActivityParams, AgentActivityResult,
-    AgentDecision, ClientKind, MailboxListResult, MessageIds, MessageRef, RpcError, SearchParams, SearchResult, View,
-    ViewParams, codes, methods,
+    AgentDecision, ClientKind, DraftCreateParams, DraftListParams, DraftListResult, DraftRef, DraftSendParams,
+    DraftUpdateParams, DraftView, MailboxListResult, MessageIds, MessageRef, Policy, RpcError, SearchParams,
+    SearchResult, SenderSetParams, SenderSetResult, UndoParams, View, ViewParams, codes, methods,
 };
 use regards_ipc::{Client, ClientError};
 use serde_json::Value;
@@ -130,11 +131,17 @@ async fn agents_see_and_read_only_what_an_account_allows() {
         codes::NOT_FOUND
     );
 
-    // Reading is all: organising, sending and settings stay with the app for now.
-    let archived = agent
-        .call::<_, Value>(methods::MESSAGE_ARCHIVE, MessageIds { ids: vec![1] })
+    // Reading is all: writing needs triage, and syncing stays with the app.
+    let drafted = agent
+        .call::<_, Value>(
+            methods::DRAFT_CREATE,
+            DraftCreateParams {
+                account_id: account.id.clone(),
+                ..DraftCreateParams::default()
+            },
+        )
         .await;
-    assert_eq!(refusal(archived).code, codes::FORBIDDEN);
+    assert_eq!(refusal(drafted).code, codes::FORBIDDEN);
     assert_eq!(
         refusal(agent.call::<_, Value>(methods::ACCOUNT_SYNC, mine()).await).code,
         codes::FORBIDDEN
@@ -187,10 +194,16 @@ async fn what_agents_do_is_kept_for_the_app_to_see_without_their_secrets() {
         )
         .await
         .unwrap();
-    let archived = agent
-        .call::<_, Value>(methods::MESSAGE_ARCHIVE, MessageIds { ids: vec![7] })
+    let drafted = agent
+        .call::<_, Value>(
+            methods::DRAFT_CREATE,
+            DraftCreateParams {
+                account_id: account.id.clone(),
+                ..DraftCreateParams::default()
+            },
+        )
         .await;
-    assert_eq!(refusal(archived).code, codes::FORBIDDEN);
+    assert_eq!(refusal(drafted).code, codes::FORBIDDEN);
     // Asking for what is not allowed, with a secret in it: refused, and the secret not kept.
     let added = agent
         .call::<_, Value>(
@@ -215,7 +228,7 @@ async fn what_agents_do_is_kept_for_the_app_to_see_without_their_secrets() {
         seen,
         [
             (methods::ACCOUNT_ADD, AgentDecision::Denied),
-            (methods::MESSAGE_ARCHIVE, AgentDecision::Denied),
+            (methods::DRAFT_CREATE, AgentDecision::Denied),
             (methods::MAILBOX_LIST, AgentDecision::Allowed),
         ],
         "newest first"
@@ -268,12 +281,159 @@ async fn what_agents_do_is_kept_for_the_app_to_see_without_their_secrets() {
         )
         .await
         .unwrap();
-    assert_eq!(mine.entries.len(), 1);
+    assert_eq!(mine.entries.len(), 2, "the folders listed, the draft refused");
 
     // Agents do not read it.
     let read = agent
         .call::<_, Value>(methods::AGENT_ACTIVITY, AgentActivityParams::default())
         .await;
     assert_eq!(refusal(read).code, codes::FORBIDDEN);
+    handle.abort();
+}
+
+#[tokio::test]
+async fn at_triage_agents_write_drafts_and_sort_senders() {
+    let world = World::new(DEFAULT_LATE_SEND_GRACE).await;
+    let Running {
+        endpoint,
+        mut desktop,
+        handle,
+    } = world.start().await;
+    let account = world.add_account(&mut desktop).await;
+    set(&mut desktop, &account.id, AgentAccess::Read).await;
+    let mut agent = Client::connect(&endpoint, ClientKind::Mcp).await.unwrap();
+    let new_draft = || DraftCreateParams {
+        account_id: account.id.clone(),
+        subject: "Plans".into(),
+        body: "First thoughts".into(),
+        ..DraftCreateParams::default()
+    };
+
+    // Read is not enough to write: the refusal says what is needed.
+    let refused = refusal(agent.call::<_, DraftView>(methods::DRAFT_CREATE, new_draft()).await);
+    assert_eq!(refused.code, codes::FORBIDDEN);
+    assert!(
+        refused.message.contains("ada@example.test allows agents only to read"),
+        "{}",
+        refused.message
+    );
+    assert_eq!(refused.data.unwrap()["needed"], "triage");
+
+    set(&mut desktop, &account.id, AgentAccess::Triage).await;
+    let draft: DraftView = agent.call(methods::DRAFT_CREATE, new_draft()).await.unwrap();
+    let _: DraftView = agent
+        .call(
+            methods::DRAFT_UPDATE,
+            DraftUpdateParams {
+                id: draft.id,
+                to: vec![],
+                cc: vec![],
+                bcc: vec![],
+                subject: "Better plans".into(),
+                body: "Second thoughts".into(),
+                html: None,
+            },
+        )
+        .await
+        .unwrap();
+    let listed: DraftListResult = agent
+        .call(methods::DRAFT_LIST, DraftListParams { account_id: None })
+        .await
+        .unwrap();
+    assert_eq!(listed.drafts.len(), 1);
+    assert_eq!(listed.drafts[0].subject, "Better plans");
+
+    // Senders sorted (blocking, which moves mail to Junk, and undo are in live.rs).
+    let _: SenderSetResult = agent
+        .call(
+            methods::SENDER_SET,
+            SenderSetParams {
+                account_id: account.id.clone(),
+                address: "news@shop.example".into(),
+                policy: Some(Policy::Newsletters),
+                priority: false,
+            },
+        )
+        .await
+        .unwrap();
+
+    // Still not: unknown mail, too much at once, and sending.
+    let unknown = refusal(
+        agent
+            .call::<_, Value>(methods::MESSAGE_ARCHIVE, MessageIds { ids: vec![999] })
+            .await,
+    );
+    assert_eq!(
+        (unknown.code, unknown.message.as_str()),
+        (codes::NOT_FOUND, "no such message: 999")
+    );
+    let bulk = refusal(
+        agent
+            .call::<_, Value>(
+                methods::MESSAGE_ARCHIVE,
+                MessageIds {
+                    ids: (1..=51).collect(),
+                },
+            )
+            .await,
+    );
+    assert_eq!(
+        (bulk.code, bulk.data.unwrap()["limit"].as_u64()),
+        (codes::FORBIDDEN, Some(50))
+    );
+    let sent = agent
+        .call::<_, Value>(
+            methods::DRAFT_SEND,
+            DraftSendParams {
+                id: draft.id,
+                undo_seconds: None,
+                send_at: None,
+                remind_at: None,
+            },
+        )
+        .await;
+    assert_eq!(refusal(sent).code, codes::FORBIDDEN);
+
+    // What it changed is kept with how it stood.
+    let activity: AgentActivityResult = desktop
+        .call(methods::AGENT_ACTIVITY, AgentActivityParams::default())
+        .await
+        .unwrap();
+    let entry = |method: &str| activity.entries.iter().find(|e| e.method == method).unwrap();
+    assert_eq!(
+        entry(methods::DRAFT_UPDATE).before.as_ref().unwrap()["subject"],
+        "Plans",
+        "the draft before"
+    );
+    assert_eq!(
+        entry(methods::SENDER_SET).before.as_ref().unwrap()["policy"],
+        Value::Null
+    );
+    assert!(
+        entry(methods::MESSAGE_ARCHIVE).before.is_none(),
+        "a refusal changed nothing"
+    );
+
+    // Agents do not undo: that stays with the person.
+    let undone = agent.call::<_, Value>(methods::UNDO_APPLY, UndoParams { id: 1 }).await;
+    assert_eq!(refusal(undone).code, codes::FORBIDDEN);
+
+    // In an account closed to agents, its drafts are not there for them.
+    set(&mut desktop, &account.id, AgentAccess::Off).await;
+    let hidden = refusal(
+        agent
+            .call::<_, DraftView>(methods::DRAFT_GET, DraftRef { id: draft.id })
+            .await,
+    );
+    assert_eq!(
+        (hidden.code, hidden.message.as_str()),
+        (codes::NOT_FOUND, "no such draft")
+    );
+    set(&mut desktop, &account.id, AgentAccess::Triage).await;
+
+    let _: Value = agent
+        .call(methods::DRAFT_DELETE, DraftRef { id: draft.id })
+        .await
+        .unwrap();
     handle.abort();
 }

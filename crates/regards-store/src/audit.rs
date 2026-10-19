@@ -53,6 +53,10 @@ pub struct NewEntry {
     /// `(code, message)` when it failed.
     pub error: Option<(i32, String)>,
     pub duration_ms: i64,
+    /// For a change: how what it changed stood before (JSON).
+    pub before: Option<String>,
+    /// The undo entry that reverses it, while it lasts.
+    pub undo_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,7 +68,8 @@ pub struct Entry {
 pub fn record(tx: &Transaction<'_>, entry: &NewEntry) -> Result<i64, StoreError> {
     tx.prepare_cached(
         "INSERT INTO agent_audit (at, session, client, method, args, account_id, access, decision, \
-         error_code, error, duration_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+         error_code, error, duration_ms, before_state, undo_id) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
     )?
     .execute(params![
         entry.at,
@@ -78,6 +83,8 @@ pub fn record(tx: &Transaction<'_>, entry: &NewEntry) -> Result<i64, StoreError>
         entry.error.as_ref().map(|(code, _)| code),
         entry.error.as_ref().map(|(_, message)| message),
         entry.duration_ms,
+        entry.before,
+        entry.undo_id,
     ])?;
     Ok(tx.last_insert_rowid())
 }
@@ -91,7 +98,7 @@ pub fn list(
 ) -> Result<Vec<Entry>, StoreError> {
     let mut statement = conn.prepare_cached(
         "SELECT id, at, session, client, method, args, account_id, access, decision, error_code, error, \
-         duration_ms FROM agent_audit WHERE (?1 IS NULL OR account_id = ?1) AND id < ?2 \
+         duration_ms, before_state, undo_id FROM agent_audit WHERE (?1 IS NULL OR account_id = ?1) AND id < ?2 \
          ORDER BY id DESC LIMIT ?3",
     )?;
     let rows = statement.query_map(params![account_id, before.unwrap_or(i64::MAX), limit], from_row)?;
@@ -121,6 +128,8 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Entry> {
             decision: Decision::parse(&decision),
             error: code.map(|code| (code, message.unwrap_or_default())),
             duration_ms: row.get(11)?,
+            before: row.get(12)?,
+            undo_id: row.get(13)?,
         },
     })
 }
@@ -143,6 +152,8 @@ mod tests {
             decision,
             error: (decision == Decision::Denied).then(|| (-32003, "not open to agents".into())),
             duration_ms: 3,
+            before: (method == "message.archive").then(|| "[{\"id\":7}]".into()),
+            undo_id: (method == "message.archive").then_some(12),
         }
     }
 
