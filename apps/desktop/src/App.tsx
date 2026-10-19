@@ -15,6 +15,7 @@ import {
   trashMessages,
 } from "./accounts";
 import { type Action, type ActionHost, type Target, choose, messageActions } from "./actions";
+import { usePendingHolds } from "./AgentHolds";
 import { Avatar } from "./Avatar";
 import { Composer } from "./Composer";
 import { type Draft, type Queued, newDraft, saveDraft } from "./compose";
@@ -202,6 +203,8 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [typed]);
   const [chooser, setChooser] = useState<Anchor | null>(null);
+  // What agents asked for and is waiting for the person (Settings › Agents).
+  const holds = usePendingHolds();
   const [sender, setSenderCard] = useState<SenderRequest | null>(null);
   const [screen, setScreen] = useState<Screening>("off");
   useEffect(() => {
@@ -1171,6 +1174,17 @@ export function App() {
                 if (draftId !== null) editDraft(draftId);
               }}
             />
+          )}
+          {holds.length > 0 && (
+            <button
+              type="button"
+              className="aside-bubble agent-waiting"
+              title={holds.map((hold) => hold.description).join("\n")}
+              onClick={() => setSettings("agents")}
+            >
+              <Icon name="agent" size={15} />
+              {holds.length === 1 ? "An agent is waiting for you" : `Agents are waiting for you: ${holds.length}`}
+            </button>
           )}
           {showBubble && (
             <button

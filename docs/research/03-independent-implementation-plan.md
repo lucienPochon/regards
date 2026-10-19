@@ -442,7 +442,10 @@ flowchart LR
   - **In the app (Settings › Agents):**
     - Each account has a dropdown of the four levels, and the chosen one is explained under the address.
     - Choosing Send asks first.
-    - Send is marked as coming until it takes effect.
+    - **Waiting for you**, at the top of the page: what agents asked for that needs the person, which is every send, more than 50 messages at once, and deleting for good.
+      - A send shows its draft (From, To, Cc, Bcc, subject, text, files) before Send or Reject.
+      - Once decided, the card says how it went, with "Undo send" while the send can be taken back, or Undo for a change.
+      - While anything waits, the main window shows "An agent is waiting for you", which opens the page.
     - The page sits at the top of the settings, under the person's card, where the reference app keeps its AI agents.
     - **Activity:** what agents did, newest first, grouped by session (the command line, or an assistant through MCP).
       - Each request is in plain words ("Read a message", "Searched “invoice”"), with "Refused" and its reason when it was not allowed.

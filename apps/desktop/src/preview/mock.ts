@@ -8,7 +8,7 @@ import type { MessageSummary, Person } from "../accounts";
 import type { Draft, OutboxEntry } from "../compose";
 import type { Identity } from "../identities";
 import type { Template } from "../templates";
-import type { AgentAccess, AgentActivity } from "../agents";
+import type { AgentAccess, AgentActivity, Hold } from "../agents";
 import { type Explanation, type Policy, type Screening, SECTIONS, type Section } from "../smart";
 import { type FixtureAccount, type FixtureMessage, ME, PERSONAL, WORK, fixtureMessages } from "./fixtures";
 
@@ -183,8 +183,44 @@ function searchSamples(query: string, accountId: string | null, server = false) 
 }
 
 /** Sample agent sessions: the command line two hours ago, an assistant just now (one request refused), and a script during it. */
+/** What an assistant asked for and waits for the person: a send (its draft is made here) and a bulk archive. */
+const holdDecisions = new Map<number, "approved" | "rejected">();
+let heldDraft: number | null = null;
+function sampleHolds(): Hold[] {
+  const owner = accounts[0];
+  if (!owner) return [];
+  if (heldDraft === null) {
+    heldDraft = newDraftFor(owner.account.id, {
+      to: [{ name: "Lena Okafor", address: "lena.okafor@example.net" }],
+      subject: "Re: Garden plot schedule",
+      body: "Hi Lena,\n\nSaturdays work for me too. I'll put the rota on the shed door on Friday.\n\nSam",
+    }).id;
+  }
+  const hold = (id: number, minutesAgo: number, reason: Hold["reason"], method: string, description: string, draft: number | null): Hold => ({
+    id,
+    created_at: started - minutesAgo * 60_000,
+    expires_at: started - minutesAgo * 60_000 + 24 * 3_600_000,
+    session: "mcp-1",
+    client: "mcp",
+    account_id: owner.account.id,
+    method,
+    params: draft !== null ? { id: draft } : { ids: Array.from({ length: 120 }, (_, index) => index + 1) },
+    description,
+    reason,
+    draft_id: draft,
+    status: holdDecisions.get(id) ?? "pending",
+    decided_at: null,
+    result: null,
+    error: null,
+  });
+  return [
+    hold(2, 1, "sending", "draft.send", "Send “Re: Garden plot schedule” to Lena Okafor", heldDraft),
+    hold(1, 6, "bulk", "message.archive", "Archive 120 messages", null),
+  ];
+}
+
 /** The sample archive and flag change an agent made: each undone from Settings › Agents once. */
-const AGENT_UNDOS = new Set([9001, 9002]);
+const AGENT_UNDOS = new Set([9001, 9002, 9003]);
 const agentUndone = new Set<number>();
 
 function agentActivity(): AgentActivity[] {
@@ -519,6 +555,26 @@ function handle(cmd: string, args: Args): unknown {
       const after = all.filter((entry) => before === null || entry.id < before);
       const page = after.slice(0, limit);
       return { entries: page, next: after.length > limit ? page[page.length - 1].id : null };
+    }
+    case "hold_list":
+      return { holds: sampleHolds().filter((hold) => !args.pending || hold.status === "pending") };
+    case "hold_approve":
+    case "hold_reject": {
+      const hold = sampleHolds().find((one) => one.id === args.id);
+      if (!hold || hold.status !== "pending") throw new Error("It is not waiting any more.");
+      const approved = cmd === "hold_approve";
+      holdDecisions.set(hold.id, approved ? "approved" : "rejected");
+      changed();
+      return {
+        ...hold,
+        status: approved ? "approved" : "rejected",
+        decided_at: Date.now(),
+        result: approved
+          ? hold.reason === "sending"
+            ? { outbox_id: 777, undo_until: Date.now() + 10_000, send_at: null }
+            : { moved: 120, undo: { id: 9003, description: "Archive 120 messages" } }
+          : null,
+      };
     }
     case "account_sync":
       return new Promise((resolve) => window.setTimeout(() => resolve(null), 900));

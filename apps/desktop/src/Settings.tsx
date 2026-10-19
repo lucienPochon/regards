@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { type AccountSummary, removeAccount, syncAccount } from "./accounts";
 import { AgentActivity } from "./AgentActivity";
+import { AgentHolds } from "./AgentHolds";
 import { leafName } from "./views";
 import { AGENT_ACCESS_LEVELS, type AgentAccess, setAgentAccess } from "./agents";
 import { backgroundMode, notificationsShown, setBackgroundMode, setNotificationsShown } from "./background";
@@ -250,8 +251,8 @@ function AccountsTab({ mail, confirm }: { mail: MailState; confirm: (request: Co
   );
 }
 
-/** Levels kept for each account but not yet giving agents more (ADR-0012): Send waits for approval of each send. */
-const COMING: ReadonlySet<AgentAccess> = new Set(["send"]);
+/** Levels kept for each account but not yet giving agents more (ADR-0012); none since sends wait for approval. */
+const COMING: ReadonlySet<AgentAccess> = new Set();
 
 /**
  * What agents (AI assistants and other programs using Regards through its
@@ -269,7 +270,7 @@ function AgentsTab({ mail, confirm }: { mail: MailState; confirm: (request: Conf
     if (access === "send") {
       const ok = await confirm({
         title: `Let agents send from ${account.email}?`,
-        body: "They could then send mail as you from this account. For now this is only recorded: no agent can send until each send waits for your approval on this page.",
+        body: "They could then send mail as you from this account. Each send waits for you to approve it, here in Settings › Agents, and nothing goes out until you do.",
         confirm: "Allow sending",
       });
       if (!ok) return;
@@ -294,6 +295,7 @@ function AgentsTab({ mail, confirm }: { mail: MailState; confirm: (request: Conf
         account decides what they may do. Only this page can change it: an agent can&apos;t give itself more.
       </p>
       {error && <p className="error">{error}</p>}
+      <AgentHolds accounts={accounts.map(({ account }) => ({ id: account.id, email: account.email }))} />
       {accounts.length === 0 ? (
         <p className="muted">Add an account first.</p>
       ) : (
@@ -308,7 +310,7 @@ function AgentsTab({ mail, confirm }: { mail: MailState; confirm: (request: Conf
                   <strong>{account.email}</strong>
                   <span className="muted agent-allows">
                     {info?.allows}
-                    {COMING.has(level) && " For now, agents can't send."}
+                    {level === "send" && " Each send waits for you here."}
                   </span>
                 </span>
                 <select
@@ -342,8 +344,8 @@ function AgentsTab({ mail, confirm }: { mail: MailState; confirm: (request: Conf
       </dl>
       <p className="muted settings-note">
         Each level allows what the one before it does. What agents change can be undone from the activity below for
-        ten minutes. Send is kept for each account now and takes effect with the next step: each send waiting for your
-        approval here.
+        ten minutes. Whatever level an account has, every send, changes to more than 50 messages at once, and deleting
+        for good wait for you at the top of this page.
       </p>
       {accounts.length > 0 && (
         <AgentActivity
