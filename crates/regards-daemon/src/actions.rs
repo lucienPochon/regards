@@ -526,10 +526,8 @@ async fn to_role(
                         continue;
                     }
                 }
-                let target = mailboxes::list(conn, &mailbox.account_id)?
-                    .into_iter()
-                    .find(|m| m.role == Some(role))
-                    .ok_or_else(|| StoreError::Conflict(missing.clone()))?;
+                let folders = mailboxes::list(conn, &mailbox.account_id)?;
+                let target = destination(&folders, role).ok_or_else(|| StoreError::Conflict(missing.clone()))?;
                 requests.push((id, target.id));
             }
             Ok((requests, reminders))
@@ -537,6 +535,14 @@ async fn to_role(
         .await
         .map_err(conflict)?;
     run_moves(state, requests, reminders, done).await
+}
+
+/// The folder `role` puts a message in. Archiving goes to the Archive
+/// folder, or, in an account without one, to All Mail (Gmail): out of the
+/// inbox and still kept, as Gmail itself archives.
+fn destination(folders: &[mailboxes::Mailbox], role: Role) -> Option<&mailboxes::Mailbox> {
+    let with = |role| folders.iter().find(|folder| folder.role == Some(role));
+    with(role).or_else(|| if role == Role::Archive { with(Role::All) } else { None })
 }
 
 /// Apply moves, and end the reminders shown in the inbox in `reminders`
@@ -857,4 +863,45 @@ pub(crate) fn junk_blocked(
     }
     let (_, _, accounts) = plan_moves(tx, &requests, now)?;
     Ok(accounts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn folder(id: i64, name: &str, role: Option<Role>) -> mailboxes::Mailbox {
+        mailboxes::Mailbox {
+            id,
+            account_id: "a".into(),
+            remote_name: name.as_bytes().to_vec(),
+            name: name.into(),
+            delimiter: Some('/'),
+            role,
+            selectable: true,
+            attributes: Vec::new(),
+            uid_validity: None,
+            uid_next: None,
+            highest_modseq: None,
+            synced_at: None,
+        }
+    }
+
+    #[test]
+    fn archiving_goes_to_the_archive_or_else_to_all_mail() {
+        let gmail = [
+            folder(1, "INBOX", Some(Role::Inbox)),
+            folder(2, "[Gmail]/All Mail", Some(Role::All)),
+            folder(3, "[Gmail]/Trash", Some(Role::Trash)),
+        ];
+        assert_eq!(destination(&gmail, Role::Archive).map(|f| f.id), Some(2));
+        assert_eq!(destination(&gmail, Role::Trash).map(|f| f.id), Some(3));
+        let both = [
+            folder(4, "Archive", Some(Role::Archive)),
+            folder(5, "All", Some(Role::All)),
+        ];
+        assert_eq!(destination(&both, Role::Archive).map(|f| f.id), Some(4));
+        let neither = [folder(6, "INBOX", Some(Role::Inbox))];
+        assert!(destination(&neither, Role::Archive).is_none());
+        assert!(destination(&gmail, Role::Junk).is_none(), "only archiving falls back");
+    }
 }
