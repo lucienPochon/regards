@@ -100,6 +100,10 @@ fn text(notice: &NoticeView) -> (String, String) {
             "It may not have been sent".into(),
             format!("“{subject}” to {who}. Check before sending it again."),
         ),
+        NoticeKind::AgentAsks => (
+            "An agent is waiting for you".into(),
+            format!("{subject}. Approve or reject it in Settings › Agents."),
+        ),
     }
 }
 
@@ -122,6 +126,11 @@ fn summary(notices: &[NoticeView]) -> (String, String) {
             count(&[NoticeKind::SendFailed, NoticeKind::SendUncertain]),
             "message not sent",
             "messages not sent",
+        ),
+        (
+            count(&[NoticeKind::AgentAsks]),
+            "agent request waiting for you",
+            "agent requests waiting for you",
         ),
     ]
     .into_iter()

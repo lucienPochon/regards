@@ -50,6 +50,7 @@ pub(crate) async fn record(state: &State, answered: Answered<'_>) {
         access,
         decision: match answered.error {
             Some(error) if error.code == codes::FORBIDDEN => Decision::Denied,
+            Some(error) if error.code == codes::HELD => Decision::Held,
             _ => Decision::Allowed,
         },
         error: answered.error.map(|error| (error.code, error.message.clone())),
@@ -61,13 +62,17 @@ pub(crate) async fn record(state: &State, answered: Answered<'_>) {
             .then(|| answered.before.map(|before| kept_args(&before)))
             .flatten(),
         undo_id: answered.undo_id,
+        hold_id: answered
+            .error
+            .filter(|error| error.code == codes::HELD)
+            .and_then(|error| error.data.as_ref()?.get("hold_id")?.as_i64()),
     };
     if let Err(error) = state.store.write_quiet(move |tx| audit::record(tx, &entry)).await {
         tracing::warn!(%error, "an agent request was not recorded");
     }
 }
 
-fn client_name(client: ClientKind) -> &'static str {
+pub(crate) fn client_name(client: ClientKind) -> &'static str {
     match client {
         ClientKind::Desktop => "desktop",
         ClientKind::Cli => "cli",

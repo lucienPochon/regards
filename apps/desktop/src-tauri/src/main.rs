@@ -23,13 +23,13 @@ use regards_ipc::protocol::{
     AgentActivityParams, AgentActivityResult, AsideParams, ClientKind, ConnectionSecurity, DeleteResult,
     DraftAttachFileParams, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult, DraftRef,
     DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
-    ExplainResult, IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView, MailboxListResult, MarkResult,
-    MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult,
-    OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams,
-    Screening, ScreeningParams, SearchParams, SearchResult, Section, SenderBlockParams, SenderSetParams,
-    SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SmartOverviewResult,
-    SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView,
-    UndoParams, UndoResult, View, ViewParams, methods,
+    ExplainResult, HoldListParams, HoldListResult, HoldRef, HoldView, IdentityListResult, IdentityRef,
+    IdentitySaveParams, IdentityView, MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds,
+    MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult, OutboxListResult, OutboxRef,
+    OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams, Screening, ScreeningParams,
+    SearchParams, SearchResult, Section, SenderBlockParams, SenderSetParams, SenderSetResult, ServerSearchResult,
+    ServerSettings, SetFlagsParams, SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult,
+    TemplateRef, TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -254,6 +254,34 @@ async fn agent_activity(
                 before,
             },
         )
+        .await
+        .map_err(describe)
+}
+
+/// What agents asked that waits for the person (ADR-0012 §3).
+#[tauri::command]
+async fn hold_list(bridge: State<'_, Bridge>, pending: bool) -> Result<HoldListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::HOLD_LIST, HoldListParams { pending, limit: None })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn hold_approve(bridge: State<'_, Bridge>, id: i64) -> Result<HoldView, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::HOLD_APPROVE, HoldRef { id })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn hold_reject(bridge: State<'_, Bridge>, id: i64) -> Result<HoldView, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::HOLD_REJECT, HoldRef { id })
         .await
         .map_err(describe)
 }
@@ -959,6 +987,9 @@ fn main() {
             account_remove,
             account_set_agent_access,
             agent_activity,
+            hold_list,
+            hold_approve,
+            hold_reject,
             account_sync,
             mailbox_list,
             message_list,

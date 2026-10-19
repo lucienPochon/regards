@@ -432,7 +432,7 @@ flowchart LR
     - Agents list only accounts open to them, and their searches, local or on the server, look only there.
     - A refusal names the setting (`data.setting = "agent_access"`, with the level needed and the current one). An account closed to agents is not named in it.
     - Read opens accounts, folders, message lists, the Pinned / Set aside / Snoozed / Reminders views, messages and conversations, Smart Inbox counts and explanations, and search. Reading never marks mail read.
-    - Send comes with holds; until then, sending stays with the app.
+    - Send opens sending, always held for the person (see Holds).
   - **As built (2026-10-19), Triage:**
     - Triage opens organising: flags, archive, trash, move (to a folder of a triage account), pin, set aside, snooze, reminders, and sorting or blocking senders.
     - It also opens drafts: new, reply, forward, read, change, delete, From, and the list (only accounts that allow triage).
@@ -452,6 +452,12 @@ flowchart LR
       - What an agent changed shows how it was ("Was: “Book club”, in Inbox, unread").
       - Undo appears while the daemon says the change can be undone: ten minutes, once. Flag changes included.
 - **Holds** for send-tier and bulk or destructive intents.
+  - **As built (2026-10-19):**
+    - Held (migration 0026): an agent's every send (Send access), changing more than 50 messages at once, and deleting for good. Deleting for good is from Trash or Junk only, refused at once otherwise.
+    - The agent gets `HELD` with the hold's id, and follows it with `hold.get`. The person is told (a notice, “An agent is waiting for you”) and approves or rejects it in the app (`hold.list`, `hold.approve`, `hold.reject`); only the app decides.
+    - Approving runs the request as the agent made it. A send goes only if its draft is still as it was when held; otherwise the hold fails and nothing is sent.
+    - Undecided holds expire after a day. The activity entry follows the decision: held, then approved or rejected.
+    - Not yet: “send with an undo window instead” per account, and deciding from the CLI. The CLI is an agent, so it cannot approve.
 - **Audit log** with before-state and undo.
   - **As built (2026-10-19):**
     - Every agent request but the handshake is recorded once answered (migration 0024): when, the connection and what it came through (CLI, MCP), the method and its parameters, the account it named and what that account allowed then, the decision (allowed or denied), any error, and how long it took.

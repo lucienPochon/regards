@@ -144,6 +144,14 @@ pub mod methods {
     /// What agents did, newest first: every request, allowed or refused
     /// (ADR-0012 §4). Kept 90 days. `ui` only.
     pub const AGENT_ACTIVITY: &str = "agent.activity";
+    /// What agents asked that waits for the person, newest first. `ui` only.
+    pub const HOLD_LIST: &str = "hold.list";
+    /// One hold. Agents: holds of the accounts open to them, to follow theirs.
+    pub const HOLD_GET: &str = "hold.get";
+    /// Approve a hold: it runs as the agent asked. `ui` only.
+    pub const HOLD_APPROVE: &str = "hold.approve";
+    /// Reject a hold. `ui` only.
+    pub const HOLD_REJECT: &str = "hold.reject";
     /// Search the mail: Gmail-style words and filters (plan §5.10), newest
     /// first. Agents: the accounts open to them (read).
     pub const SEARCH: &str = "search.query";
@@ -188,6 +196,9 @@ pub mod codes {
     pub const SYNC_FAILED: i32 = -32012;
     /// The message is too large to download for now.
     pub const TOO_LARGE: i32 = -32013;
+    /// The request waits for the person's approval (ADR-0012 §3): `data`
+    /// has `hold_id`, `expires_at` and `description`. Follow it with `hold.get`.
+    pub const HELD: i32 = -32014;
 }
 
 /// A client request.
@@ -381,6 +392,81 @@ pub struct AccountSummary {
     /// What agents may do with it (ADR-0012); `off` until its owner allows them.
     #[serde(default)]
     pub agent_access: AgentAccess,
+}
+
+/// Parameters of [`methods::HOLD_LIST`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HoldListParams {
+    /// Only those still waiting.
+    #[serde(default)]
+    pub pending: bool,
+    /// 1 to 200; 50 when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HoldListResult {
+    pub holds: Vec<HoldView>,
+}
+
+/// Parameters naming a hold: [`methods::HOLD_GET`], [`methods::HOLD_APPROVE`], [`methods::HOLD_REJECT`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HoldRef {
+    pub id: i64,
+}
+
+/// What an agent asked that waits (or waited) for the person.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HoldView {
+    pub id: i64,
+    /// Unix ms.
+    pub created_at: i64,
+    /// Undecided by then, it expires.
+    pub expires_at: i64,
+    /// The agent's connection, and what it came through (`cli`, `mcp`).
+    pub session: String,
+    pub client: String,
+    pub account_id: String,
+    /// The request, as the agent made it: run as is once approved.
+    pub method: String,
+    pub params: Value,
+    /// For the person: "Send “Plans” to Bob", "Archive 120 messages".
+    pub description: String,
+    pub reason: HoldReason,
+    /// For a send: the draft (`draft.get` shows it). Changed since, it is
+    /// not sent on approval.
+    pub draft_id: Option<i64>,
+    pub status: HoldStatus,
+    pub decided_at: Option<i64>,
+    /// Once approved: what running it gave (as the method answers), or why
+    /// it could not run.
+    pub result: Option<Value>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HoldReason {
+    /// Sending: every send by an agent waits.
+    Sending,
+    /// More messages at once than an agent may change.
+    Bulk,
+    /// Deleting for good.
+    Delete,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HoldStatus {
+    Pending,
+    /// Approved, and it ran.
+    Approved,
+    Rejected,
+    /// Not decided in time.
+    Expired,
+    /// Approved, but it could not run (see `error`).
+    Failed,
 }
 
 /// Parameters of [`methods::AGENT_ACTIVITY`].
@@ -1192,6 +1278,9 @@ pub enum NoticeKind {
     SendFailed,
     /// A message may or may not have been sent.
     SendUncertain,
+    /// An agent asks something that waits for the person: the subject is
+    /// what it asks ("Send “Plans” to Bob"), or the draft's subject.
+    AgentAsks,
 }
 
 /// One notice: what happened, who (the sender, or the recipients) and the

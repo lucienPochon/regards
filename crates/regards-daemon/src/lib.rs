@@ -13,6 +13,7 @@ mod compose;
 mod details;
 mod draft_sync;
 mod feed;
+mod holds;
 mod identities;
 mod mail;
 mod notices;

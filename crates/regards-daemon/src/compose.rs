@@ -340,6 +340,16 @@ const MAX_SEND_AHEAD_MS: i64 = 5 * 366 * 24 * 3600 * 1000;
 /// Freeze the draft's exact bytes into the outbox. It goes once the undo
 /// window is over, or at `send_at`; until then [`undo`] takes it back.
 pub(crate) async fn send(state: &Arc<State>, params: DraftSendParams) -> Result<Value, RpcError> {
+    send_unchanged(state, params, None).await
+}
+
+/// [`send`], only if the draft is still at `version` (an approved hold:
+/// what the person saw is what goes).
+pub(crate) async fn send_unchanged(
+    state: &Arc<State>,
+    params: DraftSendParams,
+    version: Option<i64>,
+) -> Result<Value, RpcError> {
     let undo_seconds = params.undo_seconds.unwrap_or(DEFAULT_UNDO_SECONDS);
     if undo_seconds > MAX_UNDO_SECONDS {
         return Err(RpcError::new(
@@ -360,6 +370,12 @@ pub(crate) async fn send(state: &Arc<State>, params: DraftSendParams) -> Result<
     }
     let undo_until = now + i64::from(undo_seconds) * 1000;
     let (seen_version, files) = draft_files(state, id).await?;
+    if version.is_some_and(|version| version != seen_version) {
+        return Err(RpcError::new(
+            codes::CONFLICT,
+            "the draft changed after it was held for approval, so it was not sent; it needs asking again",
+        ));
+    }
     let outbox_id = state
         .store
         .write(move |tx| {
