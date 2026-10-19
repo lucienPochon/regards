@@ -11,6 +11,7 @@ import {
   setNotificationsShown,
   setStartAtLogin,
 } from "./background";
+import { type BadgeSettings, badgeSettings, setBadgeSettings } from "./badge";
 import { Icon, type IconName } from "./icons";
 import type { Layout } from "./layout";
 import { type NewMail, type NotificationSettings, notificationSettings, setNotificationSettings } from "./notifications";
@@ -18,6 +19,7 @@ import type { ServiceCheck } from "./mail";
 import { ACCOUNT_COLOURS, type Prefs, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
 import { LinkRow, Option, Select, SubPageHead, Toggle } from "./SettingsControls";
 import { senderImages, setSenderImages } from "./smart";
+import { exportDiagnostics, setDetailedLogs, supportSettings } from "./support";
 import { type PresetDef, type PresetPrefs, REMINDER_PRESETS, SEND_PRESETS, SNOOZE_PRESETS } from "./snooze";
 import { type Theme, applyTheme, savedTheme } from "./theme";
 import { AboutUpdates } from "./UpdateCheck";
@@ -368,6 +370,13 @@ function AccountColours({ accounts, onBack }: { accounts: AccountSummary[]; onBa
   );
 }
 
+const platform = navigator.platform;
+/** Where the unread count shows: the dock on a Mac, the taskbar elsewhere. */
+const DOCK = /Mac/.test(platform) ? "dock" : "taskbar";
+const BADGE_NOTE = /Win/.test(platform)
+  ? "On Windows, a dot on the icon while an inbox has unread mail: its taskbar shows no number. Not mail set aside or snoozed."
+  : "The inboxes' unread mail, as in the sidebar. Not mail set aside or snoozed.";
+
 const NEW_MAIL: { id: NewMail; label: string; detail: string }[] = [
   { id: "all", label: "All new mail", detail: "Everything that arrives in the inbox." },
   { id: "smart", label: "People and Priority", detail: "Mail from people and Priority; not new senders, notifications or newsletters." },
@@ -412,6 +421,19 @@ export function NotificationsPage({ accounts }: { accounts: AccountSummary[] }) 
     });
   };
   const off = shown === false;
+  const [badge, setBadge] = useState<BadgeSettings | null>(null);
+  useEffect(() => {
+    badgeSettings().then(setBadge, (failure: unknown) => setError(String(failure)));
+  }, []);
+  const changeBadge = (next: BadgeSettings) => {
+    const before = badge;
+    setError(null);
+    setBadge(next);
+    setBadgeSettings(next).catch((failure: unknown) => {
+      setBadge(before);
+      setError(String(failure));
+    });
+  };
   const systemSettings = () => {
     setError(null);
     openSystemSettings("notifications").catch((failure: unknown) => setError(String(failure)));
@@ -492,6 +514,45 @@ export function NotificationsPage({ accounts }: { accounts: AccountSummary[] }) 
         detail="Sounds, banners and quiet hours are set there, for Regards as for any app"
         onOpen={systemSettings}
       />
+      {badge && (
+        <>
+          <h4 className="settings-subhead">On the {DOCK}</h4>
+          <Option icon="inbox" label={`Unread count on the ${DOCK}`} description={BADGE_NOTE}>
+            <Toggle label={`Unread count on the ${DOCK}`} on={badge.on} onChange={(on) => changeBadge({ ...badge, on })} />
+          </Option>
+          {badge.on &&
+            accounts.length > 1 &&
+            accounts.map((account) => {
+              const counted = badge.accounts === null || badge.accounts.includes(account.id);
+              return (
+                <div key={account.id} className="option badge-account">
+                  <Avatar
+                    person={{ name: account.display_name, address: account.email }}
+                    size="sm"
+                    colour={accountColour(prefs, account.id)}
+                  />
+                  <span className="option-text">
+                    <strong>{accountLabel(prefs, account)}</strong>
+                    <span>{counted ? "Counted" : "Not counted"}</span>
+                  </span>
+                  <span className="option-control">
+                    <Toggle
+                      label={`Count ${account.email}`}
+                      on={counted}
+                      onChange={(on) => {
+                        const now = badge.accounts ?? accounts.map((one) => one.id);
+                        const next = on ? [...now.filter((id) => id !== account.id), account.id] : now.filter((id) => id !== account.id);
+                        // Every account counted: say so as "all", so accounts added later count too.
+                        const all = accounts.every((one) => next.includes(one.id));
+                        changeBadge({ ...badge, accounts: all ? null : next });
+                      }}
+                    />
+                  </span>
+                </div>
+              );
+            })}
+        </>
+      )}
       <h4 className="settings-subhead">In Regards</h4>
       <Option icon="inbox" label="Unread counts in the sidebar" description="Beside the inbox and each account's inbox.">
         <Toggle label="Unread counts in the sidebar" on={prefs.sidebarCounts} onChange={(sidebarCounts) => setPrefs({ sidebarCounts })} />
@@ -812,6 +873,79 @@ export function AccessibilityPage() {
 }
 
 /** Support: the version and updates, the background service, and where to get help. */
+/** Detailed logs for a problem, and diagnostics saved to a file to attach to a report. */
+function Troubleshooting() {
+  const [detailed, setDetailed] = useState<boolean | null>(null);
+  const [changed, setChanged] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    supportSettings().then(
+      (settings) => setDetailed(settings.detailed_logs),
+      (failure: unknown) => setError(String(failure)),
+    );
+  }, []);
+  const save = () => {
+    setSaving(true);
+    setSaved(null);
+    setError(null);
+    exportDiagnostics()
+      .then(setSaved, (failure: unknown) => setError(String(failure)))
+      .finally(() => setSaving(false));
+  };
+  return (
+    <>
+      <h4 className="settings-subhead">Troubleshooting</h4>
+      {error && <p className="error">{error}</p>}
+      <Option
+        icon="text"
+        label="Detailed logs"
+        description={
+          changed
+            ? "Takes effect the next time Regards starts."
+            : "The service writes down more of what it does, to find a problem. Takes effect the next time Regards starts."
+        }
+      >
+        {detailed !== null && (
+          <Toggle
+            label="Detailed logs"
+            on={detailed}
+            onChange={(on) => {
+              setError(null);
+              setDetailedLogs(on).then(
+                () => {
+                  setDetailed(on);
+                  setChanged(true);
+                },
+                (failure: unknown) => setError(String(failure)),
+              );
+            }}
+          />
+        )}
+      </Option>
+      <div className="option">
+        <span className="option-icon">
+          <Icon name="paperclip" size={18} />
+        </span>
+        <span className="option-text">
+          <strong>Diagnostics</strong>
+          <span>
+            {saved
+              ? `Saved to ${saved}. Attach it to your report.`
+              : "Versions, the service's state, how many accounts of each kind, and its log, in a file you choose. No mail, addresses, passwords or tokens, and nothing is sent."}
+          </span>
+        </span>
+        <span className="option-control">
+          <button type="button" className="btn small" onClick={save} disabled={saving}>
+            {saving ? "Saving…" : "Save diagnostics…"}
+          </button>
+        </span>
+      </div>
+    </>
+  );
+}
+
 export function SupportPage({ service, onRecheck }: { service: ServiceCheck; onRecheck: () => void }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -847,6 +981,7 @@ export function SupportPage({ service, onRecheck }: { service: ServiceCheck; onR
         <Icon name="refresh" size={15} />
         Check again
       </button>
+      <Troubleshooting />
       <h4 className="settings-subhead">Get help</h4>
       {error && <p className="error">{error}</p>}
       {links.map((link) => (

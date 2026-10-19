@@ -149,6 +149,7 @@ export const TOUR: Group[] = [
       { id: "s-appearance", label: "Appearance", note: "Theme, layout, sidebar, density, pictures, preview lines.", steps: settings("Appearance") },
       { id: "s-colours", label: "Appearance › Colour for each account", note: "Colour coding, and a colour per account.", params: { accounts: "2" }, prefs: { colourCoding: true }, steps: settings("Appearance", "text:.link-row=Colour") },
       { id: "s-notifications", label: "Notifications", note: "New mail per account, each notice, the system's settings.", params: { accounts: "2" }, steps: settings("Notifications") },
+      { id: "s-badge", label: "Notifications › Count on the taskbar", note: "On or off, and which accounts count. On Windows, a dot.", params: { accounts: "2" }, steps: settings("Notifications", "see:.settings-subhead=On the") },
       { id: "s-scheduling", label: "Scheduling", note: "Snooze, send later and reminder times.", steps: settings("Scheduling") },
       { id: "s-snooze", label: "Scheduling › Snooze", note: "Change or hide each time.", steps: settings("Scheduling", "text:.link-row=Snooze") },
       { id: "s-send", label: "Scheduling › Send later", note: "Change or hide each time.", steps: settings("Scheduling", "text:.link-row=Send later") },
@@ -160,7 +161,8 @@ export const TOUR: Group[] = [
       { id: "s-templates", label: "Templates", note: "Write, rename and delete templates.", steps: settings("Templates") },
       { id: "s-accessibility", label: "Accessibility", note: "Zoom.", steps: settings("Accessibility") },
       { id: "s-shortcuts", label: "Shortcuts", note: "Every key.", steps: settings("Shortcuts") },
-      { id: "s-support", label: "Support", note: "Updates, the background service, help.", steps: settings("Support") },
+      { id: "s-support", label: "Support", note: "Updates, the background service, troubleshooting, help.", steps: settings("Support") },
+      { id: "s-diagnostics", label: "Support › Save diagnostics", note: "A file to attach to a report: no mail, addresses or passwords.", steps: settings("Support", "text:.settings-pane button=Save diagnostics") },
     ],
   },
   {

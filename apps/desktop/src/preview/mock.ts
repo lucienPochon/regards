@@ -634,6 +634,7 @@ const draftById = (id: number) => {
   return draft;
 };
 
+let detailedLogs = false;
 let badgeChoices: { on: boolean; accounts: string[] | null } = { on: true, accounts: null };
 
 let notificationChoices = {
@@ -737,8 +738,9 @@ function handle(cmd: string, args: Args): unknown {
       badgeChoices = args.settings as typeof badgeChoices;
       return null;
     case "support_settings":
-      return { detailed_logs: false };
+      return { detailed_logs: detailedLogs };
     case "set_detailed_logs":
+      detailedLogs = args.on as boolean;
       return null;
     case "export_diagnostics":
       return "C:\\Users\\you\\Documents\\regards-diagnostics.txt";
