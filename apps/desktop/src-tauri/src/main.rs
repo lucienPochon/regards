@@ -19,16 +19,17 @@ use regards_core::paths::DataDirs;
 use regards_core::secret::Secret;
 use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, AgentAccess, AgentAccessParams, AsideParams,
-    ClientKind, ConnectionSecurity, DeleteResult, DraftAttachFileParams, DraftCreateParams, DraftDetachParams,
-    DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams,
-    DraftUpdateParams, DraftView, ExplainResult, IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView,
-    MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult,
-    MessageRef, MoveParams, MoveResult, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult,
-    PinParams, Principal, RemindParams, Screening, ScreeningParams, SearchParams, SearchResult, Section,
-    SenderBlockParams, SenderSetParams, SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams,
-    SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams,
-    TemplateView, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
+    AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, AgentAccess, AgentAccessParams,
+    AgentActivityParams, AgentActivityResult, AsideParams, ClientKind, ConnectionSecurity, DeleteResult,
+    DraftAttachFileParams, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult, DraftRef,
+    DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
+    ExplainResult, IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView, MailboxListResult, MarkResult,
+    MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult,
+    OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams,
+    Screening, ScreeningParams, SearchParams, SearchResult, Section, SenderBlockParams, SenderSetParams,
+    SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SmartOverviewResult,
+    SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView,
+    UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -230,6 +231,28 @@ async fn account_set_agent_access(
         .call(
             methods::ACCOUNT_SET_AGENT_ACCESS,
             AgentAccessParams { account_id, access },
+        )
+        .await
+        .map_err(describe)
+}
+
+/// What agents did, newest first (ADR-0012 §4).
+#[tauri::command]
+async fn agent_activity(
+    bridge: State<'_, Bridge>,
+    account_id: Option<String>,
+    before: Option<i64>,
+    limit: Option<u32>,
+) -> Result<AgentActivityResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::AGENT_ACTIVITY,
+            AgentActivityParams {
+                account_id,
+                limit,
+                before,
+            },
         )
         .await
         .map_err(describe)
@@ -935,6 +958,7 @@ fn main() {
             account_add,
             account_remove,
             account_set_agent_access,
+            agent_activity,
             account_sync,
             mailbox_list,
             message_list,

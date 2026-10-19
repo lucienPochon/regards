@@ -30,3 +30,48 @@ export const setAgentAccess = (accountId: string, access: AgentAccess) =>
   invoke<{ agent_access: AgentAccess }>("account_set_agent_access", { accountId, access }).then(
     (result) => result.agent_access,
   );
+
+/** What became of an agent's request. `held`, `approved` and `rejected` come with send approvals. */
+export type AgentDecision = "allowed" | "denied" | "held" | "approved" | "rejected";
+
+/** One request an agent made (ADR-0012 §4). */
+export interface AgentActivity {
+  id: number;
+  /** Unix ms. */
+  at: number;
+  /** The agent's connection: requests made together share it. */
+  session: string;
+  /** What it came through: "cli" or "mcp". */
+  client: string;
+  /** The daemon method, such as "message.get" or "search.query". */
+  method: string;
+  /** Its parameters, secrets taken out; `{ cut: "…" }` when long. */
+  args: unknown;
+  /** The account it acted on, when it named one, and what that account allowed then. */
+  account_id: string | null;
+  access: AgentAccess | null;
+  decision: AgentDecision;
+  /** Set when it failed; `decision` is "denied" when it was not allowed. */
+  error_code: number | null;
+  error: string | null;
+  duration_ms: number;
+}
+
+export interface AgentActivityPage {
+  entries: AgentActivity[];
+  /** Pass back as `before` for older entries. */
+  next: number | null;
+}
+
+/**
+ * What agents did, newest first: every request, allowed or refused, kept 90
+ * days. Recording wakes no client, so refresh while the page is open.
+ */
+export const listAgentActivity = (
+  options: { accountId?: string | null; before?: number | null; limit?: number | null } = {},
+) =>
+  invoke<AgentActivityPage>("agent_activity", {
+    accountId: options.accountId ?? null,
+    before: options.before ?? null,
+    limit: options.limit ?? null,
+  });

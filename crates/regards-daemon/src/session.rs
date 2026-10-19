@@ -1,18 +1,20 @@
 //! One client connection: handshake, then request dispatch.
 
-use crate::{State, access, accounts, actions, compose, draft_sync, identities, mail, notices, smart, templates};
+use crate::{
+    State, access, accounts, actions, audit, compose, draft_sync, identities, mail, notices, smart, templates,
+};
 use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_ipc::framing::{self, FrameError};
 use regards_ipc::protocol::{
-    AccountRef, ChangesNotification, HealthResult, HelloParams, HelloResult, JSONRPC, MessageHtmlParams,
+    AccountRef, ChangesNotification, ClientKind, HealthResult, HelloParams, HelloResult, JSONRPC, MessageHtmlParams,
     MessageListParams, MessageRef, Notification, PROTOCOL_VERSIONS, Principal, Request, Response, RpcError,
     SearchParams, ViewParams, codes, methods, negotiate, notifications,
 };
 use regards_ipc::transport::Stream;
 use serde_json::{Value, json};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio::sync::watch;
 
 /// A client must say `hello` within this time or the connection is closed.
@@ -21,6 +23,13 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 struct Session {
     state: Arc<State>,
     principal: Option<Principal>,
+    client: Option<ClientKind>,
+    /// An agent's connection, as its activity names it (ADR-0012 §4).
+    agent_session: Option<String>,
+    /// The account the current request was checked against, and its level.
+    checked: Mutex<Option<(String, Access)>>,
+    /// Asked to stop the daemon: done once the reply is sent.
+    stop_after_reply: bool,
     /// Set by `changes.subscribe`: changes to forward as notifications.
     feed: Option<watch::Receiver<ChangesNotification>>,
 }
@@ -37,6 +46,10 @@ pub(crate) async fn run(stream: Stream, state: Arc<State>) -> Result<(), FrameEr
     let mut session = Session {
         state,
         principal: None,
+        client: None,
+        agent_session: None,
+        checked: Mutex::new(None),
+        stop_after_reply: false,
         feed: None,
     };
 
@@ -87,6 +100,9 @@ pub(crate) async fn run(stream: Stream, state: Arc<State>) -> Result<(), FrameEr
 
         framing::send(&mut framed, &response).await?;
 
+        if session.stop_after_reply {
+            let _ = session.state.stop.send(true);
+        }
         if session.state.stop.borrow().to_owned() {
             return Ok(());
         }
@@ -111,7 +127,29 @@ impl Session {
                 RpcError::new(codes::INVALID_REQUEST, "jsonrpc must be \"2.0\""),
             );
         }
-        match self.dispatch(&request).await {
+        let started = Instant::now();
+        let outcome = self.dispatch(&request).await;
+        // Everything an agent asks, but the handshake, is kept (ADR-0012 §4).
+        if let (Some(session), Some(client)) = (&self.agent_session, self.client)
+            && request.method != methods::HELLO
+        {
+            let checked = self
+                .checked
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take();
+            let answered = audit::Answered {
+                session,
+                client,
+                method: &request.method,
+                params: &request.params,
+                checked,
+                error: outcome.as_ref().err(),
+                duration: started.elapsed(),
+            };
+            audit::record(&self.state, answered).await;
+        }
+        match outcome {
             Ok(result) => Response::success(request.id, result),
             Err(error) => Response::failure(Some(request.id), error),
         }
@@ -138,13 +176,18 @@ impl Session {
             })),
             methods::DAEMON_SHUTDOWN => {
                 tracing::info!("shutdown requested by a client");
-                let _ = self.state.stop.send(true);
+                // Once the reply is out: the daemon may be gone right after.
+                self.stop_after_reply = true;
                 Ok(json!({ "stopping": true }))
             }
             methods::ACCOUNT_LIST => accounts::list(&self.state, !self.is_ui()).await,
             methods::ACCOUNT_SET_AGENT_ACCESS => {
                 self.require_ui()?;
                 accounts::set_agent_access(&self.state, params(request)?).await
+            }
+            methods::AGENT_ACTIVITY => {
+                self.require_ui()?;
+                audit::activity(&self.state, params(request)?).await
             }
             methods::ACCOUNT_ADD => {
                 self.require_ui()?;
@@ -395,7 +438,9 @@ impl Session {
         if self.is_ui() {
             return Ok(());
         }
-        access::require(&self.state, needed, account_id).await
+        let (email, current) = access::current(&self.state, account_id).await?;
+        *self.checked.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some((account_id.to_owned(), current));
+        access::permit(needed, account_id, &email, current)
     }
 
     async fn allow_mailbox(&self, needed: Access, mailbox_id: i64) -> Result<(), RpcError> {
@@ -403,7 +448,7 @@ impl Session {
             return Ok(());
         }
         let account = access::account_of_mailbox(&self.state, mailbox_id).await?;
-        access::require(&self.state, needed, &account).await
+        self.allow_account(needed, &account).await
     }
 
     async fn allow_message(&self, needed: Access, message_id: i64) -> Result<(), RpcError> {
@@ -411,7 +456,7 @@ impl Session {
             return Ok(());
         }
         let account = access::account_of_message(&self.state, message_id).await?;
-        access::require(&self.state, needed, &account).await
+        self.allow_account(needed, &account).await
     }
 
     /// The accounts a search may look in: for the app, those asked for; for
@@ -422,7 +467,7 @@ impl Session {
         }
         match account_id {
             Some(account) => {
-                access::require(&self.state, Access::Read, account).await?;
+                self.allow_account(Access::Read, account).await?;
                 Ok(Some(vec![account.to_owned()]))
             }
             None => access::open_to_agents(&self.state, Access::Read).await.map(Some),
@@ -476,6 +521,10 @@ impl Session {
             }
         };
         self.principal = Some(principal);
+        self.client = Some(params.client_kind);
+        if principal == Principal::Agent {
+            self.agent_session = Some(regards_store::accounts::new_id());
+        }
         tracing::debug!(client_kind = ?params.client_kind, ?principal, "handshake completed");
 
         Ok(to_value(HelloResult {

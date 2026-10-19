@@ -141,6 +141,9 @@ pub mod methods {
     /// What agents may do with an account: off, read, triage or send
     /// (ADR-0012). `ui` only: agents cannot change their own access.
     pub const ACCOUNT_SET_AGENT_ACCESS: &str = "account.set_agent_access";
+    /// What agents did, newest first: every request, allowed or refused
+    /// (ADR-0012 §4). Kept 90 days. `ui` only.
+    pub const AGENT_ACTIVITY: &str = "agent.activity";
     /// Search the mail: Gmail-style words and filters (plan §5.10), newest
     /// first. Agents: the accounts open to them (read).
     pub const SEARCH: &str = "search.query";
@@ -378,6 +381,60 @@ pub struct AccountSummary {
     /// What agents may do with it (ADR-0012); `off` until its owner allows them.
     #[serde(default)]
     pub agent_access: AgentAccess,
+}
+
+/// Parameters of [`methods::AGENT_ACTIVITY`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentActivityParams {
+    /// Only what was done with this account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    /// Page size, 1 to 500; 100 when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+    /// Older than this entry (`next` of the page before).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentActivityResult {
+    pub entries: Vec<AgentActivity>,
+    pub next: Option<i64>,
+}
+
+/// One request an agent made.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentActivity {
+    pub id: i64,
+    /// Unix time in milliseconds.
+    pub at: i64,
+    /// The agent's connection: requests made together share it.
+    pub session: String,
+    /// What it came through: `cli`, `mcp` (or `desktop` without the app's token).
+    pub client: String,
+    pub method: String,
+    /// Its parameters, secrets taken out; `{ "cut": … }` when long.
+    pub args: Value,
+    /// The account it acted on, when it named one, and what that account allowed then.
+    pub account_id: Option<String>,
+    pub access: Option<AgentAccess>,
+    pub decision: AgentDecision,
+    /// Set when it failed (`decision` is `denied` when it was not allowed).
+    pub error_code: Option<i32>,
+    pub error: Option<String>,
+    pub duration_ms: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentDecision {
+    Allowed,
+    Denied,
+    /// Waiting for the person to approve it.
+    Held,
+    Approved,
+    Rejected,
 }
 
 /// Parameters of [`methods::ACCOUNT_SET_AGENT_ACCESS`].

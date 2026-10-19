@@ -8,17 +8,19 @@ use regards_ipc::protocol::{RpcError, codes};
 use regards_store::{accounts, mailboxes, messages};
 use serde_json::json;
 
-/// The account's agent access must be at least `needed`.
-pub(crate) async fn require(state: &State, needed: Access, account_id: &str) -> Result<(), RpcError> {
+/// An account's address and agent access.
+pub(crate) async fn current(state: &State, account_id: &str) -> Result<(String, Access), RpcError> {
     let id = account_id.to_owned();
-    let found = state
+    state
         .store
         .read(move |conn| accounts::agent_access_of(conn, &id))
         .await
-        .map_err(crate::session::internal)?;
-    let Some((email, current)) = found else {
-        return Err(RpcError::new(codes::NOT_FOUND, "no such account"));
-    };
+        .map_err(crate::session::internal)?
+        .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such account"))
+}
+
+/// Whether `current` access allows `needed`; the refusal names the setting.
+pub(crate) fn permit(needed: Access, account_id: &str, email: &str, current: Access) -> Result<(), RpcError> {
     if current >= needed {
         return Ok(());
     }
