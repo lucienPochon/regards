@@ -16,6 +16,8 @@ pub enum Kind {
     SendHeld,
     SendFailed,
     SendUncertain,
+    /// An agent asks something that waits for the person (ADR-0012 §3).
+    AgentAsks,
 }
 
 impl Kind {
@@ -26,6 +28,7 @@ impl Kind {
             Self::SendHeld => "send_held",
             Self::SendFailed => "send_failed",
             Self::SendUncertain => "send_uncertain",
+            Self::AgentAsks => "agent_asks",
         }
     }
 
@@ -36,6 +39,7 @@ impl Kind {
             "send_held" => Self::SendHeld,
             "send_failed" => Self::SendFailed,
             "send_uncertain" => Self::SendUncertain,
+            "agent_asks" => Self::AgentAsks,
             other => return Err(StoreError::Corrupt(format!("unknown notice kind {other:?}"))),
         })
     }

@@ -4,6 +4,7 @@
 
 use crate::State;
 use regards_core::agents::Access;
+use regards_core::mailbox::Role;
 use regards_ipc::protocol::{RpcError, codes};
 use regards_store::marks::{self, Marks};
 use regards_store::{accounts, drafts, mailboxes, messages};
@@ -173,4 +174,38 @@ pub(crate) async fn sender_before(state: &State, account_id: &str, address: &str
         "priority": sender.priority,
         "blocked": sender.blocked,
     }))
+}
+
+/// Whether messages can be deleted for good: in Trash or Junk, and not on
+/// their way elsewhere. Checked before a hold, so the person is not asked
+/// to approve what could not run.
+pub(crate) async fn deletable(state: &State, ids: &[i64]) -> Result<(), RpcError> {
+    let ids = ids.to_vec();
+    let refusal = state
+        .store
+        .read(move |conn| {
+            for id in ids {
+                let Some(message) = messages::get(conn, id)? else {
+                    return Ok(Some(format!("no such message: {id}")));
+                };
+                if message.moving_to.is_some() {
+                    return Ok(Some(
+                        "this message is still being moved; try again in a moment".to_owned(),
+                    ));
+                }
+                let role = mailboxes::get(conn, message.mailbox_id)?.and_then(|m| m.role);
+                if !matches!(role, Some(Role::Trash | Role::Junk)) {
+                    return Ok(Some(
+                        "only messages in Trash or Junk can be deleted for good".to_owned(),
+                    ));
+                }
+            }
+            Ok(None)
+        })
+        .await
+        .map_err(crate::session::internal)?;
+    match refusal {
+        Some(message) => Err(RpcError::new(codes::CONFLICT, message)),
+        None => Ok(()),
+    }
 }

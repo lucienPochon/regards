@@ -18,6 +18,7 @@ pub mod audit;
 pub mod blobs;
 pub mod draft_sync;
 pub mod drafts;
+pub mod holds;
 pub mod identities;
 pub mod mailboxes;
 pub mod marks;

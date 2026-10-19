@@ -377,10 +377,8 @@ async fn at_triage_agents_write_drafts_and_sort_senders() {
             )
             .await,
     );
-    assert_eq!(
-        (bulk.code, bulk.data.unwrap()["limit"].as_u64()),
-        (codes::FORBIDDEN, Some(50))
-    );
+    // Many at once waits for the person (tests/holds.rs, live.rs), once the messages are known.
+    assert_eq!(bulk.code, codes::NOT_FOUND);
     let sent = agent
         .call::<_, Value>(
             methods::DRAFT_SEND,

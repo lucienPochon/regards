@@ -83,3 +83,38 @@ export const listAgentActivity = (
     before: options.before ?? null,
     limit: options.limit ?? null,
   });
+
+/** Why an agent's request waits for the person. */
+export type HoldReason = "sending" | "bulk" | "delete";
+export type HoldStatus = "pending" | "approved" | "rejected" | "expired" | "failed";
+
+/** What an agent asked that waits (or waited) for the person (ADR-0012 §3). */
+export interface Hold {
+  id: number;
+  /** Unix ms. Undecided by `expires_at` (a day later), it expires. */
+  created_at: number;
+  expires_at: number;
+  session: string;
+  client: string;
+  account_id: string;
+  /** The request as the agent made it: run as is once approved. */
+  method: string;
+  params: unknown;
+  /** For the person: "Send “Plans” to Bob", "Archive 120 messages", "Delete 1 message for good". */
+  description: string;
+  reason: HoldReason;
+  /** For a send: the draft (`getDraft`). Changed since it was held, it is not sent on approval. */
+  draft_id: number | null;
+  status: HoldStatus;
+  decided_at: number | null;
+  /** Once approved: what running it gave, or (status "failed") why it could not run. */
+  result: unknown;
+  error: string | null;
+}
+
+/** Holds, newest first; only those still waiting with `pending`. */
+export const listHolds = (pending = true) =>
+  invoke<{ holds: Hold[] }>("hold_list", { pending }).then((result) => result.holds);
+/** It runs as the agent asked; the hold comes back with its result. */
+export const approveHold = (id: number) => invoke<Hold>("hold_approve", { id });
+export const rejectHold = (id: number) => invoke<Hold>("hold_reject", { id });

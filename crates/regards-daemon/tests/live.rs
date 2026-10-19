@@ -12,12 +12,12 @@ use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountSummary, AgentAccess, AgentAccessParams, AgentActivityParams,
     AgentActivityResult, AsideParams, ClientKind, ConnectionSecurity, DeleteResult, DraftAttachFileParams,
     DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult, DraftRef, DraftReplyParams,
-    DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, IdentitySaveParams, IdentityView,
-    MailboxListResult, MarkResult, MessageDetail, MessageHtml, MessageHtmlParams, MessageIds, MessageListParams,
-    MessageListResult, MessageRef, MoveResult, NoticeKind, NoticeListResult, OutboxEntryView, OutboxListResult,
-    OutboxRef, OutboxState, OutboxUndoResult, PinParams, RemindParams, SearchParams, SearchResult, ServerSearchResult,
-    ServerSettings, SetFlagsParams, SetFlagsResult, SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View,
-    ViewParams, methods,
+    DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, HoldRef, HoldStatus, HoldView, IdentitySaveParams,
+    IdentityView, MailboxListResult, MarkResult, MessageDetail, MessageHtml, MessageHtmlParams, MessageIds,
+    MessageListParams, MessageListResult, MessageRef, MoveResult, NoticeKind, NoticeListResult, OutboxEntryView,
+    OutboxListResult, OutboxRef, OutboxState, OutboxUndoResult, PinParams, RemindParams, SearchParams, SearchResult,
+    ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SnoozeParams, SyncResult, ThreadView,
+    UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::protocol::{
     ExplainResult, Policy, Reason, Screening, ScreeningParams, Section, SenderBlockParams, SenderSetParams,
@@ -2746,6 +2746,122 @@ async fn live_agents_organise_mail_and_the_app_undoes_it() {
         "undone"
     );
     assert!(undoable(methods::MESSAGE_PIN), "the pin can still be undone");
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_bulk_changes_and_deleting_for_good_wait_for_the_person() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    seed.create_mailbox(b"Archive").await.unwrap();
+    seed.create_mailbox(b"Trash").await.unwrap();
+    for n in 1..=51 {
+        seed.append(b"INBOX", &[], &message(n, &format!("Note {n}"), "ann@example.test"))
+            .await
+            .unwrap();
+    }
+    let smtp = ServerSettings {
+        host: live.server.host.clone(),
+        port: 587,
+        security: ConnectionSecurity::Starttls,
+    };
+    let ((_temp, mut desktop, account, inbox, handle), endpoint) =
+        daemon_reachable(&live, smtp, live.tls.clone(), |daemon| daemon).await;
+    let _: Value = desktop
+        .call(
+            methods::ACCOUNT_SET_AGENT_ACCESS,
+            AgentAccessParams {
+                account_id: account.id.clone(),
+                access: AgentAccess::Triage,
+            },
+        )
+        .await
+        .unwrap();
+    let mut agent = Client::connect(&endpoint, ClientKind::Cli).await.unwrap();
+    let page: MessageListResult = agent
+        .call(
+            methods::MESSAGE_LIST,
+            MessageListParams {
+                mailbox_id: inbox,
+                limit: Some(100),
+                before: None,
+                section: None,
+            },
+        )
+        .await
+        .unwrap();
+    let ids: Vec<i64> = page.messages.iter().map(|m| m.id).collect();
+    assert_eq!(ids.len(), 51);
+    let held = |result: Result<Value, regards_ipc::ClientError>| match result {
+        Err(regards_ipc::ClientError::Rpc(error)) if error.code == regards_ipc::protocol::codes::HELD => {
+            error.data.unwrap()["hold_id"].as_i64().unwrap()
+        }
+        other => panic!("expected it held, got {other:?}"),
+    };
+
+    // 51 at once is a bulk change: nothing moves until the person approves.
+    let bulk = held(
+        agent
+            .call::<_, Value>(methods::MESSAGE_ARCHIVE, MessageIds { ids: ids.clone() })
+            .await,
+    );
+    assert_eq!(
+        messages(&mut desktop, inbox).await.messages.len(),
+        50,
+        "a page: still all there"
+    );
+    let approved: HoldView = desktop.call(methods::HOLD_APPROVE, HoldRef { id: bulk }).await.unwrap();
+    assert_eq!(approved.description, "Archive 51 messages");
+    assert_eq!(approved.status, HoldStatus::Approved);
+    assert_eq!(approved.result.unwrap()["moved"], 51);
+    assert!(messages(&mut desktop, inbox).await.messages.is_empty());
+    server_count_becomes(&mut seed, b"Archive", 51).await;
+
+    // Deleting for good: only from Trash or Junk, refused at once otherwise.
+    let one = vec![ids[0]];
+    let refused = agent
+        .call::<_, Value>(methods::MESSAGE_DELETE, MessageIds { ids: one.clone() })
+        .await;
+    assert!(
+        matches!(&refused, Err(regards_ipc::ClientError::Rpc(error)) if error.code == regards_ipc::protocol::codes::CONFLICT),
+        "{refused:?}"
+    );
+    let _: MoveResult = agent
+        .call(methods::MESSAGE_TRASH, MessageIds { ids: one.clone() })
+        .await
+        .unwrap();
+    server_count_becomes(&mut seed, b"Trash", 1).await;
+    // From the Trash it always waits, even for one.
+    let deleting = held(
+        agent
+            .call::<_, Value>(methods::MESSAGE_DELETE, MessageIds { ids: one.clone() })
+            .await,
+    );
+    let rejected: HoldView = desktop
+        .call(methods::HOLD_REJECT, HoldRef { id: deleting })
+        .await
+        .unwrap();
+    assert_eq!(
+        (rejected.status, rejected.description.as_str()),
+        (HoldStatus::Rejected, "Delete 1 message for good")
+    );
+    server_count_becomes(&mut seed, b"Trash", 1).await;
+    let deleting = held(
+        agent
+            .call::<_, Value>(methods::MESSAGE_DELETE, MessageIds { ids: one })
+            .await,
+    );
+    let approved: HoldView = desktop
+        .call(methods::HOLD_APPROVE, HoldRef { id: deleting })
+        .await
+        .unwrap();
+    assert_eq!(approved.status, HoldStatus::Approved, "{approved:?}");
+    server_count_becomes(&mut seed, b"Trash", 0).await;
 
     seed.logout().await;
     handle.abort();

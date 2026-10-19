@@ -1,26 +1,28 @@
 //! One client connection: handshake, then request dispatch.
 
 use crate::{
-    State, access, accounts, actions, audit, compose, draft_sync, identities, mail, notices, smart, templates,
+    State, access, accounts, actions, audit, compose, draft_sync, holds, identities, mail, notices, smart, templates,
 };
 use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_ipc::framing::{self, FrameError};
 use regards_ipc::protocol::{
     AccountRef, AsideParams, ChangesNotification, ClientKind, DraftCreateParams, DraftListParams, DraftRef,
-    DraftReplyParams, DraftSetFromParams, DraftUpdateParams, HealthResult, HelloParams, HelloResult, JSONRPC,
-    MessageHtmlParams, MessageIds, MessageListParams, MessageRef, MoveParams, Notification, PROTOCOL_VERSIONS,
-    PinParams, Principal, RemindParams, Request, Response, RpcError, SearchParams, SenderBlockParams, SenderSetParams,
-    SetFlagsParams, SnoozeParams, ViewParams, codes, methods, negotiate, notifications,
+    DraftReplyParams, DraftSendParams, DraftSetFromParams, DraftUpdateParams, HealthResult, HelloParams, HelloResult,
+    HoldRef, JSONRPC, MessageHtmlParams, MessageIds, MessageListParams, MessageRef, MoveParams, Notification,
+    PROTOCOL_VERSIONS, PinParams, Principal, RemindParams, Request, Response, RpcError, SearchParams,
+    SenderBlockParams, SenderSetParams, SetFlagsParams, SnoozeParams, ViewParams, codes, methods, negotiate,
+    notifications,
 };
 use regards_ipc::transport::Stream;
+use regards_store::holds::Reason;
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::watch;
 
 /// The most messages an agent may change in one request; more is a bulk
-/// change, which needs the person (ADR-0012 §3).
+/// change, which waits for the person (ADR-0012 §3).
 const MAX_AGENT_CHANGES: usize = 50;
 /// A client must say `hello` within this time or the connection is closed.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -209,6 +211,23 @@ impl Session {
                 self.require_ui()?;
                 audit::activity(&self.state, params(request)?).await
             }
+            methods::HOLD_LIST => {
+                self.require_ui()?;
+                holds::list(&self.state, params(request)?).await
+            }
+            methods::HOLD_GET => {
+                let params: HoldRef = params(request)?;
+                let scope = self.scope(Access::Read, None).await?;
+                holds::get(&self.state, params, scope).await
+            }
+            methods::HOLD_APPROVE => {
+                self.require_ui()?;
+                holds::approve(&self.state, params(request)?).await
+            }
+            methods::HOLD_REJECT => {
+                self.require_ui()?;
+                holds::reject(&self.state, params(request)?).await
+            }
             methods::ACCOUNT_ADD => {
                 self.require_ui()?;
                 accounts::add(&self.state, params(request)?).await
@@ -252,8 +271,16 @@ impl Session {
                 mail::html(&self.state, params).await
             }
             methods::MESSAGE_DELETE => {
-                self.require_ui()?;
-                actions::delete_forever(&self.state, params(request)?).await
+                let params: MessageIds = params(request)?;
+                if self.is_ui() {
+                    return actions::delete_forever(&self.state, params).await;
+                }
+                // Deleting for good always waits for the person, if it can be done.
+                let account = self.allow_targets(Access::Triage, &params.ids).await?;
+                access::deletable(&self.state, &params.ids).await?;
+                Err(self
+                    .hold_change(request, account, Reason::Delete, params.ids.len())
+                    .await)
             }
             methods::DRAFT_CREATE => {
                 let params: DraftCreateParams = params(request)?;
@@ -272,7 +299,7 @@ impl Session {
             }
             methods::DRAFT_GET => {
                 let params: DraftRef = params(request)?;
-                self.allow_draft(params.id).await?;
+                self.allow_draft(Access::Triage, params.id).await?;
                 compose::get(&self.state, params).await
             }
             methods::DRAFT_LIST => {
@@ -282,12 +309,12 @@ impl Session {
             }
             methods::DRAFT_UPDATE => {
                 let params: DraftUpdateParams = params(request)?;
-                self.allow_draft(params.id).await?;
+                self.allow_draft(Access::Triage, params.id).await?;
                 compose::update(&self.state, params).await
             }
             methods::DRAFT_DELETE => {
                 let params: DraftRef = params(request)?;
-                self.allow_draft(params.id).await?;
+                self.allow_draft(Access::Triage, params.id).await?;
                 compose::delete(&self.state, params).await
             }
             methods::DRAFT_ATTACH_FILE => {
@@ -336,12 +363,17 @@ impl Session {
             }
             methods::DRAFT_SET_FROM => {
                 let params: DraftSetFromParams = params(request)?;
-                self.allow_draft(params.id).await?;
+                self.allow_draft(Access::Triage, params.id).await?;
                 compose::set_from(&self.state, params).await
             }
             methods::DRAFT_SEND => {
-                self.require_ui()?;
-                compose::send(&self.state, params(request)?).await
+                let params: DraftSendParams = params(request)?;
+                if self.is_ui() {
+                    return compose::send(&self.state, params).await;
+                }
+                // An agent's send always waits for the person (ADR-0012 §3).
+                self.allow_draft(Access::Send, params.id).await?;
+                Err(holds::hold_send(&self.state, self.asker(request), &params).await)
             }
             methods::OUTBOX_LIST => {
                 self.require_ui()?;
@@ -373,12 +405,12 @@ impl Session {
             }
             methods::MESSAGE_PIN => {
                 let params: PinParams = params(request)?;
-                self.allow_change(Access::Triage, &params.ids).await?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
                 actions::pin(&self.state, params).await
             }
             methods::MESSAGE_SET_ASIDE => {
                 let params: AsideParams = params(request)?;
-                self.allow_change(Access::Triage, &params.ids).await?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
                 actions::set_aside(&self.state, params).await
             }
             methods::SMART_OVERVIEW => {
@@ -411,12 +443,12 @@ impl Session {
             }
             methods::MESSAGE_REMIND => {
                 let params: RemindParams = params(request)?;
-                self.allow_change(Access::Triage, &params.ids).await?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
                 actions::remind(&self.state, params).await
             }
             methods::MESSAGE_SNOOZE => {
                 let params: SnoozeParams = params(request)?;
-                self.allow_change(Access::Triage, &params.ids).await?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
                 actions::snooze(&self.state, params).await
             }
             methods::MESSAGE_VIEW => {
@@ -431,23 +463,23 @@ impl Session {
             }
             methods::MESSAGE_SET_FLAGS => {
                 let params: SetFlagsParams = params(request)?;
-                self.allow_change(Access::Triage, &params.ids).await?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
                 actions::set_flags(&self.state, params).await
             }
             methods::MESSAGE_MOVE => {
                 let params: MoveParams = params(request)?;
-                self.allow_change(Access::Triage, &params.ids).await?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
                 self.allow_mailbox(Access::Triage, params.mailbox_id).await?;
                 actions::move_to(&self.state, params).await
             }
             methods::MESSAGE_ARCHIVE => {
                 let params: MessageIds = params(request)?;
-                self.allow_change(Access::Triage, &params.ids).await?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
                 actions::archive(&self.state, params).await
             }
             methods::MESSAGE_TRASH => {
                 let params: MessageIds = params(request)?;
-                self.allow_change(Access::Triage, &params.ids).await?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
                 actions::trash(&self.state, params).await
             }
             methods::UNDO_APPLY => {
@@ -534,34 +566,63 @@ impl Session {
 
     /// An agent may change these messages: each one's account allows
     /// `needed`, and they are not too many at once (ADR-0012 §3).
-    async fn allow_change(&self, needed: Access, ids: &[i64]) -> Result<(), RpcError> {
+    /// More than that is a bulk change, which waits for the person.
+    async fn allow_change(&self, needed: Access, ids: &[i64], request: &Request) -> Result<(), RpcError> {
         if self.is_ui() {
             return Ok(());
         }
+        let account = self.allow_targets(needed, ids).await?;
         if ids.len() > MAX_AGENT_CHANGES {
-            let mut error = RpcError::new(
-                codes::FORBIDDEN,
-                format!("agents can change at most {MAX_AGENT_CHANGES} messages in one request"),
-            );
-            error.data = Some(json!({ "limit": MAX_AGENT_CHANGES }));
-            return Err(error);
-        }
-        let (accounts, before) = access::messages_before(&self.state, ids).await?;
-        self.note_before(before);
-        for account in accounts {
-            self.allow_within(needed, &account, "message").await?;
+            return Err(self.hold_change(request, account, Reason::Bulk, ids.len()).await);
         }
         Ok(())
     }
 
-    /// An agent may write a draft if its account allows triage.
-    async fn allow_draft(&self, draft_id: i64) -> Result<(), RpcError> {
+    /// Each message's account allows an agent `needed`; the first account.
+    async fn allow_targets(&self, needed: Access, ids: &[i64]) -> Result<String, RpcError> {
+        if ids.is_empty() {
+            return Err(RpcError::new(codes::INVALID_PARAMS, "give at least one message id"));
+        }
+        let (accounts, before) = access::messages_before(&self.state, ids).await?;
+        self.note_before(before);
+        for account in &accounts {
+            self.allow_within(needed, account, "message").await?;
+        }
+        Ok(accounts.into_iter().next().expect("one account per message"))
+    }
+
+    /// Hold an agent's change to messages for the person (ADR-0012 §3).
+    async fn hold_change(&self, request: &Request, account_id: String, reason: Reason, count: usize) -> RpcError {
+        let description = holds::describe(&request.method, count);
+        let about = holds::About {
+            account_id,
+            reason,
+            description: description.clone(),
+            draft: None,
+            people: Vec::new(),
+            subject: description,
+        };
+        holds::hold(&self.state, self.asker(request), about).await
+    }
+
+    /// The agent request at hand, as a hold keeps it.
+    fn asker<'a>(&'a self, request: &'a Request) -> holds::Asker<'a> {
+        holds::Asker {
+            session: self.agent_session.as_deref().unwrap_or_default(),
+            client: self.client.map_or("agent", audit::client_name),
+            method: &request.method,
+            params: &request.params,
+        }
+    }
+
+    /// An agent may touch a draft if its account allows `needed`.
+    async fn allow_draft(&self, needed: Access, draft_id: i64) -> Result<(), RpcError> {
         if self.is_ui() {
             return Ok(());
         }
         let (account, before) = access::draft_before(&self.state, draft_id).await?;
         self.note_before(before);
-        self.allow_within(Access::Triage, &account, "draft").await
+        self.allow_within(needed, &account, "draft").await
     }
 
     /// An agent may sort a sender if the account allows triage.
