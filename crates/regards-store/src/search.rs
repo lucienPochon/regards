@@ -321,10 +321,17 @@ pub fn search(
             }
         }
     } else {
-        // Many, or only filters: newest first until the page is full.
-        let matching = match query.text {
-            Some(_) => " AND m.id IN (SELECT rowid FROM search.mail WHERE mail MATCH ?5)",
-            None => "",
+        // Many, or only filters (and words left out): newest first until the page is full.
+        let (matching, words) = match (&query.text, &query.excluded) {
+            (Some(text), _) => (
+                " AND m.id IN (SELECT rowid FROM search.mail WHERE mail MATCH ?5)",
+                Some(text),
+            ),
+            (None, Some(excluded)) => (
+                " AND m.id NOT IN (SELECT rowid FROM search.mail WHERE mail MATCH ?5)",
+                Some(excluded),
+            ),
+            (None, None) => ("", None),
         };
         let sql = format!(
             "SELECT {columns} FROM main.messages m INDEXED BY messages_by_time \
@@ -334,8 +341,8 @@ pub fn search(
              ORDER BY m.received_at DESC, m.id DESC LIMIT ?4"
         );
         let mut statement = conn.prepare_cached(&sql)?;
-        let mut rows = match &query.text {
-            Some(text) => statement.query(params![folders, received_at, id, limit, text])?,
+        let mut rows = match words {
+            Some(words) => statement.query(params![folders, received_at, id, limit, words])?,
             None => statement.query(params![folders, received_at, id, limit])?,
         };
         while let Some(row) = rows.next()? {
@@ -552,6 +559,12 @@ mod tests {
             "newest first"
         );
         assert_eq!(find(&store, "bob -tickets").await, ["Old plans"]);
+        assert_eq!(
+            find(&store, "-tickets").await,
+            ["Café opening", "Garden plot", "Old plans"],
+            "all but"
+        );
+        assert_eq!(find(&store, "in:inbox -lugano -from:cy").await, ["Garden plot"]);
         assert_eq!(
             find(&store, "to:me@example.org has:attachment").await,
             ["Train tickets"]

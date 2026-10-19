@@ -3,8 +3,10 @@
 //! a moment after changes happen, in batches, and at start indexes the text
 //! of messages downloaded before (before there was an index, or a rebuild).
 //!
-//! Its writes are quiet: the index is nothing a client lists, so they do not
-//! tell clients to refetch, and do not wake this task either.
+//! Its writes are quiet, so they do not wake this task. Once the queue is
+//! worked off, the change feed moves (no database revision): a search on
+//! screen, refetched when the change came in, is refetched once more and
+//! finds what was just indexed.
 
 use crate::State;
 use regards_store::{StoreError, search};
@@ -44,9 +46,13 @@ pub(crate) async fn run(state: Arc<State>) {
 
 async fn work_off(state: &State) -> Result<(), StoreError> {
     let mut left = state.store.read(search::pending).await?;
+    if left == 0 {
+        return Ok(());
+    }
     while left > 0 {
         left = state.store.write_quiet(|tx| search::index(tx, BATCH)).await?;
     }
+    state.feed.bump();
     Ok(())
 }
 
