@@ -43,4 +43,13 @@ To build one bundle locally: `cd apps/desktop && npm run release`, optionally wi
   - macOS: Developer ID and notarisation, when funded.
 
   Until then, Windows SmartScreen and macOS Gatekeeper warn on first start. Each needs its account and secrets (plan, Phase 0), then a signing step in the workflow.
-- **Auto-update:** it needs a signing key pair for the update files, kept by the owner. Checking for updates sends a request to GitHub, so it is off until the person turns it on (see [privacy](privacy.md)).
+- **Installing updates by itself:** this needs a signing key pair for the update files, kept by the owner, and Tauri's updater.
+
+## Update checks
+
+What exists today (`apps/desktop/src-tauri/src/updates.rs`):
+- **Asked once:** the app asks the person whether to check for updates. It doesn't check until they say yes, because a check tells GitHub the computer's address ([privacy](privacy.md)).
+- **When on:** it asks GitHub's API for the latest release once a day.
+- **When there is a later version:** a later release (not a draft or pre-release, with a page in this repository) is told once, by a notification and the `update_available` event. The person opens its page and downloads the installer.
+
+Publishing a release (above) is all it takes for installed copies to learn of it. A fork's build can point elsewhere with `REGARDS_RELEASES_API` and `REGARDS_RELEASE_PAGES` at build time.

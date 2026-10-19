@@ -1,7 +1,7 @@
-//! A small HTTPS client, for OAuth token requests (ADR-0018): POST a form,
-//! read the answer. HTTP/1.1, one request per connection, over the same TLS
-//! as mail (the platform's verifier, never an invalid certificate). Enough
-//! for token endpoints; not a general web client.
+//! A small HTTPS client, for OAuth token requests (ADR-0018) and the update
+//! check: POST a form or GET, and read the answer. HTTP/1.1, one request per
+//! connection, over the same TLS as mail (the platform's verifier, never an
+//! invalid certificate). Enough for those; not a general web client.
 
 use crate::{NetError, TlsOptions, connect_tls};
 use std::time::Duration;
@@ -20,17 +20,35 @@ pub struct HttpsResponse {
 
 /// POST `form` (application/x-www-form-urlencoded) to an `https://` URL.
 pub async fn post_form(url: &str, form: &[(&str, &str)], options: &TlsOptions) -> Result<HttpsResponse, NetError> {
-    let (host, port, path) = split_url(url)?;
     let body = form_encode(form);
+    let head = format!(
+        "Content-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n",
+        body.len()
+    );
+    exchange("POST", url, &head, &body, options).await
+}
+
+/// GET an `https://` URL.
+pub async fn get(url: &str, options: &TlsOptions) -> Result<HttpsResponse, NetError> {
+    exchange("GET", url, "", "", options).await
+}
+
+async fn exchange(
+    method: &str,
+    url: &str,
+    head: &str,
+    body: &str,
+    options: &TlsOptions,
+) -> Result<HttpsResponse, NetError> {
+    let (host, port, path) = split_url(url)?;
     let host_header = if port == 443 {
         host.clone()
     } else {
         format!("{host}:{port}")
     };
     let request = format!(
-        "POST {path} HTTP/1.1\r\nHost: {host_header}\r\nUser-Agent: Regards\r\nAccept: application/json\r\n\
-         Content-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
+        "{method} {path} HTTP/1.1\r\nHost: {host_header}\r\nUser-Agent: Regards\r\nAccept: application/json\r\n\
+         {head}Connection: close\r\n\r\n{body}"
     );
     let exchange = async {
         let mut stream = connect_tls(&host, port, options).await?;

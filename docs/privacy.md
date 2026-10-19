@@ -15,6 +15,7 @@ Regards makes these connections, and no others:
 | **Microsoft or Google sign-in**, if you add an account that way | When you sign in, and about once an hour after | Signing in, then renewing the sign-in. Your password goes to Microsoft or Google in your browser, never to Regards |
 | **Web servers named in a message**, only if you ask | When you choose *Load images* for a message | Showing that message's remote images. They can tell the sender you opened it, which is why they stay blocked until you ask. No referrer is sent |
 | **Web pages you open from a message** | When you click a link | Links open in your own browser |
+| **GitHub** (`api.github.com`), only if you allow it | Once a day if you turn on update checks, or when you check by hand | Asking for the latest version of Regards. GitHub sees your computer's internet address and that the request comes from Regards; nothing else is sent |
 
 Every connection to a mail server or a sign-in service uses TLS, and the certificate is always checked. There is no setting to turn that off.
 
@@ -22,9 +23,7 @@ Every connection to a mail server or a sign-in service uses TLS, and the certifi
 - analytics, telemetry or crash reporting;
 - advertising;
 - fonts or scripts fetched from the internet;
-- "phone home" checks.
-
-Regards does not check for updates yet. When it does, this statement will say exactly what that check sends.
+- "phone home" checks. Update checks are off until you turn them on: Regards asks you once.
 
 ## What Regards keeps on your computer
 
