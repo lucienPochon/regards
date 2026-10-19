@@ -354,6 +354,27 @@ async fn account_set_auto_copy(
         .map_err(describe)
 }
 
+/// Whom to write to, as one types a recipient: best first.
+#[tauri::command]
+async fn people_suggest(
+    bridge: State<'_, Bridge>,
+    query: String,
+    account_id: Option<String>,
+) -> Result<regards_ipc::protocol::PeopleSuggestResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::PEOPLE_SUGGEST,
+            regards_ipc::protocol::PeopleSuggestParams {
+                query,
+                account_id,
+                limit: None,
+            },
+        )
+        .await
+        .map_err(describe)
+}
+
 /// How messages are shown (links without their tracking parameters …).
 #[tauri::command]
 async fn reading_settings(bridge: State<'_, Bridge>) -> Result<regards_ipc::protocol::ReadingSettings, String> {
@@ -1277,6 +1298,7 @@ fn main() {
             system::open_system_settings,
             system::open_url,
             account_update,
+            people_suggest,
             reading_settings,
             set_reading_settings,
             prefetch_get,

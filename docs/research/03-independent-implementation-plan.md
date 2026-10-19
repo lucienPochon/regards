@@ -369,6 +369,11 @@ flowchart LR
 - **Editor:** a rich HTML editor (ProseMirror-based, for example Tiptap, or Lexical), with sanitised HTML + `text/plain`, inline images, attachments, per-identity signatures and quote handling.
 - **Saving:** local revisioned autosave plus throttled IMAP draft sync.
 - **Sources:** reply, reply-all, forward, send again, `mailto:`, templates with placeholders, and Markdown input for the CLI and agents.
+- **Recipient suggestions** (as built 2026-10-19, `people.suggest`, migration 0032):
+  - **The people table:** per account, whom it writes to (To and Cc of mail from its own addresses) and who writes to it, with the latest name and when last seen. A trigger keeps it current for every stored message, and the migration fills it from stored mail.
+  - **Matching and ranking:** what is typed matches the start of an address or of a word of a name. Writing to someone counts three times receiving from them, and it all fades over about a month.
+  - **Left out:** no-reply, notification and bounce addresses (unless written to), blocked senders, and the account's own addresses.
+  - **Agents:** they get the same through the `people` tool, for accounts open to them.
 - **Send validation:** recipients, subject (or confirmation), attachments ready, no unresolved placeholders.
 - **Built so far (Phase 2):**
   - **Sending:** the SMTP submission client (`regards-smtp`, at-most-once).

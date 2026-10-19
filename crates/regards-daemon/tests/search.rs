@@ -10,7 +10,10 @@ mod fake_smtp;
 mod world;
 
 use regards_daemon::DEFAULT_LATE_SEND_GRACE;
-use regards_ipc::protocol::{ClientKind, SearchParams, SearchResult, ServerSearchResult, codes, methods};
+use regards_ipc::protocol::{
+    ClientKind, PeopleSuggestParams, PeopleSuggestResult, SearchParams, SearchResult, ServerSearchResult, codes,
+    methods,
+};
 use regards_ipc::{Client, ClientError};
 use world::{Running, World};
 
@@ -91,6 +94,50 @@ async fn search_answers_the_app_and_checks_what_it_is_asked() {
     };
     assert_eq!(
         code(agent.call::<_, ServerSearchResult>(methods::SEARCH_SERVER, named).await),
+        codes::FORBIDDEN
+    );
+    handle.abort();
+}
+
+#[tokio::test]
+async fn people_to_write_to_are_suggested_within_what_may_be_read() {
+    let world = World::new(DEFAULT_LATE_SEND_GRACE).await;
+    let Running {
+        endpoint,
+        mut desktop,
+        handle,
+    } = world.start().await;
+    let account = world.add_account(&mut desktop).await;
+    let ask = |query: &str, limit| PeopleSuggestParams {
+        query: query.into(),
+        account_id: None,
+        limit,
+    };
+    let found: PeopleSuggestResult = desktop.call(methods::PEOPLE_SUGGEST, ask("", None)).await.unwrap();
+    assert!(found.people.is_empty(), "nobody written with yet");
+    assert_eq!(
+        code(
+            desktop
+                .call::<_, PeopleSuggestResult>(methods::PEOPLE_SUGGEST, ask("b", Some(51)))
+                .await
+        ),
+        codes::INVALID_PARAMS
+    );
+
+    // An agent sees the people of accounts open to it only: none here.
+    let mut agent = Client::connect(&endpoint, ClientKind::Cli).await.unwrap();
+    let found: PeopleSuggestResult = agent.call(methods::PEOPLE_SUGGEST, ask("", None)).await.unwrap();
+    assert!(found.people.is_empty());
+    let closed = PeopleSuggestParams {
+        account_id: Some(account.id.clone()),
+        ..ask("", None)
+    };
+    assert_eq!(
+        code(
+            agent
+                .call::<_, PeopleSuggestResult>(methods::PEOPLE_SUGGEST, closed)
+                .await
+        ),
         codes::FORBIDDEN
     );
     handle.abort();

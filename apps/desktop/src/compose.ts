@@ -81,6 +81,15 @@ export interface Queued {
   needs_this_computer?: boolean;
 }
 
+/**
+ * Whom to write to, as a recipient is typed: the start of an address or of
+ * a word of a name; empty gives those written with most. Best first: those
+ * the account writes to, lately, before those who only wrote to it. No-reply
+ * and blocked addresses are left out. `accountId`: only that account's people.
+ */
+export const suggestPeople = (query: string, accountId: string | null = null) =>
+  invoke<{ people: Person[] }>("people_suggest", { query, accountId }).then((result) => result.people);
+
 export const newDraft = (accountId: string) => invoke<Draft>("draft_create", { accountId });
 export const replyDraft = (messageId: number, all: boolean) => invoke<Draft>("draft_reply", { messageId, all });
 export const forwardDraft = (messageId: number) => invoke<Draft>("draft_forward", { messageId });

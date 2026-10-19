@@ -20,6 +20,7 @@ mod limits;
 mod mail;
 mod notices;
 mod oauth;
+mod people;
 mod prefetch;
 mod push;
 mod queue;

@@ -29,6 +29,7 @@ mod migrate;
 pub mod notices;
 pub mod operations;
 pub mod outbox;
+pub mod people;
 pub mod search;
 pub mod settings;
 pub mod smart;
