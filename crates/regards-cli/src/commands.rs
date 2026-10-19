@@ -209,6 +209,9 @@ fn human(tool: &Tool, result: &Value) -> String {
             if let Some(n) = result["not_here"].as_u64().filter(|n| *n > 0) {
                 out.push_str(&format!("\n{n} more on the server, not on this device yet."));
             }
+            if let Some(suggestion) = result["suggestion"].as_str() {
+                out.push_str(&format!("\nDid you mean: {suggestion}"));
+            }
             out
         }
         "read" => {

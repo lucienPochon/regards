@@ -17,13 +17,15 @@
 //!   (external content), but only one in its own database, not `mail.db`.
 //! - **Another schema** ([`VERSION`]) drops the index and queues every
 //!   message; search works on what is done meanwhile, newest first.
+//! - **Typos** ([`suggest`]): the index's own word list (`vocab`, an
+//!   `fts5vocab` table, which stores nothing) gives "did you mean".
 //!
 //! The two databases commit separately in WAL mode: after a crash the index
 //! may lag a write, which only affects what is found, never the mail.
 
 use crate::StoreError;
 use crate::messages::{self, Cursor, Message};
-use regards_core::search::Query;
+use regards_core::search::{self as language, Query};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use std::path::Path;
 
@@ -66,6 +68,8 @@ pub(crate) fn prepare(conn: &Connection) -> Result<(), StoreError> {
              COMMIT;"
         ))?;
     }
+    // The words of the index, with how many messages have each: nothing stored.
+    conn.execute_batch("CREATE VIRTUAL TABLE IF NOT EXISTS search.vocab USING fts5vocab(mail, row);")?;
     // Not INSERT OR IGNORE: an upsert overrides how a trigger it fires resolves conflicts.
     conn.execute_batch(
         "CREATE TEMP TRIGGER search_added AFTER INSERT ON main.messages BEGIN \
@@ -240,6 +244,101 @@ pub fn forget_texts(tx: &Transaction<'_>, before: i64) -> Result<usize, StoreErr
              AND EXISTS (SELECT 1 FROM main.messages WHERE id = CAST(substr(texts.message_id, 2) AS INTEGER)))",
         [before],
     )?)
+}
+
+/// "Did you mean": `input` with each word the index does not know replaced
+/// by the known word nearest it (a letter wrong, missing, extra or two
+/// swapped; two such edits from five letters on), the most common first.
+/// Only if that search finds something, in `accounts` as the search would:
+/// a suggestion never tells of mail out of reach.
+///
+/// Phrases, words of fewer than three letters and those with digits are
+/// left as typed. The first letter is taken to be right: few typos are there,
+/// and the words to compare are then a part of the list.
+pub fn suggest(conn: &Connection, input: &str, accounts: Option<&[String]>) -> Result<Option<String>, StoreError> {
+    if !available(conn)? {
+        return Ok(None);
+    }
+    let query = language::parse(input);
+    let mut suggested = input.to_owned();
+    let mut changed = false;
+    for term in query.terms.iter().filter(|term| !term.negated) {
+        let word = term.text.as_str();
+        if word.chars().count() < 3 || !word.chars().all(char::is_alphabetic) || known(conn, word, term.prefix)? {
+            continue;
+        }
+        if let Some(better) = nearest(conn, &language::fold(word))?
+            && let Some(replaced) = replace_word(&suggested, word, &better)
+        {
+            suggested = replaced;
+            changed = true;
+        }
+    }
+    if !changed {
+        return Ok(None);
+    }
+    let found = search(conn, &language::parse(&suggested), accounts, 1, None)?;
+    Ok((!found.page.is_empty()).then_some(suggested))
+}
+
+/// Whether any message has the word (or a word it starts, for `prefix`).
+fn known(conn: &Connection, word: &str, prefix: bool) -> Result<bool, StoreError> {
+    let expression = format!("\"{}\"{}", word.replace('"', ""), if prefix { "*" } else { "" });
+    Ok(conn
+        .prepare_cached("SELECT 1 FROM search.mail WHERE mail MATCH ?1 LIMIT 1")?
+        .query_row([expression], |_| Ok(()))
+        .optional()?
+        .is_some())
+}
+
+/// The indexed word nearest `folded`, starting with the same letter.
+fn nearest(conn: &Connection, folded: &str) -> Result<Option<String>, StoreError> {
+    let Some(first) = folded.chars().next() else {
+        return Ok(None);
+    };
+    let Some(after) = char::from_u32(first as u32 + 1) else {
+        return Ok(None);
+    };
+    let most = if folded.chars().count() < 5 { 1 } else { 2 };
+    let mut statement = conn.prepare_cached("SELECT term, doc FROM search.vocab WHERE term >= ?1 AND term < ?2")?;
+    let mut rows = statement.query(params![first.to_string(), after.to_string()])?;
+    // Fewest edits, then in most messages.
+    let mut best: Option<(usize, i64, String)> = None;
+    while let Some(row) = rows.next()? {
+        let term: String = row.get(0)?;
+        if term == folded || term.chars().any(|c| c.is_ascii_digit()) {
+            continue;
+        }
+        let Some(edits) = language::edits_within(folded, &term, most) else {
+            continue;
+        };
+        let messages: i64 = row.get(1)?;
+        if best
+            .as_ref()
+            .is_none_or(|(fewest, most_messages, _)| (edits, -messages) < (*fewest, -*most_messages))
+        {
+            best = Some((edits, messages, term));
+        }
+    }
+    Ok(best.map(|(_, _, term)| term))
+}
+
+/// `input` with its first `word` (whole, as typed) replaced; capitalised like it.
+fn replace_word(input: &str, word: &str, with: &str) -> Option<String> {
+    let bounded = |c: Option<char>| c.is_none_or(|c| c.is_whitespace() || matches!(c, ':' | '-' | '"'));
+    let at = input
+        .match_indices(word)
+        .map(|(at, _)| at)
+        .find(|&at| bounded(input[..at].chars().next_back()) && bounded(input[at + word.len()..].chars().next()))?;
+    let mut with = with.to_owned();
+    if word.chars().next().is_some_and(char::is_uppercase) {
+        let mut letters = with.chars();
+        with = letters
+            .next()
+            .map(|first| first.to_uppercase().chain(letters).collect())
+            .unwrap_or_default();
+    }
+    Some(format!("{}{with}{}", &input[..at], &input[at + word.len()..]))
 }
 
 /// What a search found: a page, newest first, and on the first page of a
@@ -521,6 +620,71 @@ mod tests {
             .into_iter()
             .map(|m| m.subject)
             .collect()
+    }
+
+    #[tokio::test]
+    async fn a_word_typed_wrong_gets_the_nearest_known_one() {
+        let (_temp, store, [inbox, _, _]) = store().await;
+        store
+            .write(move |tx| {
+                messages::upsert(
+                    tx,
+                    inbox,
+                    &[
+                        mail(1, "Project budget", person("Ada", "ada@example.org"), 1_000),
+                        mail(2, "Garden plot", person("Léna Müller", "lena@garden.example"), 2_000),
+                        mail(3, "Projector repair", person("Bob", "bob@example.org"), 3_000),
+                    ],
+                )?;
+                messages::set_details(tx, inbox, 1, false, Some("The quarterly report is attached"))
+            })
+            .await
+            .unwrap();
+        settle(&store).await;
+        let suggest = |input: &'static str, accounts: Option<Vec<String>>| {
+            let store = &store;
+            async move {
+                store
+                    .read(move |conn| suggest(conn, input, accounts.as_deref()))
+                    .await
+                    .unwrap()
+            }
+        };
+        assert_eq!(suggest("projcet", None).await.as_deref(), Some("project"));
+        assert_eq!(
+            suggest("Projcet budegt", None).await.as_deref(),
+            Some("Project budget"),
+            "each word, written as typed"
+        );
+        assert_eq!(
+            suggest("quartelry", None).await.as_deref(),
+            Some("quarterly"),
+            "in the text"
+        );
+        assert_eq!(suggest("from:muler", None).await.as_deref(), Some("from:muller"));
+        assert_eq!(
+            suggest("is:unread repot", None).await.as_deref(),
+            Some("is:unread report")
+        );
+
+        assert_eq!(suggest("project", None).await, None, "known");
+        assert_eq!(
+            suggest("proj", None).await,
+            None,
+            "being typed: the start of known words"
+        );
+        assert_eq!(suggest("xylophone", None).await, None, "nothing near");
+        assert_eq!(suggest("pr0ject", None).await, None, "digits are left as typed");
+        assert_eq!(
+            suggest("garden -projcet", None).await,
+            None,
+            "what is left out is not corrected"
+        );
+        assert_eq!(
+            suggest("projcet", Some(vec!["elsewhere".into()])).await,
+            None,
+            "only what the search could find"
+        );
     }
 
     #[tokio::test]

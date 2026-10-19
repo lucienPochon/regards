@@ -756,6 +756,11 @@ pub struct SearchResult {
     pub next: Option<MessageCursor>,
     /// Changes still to index: while it is above 0, recent mail may be missing.
     pub indexing: u64,
+    /// When nothing was found: the search with its unknown words replaced
+    /// by the nearest known ones, which does find something ("did you
+    /// mean …?"). To offer, not to run unasked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggestion: Option<String>,
 }
 
 /// What [`methods::SEARCH_SERVER`] found.

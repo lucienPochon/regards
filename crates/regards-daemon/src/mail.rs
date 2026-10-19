@@ -214,14 +214,20 @@ fn cut(page: &mut Vec<Message>, limit: u32) -> Option<MessageCursor> {
 pub(crate) async fn search(state: &State, params: SearchParams, scope: Option<Vec<String>>) -> Result<Value, RpcError> {
     let (limit, query, before) = search_request(&params)?;
     let accounts = scope.or(params.account_id.map(|account| vec![account]));
-    let (hits, info, indexing) = state
+    let input = params.query;
+    let (hits, info, indexing, suggestion) = state
         .store
         .read(move |conn| {
             // One extra row tells whether another page exists.
             let hits = regards_store::search::search(conn, &query, accounts.as_deref(), limit + 1, before)?;
             let rows: Vec<Message> = hits.page.iter().chain(&hits.top).cloned().collect();
             let info = page_info_any(conn, &rows)?;
-            Ok((hits, info, regards_store::search::pending(conn)?))
+            // Nothing at all: perhaps a word was typed wrong.
+            let suggestion = match (&query.text, before, hits.page.is_empty()) {
+                (Some(_), None, true) => regards_store::search::suggest(conn, &input, accounts.as_deref())?,
+                _ => None,
+            };
+            Ok((hits, info, regards_store::search::pending(conn)?, suggestion))
         })
         .await
         .map_err(|error| match error {
@@ -235,6 +241,7 @@ pub(crate) async fn search(state: &State, params: SearchParams, scope: Option<Ve
         top: hits.top.into_iter().map(|row| summary(row, &info)).collect(),
         next,
         indexing,
+        suggestion,
     }))
 }
 

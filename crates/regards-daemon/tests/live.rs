@@ -2407,6 +2407,11 @@ async fn live_search_finds_mail_by_its_words_people_and_text() {
     assert_eq!(found_subjects(&found), ["Garden club", "Trip plans"]);
     let found = search_until(&mut desktop, "muller valley", settled).await;
     assert_eq!(found_subjects(&found), ["Trip plans"]);
+    assert_eq!(found.suggestion, None);
+    // Typed wrong: nothing, and the search that finds it.
+    let found = search_until(&mut desktop, "mulelr vallye", settled).await;
+    assert!(found.messages.is_empty());
+    assert_eq!(found.suggestion.as_deref(), Some("muller valley"));
     let found = search_until(&mut desktop, "from:billing is:read", settled).await;
     assert_eq!(found_subjects(&found), ["Invoice October"]);
     assert!(

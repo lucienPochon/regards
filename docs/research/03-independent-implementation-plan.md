@@ -398,7 +398,13 @@ flowchart LR
     - The same words and filters go to each account's server as IMAP `UID SEARCH` (`TEXT`, `FROM`, `TO` or `CC`, `SUBJECT`, `NOT`, flags, `BEFORE` / `SINCE`; `CHARSET UTF-8` when needed). This finds the text of mail not opened here.
     - It searches the folders the search would, but only All Mail when the account has one and no folder is named.
     - Matches stored here are listed like the search's results. Matches not fetched yet are counted (`not_here`), not fetched: storing an old message early would make older mail's background fetch skip what lies between.
-  - **Not yet:** typo tolerance (ADR-0008's side index).
+  - **Did you mean** (`search::suggest`, `SearchResult.suggestion`):
+    - **When:** a search that finds nothing comes back with the same search, its unknown words replaced by the nearest known ones.
+    - **Nearest:** a letter wrong, missing, extra, or two swapped; up to two such edits from five letters on. It starts with the same letter, and the word in the most messages wins.
+    - **Left as typed:** phrases, words with digits, words shorter than three letters, and words left out (`-word`).
+    - **Never a leak:** it is offered only if it finds something in the same accounts and folders, so an agent learns nothing of mail closed to it.
+    - **The word list:** the index's own (`fts5vocab`), so nothing more is stored and nothing is rebuilt.
+    - **Speed:** 9 ms at 100k messages (`tests/scale.rs`).
 
 ### 5.11 Agent gateway: CLI + MCP (P1, 1.0, ADR-0012)
 

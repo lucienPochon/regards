@@ -151,7 +151,8 @@ pub(crate) const TOOLS: &[Tool] = &[
         description: "Search the mail, newest first. Words match subject, people and text; also \
                       \"a phrase\", -word, from: to: subject:, has:attachment, is:unread, is:read, \
                       is:flagged, in:<folder>, before:YYYY-MM-DD, after:YYYY-MM-DD. A message's whole \
-                      text is searched once it was opened; use `search_server` for the rest.",
+                      text is searched once it was opened; use `search_server` for the rest. When \
+                      nothing is found, `suggestion` may give the search with typos fixed.",
         access: Access::Read,
         method: "search.query",
         params: &[

@@ -397,6 +397,17 @@ async fn bench_searching_100k_messages() {
         "every query finds something"
     );
 
+    // Did you mean: a word typed with a letter too many.
+    let typo = format!("{rare}x");
+    let suggested = time("suggest: a word typed wrong", budget, || {
+        let typo = typo.clone();
+        store.read(move |conn| search::suggest(conn, &typo, None))
+    })
+    .await
+    .unwrap();
+    println!("{typo} → {suggested:?}");
+    assert!(suggested.is_some());
+
     // A new index schema: rebuilt from what is stored.
     drop(store);
     {
