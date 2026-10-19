@@ -758,18 +758,36 @@ function handle(cmd: string, args: Args): unknown {
       return owner.account;
     }
     case "people_suggest": {
+      // From the sample mail: those the account wrote to first, then those who wrote to it.
       const typed = String(args.query ?? "").trim().toLowerCase();
-      const known = [
-        { name: "Lena Okafor", address: "lena.okafor@example.net" },
-        { name: "Bob Marsh", address: "bob@example.net" },
-        { name: "Cy Ito", address: "cy@example.org" },
-      ];
-      const people = known.filter(
-        (p) =>
-          typed === "" ||
-          p.address.startsWith(typed) ||
-          p.name.toLowerCase().split(" ").some((word) => word.startsWith(typed)),
-      );
+      const own = new Set(accounts.map((a) => a.account.email.toLowerCase()));
+      const ranked = new Map<string, { person: Person; wrote: number; got: number }>();
+      for (const message of messages) {
+        const owner = accountOfMailbox(message.mailboxId);
+        if (args.accountId && owner?.account.id !== args.accountId) continue;
+        const sent = owner?.mailboxes.find((m) => m.id === message.mailboxId)?.role === "sent";
+        for (const person of sent ? [...message.to, ...message.cc] : [message.from]) {
+          const address = person.address?.toLowerCase();
+          if (!address || own.has(address) || /no-?reply|notifications?@|bounce/.test(address)) continue;
+          const entry = ranked.get(address) ?? { person: { name: person.name, address: person.address }, wrote: 0, got: 0 };
+          if (sent) entry.wrote++;
+          else entry.got++;
+          ranked.set(address, entry);
+        }
+      }
+      const people = [...ranked.values()]
+        .filter(
+          ({ person }) =>
+            typed === "" ||
+            (person.address ?? "").toLowerCase().startsWith(typed) ||
+            (person.name ?? "")
+              .toLowerCase()
+              .split(/\s+/)
+              .some((word) => word.startsWith(typed)),
+        )
+        .sort((a, b) => b.wrote - a.wrote || b.got - a.got)
+        .slice(0, Math.min(Number(args.limit ?? 8), 50))
+        .map(({ person }) => person);
       return { people };
     }
     case "reading_settings":
