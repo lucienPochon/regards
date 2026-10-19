@@ -20,6 +20,7 @@ const READING: &[&str] = &[
     methods::MESSAGE_LIST,
     methods::SEARCH,
     methods::SEARCH_SERVER,
+    methods::PEOPLE_SUGGEST,
     methods::MESSAGE_GET,
     methods::MESSAGE_HTML,
     methods::THREAD_GET,

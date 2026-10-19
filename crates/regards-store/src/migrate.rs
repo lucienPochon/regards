@@ -40,6 +40,7 @@ const MIGRATIONS: &[M<'static>] = &[
     M::up(include_str!("../migrations/0029_sender_images.sql")),
     M::up(include_str!("../migrations/0030_arrivals.sql")),
     M::up(include_str!("../migrations/0031_auto_copy.sql")),
+    M::up(include_str!("../migrations/0032_people.sql")),
 ];
 
 /// Backups kept before older ones are deleted.
@@ -136,6 +137,47 @@ mod tests {
             std::fs::read_dir(&backups).unwrap().count(),
             1,
             "a backup of the v1 database"
+        );
+    }
+
+    #[test]
+    fn people_already_written_with_are_counted_from_stored_mail() {
+        let temp = tempfile::tempdir().unwrap();
+        let backups = temp.path().join("backups");
+        let mut conn = Connection::open(temp.path().join("mail.db")).unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        run(&Migrations::from_slice(&MIGRATIONS[..31]), &mut conn, &backups).unwrap();
+        conn.execute_batch(
+            "INSERT INTO accounts (id, display_name, email, auth_kind, username, secret_key, imap_host, imap_port, \
+             imap_security, smtp_host, smtp_port, smtp_security, created_at, position) \
+             VALUES ('a', 'Ada', 'ada@example.test', 'password', 'ada', 'a/mail-password', 'h', 993, 'tls', 'h', 587, \
+             'starttls', 0, 0); \
+             INSERT INTO identities (account_id, name, email, is_default, created_at) VALUES ('a', 'Ada', 'Ada@Example.test', 1, 0); \
+             INSERT INTO mailboxes (id, account_id, remote_name, name, selectable) VALUES (1, 'a', x'01', 'INBOX', 1); \
+             INSERT INTO messages (mailbox_id, uid, received_at, from_name, from_address, to_json) \
+             VALUES (1, 1, 10, 'Lena Okafor', 'Lena@Example.net', '[{\"name\":\"Ada\",\"address\":\"ada@example.test\"}]'); \
+             INSERT INTO messages (mailbox_id, uid, received_at, from_name, from_address, to_json, cc_json) \
+             VALUES (1, 2, 20, 'Ada', 'ada@example.test', '[{\"name\":\"Bob\",\"address\":\"bob@example.net\"}]', \
+             '[{\"name\":\"Lena\",\"address\":\"lena@example.net\"}]');",
+        )
+        .unwrap();
+
+        to_latest(&mut conn, &backups).unwrap();
+        let mut rows = conn
+            .prepare("SELECT address, name, sent, received, last_at FROM people ORDER BY address")
+            .unwrap();
+        let people: Vec<(String, Option<String>, i64, i64, i64)> = rows
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(
+            people,
+            [
+                ("bob@example.net".into(), Some("Bob".into()), 1, 0, 20),
+                ("lena@example.net".into(), Some("Lena Okafor".into()), 1, 1, 20),
+            ],
+            "the account's own address is nobody to suggest"
         );
     }
 

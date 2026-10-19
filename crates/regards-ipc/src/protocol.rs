@@ -169,6 +169,9 @@ pub mod methods {
     pub const NOTICE_LIST: &str = "notice.list";
     /// The notices up to an id have been shown (or seen in the app).
     pub const NOTICE_SHOWN: &str = "notice.shown";
+    /// Whom to write to, as one types a recipient: the people an account
+    /// writes with, best first. Agents: of accounts open to them (Read).
+    pub const PEOPLE_SUGGEST: &str = "people.suggest";
     /// How messages are shown: [`ReadingSettings`]. `ui` only.
     pub const READING_SETTINGS: &str = "reading.settings";
     /// Change [`ReadingSettings`]. `ui` only.
@@ -1593,6 +1596,27 @@ pub struct NoticeView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NoticeListResult {
     pub notices: Vec<NoticeView>,
+}
+
+/// Parameters of [`methods::PEOPLE_SUGGEST`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PeopleSuggestParams {
+    /// What was typed: the start of an address or of a word of a name.
+    /// Empty: those written with most.
+    pub query: String,
+    /// Only this account's people; every account's when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    /// 1 to 50; 8 when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+/// The result of [`methods::PEOPLE_SUGGEST`]: best first (written to most,
+/// lately; no-reply and blocked addresses left out).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PeopleSuggestResult {
+    pub people: Vec<Person>,
 }
 
 /// How messages are shown, kept by the daemon.

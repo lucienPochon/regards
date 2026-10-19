@@ -2,7 +2,7 @@
 
 use crate::{
     State, access, accounts, actions, audit, compose, discover, draft_sync, holds, identities, mail, notices, oauth,
-    prefetch, smart, templates,
+    people, prefetch, smart, templates,
 };
 use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
@@ -11,9 +11,9 @@ use regards_ipc::protocol::{
     AccountRef, AsideParams, ChangesNotification, ClientKind, DraftCreateParams, DraftListParams, DraftRef,
     DraftReplyParams, DraftSendParams, DraftSetFromParams, DraftUpdateParams, HealthResult, HelloParams, HelloResult,
     HoldRef, JSONRPC, MessageHtmlParams, MessageIds, MessageListParams, MessageRef, MoveParams, Notification,
-    PROTOCOL_VERSIONS, PinParams, Principal, RemindParams, Request, Response, RpcError, SearchParams,
-    SenderBlockParams, SenderSetParams, SetFlagsParams, SnoozeParams, ViewParams, codes, methods, negotiate,
-    notifications,
+    PROTOCOL_VERSIONS, PeopleSuggestParams, PinParams, Principal, RemindParams, Request, Response, RpcError,
+    SearchParams, SenderBlockParams, SenderSetParams, SetFlagsParams, SnoozeParams, ViewParams, codes, methods,
+    negotiate, notifications,
 };
 use regards_ipc::transport::Stream;
 use regards_store::holds::Reason;
@@ -444,6 +444,11 @@ impl Session {
             methods::NOTICE_SHOWN => {
                 self.require_ui()?;
                 notices::shown(&self.state, params(request)?).await
+            }
+            methods::PEOPLE_SUGGEST => {
+                let params: PeopleSuggestParams = params(request)?;
+                let scope = self.search_scope(params.account_id.as_deref()).await?;
+                people::suggest(&self.state, params, scope).await
             }
             methods::READING_SETTINGS => {
                 self.require_ui()?;

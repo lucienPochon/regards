@@ -176,6 +176,13 @@ fn human(tool: &Tool, result: &Value) -> String {
         )
     };
     match tool.name {
+        "people" => list(&result["people"], |person| {
+            let address = text(&person["address"]);
+            match person["name"].as_str().filter(|name| !name.is_empty()) {
+                Some(name) => format!("{name} <{address}>"),
+                None => address,
+            }
+        }),
         "accounts" => list(&result["accounts"], |account| {
             format!(
                 "{}  {}  (agents: {})",

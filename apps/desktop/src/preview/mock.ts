@@ -757,6 +757,21 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return owner.account;
     }
+    case "people_suggest": {
+      const typed = String(args.query ?? "").trim().toLowerCase();
+      const known = [
+        { name: "Lena Okafor", address: "lena.okafor@example.net" },
+        { name: "Bob Marsh", address: "bob@example.net" },
+        { name: "Cy Ito", address: "cy@example.org" },
+      ];
+      const people = known.filter(
+        (p) =>
+          typed === "" ||
+          p.address.startsWith(typed) ||
+          p.name.toLowerCase().split(" ").some((word) => word.startsWith(typed)),
+      );
+      return { people };
+    }
     case "reading_settings":
       return reading;
     case "set_reading_settings":
