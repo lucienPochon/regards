@@ -49,7 +49,7 @@ pub(crate) async fn record(state: &State, answered: Answered<'_>) {
         account_id,
         access,
         decision: match answered.error {
-            Some(error) if error.code == codes::FORBIDDEN => Decision::Denied,
+            Some(error) if error.code == codes::FORBIDDEN || error.code == codes::RATE_LIMITED => Decision::Denied,
             Some(error) if error.code == codes::HELD => Decision::Held,
             _ => Decision::Allowed,
         },

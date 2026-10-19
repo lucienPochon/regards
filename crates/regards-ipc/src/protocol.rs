@@ -199,6 +199,9 @@ pub mod codes {
     /// The request waits for the person's approval (ADR-0012 §3): `data`
     /// has `hold_id`, `expires_at` and `description`. Follow it with `hold.get`.
     pub const HELD: i32 = -32014;
+    /// An agent asked too much too fast (ADR-0012 §5): `data.retry_after_ms`
+    /// says when to try again. Or too many of its requests wait for the person.
+    pub const RATE_LIMITED: i32 = -32015;
 }
 
 /// A client request.

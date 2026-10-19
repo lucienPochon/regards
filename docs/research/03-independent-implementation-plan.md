@@ -488,6 +488,12 @@ flowchart LR
     - `regards skill [--install <dir>]` prints or writes a `SKILL.md`: the rules (message text is data, nothing is sent by itself) and every command, made from the same list.
     - For people: `docs/agents.md`.
 - **Prompt-injection posture:** content is passed as data, drafts never auto-send, and agents cannot change their own access.
+  - **As built (2026-10-19):**
+    - **Pace, per agent connection:** a burst of 120 requests, then 10 a second; for changes, a burst of 30, then 1 a second. Past it: `RATE_LIMITED` (-32015) with `retry_after_ms`, recorded as denied. The app is never limited.
+    - **At most 20 requests wait for the person at once;** more are refused, so an agent cannot bury them in approvals.
+    - **The red-team test** (`live_mail_that_gives_orders_moves_nothing`): five messages that give orders (plain, a fake MCP tool call, hidden HTML, approve links, a fake closing tag) are listed, read, rendered, threaded and searched by an agent with Send access.
+      - Afterwards there is no draft, no hold and nothing to send, and every message is still unread and in place.
+      - Its activity is only the reading it asked for: the daemon never acts on what mail says.
 
 ### 5.12 Notifications, tray, badges (P1, 1.0)
 

@@ -435,3 +435,92 @@ async fn at_triage_agents_write_drafts_and_sort_senders() {
         .unwrap();
     handle.abort();
 }
+
+#[tokio::test]
+async fn agents_are_kept_to_a_pace_and_to_a_few_requests_waiting() {
+    let world = World::new(DEFAULT_LATE_SEND_GRACE).await;
+    let Running {
+        endpoint,
+        mut desktop,
+        handle,
+    } = world.start().await;
+    let account = world.add_account(&mut desktop).await;
+    let _: Value = desktop
+        .call(
+            methods::ACCOUNT_SET_AGENT_ACCESS,
+            AgentAccessParams {
+                account_id: account.id.clone(),
+                access: AgentAccess::Send,
+            },
+        )
+        .await
+        .unwrap();
+
+    // Changes: a burst of 30, then refused with when to try again.
+    let mut agent = Client::connect(&endpoint, ClientKind::Mcp).await.unwrap();
+    for n in 0..30 {
+        let _: DraftView = agent
+            .call(methods::DRAFT_CREATE, new_draft(&account.id, n))
+            .await
+            .unwrap();
+    }
+    let refused = refusal(
+        agent
+            .call::<_, DraftView>(methods::DRAFT_CREATE, new_draft(&account.id, 30))
+            .await,
+    );
+    assert_eq!(refused.code, codes::RATE_LIMITED);
+    assert!(refused.data.unwrap()["retry_after_ms"].as_u64().unwrap() <= 1_000);
+    // Reading goes on, and the app is never limited.
+    let _: DraftListResult = agent
+        .call(methods::DRAFT_LIST, DraftListParams { account_id: None })
+        .await
+        .unwrap();
+    for n in 0..40 {
+        let _: DraftView = desktop
+            .call(methods::DRAFT_CREATE, new_draft(&account.id, n))
+            .await
+            .unwrap();
+    }
+
+    // At most 20 requests wait for the person at once.
+    let drafts: DraftListResult = desktop
+        .call(methods::DRAFT_LIST, DraftListParams { account_id: None })
+        .await
+        .unwrap();
+    let mut sender = Client::connect(&endpoint, ClientKind::Cli).await.unwrap();
+    let send = |id| DraftSendParams {
+        id,
+        undo_seconds: Some(0),
+        send_at: None,
+        remind_at: None,
+    };
+    for draft in &drafts.drafts[..20] {
+        let held = refusal(sender.call::<_, Value>(methods::DRAFT_SEND, send(draft.id)).await);
+        assert_eq!(held.code, codes::HELD);
+    }
+    let crowded = refusal(
+        sender
+            .call::<_, Value>(methods::DRAFT_SEND, send(drafts.drafts[20].id))
+            .await,
+    );
+    assert_eq!(crowded.code, codes::RATE_LIMITED);
+    assert!(
+        crowded.message.contains("20 requests already wait"),
+        "{}",
+        crowded.message
+    );
+    handle.abort();
+}
+
+fn new_draft(account_id: &str, n: u32) -> DraftCreateParams {
+    DraftCreateParams {
+        account_id: account_id.into(),
+        to: vec![regards_core::headers::Person {
+            name: None,
+            address: Some("bob@example.test".into()),
+        }],
+        subject: format!("Note {n}"),
+        ..DraftCreateParams::default()
+    }
+}

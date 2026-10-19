@@ -126,6 +126,15 @@ pub fn list(conn: &Connection, pending: bool, now: i64, limit: u32) -> Result<Ve
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+/// How many holds wait for the person at `now`.
+pub fn waiting(conn: &Connection, now: i64) -> Result<u32, StoreError> {
+    Ok(conn.query_row(
+        "SELECT count(*) FROM holds WHERE status = 'pending' AND expires_at >= ?1",
+        [now],
+        |row| row.get(0),
+    )?)
+}
+
 /// Decide a hold still waiting at `now`: approved or rejected. `None` if
 /// it is not waiting any more (decided, expired, or no such hold).
 pub fn decide(tx: &Transaction<'_>, id: i64, approve: bool, now: i64) -> Result<Option<Hold>, StoreError> {

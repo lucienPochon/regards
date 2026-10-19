@@ -15,6 +15,7 @@ mod draft_sync;
 mod feed;
 mod holds;
 mod identities;
+mod limits;
 mod mail;
 mod notices;
 mod push;

@@ -23,6 +23,8 @@ use std::sync::Arc;
 
 /// How long a hold waits for the person.
 const HOLD_FOR_MS: i64 = 24 * 60 * 60 * 1000;
+/// The most holds waiting at once: more would bury the person in requests.
+const MAX_WAITING: u32 = 20;
 const DEFAULT_PAGE: u32 = 50;
 const MAX_PAGE: u32 = 200;
 
@@ -49,6 +51,16 @@ pub(crate) struct About {
 /// Hold an agent's request for the person; the answer the agent gets.
 pub(crate) async fn hold(state: &State, asker: Asker<'_>, about: About) -> RpcError {
     let now = compose::now_ms();
+    match state.store.read(move |conn| holds::waiting(conn, now)).await {
+        Ok(waiting) if waiting >= MAX_WAITING => {
+            return RpcError::new(
+                codes::RATE_LIMITED,
+                format!("{waiting} requests already wait for the person; ask again once they have decided some"),
+            );
+        }
+        Ok(_) => {}
+        Err(error) => return crate::session::internal(error),
+    }
     let new = NewHold {
         created_at: now,
         expires_at: now + HOLD_FOR_MS,
