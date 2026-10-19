@@ -633,6 +633,10 @@ function handle(cmd: string, args: Args): unknown {
       throw new Error("The preview cannot sign in to a real server.");
     case "account_discover": {
       const domain = String(args.email ?? "").split("@")[1]?.toLowerCase() ?? "";
+      if (domain === "outlook.com" || domain === "hotmail.com") {
+        // Microsoft's consumer mail takes no password: only signing in with Microsoft.
+        return { source: "known", imap: null, smtp: null, oauth: "microsoft", oauth_only: true };
+      }
       if (domain === "gmail.com") {
         return {
           source: "known",

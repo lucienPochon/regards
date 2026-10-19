@@ -4413,6 +4413,57 @@ button.sender-row:hover:not(:disabled) {
   margin-top: 20px;
 }
 
+/* Adding an account: what the lookup found, the password tip, and the servers behind a disclosure. */
+.lookup-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.lookup-status .icon {
+  flex: none;
+  color: var(--accent);
+}
+
+.password-help {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.oauth-only {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: left;
+}
+
+.oauth-only.error {
+  color: var(--danger);
+}
+
+.server-settings {
+  display: grid;
+  gap: 12px;
+}
+
+.server-settings[open] {
+  padding-bottom: 2px;
+}
+
+.server-settings > summary {
+  justify-self: start;
+}
+
+.server-settings[open] > summary {
+  margin-bottom: 12px;
+}
+
 /* In the main window: an account that must sign in again. */
 .aside-bubble.signed-out {
   border-color: var(--danger);
