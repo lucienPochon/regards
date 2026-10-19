@@ -20,6 +20,13 @@ pub struct Pki {
     server: Arc<ServerConfig>,
 }
 
+impl Pki {
+    /// TLS as this certificate's server, for other fakes.
+    pub fn acceptor(&self) -> TlsAcceptor {
+        TlsAcceptor::from(Arc::clone(&self.server))
+    }
+}
+
 /// A fresh CA and a certificate for 127.0.0.1.
 pub fn pki() -> Pki {
     let ca_key = KeyPair::generate().unwrap();

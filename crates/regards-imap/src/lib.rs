@@ -72,7 +72,17 @@ pub async fn verify_login(
     password: &Secret,
     tls: &TlsOptions,
 ) -> Result<LoginCheck, ImapError> {
-    let session = Session::login(server, username, password, tls).await?;
+    verify_sign_in(server, username, Auth::Password(password), tls).await
+}
+
+/// [`verify_login`], with a password or an OAuth token.
+pub async fn verify_sign_in(
+    server: &ImapServer,
+    username: &str,
+    auth: Auth<'_>,
+    tls: &TlsOptions,
+) -> Result<LoginCheck, ImapError> {
+    let session = Session::sign_in(server, username, auth, tls).await?;
     let capabilities = session.capabilities.clone();
     session.logout().await;
     Ok(LoginCheck { capabilities })

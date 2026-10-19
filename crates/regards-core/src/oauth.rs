@@ -93,6 +93,22 @@ pub struct Client {
     pub provider: Provider,
     pub id: String,
     pub secret: Option<String>,
+    /// Where the browser signs in and where tokens come from: the
+    /// provider's own, unless a test points elsewhere.
+    pub authorize_endpoint: String,
+    pub token_endpoint: String,
+}
+
+impl Client {
+    pub fn new(provider: Provider, id: impl Into<String>, secret: Option<String>) -> Self {
+        Self {
+            provider,
+            id: id.into(),
+            secret,
+            authorize_endpoint: provider.authorize_endpoint().to_owned(),
+            token_endpoint: provider.token_endpoint().to_owned(),
+        }
+    }
 }
 
 /// A PKCE pair: the verifier stays here, its challenge goes to the browser.
@@ -176,7 +192,7 @@ pub fn authorize_url(
         .iter()
         .map(|(name, value)| format!("{name}={}", query_value(value)))
         .collect();
-    format!("{}?{}", client.provider.authorize_endpoint(), query.join("&"))
+    format!("{}?{}", client.authorize_endpoint, query.join("&"))
 }
 
 /// The token request for the code the browser brought back.
@@ -220,6 +236,8 @@ pub struct Tokens {
     pub expires_in: u64,
     /// The account's address, from the ID token (sign-in only).
     pub email: Option<String>,
+    /// The person's name, from the ID token, when the provider gives it.
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -265,25 +283,39 @@ pub fn read_tokens(status: u16, body: &[u8]) -> Result<Tokens, OauthError> {
         return Err(OauthError::Refused(format!("HTTP {status}")));
     }
     let access = answer.access_token.ok_or(OauthError::Unreadable)?;
+    let claims = answer.id_token.as_deref().and_then(claims_of);
     Ok(Tokens {
         access: Secret::new(access),
         refresh: answer.refresh_token.map(Secret::new),
         expires_in: answer.expires_in.unwrap_or(3600),
-        email: answer.id_token.as_deref().and_then(email_of),
+        email: claims.as_ref().and_then(email_in),
+        name: claims
+            .as_ref()
+            .and_then(|claims| claims.get("name")?.as_str())
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned),
     })
 }
 
-/// The address in an ID token's claims. It came straight from the token
-/// endpoint over TLS (OpenID Connect §3.1.3.7), so its signature is not
-/// checked here.
-pub fn email_of(id_token: &str) -> Option<String> {
+/// An ID token's claims. It came straight from the token endpoint over TLS
+/// (OpenID Connect §3.1.3.7), so its signature is not checked here.
+fn claims_of(id_token: &str) -> Option<serde_json::Value> {
     let payload = id_token.split('.').nth(1)?;
-    let claims: serde_json::Value = serde_json::from_slice(&base64_url_decode(payload)?).ok()?;
+    serde_json::from_slice(&base64_url_decode(payload)?).ok()
+}
+
+fn email_in(claims: &serde_json::Value) -> Option<String> {
     ["email", "preferred_username", "upn"]
         .iter()
         .find_map(|claim| claims.get(claim)?.as_str())
         .filter(|address| address.contains('@'))
         .map(str::to_owned)
+}
+
+/// The address in an ID token's claims.
+pub fn email_of(id_token: &str) -> Option<String> {
+    email_in(&claims_of(id_token)?)
 }
 
 /// The XOAUTH2 SASL string, base64: for IMAP AUTHENTICATE and SMTP AUTH.
@@ -298,11 +330,7 @@ mod tests {
     use super::*;
 
     fn microsoft() -> Client {
-        Client {
-            provider: Provider::Microsoft,
-            id: "00000000-test".into(),
-            secret: None,
-        }
+        Client::new(Provider::Microsoft, "00000000-test", None)
     }
 
     #[test]
@@ -336,11 +364,7 @@ mod tests {
             pkce.challenge
         )));
         assert!(url.contains("&state=st&") && url.ends_with("&login_hint=ada%40outlook.com"));
-        let google = Client {
-            provider: Provider::Google,
-            id: "g".into(),
-            secret: Some("public".into()),
-        };
+        let google = Client::new(Provider::Google, "g", Some("public".into()));
         let url = authorize_url(&google, &Provider::Google.redirect_uri(9), "s", &pkce, None);
         assert!(url.contains("access_type=offline") && url.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A9%2F"));
         let form = code_form(&google, "c0de", &pkce, "http://127.0.0.1:9/");
@@ -364,8 +388,8 @@ mod tests {
         assert_eq!(tokens.access.expose(), "at");
         assert_eq!(tokens.refresh.as_ref().map(Secret::expose), Some("rt"));
         assert_eq!(
-            (tokens.expires_in, tokens.email.as_deref()),
-            (3599, Some("ada@outlook.com"))
+            (tokens.expires_in, tokens.email.as_deref(), tokens.name.as_deref()),
+            (3599, Some("ada@outlook.com"), Some("Ada"))
         );
 
         let expired = br#"{"error":"invalid_grant","error_description":"AADSTS70008: expired"}"#;

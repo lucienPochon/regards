@@ -1,7 +1,8 @@
 //! Where the browser comes back after an OAuth sign-in (RFC 8252 §7.3): a
 //! listener on this computer's loopback address, on a port the system
 //! picks, that takes one redirect and answers with a page saying to go back
-//! to Regards.
+//! to Regards. Only the redirect carrying the sign-in's `state` counts:
+//! anything else on this computer can reach the port too.
 
 use crate::NetError;
 use std::time::Duration;
@@ -10,7 +11,7 @@ use tokio::net::TcpListener;
 
 const PAGE: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Regards</title></head>\
     <body style=\"font-family: system-ui, sans-serif; margin: 15vh auto; max-width: 28em; text-align: center\">\
-    <h1 style=\"font-weight: 600\">You are signed in</h1><p>You can close this window and go back to Regards.</p>\
+    <h1 style=\"font-weight: 600\">Back to Regards</h1><p>You can close this window and go back to Regards.</p>\
     </body></html>";
 
 /// A loopback listener for one sign-in.
@@ -36,9 +37,10 @@ impl Redirect {
         self.port
     }
 
-    /// The query parameters of the first request for `/` (others, such as
-    /// a browser asking for its icon, are turned away), within `wait`.
-    pub async fn wait(self, wait: Duration) -> Result<Vec<(String, String)>, NetError> {
+    /// The query parameters of the first request for `/` with this
+    /// `state`, within `wait`. Others (a browser asking for its icon, a
+    /// stale or forged redirect) are turned away.
+    pub async fn wait(self, state: &str, wait: Duration) -> Result<Vec<(String, String)>, NetError> {
         tokio::time::timeout(wait, async {
             loop {
                 let (mut stream, _) = self
@@ -70,6 +72,13 @@ impl Redirect {
                         .await;
                     continue;
                 }
+                let query = parse_query(query);
+                if !query.iter().any(|(name, value)| name == "state" && value == state) {
+                    let _ = stream
+                        .write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                        .await;
+                    continue;
+                }
                 let answer = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\n\
                      Cache-Control: no-store\r\nConnection: close\r\n\r\n{PAGE}",
@@ -77,7 +86,7 @@ impl Redirect {
                 );
                 let _ = stream.write_all(answer.as_bytes()).await;
                 let _ = stream.shutdown().await;
-                return Ok(parse_query(query));
+                return Ok(query);
             }
         })
         .await
@@ -168,10 +177,11 @@ mod tests {
                 answer
             };
             let icon = ask("/favicon.ico").await;
+            let forged = ask("/?code=evil&state=guess").await;
             let page = ask("/?code=abc&state=xyz").await;
-            (icon, page)
+            (icon, forged, page)
         });
-        let query = redirect.wait(Duration::from_secs(5)).await.unwrap();
+        let query = redirect.wait("xyz", Duration::from_secs(5)).await.unwrap();
         assert_eq!(
             query,
             [
@@ -179,8 +189,12 @@ mod tests {
                 ("state".to_owned(), "xyz".to_owned())
             ]
         );
-        let (icon, page) = browser.await.unwrap();
+        let (icon, forged, page) = browser.await.unwrap();
         assert!(icon.starts_with("HTTP/1.1 404"));
+        assert!(
+            forged.starts_with("HTTP/1.1 400"),
+            "another state does not end the wait"
+        );
         assert!(page.starts_with("HTTP/1.1 200") && page.contains("go back to Regards"));
     }
 
@@ -188,7 +202,7 @@ mod tests {
     async fn nobody_coming_back_ends_in_time() {
         let redirect = Redirect::listen().await.unwrap();
         assert!(matches!(
-            redirect.wait(Duration::from_millis(50)).await,
+            redirect.wait("s", Duration::from_millis(50)).await,
             Err(NetError::Timeout(_))
         ));
     }

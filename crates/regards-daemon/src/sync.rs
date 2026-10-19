@@ -13,7 +13,7 @@ use crate::State;
 use crate::feed::Feed;
 use regards_core::headers;
 use regards_core::mailbox::{Candidate, assign_roles};
-use regards_imap::{FlagUpdate, Flags, ImapError, ImapServer, MessageSet, Selected, Session, Since};
+use regards_imap::{Auth, FlagUpdate, Flags, ImapError, ImapServer, MessageSet, Selected, Session, Since};
 use regards_ipc::protocol::SyncState;
 use regards_store::StoreError;
 use regards_store::accounts;
@@ -34,6 +34,8 @@ pub(crate) enum SyncError {
     NoPassword,
     #[error("the system credential store is not available: {0}")]
     Vault(String),
+    #[error(transparent)]
+    Token(#[from] crate::oauth::TokenError),
     #[error(transparent)]
     Imap(#[from] ImapError),
     #[error("could not save the result: {0}")]
@@ -155,7 +157,8 @@ pub(crate) fn spawn_one(state: Arc<State>, account_id: String) {
     });
 }
 
-/// Sign in to an account's IMAP server with its stored password.
+/// Sign in to an account's IMAP server with its stored password, or with
+/// an OAuth access token (renewed once if the server turns a kept one down).
 pub(crate) async fn login(state: &State, account_id: &str) -> Result<Session, SyncError> {
     let id = account_id.to_owned();
     let account = state
@@ -163,6 +166,20 @@ pub(crate) async fn login(state: &State, account_id: &str) -> Result<Session, Sy
         .read(move |conn| accounts::get(conn, &id))
         .await?
         .ok_or(SyncError::NoAccount)?;
+    let server = ImapServer {
+        host: account.imap.host.clone(),
+        port: account.imap.port,
+    };
+    if crate::oauth::provider_of(account.auth_kind).is_some() {
+        let (token, kept) = crate::oauth::access_token(state, &account, None).await?;
+        return match Session::sign_in(&server, &account.username, Auth::Bearer(&token), &state.tls).await {
+            Err(ImapError::AuthFailed(_)) if kept => {
+                let (token, _) = crate::oauth::access_token(state, &account, Some(&token)).await?;
+                Ok(Session::sign_in(&server, &account.username, Auth::Bearer(&token), &state.tls).await?)
+            }
+            other => Ok(other?),
+        };
+    }
     let vault = crate::accounts::vault(state)
         .await
         .map_err(|error| SyncError::Vault(error.message))?;
@@ -171,11 +188,6 @@ pub(crate) async fn login(state: &State, account_id: &str) -> Result<Session, Sy
         .await
         .map_err(|error| SyncError::Vault(error.to_string()))?
         .ok_or(SyncError::NoPassword)?;
-
-    let server = ImapServer {
-        host: account.imap.host.clone(),
-        port: account.imap.port,
-    };
     Ok(Session::login(&server, &account.username, &password, &state.tls).await?)
 }
 

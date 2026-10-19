@@ -18,6 +18,7 @@ mod identities;
 mod limits;
 mod mail;
 mod notices;
+mod oauth;
 mod push;
 mod queue;
 mod scheduler;
@@ -28,6 +29,7 @@ mod smart;
 mod sync;
 mod templates;
 
+pub use oauth::OauthApp;
 use regards_core::paths::DataDirs;
 use regards_imap::TlsOptions;
 use regards_ipc::UiToken;
@@ -68,6 +70,8 @@ pub(crate) struct State {
     /// The credential store, opened on first use so a missing Secret Service
     /// on Linux does not stop the daemon from starting.
     pub(crate) vault: OnceCell<Result<Vault, String>>,
+    /// Signing in with Microsoft and Google (ADR-0018).
+    pub(crate) oauth: oauth::Oauth,
     /// Which certificates IMAP and SMTP connections trust.
     pub(crate) tls: TlsOptions,
     /// Sync progress per account.
@@ -122,6 +126,7 @@ pub struct Daemon {
     ui_token: Option<UiToken>,
     vault: Option<Vault>,
     tls: TlsOptions,
+    oauth_apps: Vec<OauthApp>,
     limits: SyncLimits,
     late_send_grace: Duration,
     draft_pace: (Duration, Duration),
@@ -174,6 +179,7 @@ impl Daemon {
             ui_token: None,
             vault: None,
             tls: default_tls(),
+            oauth_apps: OauthApp::configured(),
             limits: SyncLimits::default(),
             late_send_grace: DEFAULT_LATE_SEND_GRACE,
             draft_pace: (Duration::from_secs(10), Duration::from_secs(5)),
@@ -196,6 +202,13 @@ impl Daemon {
     /// Trust these certificates for IMAP and SMTP instead of the defaults (tests).
     pub fn with_tls(mut self, tls: TlsOptions) -> Self {
         self.tls = tls;
+        self
+    }
+
+    /// Sign in with these apps instead of those the environment or this
+    /// build gives (tests).
+    pub fn with_oauth_apps(mut self, apps: Vec<OauthApp>) -> Self {
+        self.oauth_apps = apps;
         self
     }
 
@@ -239,6 +252,7 @@ impl Daemon {
             store,
             vault,
             tls,
+            oauth_apps,
             dirs,
             limits,
             late_send_grace,
@@ -252,6 +266,7 @@ impl Daemon {
             ui_token,
             store,
             vault: OnceCell::new_with(vault.map(Ok)),
+            oauth: oauth::Oauth::new(oauth_apps),
             tls,
             sync: sync::Tracker::new(Arc::clone(&feed)),
             watchers: push::Watchers::default(),

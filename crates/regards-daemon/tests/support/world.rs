@@ -7,7 +7,7 @@
 
 use regards_core::paths::DataDirs;
 use regards_core::secret::Secret;
-use regards_daemon::Daemon;
+use regards_daemon::{Daemon, OauthApp};
 use regards_imap::TlsOptions;
 use regards_ipc::protocol::{
     AccountAddParams, AccountSummary, ClientKind, ConnectionSecurity, ServerSettings, methods,
@@ -28,6 +28,8 @@ pub struct World {
     pub imap_port: u16,
     pub smtp_port: u16,
     pub sent: crate::fake_smtp::Sessions,
+    /// None unless a test sets them, whatever the environment says.
+    pub oauth_apps: Vec<OauthApp>,
 }
 
 pub struct Running {
@@ -46,6 +48,7 @@ impl World {
             &smtp_pki,
             crate::fake_smtp::Script {
                 password: crate::fake_imap::PASSWORD,
+                auth: "PLAIN LOGIN XOAUTH2",
                 ..crate::fake_smtp::Script::new(crate::fake_smtp::Mode::StartTls {
                     offer: true,
                     inject: false,
@@ -67,6 +70,7 @@ impl World {
             imap_port,
             smtp_port,
             sent,
+            oauth_apps: Vec::new(),
         }
     }
 
@@ -77,6 +81,7 @@ impl World {
             .with_ui_token(self.token.clone())
             .with_vault(self.vault.clone())
             .with_tls(self.tls.clone())
+            .with_oauth_apps(self.oauth_apps.clone())
             .with_late_send_grace(self.grace);
         let endpoint = daemon.endpoint().clone();
         let handle = tokio::spawn(daemon.serve(std::future::pending()));

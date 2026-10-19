@@ -33,12 +33,15 @@ pub enum VaultError {
 pub enum SecretKind {
     /// The password or app password used for IMAP and SMTP.
     MailPassword,
+    /// The OAuth refresh token that gets access tokens for IMAP and SMTP.
+    OauthRefresh,
 }
 
 impl SecretKind {
     fn as_str(self) -> &'static str {
         match self {
             Self::MailPassword => "mail-password",
+            Self::OauthRefresh => "oauth-refresh",
         }
     }
 }

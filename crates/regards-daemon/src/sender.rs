@@ -215,6 +215,36 @@ async fn deliver(state: &State, entry: &Entry) -> Result<Submitted, SubmitError>
     let (Some(account), Some(mime)) = found else {
         return Err(not_sent("the account or the message no longer exists", false));
     };
+    let server = smtp_server(&account);
+    let envelope = Envelope {
+        from: entry.envelope_from.clone(),
+        to: entry.envelope_to.clone(),
+    };
+    if crate::oauth::provider_of(account.auth_kind).is_some() {
+        let token_error = |error: crate::oauth::TokenError| not_sent(&error.to_string(), error.passes());
+        let (token, kept) = crate::oauth::access_token(state, &account, None)
+            .await
+            .map_err(token_error)?;
+        let credentials = Credentials {
+            username: &account.username,
+            password: &token,
+            oauth: true,
+        };
+        return match regards_smtp::submit(&server, &credentials, &envelope, &mime, &state.tls).await {
+            // Turned down before anything was sent: renew the token, once.
+            Err(SubmitError::SignIn(_)) if kept => {
+                let (token, _) = crate::oauth::access_token(state, &account, Some(&token))
+                    .await
+                    .map_err(token_error)?;
+                let credentials = Credentials {
+                    password: &token,
+                    ..credentials
+                };
+                regards_smtp::submit(&server, &credentials, &envelope, &mime, &state.tls).await
+            }
+            other => other,
+        };
+    }
     let vault = crate::accounts::vault(state)
         .await
         .map_err(|error| not_sent(&error.message, true))?;
@@ -228,15 +258,10 @@ async fn deliver(state: &State, entry: &Entry) -> Result<Submitted, SubmitError>
                 false,
             )
         })?;
-    let server = smtp_server(&account);
     let credentials = Credentials {
         username: &account.username,
         password: &password,
         oauth: false,
-    };
-    let envelope = Envelope {
-        from: entry.envelope_from.clone(),
-        to: entry.envelope_to.clone(),
     };
     regards_smtp::submit(&server, &credentials, &envelope, &mime, &state.tls).await
 }
