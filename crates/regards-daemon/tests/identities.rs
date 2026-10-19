@@ -12,9 +12,9 @@ mod world;
 use regards_core::headers::{self, Person};
 use regards_daemon::DEFAULT_LATE_SEND_GRACE;
 use regards_ipc::protocol::{
-    AccountRef, AccountSummary, AccountUpdateParams, DraftCreateParams, DraftSendParams, DraftSendResult,
-    DraftSetFromParams, DraftUpdateParams, DraftView, IdentityListResult, IdentityRef, IdentitySaveParams,
-    IdentityView, codes, methods,
+    AccountRef, AccountSummary, AccountUpdateParams, AutoCopy, AutoCopyParams, CopyKind, DraftCreateParams,
+    DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView, IdentityListResult,
+    IdentityRef, IdentitySaveParams, IdentityView, codes, methods,
 };
 use regards_ipc::{Client, ClientError};
 use serde_json::Value;
@@ -278,5 +278,74 @@ async fn renaming_an_account_renames_how_it_sends_unless_that_was_chosen() {
         .await
         .unwrap();
     assert_eq!(code(rename(&mut agent, &account.id, "X").await), codes::FORBIDDEN);
+    handle.abort();
+}
+
+#[tokio::test]
+async fn every_new_draft_gets_the_accounts_automatic_copy() {
+    let world = World::new(DEFAULT_LATE_SEND_GRACE).await;
+    let Running {
+        mut desktop,
+        endpoint,
+        handle,
+    } = world.start().await;
+    let account = world.add_account(&mut desktop).await;
+    let set = |copy: Option<AutoCopy>| AutoCopyParams {
+        account_id: account.id.clone(),
+        auto_copy: copy,
+    };
+    let archive = AutoCopy {
+        kind: CopyKind::Bcc,
+        address: " archive@example.test ".into(),
+    };
+    let _: Value = desktop
+        .call(methods::ACCOUNT_SET_AUTO_COPY, set(Some(archive)))
+        .await
+        .unwrap();
+    let listed: Vec<AccountSummary> = desktop.call(methods::ACCOUNT_LIST, Value::Null).await.unwrap();
+    assert_eq!(
+        listed[0].auto_copy.as_ref().map(|copy| copy.address.as_str()),
+        Some("archive@example.test")
+    );
+
+    let draft = new_draft(&mut desktop, &account.id).await;
+    assert_eq!(draft.bcc.len(), 1);
+    assert_eq!(draft.bcc[0].address.as_deref(), Some("archive@example.test"));
+    assert!(draft.cc.is_empty());
+
+    // An agent's drafts too: the daemon applies it.
+    let _: Value = desktop
+        .call(
+            methods::ACCOUNT_SET_AGENT_ACCESS,
+            regards_ipc::protocol::AgentAccessParams {
+                account_id: account.id.clone(),
+                access: regards_ipc::protocol::AgentAccess::Triage,
+            },
+        )
+        .await
+        .unwrap();
+    let mut agent = Client::connect(&endpoint, regards_ipc::protocol::ClientKind::Mcp)
+        .await
+        .unwrap();
+    assert_eq!(new_draft(&mut agent, &account.id).await.bcc.len(), 1);
+    assert_eq!(
+        code(agent.call::<_, Value>(methods::ACCOUNT_SET_AUTO_COPY, set(None)).await),
+        codes::FORBIDDEN
+    );
+
+    let wrong = AutoCopy {
+        kind: CopyKind::Cc,
+        address: "two@a.test, three@b.test".into(),
+    };
+    assert_eq!(
+        code(
+            desktop
+                .call::<_, Value>(methods::ACCOUNT_SET_AUTO_COPY, set(Some(wrong)))
+                .await
+        ),
+        codes::INVALID_PARAMS
+    );
+    let _: Value = desktop.call(methods::ACCOUNT_SET_AUTO_COPY, set(None)).await.unwrap();
+    assert!(new_draft(&mut desktop, &account.id).await.bcc.is_empty());
     handle.abort();
 }

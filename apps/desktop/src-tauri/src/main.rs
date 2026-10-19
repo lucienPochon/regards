@@ -335,6 +335,23 @@ async fn account_discover(bridge: State<'_, Bridge>, email: String) -> Result<Di
         .map_err(describe)
 }
 
+/// The copy every new draft of an account gets (Cc or Bcc to an address), or none.
+#[tauri::command]
+async fn account_set_auto_copy(
+    bridge: State<'_, Bridge>,
+    account_id: String,
+    auto_copy: Option<regards_ipc::protocol::AutoCopy>,
+) -> Result<Value, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::ACCOUNT_SET_AUTO_COPY,
+            regards_ipc::protocol::AutoCopyParams { account_id, auto_copy },
+        )
+        .await
+        .map_err(describe)
+}
+
 /// Rename an account; its sending name follows if it was the same.
 #[tauri::command]
 async fn account_update(bridge: State<'_, Bridge>, id: String, display_name: String) -> Result<AccountSummary, String> {
@@ -1205,6 +1222,7 @@ fn main() {
             system::open_system_settings,
             system::open_url,
             account_update,
+            account_set_auto_copy,
             notify::notification_settings,
             notify::set_notification_settings,
             updates::update_status,

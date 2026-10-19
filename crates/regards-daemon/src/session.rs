@@ -254,6 +254,10 @@ impl Session {
                 self.require_ui()?;
                 accounts::update(&self.state, params(request)?).await
             }
+            methods::ACCOUNT_SET_AUTO_COPY => {
+                self.require_ui()?;
+                accounts::set_auto_copy(&self.state, params(request)?).await
+            }
             methods::ACCOUNT_DISCOVER => {
                 self.require_ui()?;
                 discover::discover(&self.state, params(request)?).await

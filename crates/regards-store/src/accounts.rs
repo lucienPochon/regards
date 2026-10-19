@@ -3,6 +3,7 @@
 
 use crate::StoreError;
 use regards_core::agents::Access;
+use regards_core::compose::{AutoCopy, CopyKind};
 use rusqlite::{Connection, ErrorCode, OptionalExtension, Row, Transaction, params};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -194,6 +195,41 @@ pub fn set_agent_send_window(tx: &Transaction<'_>, id: &str, window: Option<u32>
     let changed = tx.execute(
         "UPDATE accounts SET agent_send_window = ?2 WHERE id = ?1",
         params![id, window],
+    )?;
+    Ok(changed > 0)
+}
+
+/// The copy every new draft of the account gets, if any.
+pub fn auto_copy(conn: &Connection, id: &str) -> Result<Option<AutoCopy>, StoreError> {
+    let found: Option<(Option<String>, Option<String>)> = conn
+        .prepare_cached("SELECT auto_copy_kind, auto_copy_address FROM accounts WHERE id = ?1")?
+        .query_row([id], |row| Ok((row.get(0)?, row.get(1)?)))
+        .optional()?;
+    Ok(match found {
+        Some((Some(kind), Some(address))) => Some(AutoCopy {
+            kind: if kind == "bcc" { CopyKind::Bcc } else { CopyKind::Cc },
+            address,
+        }),
+        _ => None,
+    })
+}
+
+/// Set (or, with `None`, clear) the copy every new draft gets; `false` if
+/// there is no such account.
+pub fn set_auto_copy(tx: &Transaction<'_>, id: &str, copy: Option<&AutoCopy>) -> Result<bool, StoreError> {
+    let (kind, address) = match copy {
+        Some(copy) => (
+            Some(match copy.kind {
+                CopyKind::Cc => "cc",
+                CopyKind::Bcc => "bcc",
+            }),
+            Some(copy.address.as_str()),
+        ),
+        None => (None, None),
+    };
+    let changed = tx.execute(
+        "UPDATE accounts SET auto_copy_kind = ?2, auto_copy_address = ?3 WHERE id = ?1",
+        params![id, kind, address],
     )?;
     Ok(changed > 0)
 }

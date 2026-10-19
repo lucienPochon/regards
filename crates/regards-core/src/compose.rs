@@ -11,9 +11,48 @@ use crate::headers::Person;
 use mail_builder::MessageBuilder;
 use mail_builder::headers::address::Address;
 use mail_builder::mime::{BodyPart, MimePart};
+use serde::{Deserialize, Serialize};
 
 /// At most this many References are carried on (the parent's oldest are dropped).
 const MAX_REFERENCES: usize = 20;
+
+/// Where an automatic copy goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CopyKind {
+    Cc,
+    Bcc,
+}
+
+/// A copy every new draft of an account gets: Cc or Bcc to an address.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutoCopy {
+    pub kind: CopyKind,
+    pub address: String,
+}
+
+impl AutoCopy {
+    /// Add it to a new draft's recipients, unless the address is one of them.
+    pub fn apply(&self, to: &[Person], cc: &mut Vec<Person>, bcc: &mut Vec<Person>) {
+        let there = to.iter().chain(cc.iter()).chain(bcc.iter()).any(|person| {
+            person
+                .address
+                .as_deref()
+                .is_some_and(|address| address.eq_ignore_ascii_case(&self.address))
+        });
+        if there {
+            return;
+        }
+        let copy = Person {
+            name: None,
+            address: Some(self.address.clone()),
+        };
+        match self.kind {
+            CopyKind::Cc => cc.push(copy),
+            CopyKind::Bcc => bcc.push(copy),
+        }
+    }
+}
 
 /// An outgoing message.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -469,6 +508,29 @@ fn utc(ms: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_automatic_copy_is_added_once() {
+        let person = |address: &str| Person {
+            name: None,
+            address: Some(address.into()),
+        };
+        let copy = AutoCopy {
+            kind: CopyKind::Bcc,
+            address: "archive@example.test".into(),
+        };
+        let (mut cc, mut bcc) = (Vec::new(), Vec::new());
+        copy.apply(&[person("bob@example.test")], &mut cc, &mut bcc);
+        assert!(cc.is_empty());
+        assert_eq!(bcc, [person("archive@example.test")]);
+        // Already addressed, in any field or case: not again.
+        copy.apply(&[], &mut cc, &mut bcc);
+        assert_eq!(bcc.len(), 1);
+        let mut cc = vec![person("Archive@Example.test")];
+        let mut bcc = Vec::new();
+        copy.apply(&[], &mut cc, &mut bcc);
+        assert!(bcc.is_empty());
+    }
 
     fn person(name: Option<&str>, address: &str) -> Person {
         Person {
