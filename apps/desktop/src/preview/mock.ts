@@ -1008,6 +1008,12 @@ mockIPC(
   { shouldMockEvents: true },
 );
 
+// A link opened while Regards runs, as the desktop sends it: regardsOpenLink("message:5") in the console.
+(window as unknown as { regardsOpenLink: (link: string) => void }).regardsOpenLink = (link) => {
+  const [kind, id] = link.split(":");
+  void emit("link_open", { kind, id: Number(id) });
+};
+
 // Message bodies: the HTML straight into the sandboxed frame.
 (window as unknown as { __TAURI_INTERNALS__: { convertFileSrc: (path: string) => string } }).__TAURI_INTERNALS__.convertFileSrc =
   (path: string) => {
