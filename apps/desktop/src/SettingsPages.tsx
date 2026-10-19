@@ -26,7 +26,7 @@ import { Icon, type IconName } from "./icons";
 import type { Layout } from "./layout";
 import { type NewMail, type NotificationSettings, notificationSettings, setNotificationSettings } from "./notifications";
 import type { ServiceCheck } from "./mail";
-import { ACCOUNT_COLOURS, type Prefs, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
+import { ACCOUNT_COLOURS, COLOUR_NAMES, type Prefs, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
 import { LinkRow, Option, Select, SubPageHead, Toggle } from "./SettingsControls";
 import { senderImages, setSenderImages } from "./smart";
 import { exportDiagnostics, setDetailedLogs, supportSettings } from "./support";
@@ -468,7 +468,8 @@ function AccountColours({ accounts, onBack }: { accounts: AccountSummary[]; onBa
                     type="button"
                     role="radio"
                     aria-checked={colour === current}
-                    aria-label={colour}
+                    aria-label={COLOUR_NAMES[colour] ?? colour}
+                    title={COLOUR_NAMES[colour]}
                     className={colour === current ? "swatch chosen" : "swatch"}
                     style={{ background: colour }}
                     onClick={() => setPrefs({ accountColours: { ...prefs.accountColours, [account.id]: colour } })}

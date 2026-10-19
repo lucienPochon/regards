@@ -3,6 +3,7 @@ import { applyUndo } from "./accounts";
 import { type AgentActivity as Entry, type AgentDecision, listAgentActivity } from "./agents";
 import { fullDate } from "./format";
 import { Icon } from "./icons";
+import { radioKeys, radioTab } from "./radios";
 
 /** How often the list looks for new entries while it is shown (recording wakes no client). */
 const POLL_MS = 5000;
@@ -215,16 +216,17 @@ export function AgentActivity({
     <section className="agent-activity" aria-label="Agent activity">
       <div className="activity-head">
         <h4>Activity</h4>
-        <span className="choice" role="radiogroup" aria-label="Which requests">
+        <span className="choice" role="radiogroup" aria-label="Which requests" onKeyDown={(event) => radioKeys(event)}>
           {[
             { id: false, label: "Everything" },
             { id: true, label: "Refused" },
-          ].map((option) => (
+          ].map((option, index) => (
             <button
               key={option.label}
               type="button"
               role="radio"
               aria-checked={refusedOnly === option.id}
+              tabIndex={radioTab(refusedOnly === option.id, index, true)}
               className={refusedOnly === option.id ? "chosen" : undefined}
               onClick={() => setRefusedOnly(option.id)}
             >

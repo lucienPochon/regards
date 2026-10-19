@@ -319,7 +319,7 @@ function ThreadMessage({
   if (!expanded) {
     return (
       <li className="mail-card collapsed" ref={ref}>
-        <button type="button" className="mail-line" onClick={onToggle ?? undefined}>
+        <button type="button" className="mail-line" aria-expanded={false} onClick={onToggle ?? undefined}>
           <Avatar person={message.from} size="sm" />
           <span className={message.seen ? "who" : "who unread"}>{personName(message.from)}</span>
           {otherFolder && entry.mailbox_name && <span className="chip">{entry.mailbox_name}</span>}
@@ -394,6 +394,7 @@ function ThreadMessage({
         <button
           type="button"
           className="mail-who"
+          aria-expanded={onToggle ? true : details}
           onClick={onToggle ?? (() => setDetails(!details))}
           title={message.from?.address ?? undefined}
         >
@@ -405,7 +406,7 @@ function ThreadMessage({
           )}
         </button>
         <time className="when">{when}</time>
-        <button type="button" className="icon-btn small" title={`More (${MOD_KEY}+K)`} aria-label="More" onClick={more}>
+        <button type="button" className="icon-btn small" title={`More (${MOD_KEY}+K)`} aria-label="More" aria-haspopup="dialog" onClick={more}>
           <Icon name="more" size={15} />
         </button>
       </div>

@@ -72,6 +72,18 @@ export const DEFAULT_PREFS: Prefs = {
   reminderPresets: {},
 };
 
+/** What each account colour is called, for screen readers and tooltips. */
+export const COLOUR_NAMES: Record<string, string> = {
+  "#1d7a61": "Green",
+  "#3b7dd8": "Blue",
+  "#8b5cc8": "Purple",
+  "#c8507a": "Pink",
+  "#d4891f": "Amber",
+  "#2a9d9a": "Teal",
+  "#66717f": "Slate",
+  "#b5562f": "Rust",
+};
+
 /** The colours an account can take, readable on both themes. */
 export const ACCOUNT_COLOURS = ["#1d7a61", "#3b7dd8", "#8b5cc8", "#c8507a", "#d4891f", "#2a9d9a", "#66717f", "#b5562f"];
 

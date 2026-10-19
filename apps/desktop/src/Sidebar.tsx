@@ -441,7 +441,7 @@ function FolderPanel({
           type="button"
           className={on ? "panel-star on" : "panel-star"}
           title={on ? "Remove from the sidebar" : "Add to the sidebar"}
-          aria-label={on ? `Remove ${label} from the sidebar` : `Add ${label} to the sidebar`}
+          aria-label={`${label} in the sidebar`}
           aria-pressed={on}
           onClick={() => toggle(target)}
         >

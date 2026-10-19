@@ -42,7 +42,7 @@ export function TitleBar({ onAppMenu }: { onAppMenu: (anchor: Anchor) => void })
   if (PLATFORM !== "windows") return null;
   return (
     <div className="caption" role="toolbar" aria-label="Window">
-      <button type="button" className="caption-btn" title="Menu" aria-label="Menu" onClick={(event) => onAppMenu(anchorOf(event.currentTarget, "end"))}>
+      <button type="button" className="caption-btn" title="Menu" aria-label="Menu" aria-haspopup="menu" onClick={(event) => onAppMenu(anchorOf(event.currentTarget, "end"))}>
         <Icon name="chevronDown" size={13} />
       </button>
       <button type="button" className="caption-btn" title="Minimise" aria-label="Minimise" onClick={() => void currentWindow()?.minimize()}>

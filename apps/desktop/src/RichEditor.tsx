@@ -85,7 +85,7 @@ export function RichEditor({
     editable: !disabled,
     autofocus: autofocus ? "start" : false,
     editorProps: {
-      attributes: { class: "compose-body", "aria-label": "Message", role: "textbox" },
+      attributes: { class: "compose-body", "aria-label": "Message", role: "textbox", "aria-multiline": "true" },
       // Pasted images are stored first: the editor shows them once they are.
       handlePaste: (_view, event) => {
         const files = [...(event.clipboardData?.files ?? [])].filter((file) => IMAGE_TYPES.includes(file.type));
@@ -117,7 +117,7 @@ export function RichEditor({
   if (!editor) return null;
   const chain = () => editor.chain().focus();
   const button = (label: string, pressed: boolean, run: () => void, title: string) => (
-    <button type="button" aria-pressed={pressed} title={title} onClick={run} disabled={disabled}>
+    <button type="button" aria-pressed={pressed} aria-label={title} title={title} onClick={run} disabled={disabled}>
       {label}
     </button>
   );

@@ -15,7 +15,7 @@ import { type Screening, setScreening } from "./smart";
 import { TemplatesEditor } from "./TemplatesEditor";
 import type { AccountMail, MailState, ServiceCheck } from "./mail";
 import { MOD_KEY, SHORTCUTS, useShortcuts } from "./shortcuts";
-import { ACCOUNT_COLOURS, accountColour, setPrefs, usePrefs } from "./prefs";
+import { ACCOUNT_COLOURS, COLOUR_NAMES, accountColour, setPrefs, usePrefs } from "./prefs";
 import { Choice, LinkRow, Option, Toggle } from "./SettingsControls";
 import {
   AccessibilityPage,
@@ -535,7 +535,8 @@ function AccountRow({
                   type="button"
                   role="radio"
                   aria-checked={swatch === colour}
-                  aria-label={swatch}
+                  aria-label={COLOUR_NAMES[swatch] ?? swatch}
+                  title={COLOUR_NAMES[swatch]}
                   className={swatch === colour ? "swatch chosen" : "swatch"}
                   style={{ background: swatch }}
                   onClick={() => setPrefs({ accountColours: { ...prefs.accountColours, [account.id]: swatch } })}

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
+import { radioKeys, radioTab } from "./radios";
 
 /** A setting: what it is on the left, the control on the right. */
 export function Option({
@@ -40,13 +41,14 @@ export function Choice<T extends string>({
   label: string;
 }) {
   return (
-    <span className="choice" role="radiogroup" aria-label={label}>
-      {options.map((option) => (
+    <span className="choice" role="radiogroup" aria-label={label} onKeyDown={(event) => radioKeys(event)}>
+      {options.map((option, index) => (
         <button
           key={option.id}
           type="button"
           role="radio"
           aria-checked={value === option.id}
+          tabIndex={radioTab(value === option.id, index, options.some((one) => one.id === value))}
           className={value === option.id ? "chosen" : undefined}
           onClick={() => onChange(option.id)}
         >
