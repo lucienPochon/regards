@@ -1,8 +1,10 @@
 //! `regards`: the Regards command-line tool.
 
+mod commands;
 mod logging;
+mod tools;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_core::paths::DataDirs;
 use regards_daemon::{Daemon, DaemonError};
@@ -56,7 +58,14 @@ enum DaemonCommand {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let cli = Cli::parse();
+    // The mail commands come from the tools agents use (ADR-0012 §1).
+    let matches = Cli::command().subcommands(commands::all()).get_matches();
+    if let Some((name, arguments)) = matches.subcommand()
+        && let Some((tool, args)) = commands::parse(name, arguments)
+    {
+        return run_tool(tool, args, matches.get_flag("json")).await;
+    }
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
     match run(cli).await {
         Ok(code) => code,
         Err(error) => {
@@ -64,6 +73,23 @@ async fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// One tool, as an agent: the daemon is started if it is not running.
+async fn run_tool(tool: &tools::Tool, args: serde_json::Map<String, serde_json::Value>, as_json: bool) -> ExitCode {
+    let connected = async {
+        let launcher = Launcher::new(DataDirs::resolve()?, std::env::current_exe()?);
+        anyhow::Ok(launcher.connect_or_start(ClientKind::Cli, None, false).await?)
+    };
+    let mut connected = match connected.await {
+        Ok(connected) => connected,
+        Err(error) => {
+            eprintln!("error: {error:#}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let outcome = tools::run(&mut connected.client, tool, &args).await;
+    commands::print(tool, &outcome, as_json)
 }
 
 async fn run(cli: Cli) -> anyhow::Result<ExitCode> {

@@ -426,6 +426,15 @@ flowchart LR
     - For a change, its activity keeps how what it changed stood before: the messages (folder, flags, marks), the draft, or the sender. It also keeps the undo entry that reverses it (migration 0025). The app's Undo uses it while it lasts: ten minutes, once.
     - Flag changes have undo entries too: undo sets back only the flags still as the change left them, so the person's own change since is kept.
 - **Interfaces:** stable `--json` contracts, `regards mcp`, `regards skill`, and deep links `regards://…`.
+  - **As built (2026-10-19), the CLI:**
+    - The mail commands are made from one list of tools (`regards-cli/src/tools.rs`), which `regards mcp` uses too, so the two match one to one.
+    - Read: `accounts`, `folders`, `messages`, `search`, `search-server`, `read`, `thread`, `view`, `drafts`, `draft`, `hold`.
+    - Triage: `archive`, `trash`, `move`, `mark`, `pin`, `set-aside`, `snooze`, `remind`, `sort-sender`, `block-sender`, `write`, `reply`, `forward`, `edit`, `discard`, `delete-for-good`.
+    - Send: `send`.
+    - Each command is one daemon request as an agent; the daemon is started if it is not running.
+    - `--json` prints the tool's result: the daemon's answer, with dates as ISO 8601 UTC and `link`s (`regards://message/<id>`, `regards://draft/<id>`, `regards://hold/<id>`). Paging cursors (`next`) stay as they came, to be passed back. A held request prints `{ "held": … }` and exits 0. Errors print `{ "error": { code, message, data } }` and exit 5 (not allowed), 6 (not found), 2 (unclear arguments) or 1.
+    - Times are taken as ISO 8601 (with an offset, or UTC), and people as `Name <address>` or addresses.
+    - The desktop does not open `regards://` links yet.
 - **Prompt-injection posture:** content is passed as data, drafts never auto-send, and agents cannot change their own access.
 
 ### 5.12 Notifications, tray, badges (P1, 1.0)

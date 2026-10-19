@@ -3688,6 +3688,7 @@ dependencies = [
  "regards-core",
  "regards-daemon",
  "regards-ipc",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",
