@@ -11,8 +11,8 @@ export function Welcome() {
         </span>
         <h1>Welcome to Regards</h1>
         <p className="muted">
-          Add your email account to begin. Regards signs in to check the details, keeps your password in this
-          computer's credential store, and keeps your mail on this computer.
+          Add your email account to begin. Regards keeps your password or sign-in in this computer's credential
+          store, and your mail on this computer.
         </p>
         <AccountForm onDone={() => {}} />
       </section>

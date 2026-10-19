@@ -1,5 +1,7 @@
-import { type FormEvent, useState } from "react";
-import { type AccountInput, type ConnectionSecurity, addAccount } from "./accounts";
+import { type FormEvent, useEffect, useState } from "react";
+import { type AccountInput, type ConnectionSecurity, type Provider, addAccount, oauthProviders, providerFor } from "./accounts";
+import { Icon } from "./icons";
+import { OauthWaiting, PROVIDERS, useOauth } from "./OauthSignIn";
 
 const EMPTY: AccountInput = {
   displayName: "",
@@ -13,11 +15,25 @@ const EMPTY: AccountInput = {
   smtpSecurity: "starttls",
 };
 
-/** Add an IMAP account: Regards signs in to check the details before it saves anything. */
+/**
+ * Add an account: with Microsoft or Google in the browser, when this version
+ * can (ADR-0018), or with a password, where Regards signs in to check the
+ * details before it saves anything.
+ */
 export function AccountForm({ onDone, onCancel }: { onDone: () => void; onCancel?: () => void }) {
   const [input, setInput] = useState<AccountInput>(EMPTY);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [providers, setProviders] = useState<Provider[]>([]);
+  useEffect(() => {
+    oauthProviders().then(setProviders, () => setProviders([]));
+  }, []);
+  const oauth = useOauth(() => {
+    setInput(EMPTY);
+    onDone();
+  });
+  // The provider an address belongs to, to offer its button first.
+  const suggested = providerFor(input.email);
 
   const set = <K extends keyof AccountInput>(key: K, value: AccountInput[K]) =>
     setInput((current) => ({ ...current, [key]: value }));
@@ -37,8 +53,33 @@ export function AccountForm({ onDone, onCancel }: { onDone: () => void; onCancel
     }
   };
 
+  if (oauth.flow) return <OauthWaiting flow={oauth.flow} onCancel={oauth.cancel} />;
+
   return (
     <form className="account-form" onSubmit={submit}>
+      {providers.length > 0 && (
+        <div className="oauth-choice">
+          {providers.map((provider) => (
+            <button
+              key={provider}
+              type="button"
+              className={provider === suggested ? "oauth-button suggested" : "oauth-button"}
+              onClick={() => void oauth.start(provider, input.email.trim() || null)}
+            >
+              <Icon name="user" size={18} />
+              <span>
+                <strong>Sign in with {PROVIDERS[provider].label}</strong>
+                <span className="muted">{PROVIDERS[provider].covers}</span>
+              </span>
+              {provider === suggested && <span className="chip">For this address</span>}
+            </button>
+          ))}
+          {oauth.error && <p className="form-status error">{oauth.error}</p>}
+          <p className="oauth-or">
+            <span>or with a password</span>
+          </p>
+        </div>
+      )}
       <div className="form-row">
         <label>
           Your name

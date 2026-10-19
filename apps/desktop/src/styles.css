@@ -3632,8 +3632,9 @@ button.sender-row:hover:not(:disabled) {
 
 .account-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  gap: 12px 16px;
   padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -3641,7 +3642,7 @@ button.sender-row:hover:not(:disabled) {
 
 .account-text {
   display: grid;
-  flex: 1;
+  flex: 1 1 220px;
   min-width: 0;
 }
 
@@ -3655,9 +3656,10 @@ button.sender-row:hover:not(:disabled) {
   white-space: normal;
 }
 
+/* Beside the text when they fit; under it, from the left, when they don't. */
 .account-buttons {
   display: flex;
-  flex: none;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -4243,6 +4245,140 @@ button.sender-row:hover:not(:disabled) {
 .welcome-card .account-form {
   width: 100%;
   margin-top: 20px;
+}
+
+/* Signing in with Microsoft or Google: above the password form, then waiting for the browser. */
+.oauth-choice {
+  display: grid;
+  gap: 8px;
+}
+
+.oauth-button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  text-align: left;
+}
+
+.oauth-button:hover {
+  border-color: var(--accent);
+}
+
+.oauth-button.suggested {
+  border-color: var(--accent);
+  background: var(--pill);
+}
+
+.oauth-button > .icon {
+  flex: none;
+  color: var(--accent);
+}
+
+.oauth-button > span:not(.chip) {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 0;
+}
+
+.oauth-button strong {
+  font-size: 14px;
+}
+
+.oauth-button .muted {
+  font-size: 12.5px;
+}
+
+.oauth-button .chip {
+  background: var(--pill-strong);
+  color: var(--accent);
+}
+
+.oauth-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 2px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.oauth-or::before,
+.oauth-or::after {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+  content: "";
+}
+
+.oauth-waiting {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 22px 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--notice);
+  text-align: center;
+}
+
+.oauth-waiting strong {
+  font-size: 15px;
+}
+
+.oauth-waiting > .muted {
+  max-width: 44ch;
+  font-size: 13px;
+}
+
+.oauth-url {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  max-width: 460px;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.oauth-url > span {
+  display: flex;
+  gap: 6px;
+}
+
+.oauth-url .input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  font-size: 12px;
+}
+
+.oauth-url .btn {
+  flex: none;
+  margin-top: 0;
+}
+
+.welcome-card .oauth-waiting {
+  margin-top: 20px;
+}
+
+/* In the main window: an account that must sign in again. */
+.aside-bubble.signed-out {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--text);
+}
+
+.aside-bubble.signed-out > .icon {
+  color: var(--danger);
 }
 
 /* Menus: small, light and plain. The palette: a dark panel in the upper middle. */

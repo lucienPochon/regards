@@ -227,6 +227,8 @@ export function App() {
 
   const accounts = useMemo(() => (mail.state === "ready" ? mail.accounts : []), [mail]);
   const ownAddresses = useMemo(() => new Set(accounts.map((entry) => entry.account.email.toLowerCase())), [accounts]);
+  // Accounts whose Microsoft or Google sign-in expired: nothing syncs or sends until they sign in again.
+  const signedOut = accounts.filter((entry) => entry.account.needs_sign_in);
   const inInbox = view.kind === "role" && view.role === "inbox";
   // The Smart Inbox: every inbox, or one account's when its inbox is open.
   const accountInbox =
@@ -1269,6 +1271,17 @@ export function App() {
                 if (draftId !== null) editDraft(draftId);
               }}
             />
+          )}
+          {signedOut.length > 0 && composer?.mode !== "full" && (
+            <button
+              type="button"
+              className="aside-bubble signed-out"
+              title="Its mail doesn't sync, and nothing is sent from it, until you sign in again"
+              onClick={() => setSettings("accounts")}
+            >
+              <Icon name="alert" size={15} />
+              {signedOut.length === 1 ? `Sign in again: ${signedOut[0].account.email}` : `${signedOut.length} accounts need you to sign in again`}
+            </button>
           )}
           {holds.length > 0 && composer?.mode !== "full" && (
             <button

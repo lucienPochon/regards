@@ -7,6 +7,7 @@ import { AGENT_ACCESS_LEVELS, type AgentAccess, setAgentAccess } from "./agents"
 import { backgroundMode, notificationsShown, setBackgroundMode, setNotificationsShown } from "./background";
 import { AccountForm } from "./AccountForm";
 import { IdentitiesEditor } from "./IdentitiesEditor";
+import { OauthWaiting, PROVIDERS, useOauth } from "./OauthSignIn";
 import { Avatar } from "./Avatar";
 import type { ConfirmRequest } from "./Confirm";
 import { Icon, type IconName } from "./icons";
@@ -376,6 +377,9 @@ function AccountRow({ entry, confirm }: { entry: AccountMail; confirm: (request:
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addresses, setAddresses] = useState(false);
+  // A sign-in with Microsoft or Google that expired or was withdrawn: sign in again.
+  const oauth = useOauth(() => setError(null));
+  const provider = account.sign_in && account.sign_in !== "password" ? account.sign_in : null;
 
   const syncNow = async () => {
     setSyncing(true);
@@ -403,9 +407,10 @@ function AccountRow({ entry, confirm }: { entry: AccountMail; confirm: (request:
     }
   };
 
-  const problem = error ?? entry.error ?? sync?.last_error ?? null;
-  const status =
-    syncing || sync?.running
+  const problem = error ?? oauth.error ?? entry.error ?? sync?.last_error ?? null;
+  const status = account.needs_sign_in
+    ? "Signed out: sign in again to sync and send"
+    : syncing || sync?.running
       ? "Syncing…"
       : problem
         ? `Sync failed: ${problem}`
@@ -422,9 +427,15 @@ function AccountRow({ entry, confirm }: { entry: AccountMail; confirm: (request:
       <div className="account-text">
         <strong>{account.display_name || account.email}</strong>
         <span className="muted">{account.email}</span>
-        <span className={problem ? "small error" : "small muted"}>{status}</span>
+        {provider && <span className="small muted">Signs in with {PROVIDERS[provider].label}</span>}
+        <span className={problem || account.needs_sign_in ? "small error" : "small muted"}>{status}</span>
       </div>
       <div className="account-buttons">
+        {account.needs_sign_in && provider && (
+          <button type="button" className="btn small primary" onClick={() => void oauth.start(provider, account.email)} disabled={oauth.flow !== null}>
+            Sign in again
+          </button>
+        )}
         <button type="button" className="btn small" onClick={syncNow} disabled={syncing || sync?.running}>
           <Icon name="refresh" size={15} />
           Sync now
@@ -437,6 +448,11 @@ function AccountRow({ entry, confirm }: { entry: AccountMail; confirm: (request:
         </button>
       </div>
     </li>
+    {oauth.flow && (
+      <li>
+        <OauthWaiting flow={oauth.flow} onCancel={oauth.cancel} />
+      </li>
+    )}
     {addresses && (
       <li>
         <IdentitiesEditor accountId={account.id} />

@@ -34,6 +34,11 @@ const parked = (m: FixtureMessage) => m.aside === true || (m.snoozed_until ?? 0)
 const inboxPlace = (m: FixtureMessage) =>
   m.surfaced_at && (m.reminded || m.surfaced_at > m.received_at) ? m.surfaced_at : m.received_at;
 let nextId = 10_000;
+// The address a sign-in was started for; `?signin=1` signs the first account out of Microsoft.
+let oauthEmail: string | null = null;
+if (params.get("signin") === "1" && accounts[0]) {
+  accounts[0].account = { ...accounts[0].account, sign_in: "microsoft", needs_sign_in: true };
+}
 // Two sample templates; the daemon keeps them by name.
 const templates: Template[] = [
   {
@@ -545,8 +550,22 @@ function handle(cmd: string, args: Args): unknown {
     case "account_oauth_providers":
       return { providers: ["microsoft", "google"] };
     case "account_oauth_start":
+      oauthEmail = (args.email as string | null) ?? null;
       return { flow_id: "preview-flow", url: "https://login.example.test/authorize" };
     case "account_oauth_finish":
+      // `?oauth=ok`: signing in again works, for an account the preview has.
+      if (params.get("oauth") === "ok") {
+        const owner = accounts.find((a) => a.account.email === oauthEmail);
+        if (owner) {
+          return new Promise((resolve) =>
+            window.setTimeout(() => {
+              owner.account = { ...owner.account, needs_sign_in: false };
+              changed();
+              resolve(owner.account);
+            }, 1500),
+          );
+        }
+      }
       // Waits like a person in the browser, then says what the preview cannot do.
       return new Promise((_, reject) =>
         window.setTimeout(() => reject(new Error("The preview cannot sign in to a real provider.")), 1500),
@@ -1047,7 +1066,10 @@ function handle(cmd: string, args: Args): unknown {
 mockIPC(
   (cmd, args) => {
     try {
-      return Promise.resolve(handle(cmd, (args ?? {}) as Args));
+      // As the real bridge does, a failure comes back as its message, also from a call that takes a moment.
+      return Promise.resolve(handle(cmd, (args ?? {}) as Args)).catch((error: unknown) =>
+        Promise.reject(error instanceof Error ? error.message : String(error)),
+      );
     } catch (error) {
       return Promise.reject(error instanceof Error ? error.message : String(error));
     }

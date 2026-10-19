@@ -141,6 +141,11 @@ flowchart LR
 - **Everyone else** (Infomaniak, iCloud, Yahoo, Fastmail, GMX, hosting providers, own servers): an app or mailbox password in the OS keychain. Autoconfig through an ISPDB-style database, DNS SRV, then manual entry, with app-password guidance.
 - **Accepted when:** setup succeeds against Microsoft 365, Outlook.com, Gmail (both paths), Infomaniak, iCloud and a self-hosted Dovecot, and no secret is ever written outside the keychain.
 
+- **In the app:**
+  - The add-account form (first run and Settings) offers "Sign in with Microsoft" and "Sign in with Google" above the password form, when this version has the provider's client id. The provider of the address being typed is offered first.
+  - While the person signs in in the browser, the app says so, shows the page's address in case no window opened, and can cancel. Leaving the screen gives the sign-in up.
+  - An account whose sign-in expired says so in Settings › Accounts, with "Sign in again". The main window shows a pill that leads there.
+
 ### 5.2 IMAP engine (P0, 1.0, ADR-0009)
 
 - Async IMAP on rustls, one connection actor per account (an IDLE connection plus a command connection).
