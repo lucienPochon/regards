@@ -8,7 +8,7 @@ import type { MessageSummary, Person } from "../accounts";
 import type { Draft, OutboxEntry } from "../compose";
 import type { Identity } from "../identities";
 import type { Template } from "../templates";
-import type { AgentAccess } from "../agents";
+import type { AgentAccess, AgentActivity } from "../agents";
 import { type Explanation, type Policy, type Screening, SECTIONS, type Section } from "../smart";
 import { type FixtureAccount, type FixtureMessage, ME, PERSONAL, WORK, fixtureMessages } from "./fixtures";
 
@@ -180,6 +180,47 @@ function searchSamples(query: string, accountId: string | null, server = false) 
   // The best: those with the first word in the subject, as the daemon weighs it most.
   const top = words.length > 0 && found.length <= 2000 ? found.filter((m) => fold(m.subject).includes(words[0])).slice(0, 3) : [];
   return { found, top };
+}
+
+/** Two sample agent sessions: the command line two hours ago, an assistant just now (one request refused). */
+function agentActivity(): AgentActivity[] {
+  const account = accounts[0]?.account.id ?? null;
+  const at = (minutesAgo: number) => started - minutesAgo * 60_000;
+  const entry = (
+    id: number,
+    minutesAgo: number,
+    session: string,
+    client: string,
+    method: string,
+    args: unknown,
+    denied = false,
+  ): AgentActivity => ({
+    id,
+    at: at(minutesAgo),
+    session,
+    client,
+    method,
+    args,
+    account_id: method === "account.list" ? null : account,
+    access: method === "account.list" ? null : "read",
+    decision: denied ? "denied" : "allowed",
+    error_code: denied ? -32010 : null,
+    error: denied ? "Agents may only read sam@example.org. Allow more in Settings › Agents." : null,
+    duration_ms: 3 + (id % 7),
+  });
+  return [
+    entry(12, 2, "mcp-1", "mcp", "draft.create", { account_id: account }, true),
+    entry(11, 3, "mcp-1", "mcp", "message.get", { id: 101 }),
+    entry(10, 3, "mcp-1", "mcp", "search.query", { query: "garden rota" }),
+    entry(9, 4, "mcp-1", "mcp", "account.list", {}),
+    entry(8, 118, "cli-1", "cli", "message.get", { id: 104 }),
+    entry(7, 118, "cli-1", "cli", "message.get", { id: 103 }),
+    entry(6, 119, "cli-1", "cli", "message.get", { id: 102 }),
+    entry(5, 119, "cli-1", "cli", "search.query", { query: "invoice has:attachment" }),
+    entry(4, 120, "cli-1", "cli", "message.list", { mailbox_id: 1, limit: 20 }),
+    entry(3, 120, "cli-1", "cli", "mailbox.list", { account_id: account }),
+    entry(2, 121, "cli-1", "cli", "account.list", {}),
+  ];
 }
 
 /** What a section's list shows: without screening, new senders are with People. */
@@ -434,6 +475,14 @@ function handle(cmd: string, args: Args): unknown {
       owner.account = { ...owner.account, agent_access: args.access as AgentAccess };
       changed();
       return { agent_access: owner.account.agent_access };
+    }
+    case "agent_activity": {
+      const before = (args.before as number | null) ?? null;
+      const limit = (args.limit as number | null) ?? 100;
+      const all = agentActivity().filter((entry) => !args.accountId || entry.account_id === args.accountId);
+      const after = all.filter((entry) => before === null || entry.id < before);
+      const page = after.slice(0, limit);
+      return { entries: page, next: after.length > limit ? page[page.length - 1].id : null };
     }
     case "account_sync":
       return new Promise((resolve) => window.setTimeout(() => resolve(null), 900));

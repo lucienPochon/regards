@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { type AccountSummary, removeAccount, syncAccount } from "./accounts";
+import { AgentActivity } from "./AgentActivity";
 import { AGENT_ACCESS_LEVELS, type AgentAccess, setAgentAccess } from "./agents";
 import { backgroundMode, notificationsShown, setBackgroundMode, setNotificationsShown } from "./background";
 import { AccountForm } from "./AccountForm";
@@ -340,8 +341,11 @@ function AgentsTab({ mail, confirm }: { mail: MailState; confirm: (request: Conf
       </dl>
       <p className="muted settings-note">
         Each level allows what the one before it does. Triage and Send are kept for each account now and take effect
-        with the next steps: a list here of what agents did, with undo, and each send waiting for your approval.
+        with the next steps: undo for what agents change, and each send waiting for your approval here.
       </p>
+      {accounts.length > 0 && (
+        <AgentActivity accounts={accounts.map(({ account }) => ({ id: account.id, email: account.email }))} />
+      )}
     </>
   );
 }

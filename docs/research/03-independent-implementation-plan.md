@@ -438,6 +438,11 @@ flowchart LR
     - Choosing Send asks first.
     - Triage and Send are marked as coming until they take effect.
     - The page sits at the top of the settings, under the person's card, where the reference app keeps its AI agents.
+    - **Activity:** what agents did, newest first, grouped by session (the command line, or an assistant through MCP).
+      - Each request is in plain words ("Read a message", "Searched “invoice”"), with "Refused" and its reason when it was not allowed.
+      - Its parameters can be opened under it.
+      - Filters: everything or refused only, and with several accounts, one of them.
+      - It looks for new entries every 5 s while shown, and on focus. Older entries page with "Show older".
 - **Holds** for send-tier and bulk or destructive intents.
 - **Audit log** with before-state and undo.
   - **As built (2026-10-19):**

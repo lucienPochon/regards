@@ -3662,6 +3662,183 @@ button.sender-row:hover:not(:disabled) {
   font-size: 10.5px;
 }
 
+/* What agents did: sessions of requests, newest first. */
+.agent-activity {
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.activity-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.activity-head h4 {
+  margin: 0 auto 0 0;
+  font-size: 15px;
+}
+
+.activity-empty {
+  padding: 18px 0;
+  font-size: 13px;
+}
+
+.activity-sessions {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-session {
+  padding: 10px 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.activity-session-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 0 8px 6px;
+  font-size: 13px;
+}
+
+.activity-session-head > .icon {
+  color: var(--accent);
+}
+
+.activity-session-head .muted {
+  font-size: 12px;
+}
+
+.activity-entries {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-entry summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 7px;
+  font-size: 13px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.activity-entry summary::-webkit-details-marker {
+  display: none;
+}
+
+.activity-entry summary:hover {
+  background: var(--row-hover);
+}
+
+.activity-when {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-account {
+  flex: none;
+  max-width: 34%;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip.activity-decision.refused {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.chip.activity-decision.held {
+  background: var(--warm-soft);
+  color: var(--warm);
+}
+
+.chip.activity-decision.approved {
+  background: var(--pill-strong);
+  color: var(--accent);
+}
+
+.activity-details {
+  margin: 2px 8px 8px 72px;
+  font-size: 12.5px;
+}
+
+.activity-details dl {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+
+.activity-details dt {
+  color: var(--muted);
+}
+
+.activity-details dd {
+  margin: 0;
+}
+
+.activity-details code {
+  font-size: 12px;
+}
+
+.activity-error {
+  margin: 0 0 6px;
+  color: var(--danger);
+}
+
+.activity-details pre {
+  max-height: 180px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--notice);
+  color: var(--text-2);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.activity-more {
+  margin: 4px 8px 0;
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.activity-more:hover {
+  text-decoration: underline;
+}
+
+.activity-older {
+  margin-top: 12px;
+}
+
 .panel {
   padding: 4px 18px 18px;
   border: 1px solid var(--border);
