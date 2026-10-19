@@ -1,9 +1,16 @@
+import { useCallback, useEffect, useState } from "react";
+import type { MessageSummary } from "./accounts";
 import { Avatar } from "./Avatar";
-import { type Draft, deleteDraft } from "./compose";
+import { useChanges } from "./changes";
+import { type Draft, adoptDraft, deleteDraft, listDraftsElsewhere } from "./compose";
 import { listDate, peopleShort } from "./format";
 import { Icon } from "./icons";
 
-/** Messages being written, to pick up again. */
+/**
+ * Messages being written, to pick up again: those written here, then those
+ * written on another device or in webmail (in the server's Drafts folder),
+ * which become drafts here when opened.
+ */
 export function DraftsList({
   drafts,
   open,
@@ -15,7 +22,16 @@ export function DraftsList({
   onOpen: (draftId: number) => void;
   onFailed: (error: unknown) => void;
 }) {
-  if (drafts.length === 0) {
+  const [elsewhere, setElsewhere] = useState<MessageSummary[]>([]);
+  const load = useCallback(() => {
+    listDraftsElsewhere().then(setElsewhere, () => setElsewhere([]));
+  }, []);
+  useEffect(load, [load]);
+  useChanges(load);
+  const pickUp = (message: MessageSummary) =>
+    adoptDraft(message.id).then((draft) => onOpen(draft.id), onFailed);
+
+  if (drafts.length === 0 && elsewhere.length === 0) {
     return (
       <div className="list-scroll">
         <div className="empty list-empty">
@@ -63,6 +79,30 @@ export function DraftsList({
             </li>
           ))}
         </ul>
+        {elsewhere.length > 0 && (
+          <section className="day" aria-label="On other devices">
+            <h3 className="day-head">On other devices</h3>
+            <ul aria-label="Drafts written elsewhere">
+              {elsewhere.map((message) => (
+                <li key={message.id} className="row">
+                  <button type="button" className="row-main" onClick={() => void pickUp(message)}>
+                    <span className="dot" />
+                    <span className="row-avatar">
+                      <Avatar person={message.to[0] ?? null} size="md" ring />
+                    </span>
+                    <span className="from">
+                      <span className="draft-mark">Draft</span>
+                      {message.to.length > 0 ? peopleShort(message.to) : "No recipient yet"}
+                    </span>
+                    <span className="subject">{message.subject || "(no subject)"}</span>
+                    <span className="marks">{message.has_attachments && <Icon name="paperclip" size={14} />}</span>
+                    <span className="date">{listDate(message.received_at)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
     </div>
   );

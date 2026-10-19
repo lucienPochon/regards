@@ -25,9 +25,10 @@ use regards_ipc::protocol::{
     ExplainResult, IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView, MailboxListResult, MarkResult,
     MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult,
     OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams,
-    Screening, ScreeningParams, Section, SenderBlockParams, SenderSetParams, SenderSetResult, ServerSettings,
-    SetFlagsParams, SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef,
-    TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
+    Screening, ScreeningParams, SearchParams, SearchResult, Section, SenderBlockParams, SenderSetParams,
+    SenderSetResult, ServerSettings, SetFlagsParams, SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult,
+    TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, View,
+    ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -264,6 +265,30 @@ async fn message_list(
                 limit,
                 before,
                 section,
+            },
+        )
+        .await
+        .map_err(describe)
+}
+
+/// Search the mail, Gmail-style (see `search.ts`): newest first.
+#[tauri::command]
+async fn search_messages(
+    bridge: State<'_, Bridge>,
+    query: String,
+    account_id: Option<String>,
+    before: Option<MessageCursor>,
+    limit: Option<u32>,
+) -> Result<SearchResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::SEARCH,
+            SearchParams {
+                query,
+                account_id,
+                limit,
+                before,
             },
         )
         .await
@@ -590,6 +615,26 @@ async fn draft_set_from(bridge: State<'_, Bridge>, id: i64, identity_id: i64) ->
         .map_err(describe)
 }
 
+/// Drafts in the server's Drafts folders written elsewhere, to pick up.
+#[tauri::command]
+async fn draft_elsewhere(bridge: State<'_, Bridge>) -> Result<MessageListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::DRAFT_ELSEWHERE, DraftListParams { account_id: None })
+        .await
+        .map_err(describe)
+}
+
+/// Pick up a draft written elsewhere: it becomes a draft here.
+#[tauri::command]
+async fn draft_adopt(bridge: State<'_, Bridge>, message_id: i64) -> Result<DraftView, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::DRAFT_ADOPT, MessageRef { id: message_id })
+        .await
+        .map_err(describe)
+}
+
 /// Templates: text to start a message with, by name.
 #[tauri::command]
 async fn template_list(bridge: State<'_, Bridge>) -> Result<TemplateListResult, String> {
@@ -851,6 +896,7 @@ fn main() {
             account_sync,
             mailbox_list,
             message_list,
+            search_messages,
             smart_overview,
             message_explain,
             sender_set,
@@ -881,6 +927,8 @@ fn main() {
             draft_delete,
             draft_set_from,
             identity_list,
+            draft_elsewhere,
+            draft_adopt,
             template_list,
             template_save,
             template_remove,

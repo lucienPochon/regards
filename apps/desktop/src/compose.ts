@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Person } from "./accounts";
+import type { MessageSummary, Person } from "./accounts";
 
 /** Mirrors `DraftView` in `regards-ipc`. */
 export interface Draft {
@@ -66,6 +66,11 @@ export const attachFiles = (draftId: number) => invoke<Draft | null>("draft_atta
 export const detachFile = (draftId: number, attachmentId: number) =>
   invoke<Draft>("draft_detach", { draftId, attachmentId });
 export const deleteDraft = (id: number) => invoke("draft_delete", { id });
+/** Drafts written elsewhere (another device, webmail), in the server's Drafts folders. */
+export const listDraftsElsewhere = () =>
+  invoke<{ messages: MessageSummary[] }>("draft_elsewhere").then((result) => result.messages);
+/** Pick one up: it becomes a draft here, kept in step with its copy on the server. */
+export const adoptDraft = (messageId: number) => invoke<Draft>("draft_adopt", { messageId });
 /** Send it from another of the account's identities; a plain-text draft's signature is swapped. */
 export const setDraftFrom = (id: number, identityId: number) => invoke<Draft>("draft_set_from", { id, identityId });
 

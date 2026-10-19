@@ -12,6 +12,7 @@ pub mod headers;
 pub mod html;
 pub mod mailbox;
 pub mod paths;
+pub mod search;
 pub mod secret;
 pub mod smart;
 

@@ -8,7 +8,7 @@ use regards_core::smart::{Screening, Section};
 use regards_core::{body, html};
 use regards_ipc::protocol::{
     MessageCursor, MessageDetail, MessageHtml, MessageHtmlParams, MessageListParams, MessageListResult, MessageRef,
-    MessageSummary, RpcError, ThreadEntry, ThreadView, View, ViewParams, codes,
+    MessageSummary, RpcError, SearchParams, SearchResult, ThreadEntry, ThreadView, View, ViewParams, codes,
 };
 use regards_store::mailboxes::Mailbox;
 use regards_store::marks::{self, Mark, Marks};
@@ -25,6 +25,8 @@ const MAX_PAGE: u32 = 500;
 const MAX_DOWNLOAD: u32 = 50 * 1024 * 1024;
 /// Longer than any frame host needs.
 const MAX_LINK_PREFIX: usize = 512;
+/// Longer than anyone types.
+const MAX_QUERY: usize = 1_000;
 
 pub(crate) async fn list(state: &State, params: MessageListParams) -> Result<Value, RpcError> {
     let limit = params.limit.unwrap_or(DEFAULT_PAGE);
@@ -144,6 +146,75 @@ pub(crate) async fn view(state: &State, params: ViewParams) -> Result<Value, Rpc
 
 fn store_error(error: StoreError) -> RpcError {
     crate::session::internal(error)
+}
+
+/// Search the mail (plan §5.10): one copy of each message, newest first; on
+/// the first page of words that match few messages, the best matches too.
+pub(crate) async fn search(state: &State, params: SearchParams) -> Result<Value, RpcError> {
+    let limit = params.limit.unwrap_or(DEFAULT_PAGE);
+    if !(1..=MAX_PAGE).contains(&limit) {
+        return Err(RpcError::new(
+            codes::INVALID_PARAMS,
+            format!("limit must be 1 to {MAX_PAGE}"),
+        ));
+    }
+    if params.query.len() > MAX_QUERY {
+        return Err(RpcError::new(codes::INVALID_PARAMS, "the search is too long"));
+    }
+    let query = regards_core::search::parse(&params.query);
+    let account_id = params.account_id;
+    let before = params.before.map(|c| Cursor {
+        received_at: c.received_at,
+        id: c.id,
+    });
+    let (hits, info, indexing) = state
+        .store
+        .read(move |conn| {
+            // One extra row tells whether another page exists.
+            let hits = regards_store::search::search(conn, &query, account_id.as_deref(), limit + 1, before)?;
+            // Marks are kept by account: each account's rows together.
+            let mut accounts: HashMap<i64, Option<String>> = HashMap::new();
+            let mut rows: HashMap<String, Vec<Message>> = HashMap::new();
+            for message in hits.page.iter().chain(&hits.top) {
+                let account = match accounts.entry(message.mailbox_id) {
+                    Entry::Occupied(known) => known.get().clone(),
+                    Entry::Vacant(new) => new
+                        .insert(mailboxes::get(conn, message.mailbox_id)?.map(|m| m.account_id))
+                        .clone(),
+                };
+                if let Some(account) = account {
+                    rows.entry(account).or_default().push(message.clone());
+                }
+            }
+            let mut info = PageInfo::default();
+            for (account, rows) in rows {
+                let more = page_info(conn, &account, &rows)?;
+                info.marks.extend(more.marks);
+                info.threads.extend(more.threads);
+            }
+            Ok((hits, info, regards_store::search::pending(conn)?))
+        })
+        .await
+        .map_err(|error| match error {
+            StoreError::Conflict(message) => RpcError::new(codes::CONFLICT, message),
+            other => store_error(other),
+        })?;
+    let mut page = hits.page;
+    let more = page.len() > limit as usize;
+    page.truncate(limit as usize);
+    let next = more.then(|| {
+        let last = page.last().expect("a full page is not empty");
+        MessageCursor {
+            received_at: last.listed_at,
+            id: last.id,
+        }
+    });
+    Ok(json!(SearchResult {
+        messages: page.into_iter().map(|row| summary(row, &info)).collect(),
+        top: hits.top.into_iter().map(|row| summary(row, &info)).collect(),
+        next,
+        indexing,
+    }))
 }
 
 /// One message with its body. The source is downloaded the first time and
@@ -302,14 +373,23 @@ async fn download(state: &State, message: &Message, mailbox: &Mailbox) -> Result
 
     let blobs = state.blobs.clone();
     let copy = source.clone();
-    let hash = tokio::task::spawn_blocking(move || blobs.put(&copy))
+    // Kept, and its whole text searchable from now on.
+    let (hash, text) = tokio::task::spawn_blocking(move || (blobs.put(&copy), body::parse(&copy).text))
         .await
-        .map_err(crate::session::internal)?
         .map_err(crate::session::internal)?;
-    let id = message.id;
+    let hash = hash.map_err(crate::session::internal)?;
+    let (id, account, message_id, now) = (
+        message.id,
+        mailbox.account_id.clone(),
+        message.message_id.clone(),
+        crate::compose::now_ms(),
+    );
     state
         .store
-        .write(move |tx| messages::set_blob(tx, id, &hash))
+        .write(move |tx| {
+            messages::set_blob(tx, id, &hash)?;
+            regards_store::search::set_text(tx, &account, id, message_id.as_deref(), &text, now)
+        })
         .await
         .map_err(store_error)?;
     Ok(source)
@@ -438,4 +518,9 @@ fn shown_sections(asked: Option<Section>, screening: Screening) -> (Vec<Section>
         (Some(Section::People), Screening::Off) => (vec![Section::People, Section::NewSenders], None),
         (Some(section), _) => (vec![section], None),
     }
+}
+
+/// A message's summary, without its page's marks and conversation sizes.
+pub(crate) fn plain_summary(m: Message) -> MessageSummary {
+    summary(m, &PageInfo::default())
 }

@@ -34,8 +34,12 @@ We need durable local storage for mail metadata, bodies, drafts, state overlays,
 4. **Search, Phase 0–1:**
    - SQLite **FTS5**, external-content tables over subject, participants and body text, with **BM25** ranking.
    - Header fields are indexed columns, not scanned.
-   - The query language is Gmail-style (spec in plan §5.8).
+   - The query language is Gmail-style (spec in plan §5.10).
    - Typo tolerance via a trigram or spell-suggestion side index.
+   - **As built (2026-10-19):**
+     - A regular FTS5 table in `search.db`, which holds its own copy of the indexed text. FTS5 reads external content only from its own database, and the text is in `mail.db`.
+     - The copy is small: subject, people, and the preview, plus the full text of downloaded messages.
+     - Typo tolerance is not built yet.
 5. **Search, later and optional:** semantic search with a local embedding model (ONNX Runtime via `ort`) and a vector table (for example `sqlite-vec`, evaluated then), using hybrid ranking (reciprocal rank fusion). If FTS5 limits are hit, migrate the keyword index to `tantivy` (MIT).
 6. **Encryption at rest:** v1 relies on OS full-disk encryption and documents that clearly. A later ADR may add database encryption (for example SQLCipher) if users need it.
 7. **Secrets are never stored in SQLite.** Only OS credential-store references are (ADR-0013).

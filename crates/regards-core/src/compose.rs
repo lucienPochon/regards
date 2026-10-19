@@ -68,13 +68,23 @@ impl Outgoing {
 
     /// Check the addresses, then build the message.
     pub fn build(&self) -> Result<Vec<u8>, ComposeError> {
+        if self.recipients().is_empty() {
+            return Err(ComposeError::NoRecipients);
+        }
+        self.assemble(false)
+    }
+
+    /// The copy of a draft kept in the Drafts folder, for other devices: it
+    /// may have nobody to go to yet, and it keeps its Bcc so they come back.
+    pub fn build_draft(&self) -> Result<Vec<u8>, ComposeError> {
+        self.assemble(true)
+    }
+
+    fn assemble(&self, draft: bool) -> Result<Vec<u8>, ComposeError> {
         let from = self.from.address.as_deref().ok_or(ComposeError::NoSender)?;
         check(from)?;
         for person in self.to.iter().chain(&self.cc).chain(&self.bcc) {
             check(person.address.as_deref().unwrap_or(""))?;
-        }
-        if self.recipients().is_empty() {
-            return Err(ComposeError::NoRecipients);
         }
         let mut builder = MessageBuilder::new()
             .from(address(&self.from))
@@ -92,6 +102,9 @@ impl Outgoing {
         }
         if !self.cc.is_empty() {
             builder = builder.cc(list(&self.cc));
+        }
+        if draft && !self.bcc.is_empty() {
+            builder = builder.bcc(list(&self.bcc));
         }
         if let Some(parent) = &self.in_reply_to {
             builder = builder.in_reply_to(parent.as_str());
@@ -644,5 +657,34 @@ mod tests {
         assert_eq!(swap_signature("Hello\n\n", "", "Ada"), "Hello\n\nAda\n\n");
         // Edited away: left as written, the new one added.
         assert_eq!(swap_signature("Hello", "Ada", "Bea"), "Hello\n\nBea");
+    }
+
+    #[test]
+    fn a_drafts_copy_may_have_nobody_yet_and_keeps_its_bcc() {
+        let mut draft = Outgoing {
+            from: person(Some("Ada"), "ada@example.test"),
+            to: vec![],
+            cc: vec![],
+            bcc: vec![person(None, "secret@example.test")],
+            subject: "Plans".into(),
+            text: "Half written".into(),
+            message_id: "draft-1@example.test".into(),
+            in_reply_to: None,
+            references: vec![],
+            date: 0,
+            html: None,
+            attachments: vec![],
+        };
+        let copy = String::from_utf8(draft.build_draft().unwrap()).unwrap();
+        assert!(
+            copy.contains("Bcc: <secret@example.test>") || copy.contains("Bcc: secret@example.test"),
+            "{copy}"
+        );
+        draft.bcc.clear();
+        assert!(draft.build_draft().is_ok(), "nobody to send to yet");
+        assert!(
+            matches!(draft.build(), Err(ComposeError::NoRecipients)),
+            "but it cannot be sent so"
+        );
     }
 }
