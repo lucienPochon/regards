@@ -163,6 +163,10 @@ impl Session {
                 self.require_ui()?;
                 mail::list(&self.state, params(request)?).await
             }
+            methods::SEARCH => {
+                self.require_ui()?;
+                mail::search(&self.state, params(request)?).await
+            }
             methods::MESSAGE_GET => {
                 self.require_ui()?;
                 mail::get(&self.state, params(request)?).await

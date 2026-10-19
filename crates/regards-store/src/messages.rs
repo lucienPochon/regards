@@ -308,9 +308,21 @@ pub fn clear(tx: &Transaction<'_>, mailbox_id: i64) -> Result<usize, StoreError>
     Ok(tx.execute("DELETE FROM messages WHERE mailbox_id = ?1", [mailbox_id])?)
 }
 
+/// The columns [`from_row`] reads, in its order.
 const COLUMNS: &str = "id, mailbox_id, uid, modseq, seen, answered, flagged, draft, deleted, keywords, \
     received_at, size, sent_at, subject, from_name, from_address, to_json, cc_json, message_id_header, blob_hash, moving_to, thread_id, \
     section, has_attachments, preview";
+/// How many [`COLUMNS`] there are: what a query selects after them starts here.
+pub(crate) const COLUMN_COUNT: usize = 25;
+
+/// [`COLUMNS`] of the table aliased `alias`.
+pub(crate) fn columns(alias: &str) -> String {
+    COLUMNS
+        .split(',')
+        .map(|column| format!("{alias}.{}", column.trim()))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 
 /// Record where the downloaded source of message `id` is stored.
 pub fn set_blob(tx: &Transaction<'_>, id: i64, hash: &str) -> Result<(), StoreError> {
@@ -461,7 +473,7 @@ pub struct Sections<'a> {
 }
 
 /// Where `listed_at` follows [`COLUMNS`] in [`inbox_sql`].
-const LISTED_AT: usize = 25;
+const LISTED_AT: usize = COLUMN_COUNT;
 
 /// The account's messages carrying `mark` (snoozed: until after `now`), one per
 /// Message-ID, newest first: the Pinned, Set aside, Snoozed and Reminders views.
@@ -533,7 +545,7 @@ pub fn get(conn: &Connection, id: i64) -> Result<Option<Message>, StoreError> {
         .transpose()
 }
 
-fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Message, StoreError>> {
+pub(crate) fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Message, StoreError>> {
     let keywords: String = row.get(9)?;
     let to: String = row.get(16)?;
     let cc: String = row.get(17)?;

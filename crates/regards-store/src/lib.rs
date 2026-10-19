@@ -7,6 +7,9 @@
 //!   `revision`, the change feed's cursor (ADR-0007).
 //! - **Readers:** a small pool of read-only connections serves queries
 //!   concurrently with the writer.
+//! - **`search.db`:** the keyword index, attached to every connection as
+//!   `search` ([`search`]). A broken one is replaced; if that fails too,
+//!   mail works without search.
 //!
 //! The daemon is the only process that opens the database (ADR-0005).
 
@@ -22,6 +25,7 @@ mod migrate;
 pub mod notices;
 pub mod operations;
 pub mod outbox;
+pub mod search;
 pub mod smart;
 pub mod templates;
 pub mod threads;
@@ -88,12 +92,12 @@ impl Store {
     /// Open (creating if needed) and migrate the database of `dirs`.
     pub async fn open(dirs: &DataDirs) -> Result<Self, StoreError> {
         let dirs = dirs.clone();
-        tokio::task::spawn_blocking(move || Self::open_blocking(&dirs.mail_db(), &dirs.backups()))
+        tokio::task::spawn_blocking(move || Self::open_blocking(&dirs.mail_db(), &dirs.search_db(), &dirs.backups()))
             .await
             .map_err(|_| StoreError::Panicked)?
     }
 
-    fn open_blocking(path: &Path, backups: &Path) -> Result<Self, StoreError> {
+    fn open_blocking(path: &Path, search_db: &Path, backups: &Path) -> Result<Self, StoreError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -103,12 +107,16 @@ impl Store {
         writer.pragma_update(None, "synchronous", "NORMAL")?;
         writer.pragma_update(None, "foreign_keys", true)?;
         migrate::to_latest(&mut writer, backups)?;
+        let searching = open_search(&writer, search_db);
 
         let readers = (0..READERS)
             .map(|_| {
                 let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
                 conn.busy_timeout(BUSY_TIMEOUT)?;
                 conn.pragma_update(None, "foreign_keys", true)?;
+                if searching {
+                    search::attach(&conn, search_db)?;
+                }
                 Ok(conn)
             })
             .collect::<Result<Vec<_>, StoreError>>()?;
@@ -142,22 +150,15 @@ impl Store {
         T: Send + 'static,
         F: FnOnce(&Transaction<'_>) -> Result<T, StoreError> + Send + 'static,
     {
-        let (done, result) = oneshot::channel();
-        let job: WriteJob = Box::new(move |conn| {
-            let outcome = catch_unwind(AssertUnwindSafe(|| {
-                let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-                let value = f(&tx)?;
+        let committed = self
+            .run_write(move |tx| {
+                let value = f(tx)?;
                 let revision = tx.query_row("UPDATE revision SET value = value + 1 RETURNING value", [], |row| {
                     row.get(0)
                 })?;
-                tx.commit()?;
                 Ok(Committed { value, revision })
-            }))
-            .unwrap_or(Err(StoreError::Panicked));
-            let _ = done.send(outcome);
-        });
-        self.inner.writer.send(job).map_err(|_| StoreError::Closed)?;
-        let committed = result.await.map_err(|_| StoreError::Closed)??;
+            })
+            .await?;
         // Writes finish in order, but callers may resume out of order: keep the highest.
         self.inner.revisions.send_if_modified(|latest| {
             let newer = committed.revision > *latest;
@@ -167,6 +168,37 @@ impl Store {
             newer
         });
         Ok(committed)
+    }
+
+    /// [`write`](Self::write) for what no client shows (the search index):
+    /// committed without a new revision, so nobody is told to refetch.
+    pub async fn write_quiet<T, F>(&self, f: F) -> Result<T, StoreError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Transaction<'_>) -> Result<T, StoreError> + Send + 'static,
+    {
+        self.run_write(f).await
+    }
+
+    /// Run `f` on the writer thread in an immediate transaction, committed if it succeeds.
+    async fn run_write<T, F>(&self, f: F) -> Result<T, StoreError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Transaction<'_>) -> Result<T, StoreError> + Send + 'static,
+    {
+        let (done, result) = oneshot::channel();
+        let job: WriteJob = Box::new(move |conn| {
+            let outcome = catch_unwind(AssertUnwindSafe(|| {
+                let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let value = f(&tx)?;
+                tx.commit()?;
+                Ok(value)
+            }))
+            .unwrap_or(Err(StoreError::Panicked));
+            let _ = done.send(outcome);
+        });
+        self.inner.writer.send(job).map_err(|_| StoreError::Closed)?;
+        result.await.map_err(|_| StoreError::Closed)?
     }
 
     /// Follow the latest committed revision: the receiver wakes after each commit.
@@ -209,6 +241,33 @@ impl Store {
     pub async fn revision(&self) -> Result<i64, StoreError> {
         self.read(|conn| Ok(conn.query_row("SELECT value FROM revision", [], |row| row.get(0))?))
             .await
+    }
+}
+
+/// Attach and prepare `search.db` on the writer; whether search is there.
+/// The index can be rebuilt, so a broken one is deleted and made anew.
+fn open_search(writer: &Connection, path: &Path) -> bool {
+    let open = || -> Result<(), StoreError> {
+        search::attach(writer, path)?;
+        if let Err(error) = search::prepare(writer) {
+            let _ = writer.execute_batch("DETACH DATABASE search");
+            return Err(error);
+        }
+        Ok(())
+    };
+    let Err(error) = open() else { return true };
+    tracing::warn!(%error, "the search index is unreadable: rebuilding it");
+    for suffix in ["", "-wal", "-shm"] {
+        let mut file = path.as_os_str().to_owned();
+        file.push(suffix);
+        let _ = std::fs::remove_file(file);
+    }
+    match open() {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::error!(%error, "search is not available");
+            false
+        }
     }
 }
 
@@ -281,6 +340,23 @@ mod tests {
         // A failed write commits nothing and wakes nobody.
         let _ = store.write(|_| Err::<(), _>(StoreError::Conflict("no".into()))).await;
         assert!(!revisions.has_changed().unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_broken_search_index_is_made_anew() {
+        let temp = tempfile::tempdir().unwrap();
+        let dirs = DataDirs::at(temp.path());
+        std::fs::write(dirs.search_db(), b"not a database, not at all").unwrap();
+        let store = Store::open(&dirs).await.unwrap();
+        let version: i64 = store
+            .read(|conn| Ok(conn.query_row("PRAGMA search.user_version", [], |r| r.get(0))?))
+            .await
+            .unwrap();
+        assert!(version > 0);
+        let failed = store
+            .read(|conn| Ok(conn.execute("DELETE FROM search.texts", [])?))
+            .await;
+        assert!(failed.is_err(), "readers cannot write the index either");
     }
 
     #[tokio::test]

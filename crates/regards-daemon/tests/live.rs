@@ -14,8 +14,9 @@ use regards_ipc::protocol::{
     DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, IdentitySaveParams, IdentityView,
     MailboxListResult, MarkResult, MessageDetail, MessageHtml, MessageHtmlParams, MessageIds, MessageListParams,
     MessageListResult, MessageRef, MoveResult, NoticeKind, NoticeListResult, OutboxEntryView, OutboxListResult,
-    OutboxRef, OutboxState, OutboxUndoResult, PinParams, RemindParams, ServerSettings, SetFlagsParams, SetFlagsResult,
-    SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
+    OutboxRef, OutboxState, OutboxUndoResult, PinParams, RemindParams, SearchParams, SearchResult, ServerSettings,
+    SetFlagsParams, SetFlagsResult, SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams,
+    methods,
 };
 use regards_ipc::protocol::{
     ExplainResult, Policy, Reason, Screening, ScreeningParams, Section, SenderBlockParams, SenderSetParams,
@@ -2321,6 +2322,143 @@ async fn live_drafts_are_kept_in_the_drafts_folder_and_picked_up_from_it() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     let _ = drafts_box;
+
+    seed.logout().await;
+    handle.abort();
+}
+
+/// Search until `check` passes (the index follows changes a moment later).
+async fn search_until(desktop: &mut Client, query: &str, check: impl Fn(&SearchResult) -> bool) -> SearchResult {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let found: SearchResult = desktop
+            .call(
+                methods::SEARCH,
+                SearchParams {
+                    query: query.into(),
+                    ..SearchParams::default()
+                },
+            )
+            .await
+            .unwrap();
+        if check(&found) {
+            return found;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "{query:?} found {:?}",
+            found_subjects(&found)
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
+fn found_subjects(found: &SearchResult) -> Vec<String> {
+    let mut subjects: Vec<String> = found.messages.iter().map(|m| m.subject.clone()).collect();
+    subjects.sort();
+    subjects
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_search_finds_mail_by_its_words_people_and_text() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    seed.create_mailbox(b"Archive").await.unwrap();
+    seed.create_mailbox(b"Trash").await.unwrap();
+    // The list's preview holds the start of the text; the summit is past it.
+    let trip = format!(
+        "From: =?utf-8?q?L=C3=A9na_M=C3=BCller?= <lena@example.net>\r\nTo: Live <live@example.test>\r\n\
+         Subject: Trip plans\r\nMessage-ID: <trip@example.test>\r\nDate: Sun, 18 Oct 2026 09:00:00 +0000\r\n\
+         MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{}\r\nWe climb the Matterhorn on Friday.\r\n",
+        "Some news from the valley. ".repeat(10)
+    );
+    seed.append(b"INBOX", &[], trip.as_bytes()).await.unwrap();
+    seed.append(
+        b"INBOX",
+        &[SystemFlag::Seen],
+        &message(1, "Invoice October", "billing@shop.example"),
+    )
+    .await
+    .unwrap();
+    seed.append(b"INBOX", &[], &message(2, "Garden club", "Lena <lena@example.net>"))
+        .await
+        .unwrap();
+    let (_temp, mut desktop, account, _inbox, handle) = daemon_with_account(&live).await;
+    let settled = |found: &SearchResult| found.indexing == 0;
+
+    // People (without their accents), subjects, and the start of the text.
+    let found = search_until(&mut desktop, "lena", |f| f.messages.len() == 2).await;
+    assert_eq!(found_subjects(&found), ["Garden club", "Trip plans"]);
+    let found = search_until(&mut desktop, "muller valley", settled).await;
+    assert_eq!(found_subjects(&found), ["Trip plans"]);
+    let found = search_until(&mut desktop, "from:billing is:read", settled).await;
+    assert_eq!(found_subjects(&found), ["Invoice October"]);
+    assert!(
+        search_until(&mut desktop, "invoice is:unread", settled)
+            .await
+            .messages
+            .is_empty()
+    );
+    assert!(
+        search_until(&mut desktop, "matterhorn", settled)
+            .await
+            .messages
+            .is_empty(),
+        "past the preview, until it is opened"
+    );
+
+    // Opened: all of its text.
+    let trip = search_until(&mut desktop, "subject:trip", |f| f.messages.len() == 1)
+        .await
+        .messages[0]
+        .clone();
+    let _: MessageDetail = desktop
+        .call(methods::MESSAGE_GET, MessageRef { id: trip.id })
+        .await
+        .unwrap();
+    let found = search_until(&mut desktop, "matterhorn friday", |f| f.messages.len() == 1).await;
+    assert_eq!(found.messages[0].id, trip.id);
+
+    // Archived (on the server too): found by its text in the Archive folder.
+    // With COPYUID its row moves along; without, its new row there finds the
+    // text kept by Message-ID (the store's tests).
+    let archive = folders(&mut desktop, &account.id)
+        .await
+        .mailboxes
+        .into_iter()
+        .find(|m| m.role == Some(Role::Archive))
+        .unwrap()
+        .id;
+    let _: MoveResult = desktop
+        .call(methods::MESSAGE_ARCHIVE, MessageIds { ids: vec![trip.id] })
+        .await
+        .unwrap();
+    server_count_becomes(&mut seed, b"Archive", 1).await;
+    sync(&mut desktop, &account.id).await;
+    let found = search_until(&mut desktop, "matterhorn in:archive", |f| f.messages.len() == 1).await;
+    assert_eq!(found.messages[0].mailbox_id, archive);
+    assert!(
+        search_until(&mut desktop, "matterhorn in:inbox", settled)
+            .await
+            .messages
+            .is_empty()
+    );
+
+    // Trash is left out unless asked for.
+    let garden = search_until(&mut desktop, "garden", |f| f.messages.len() == 1)
+        .await
+        .messages[0]
+        .clone();
+    let _: MoveResult = desktop
+        .call(methods::MESSAGE_TRASH, MessageIds { ids: vec![garden.id] })
+        .await
+        .unwrap();
+    search_until(&mut desktop, "garden", |f| f.messages.is_empty()).await;
+    let found = search_until(&mut desktop, "garden in:trash", |f| f.messages.len() == 1).await;
+    assert_eq!(found_subjects(&found), ["Garden club"]);
 
     seed.logout().await;
     handle.abort();

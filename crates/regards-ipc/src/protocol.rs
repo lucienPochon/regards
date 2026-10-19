@@ -137,6 +137,9 @@ pub mod methods {
     pub const NOTICE_LIST: &str = "notice.list";
     /// The notices up to an id have been shown (or seen in the app).
     pub const NOTICE_SHOWN: &str = "notice.shown";
+    /// Search the mail: Gmail-style words and filters (plan §5.10), newest
+    /// first. `ui` only for now.
+    pub const SEARCH: &str = "search.query";
     /// Dedicate this connection to change notifications (ADR-0007). `ui` only for now.
     pub const CHANGES_SUBSCRIBE: &str = "changes.subscribe";
 }
@@ -456,6 +459,40 @@ pub struct MessageListParams {
     /// In the inbox: only this Smart Inbox section.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub section: Option<Section>,
+}
+
+/// Parameters of [`methods::SEARCH`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchParams {
+    /// What was typed. Words match subject, people and text (the last one
+    /// also as the start of a word); `"a phrase"`, `-word`; `from:` `to:`
+    /// `subject:`; `has:attachment`; `is:unread` `is:read` `is:flagged`;
+    /// `in:<folder or role>` (`in:anywhere` takes in Trash and Junk, left
+    /// out otherwise); `before:` / `after:` `YYYY-MM-DD`.
+    pub query: String,
+    /// Only this account; every account when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    /// Page size, 1 to 500; 50 when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<MessageCursor>,
+}
+
+/// What [`methods::SEARCH`] found.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchResult {
+    /// One copy of each message (its inbox copy, if it has one), newest first.
+    pub messages: Vec<MessageSummary>,
+    /// On the first page, when the words match few messages: the best
+    /// matches, best first (they are among the pages too).
+    #[serde(default)]
+    pub top: Vec<MessageSummary>,
+    /// Set when there may be older results.
+    pub next: Option<MessageCursor>,
+    /// Changes still to index: while it is above 0, recent mail may be missing.
+    pub indexing: u64,
 }
 
 /// A message in a list.

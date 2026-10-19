@@ -55,6 +55,11 @@ impl DataDirs {
         self.data.join("mail.db")
     }
 
+    /// The keyword index, which can be deleted and rebuilt (ADR-0008).
+    pub fn search_db(&self) -> PathBuf {
+        self.data.join("search.db")
+    }
+
     /// Content-addressed files: downloaded messages (ADR-0008).
     pub fn blobs(&self) -> PathBuf {
         self.data.join("blobs")

@@ -192,7 +192,7 @@ flowchart LR
     - Hovering a message highlights it, shows a select check in the margin, and puts its actions in place of the date. Right-clicking gives every action.
     - Several can be selected: by the check, Ctrl/⌘-click, Shift-click, `x` or Ctrl/⌘+A. A bar at the top then acts on all of them.
     - Single-key shortcuts act on the selection, else the message under the pointer, else the highlighted one.
-    - The search field filters the loaded list by sender and subject until full search arrives (§5.10).
+    - The search field filters the loaded list by sender and subject until it is wired to search (§5.10).
   - **Reading:** the conversation as cards, oldest first, with the open message expanded and the others one line each. Reply and forward sit at the bottom of each card, and after archiving or deleting the next message opens.
   - **Writing:** a new message takes the whole pane, with a large subject field. A reply opens in a panel over the conversation, which can be made full size.
   - **Actions** come from one list, which feeds the toolbar, hover buttons, right-click menu, selection bar, shortcuts and the command palette (Ctrl/⌘+K). Moving opens a folder picker you can type into. Snoozing and sending later pick from preset times.
@@ -374,6 +374,22 @@ flowchart LR
 
 - Gmail-style query language over SQLite FTS5 with BM25.
 - Optional on-device embeddings, opt-in.
+- **Keyword search, as built (2026-10-19):**
+  - **The language** (`regards_core::search`):
+    - Words match the subject, the people and the text; the last one also as the start of a word (from two letters), so results come while typing.
+    - `"a phrase"` matches as written, `-word` leaves out.
+    - `from:` `to:` `subject:` look in one place; `has:attachment`; `is:unread` `is:read` `is:flagged`; `before:` / `after:` `YYYY-MM-DD`.
+    - `in:<folder or role>`; Trash and Junk are left out unless named, or with `in:anywhere`.
+    - Accents need not be typed. What is typed never reaches FTS5's own syntax: every word is quoted.
+  - **The index** (`search.db`, ADR-0008): a row per stored message, with its subject, sender, recipients and text. The text is the whole of it once the message was downloaded (on opening), its preview before. Full texts are kept by Message-ID, so a message moved to another folder is still found by them.
+  - **Kept current:** triggers on the writer queue every change to `messages`. The daemon indexes the queue 300 ms later, in batches of 500, with writes that wake no client. Another index version is rebuilt the same way, newest first.
+  - **Results:** one copy of each message (its inbox copy first), newest first, paged like a folder. On the first page of words that match at most 2,000 messages: the 3 best by BM25 (the subject weighs most, then sender, recipients, text).
+  - **Two plans:** words with few matches are read through the index. Common words, and filters alone, walk all mail newest first through `messages_by_time` (migration 0022) until a page is full; that index holds the filtered columns, so the walk reads only the index.
+  - **Measured** at 100k messages (`tests/scale.rs`, release build, development machine):
+    - Every query took 0.3–22 ms: a rare word 3 ms, a word in 88% of mail 22 ms, the whole walk (nothing passes the filters) 15 ms. The target is 150 ms p95.
+    - Indexing 100k took 11.7 s in the background, each batch under 0.45 s.
+  - **Interfaces:** `search.query` (`ui` only until agent access levels), bridged as `search_messages`, and `search.ts` in the app.
+  - **Not yet:** typo tolerance (ADR-0008's side index), searching the server for mail not downloaded, and the full text of mail not opened.
 
 ### 5.11 Agent gateway: CLI + MCP (P1, 1.0, ADR-0012)
 
