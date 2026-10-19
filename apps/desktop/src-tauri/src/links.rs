@@ -17,7 +17,10 @@ pub(crate) enum Kind {
     Hold,
 }
 
-/// What to open: the UI receives it as the `open` event.
+/// The event the UI receives a link as.
+pub(crate) const EVENT: &str = "link_open";
+
+/// What to open: the UI receives it as [`EVENT`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub(crate) struct Open {
     pub kind: Kind,
@@ -61,7 +64,7 @@ pub(crate) fn open(app: &AppHandle, urls: impl IntoIterator<Item = String>, at_s
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(open);
         }
-        let _ = app.emit("open", open);
+        let _ = app.emit(EVENT, open);
     }
 }
 

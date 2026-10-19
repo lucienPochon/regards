@@ -16,4 +16,4 @@ export const takeLink = () => invoke<OpenLink | null>("link_take");
 
 /** Links opened while Regards runs (it shows its window first). */
 export const onOpenLink = (open: (link: OpenLink) => void): Promise<UnlistenFn> =>
-  listen<OpenLink>("open", (event) => open(event.payload));
+  listen<OpenLink>("link_open", (event) => open(event.payload));
