@@ -39,6 +39,8 @@ struct Session {
     before: Mutex<Option<Value>>,
     /// Asked to stop the daemon: done once the reply is sent.
     stop_after_reply: bool,
+    /// What an agent may still ask (ADR-0012 §5).
+    limits: crate::limits::Limits,
     /// Set by `changes.subscribe`: changes to forward as notifications.
     feed: Option<watch::Receiver<ChangesNotification>>,
 }
@@ -60,6 +62,7 @@ pub(crate) async fn run(stream: Stream, state: Arc<State>) -> Result<(), FrameEr
         checked: Mutex::new(None),
         before: Mutex::new(None),
         stop_after_reply: false,
+        limits: crate::limits::Limits::new(),
         feed: None,
     };
 
@@ -138,7 +141,13 @@ impl Session {
             );
         }
         let started = Instant::now();
-        let outcome = self.dispatch(&request).await;
+        let outcome = match self.agent_session {
+            Some(_) => match self.limits.take(&request.method) {
+                Ok(()) => self.dispatch(&request).await,
+                Err(refused) => Err(refused),
+            },
+            None => self.dispatch(&request).await,
+        };
         // Everything an agent asks, but the handshake, is kept (ADR-0012 §4).
         if let (Some(session), Some(client)) = (&self.agent_session, self.client)
             && request.method != methods::HELLO
