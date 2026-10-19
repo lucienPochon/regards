@@ -13,7 +13,7 @@ Regards makes these connections, and no others:
 | **Your mail servers** (IMAP and SMTP), as you set them up | While Regards runs | Fetching and organising your mail, sending what you send, searching on the server when you ask |
 | **DNS, and the servers your address's domain suggests** | When you add an account | Finding its mail servers. DNS goes to your system's DNS servers. Candidates such as `imap.<your domain>` are only greeted to check that they answer; nothing is signed in to |
 | **Microsoft or Google sign-in**, if you add an account that way | When you sign in, and about once an hour after | Signing in, then renewing the sign-in. Your password goes to Microsoft or Google in your browser, never to Regards |
-| **Web servers named in a message**, only if you ask | When you choose *Load images* for a message | Showing that message's remote images. They can tell the sender you opened it, which is why they stay blocked until you ask. No referrer is sent |
+| **Web servers named in a message**, only if you ask | When you choose *Load images* for a message, or open one from a sender whose images you chose to always load | Showing that message's remote images. They can tell the sender you opened it, which is why they stay blocked until you ask. No referrer is sent |
 | **Web pages you open from a message** | When you click a link | Links open in your own browser |
 | **GitHub** (`api.github.com`), only if you allow it | Once a day if you turn on update checks, or when you check by hand | Asking for the latest version of Regards. GitHub sees your computer's internet address and that the request comes from Regards; nothing else is sent |
 

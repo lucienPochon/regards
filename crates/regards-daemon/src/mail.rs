@@ -9,9 +9,9 @@ use regards_core::smart::{Screening, Section};
 use regards_core::{body, html};
 use regards_imap::SearchTerm;
 use regards_ipc::protocol::{
-    MessageCursor, MessageDetail, MessageHtml, MessageHtmlParams, MessageListParams, MessageListResult, MessageRef,
-    MessageSummary, RpcError, SearchParams, SearchResult, ServerSearchResult, ThreadEntry, ThreadView, View,
-    ViewParams, codes,
+    AccountRef, MessageCursor, MessageDetail, MessageHtml, MessageHtmlParams, MessageListParams, MessageListResult,
+    MessageRef, MessageSummary, RpcError, SearchParams, SearchResult, SenderImagesParams, SenderImagesResult,
+    ServerSearchResult, ThreadEntry, ThreadView, View, ViewParams, codes,
 };
 use regards_store::mailboxes::Mailbox;
 use regards_store::marks::{self, Mark, Marks};
@@ -447,6 +447,7 @@ fn server_terms(query: &Query) -> Vec<SearchTerm> {
 pub(crate) async fn get(state: &State, params: MessageRef) -> Result<Value, RpcError> {
     let (message, source) = load(state, params.id).await?;
     let info = message_info(state, &message).await?;
+    let images_from_sender = sender_images(state, &message).await?;
     let (body, remote_images) = tokio::task::spawn_blocking(move || {
         let body = body::parse(&source);
         let remote = if body.has_html {
@@ -465,9 +466,61 @@ pub(crate) async fn get(state: &State, params: MessageRef) -> Result<Value, RpcE
         text: body.text,
         has_html: body.has_html,
         remote_images,
+        images_from_sender,
         attachments: body.attachments,
         message: summary(message, &info),
     }))
+}
+
+/// Whether the person lets the message's sender's remote images load.
+async fn sender_images(state: &State, message: &Message) -> Result<bool, RpcError> {
+    let Some(address) = message.from.as_ref().and_then(|from| from.address.clone()) else {
+        return Ok(false);
+    };
+    let mailbox_id = message.mailbox_id;
+    state
+        .store
+        .read(move |conn| {
+            let Some(mailbox) = mailboxes::get(conn, mailbox_id)? else {
+                return Ok(false);
+            };
+            regards_store::images::allowed(conn, &mailbox.account_id, &address)
+        })
+        .await
+        .map_err(store_error)
+}
+
+/// The sender list of [`methods::SENDER_SET_IMAGES`], one more or less.
+pub(crate) async fn set_sender_images(state: &State, params: SenderImagesParams) -> Result<Value, RpcError> {
+    let address = params.address.trim().to_owned();
+    if !address.contains('@') || address.len() > 320 {
+        return Err(RpcError::new(codes::INVALID_PARAMS, "that is not an address"));
+    }
+    let (account_id, allow) = (params.account_id, params.allow);
+    state
+        .store
+        .write(move |tx| {
+            if regards_store::accounts::get(tx, &account_id)?.is_none() {
+                return Err(StoreError::Conflict("no such account".into()));
+            }
+            regards_store::images::set(tx, &account_id, &address, allow)
+        })
+        .await
+        .map_err(|error| match error {
+            StoreError::Conflict(message) => RpcError::new(codes::NOT_FOUND, message),
+            other => store_error(other),
+        })?;
+    Ok(json!({ "allow": allow }))
+}
+
+pub(crate) async fn sender_images_list(state: &State, params: AccountRef) -> Result<Value, RpcError> {
+    let account_id = params.account_id;
+    let senders = state
+        .store
+        .read(move |conn| regards_store::images::list(conn, &account_id))
+        .await
+        .map_err(store_error)?;
+    Ok(json!(SenderImagesResult { senders }))
 }
 
 /// What one message's summary needs.
@@ -494,12 +547,13 @@ pub(crate) async fn html(state: &State, params: MessageHtmlParams) -> Result<Val
     {
         return Err(RpcError::new(codes::INVALID_PARAMS, "link_prefix is too long"));
     }
-    let (_, source) = load(state, params.id).await?;
+    let (message, source) = load(state, params.id).await?;
     let MessageHtmlParams {
         allow_remote,
         link_prefix,
         ..
     } = params;
+    let allow_remote = allow_remote || sender_images(state, &message).await?;
     let rendered = tokio::task::spawn_blocking(move || html::render(&source, allow_remote, link_prefix.as_deref()))
         .await
         .map_err(crate::session::internal)?
