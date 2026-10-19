@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useShortcuts } from "./shortcuts";
+import { useDialogFocus } from "./dialogFocus";
 
 /** "2026-10-21T09:00" for a datetime-local field, in local time. */
 function localValue(time: number): string {
@@ -22,12 +23,16 @@ export function TimePicker({
 }) {
   const [value, setValue] = useState(localValue(initial));
   useShortcuts({ Escape: () => onAnswer(null) }, { modal: true });
+  const box = useRef<HTMLElement>(null);
+  useDialogFocus(box);
   // The field gives local wall-clock time; Date parses it in the local zone.
   const time = value ? new Date(value).getTime() : Number.NaN;
   const valid = Number.isFinite(time) && time > Date.now();
   return (
     <div className="backdrop" onMouseDown={() => onAnswer(null)}>
       <section
+        ref={box}
+        tabIndex={-1}
         className="dialog confirm-dialog"
         role="dialog"
         aria-modal="true"

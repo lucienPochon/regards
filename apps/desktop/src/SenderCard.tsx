@@ -5,6 +5,7 @@ import { Icon } from "./icons";
 import type { Anchor } from "./Menu";
 import { useShortcuts } from "./shortcuts";
 import { type Explanation, type Policy, SECTION_LABELS, blockSender, explain, reasonText, setSender } from "./smart";
+import { useDialogFocus } from "./dialogFocus";
 
 export interface SenderRequest {
   anchor: Anchor;
@@ -42,6 +43,7 @@ export function SenderCard({
   const [copied, setCopied] = useState(false);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const card = useRef<HTMLDivElement>(null);
+  useDialogFocus(card);
   useShortcuts({ Escape: onClose }, { modal: true });
   const { person, accountId, messageId } = request;
   const address = explanation?.sender?.address ?? person.address ?? "";
@@ -84,6 +86,7 @@ export function SenderCard({
         className={position ? "sender-card" : "sender-card measuring"}
         role="dialog"
         aria-label={`About ${person.name ?? address}`}
+        tabIndex={-1}
         style={position ?? undefined}
         onMouseDown={(event) => event.stopPropagation()}
       >

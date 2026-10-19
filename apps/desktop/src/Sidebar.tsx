@@ -1,4 +1,4 @@
-import { type DragEvent, type MouseEvent, useState } from "react";
+import { type DragEvent, type MouseEvent, useRef, useState } from "react";
 import type { MailboxSummary, Role } from "./accounts";
 import { Avatar } from "./Avatar";
 import type { OutboxEntry } from "./compose";
@@ -9,6 +9,7 @@ import type { SidebarChanges, SidebarPrefs } from "./sidebar-prefs";
 import { accountColour, accountLabel, usePrefs } from "./prefs";
 import { useShortcuts } from "./shortcuts";
 import { MARKED_ICONS, MARKED_LABELS, ROLE_ICONS, ROLE_LABELS, type View, depth, leafName, sameView, viewKey } from "./views";
+import { useDialogFocus } from "./dialogFocus";
 
 /** What dragging messages carries: the messages, and the account and folder each is in. */
 export const DRAG_TYPE = "application/x-regards-messages";
@@ -405,6 +406,8 @@ function FolderPanel({
 }) {
   useShortcuts({ Escape: onClose }, { modal: true });
   const appPrefs = usePrefs();
+  const panel = useRef<HTMLElement>(null);
+  useDialogFocus(panel);
   const nameOf = (account: { id: string; email: string }) => accountLabel(appPrefs, account);
   const hidden = new Set(prefs.hidden);
   const starred = new Set(prefs.starred.map(viewKey));
@@ -459,7 +462,7 @@ function FolderPanel({
   return (
     <>
       <div className="panel-catcher" onMouseDown={onClose} aria-hidden="true" />
-      <aside className="folder-panel" aria-label="All folders">
+      <aside ref={panel} className="folder-panel" role="dialog" aria-label="All folders" tabIndex={-1}>
         <div className="panel-scroll">
           <h2 className="panel-head">All folders</h2>
           <ul>{system.map((entry) => row(entry.view, entry.icon, entry.label))}</ul>

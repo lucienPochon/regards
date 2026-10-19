@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type AccountSummary, removeAccount, syncAccount, updateAccount } from "./accounts";
 import { AgentActivity } from "./AgentActivity";
 import { AgentHolds } from "./AgentHolds";
@@ -28,6 +28,7 @@ import {
   SchedulingPage,
   SupportPage,
 } from "./SettingsPages";
+import { useDialogFocus } from "./dialogFocus";
 
 export type SettingsTab =
   | "accounts"
@@ -93,15 +94,19 @@ export function Settings({
   onClose: () => void;
 }) {
   useShortcuts({ Escape: onClose }, { modal: true });
+  const sheet = useRef<HTMLElement>(null);
+  useDialogFocus(sheet);
   const me = mail.state === "ready" ? mail.accounts[0]?.account : undefined;
   const accounts = mail.state === "ready" ? mail.accounts.map((entry) => entry.account) : [];
   return (
     <div className="backdrop sheet" onMouseDown={onClose}>
       <section
+        ref={sheet}
         className="dialog settings"
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <nav className="settings-nav" aria-label="Settings">
