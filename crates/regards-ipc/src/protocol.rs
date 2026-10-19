@@ -140,6 +140,10 @@ pub mod methods {
     /// Search the mail: Gmail-style words and filters (plan §5.10), newest
     /// first. `ui` only for now.
     pub const SEARCH: &str = "search.query";
+    /// [`SEARCH`] on the servers too: for words in messages not opened here
+    /// (their text is not indexed on this device). Slower: it asks each
+    /// server. Takes [`SearchParams`](super::SearchParams). `ui` only for now.
+    pub const SEARCH_SERVER: &str = "search.server";
     /// Dedicate this connection to change notifications (ADR-0007). `ui` only for now.
     pub const CHANGES_SUBSCRIBE: &str = "changes.subscribe";
 }
@@ -493,6 +497,21 @@ pub struct SearchResult {
     pub next: Option<MessageCursor>,
     /// Changes still to index: while it is above 0, recent mail may be missing.
     pub indexing: u64,
+}
+
+/// What [`methods::SEARCH_SERVER`] found.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerSearchResult {
+    /// Found by the servers and on this device: one copy of each (its inbox
+    /// copy, if it has one), newest first.
+    pub messages: Vec<MessageSummary>,
+    /// Set when there may be older results.
+    pub next: Option<MessageCursor>,
+    /// Found by the servers but not on this device yet: older than what has
+    /// been fetched so far, or just arrived.
+    pub not_here: u32,
+    /// Accounts whose server could not be searched now (offline, say).
+    pub unreachable: Vec<String>,
 }
 
 /// A message in a list.

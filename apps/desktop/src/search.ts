@@ -47,6 +47,36 @@ export const searchMessages = (query: string, options: SearchOptions = {}) =>
     limit: options.limit ?? null,
   });
 
+export interface ServerSearchResult {
+  /** Found by the servers and on this device: one copy of each (its inbox copy first), newest first. */
+  messages: MessageSummary[];
+  /** Pass back as `before` for older results; each page asks the servers again. */
+  next: MessageCursor | null;
+  /**
+   * Found by the servers but not on this device yet: older than what has been
+   * fetched so far (older mail keeps being fetched in the background), or
+   * just arrived (the next sync brings it). They then show in searches here.
+   */
+  not_here: number;
+  /** Ids of the accounts whose server could not be searched now (offline, say). */
+  unreachable: string[];
+}
+
+/**
+ * The same search on the servers: they have the text of mail not opened on
+ * this device, which the search here does not (it has their subject, people
+ * and preview). Slower, as it asks each server: for a "Search on the server"
+ * action, not while typing. Servers match words their own way, often as
+ * parts of words.
+ */
+export const searchServer = (query: string, options: SearchOptions = {}) =>
+  invoke<ServerSearchResult>("search_server", {
+    query,
+    accountId: options.accountId ?? null,
+    before: options.before ?? null,
+    limit: options.limit ?? null,
+  });
+
 /**
  * One term of a search, for an action that starts one (such as "Mail from
  * this sender"): `from:lena@example.net`, `from:"Lena Müller"`.

@@ -26,9 +26,9 @@ use regards_ipc::protocol::{
     MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult,
     OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams,
     Screening, ScreeningParams, SearchParams, SearchResult, Section, SenderBlockParams, SenderSetParams,
-    SenderSetResult, ServerSettings, SetFlagsParams, SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult,
-    TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, View,
-    ViewParams, methods,
+    SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SmartOverviewResult,
+    SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView,
+    UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -284,6 +284,30 @@ async fn search_messages(
     client
         .call(
             methods::SEARCH,
+            SearchParams {
+                query,
+                account_id,
+                limit,
+                before,
+            },
+        )
+        .await
+        .map_err(describe)
+}
+
+/// Search the servers as well, for the text of mail not opened here (see `search.ts`).
+#[tauri::command]
+async fn search_server(
+    bridge: State<'_, Bridge>,
+    query: String,
+    account_id: Option<String>,
+    before: Option<MessageCursor>,
+    limit: Option<u32>,
+) -> Result<ServerSearchResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::SEARCH_SERVER,
             SearchParams {
                 query,
                 account_id,
@@ -897,6 +921,7 @@ fn main() {
             mailbox_list,
             message_list,
             search_messages,
+            search_server,
             smart_overview,
             message_explain,
             sender_set,

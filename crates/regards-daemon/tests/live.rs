@@ -14,9 +14,9 @@ use regards_ipc::protocol::{
     DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, IdentitySaveParams, IdentityView,
     MailboxListResult, MarkResult, MessageDetail, MessageHtml, MessageHtmlParams, MessageIds, MessageListParams,
     MessageListResult, MessageRef, MoveResult, NoticeKind, NoticeListResult, OutboxEntryView, OutboxListResult,
-    OutboxRef, OutboxState, OutboxUndoResult, PinParams, RemindParams, SearchParams, SearchResult, ServerSettings,
-    SetFlagsParams, SetFlagsResult, SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams,
-    methods,
+    OutboxRef, OutboxState, OutboxUndoResult, PinParams, RemindParams, SearchParams, SearchResult, ServerSearchResult,
+    ServerSettings, SetFlagsParams, SetFlagsResult, SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View,
+    ViewParams, methods,
 };
 use regards_ipc::protocol::{
     ExplainResult, Policy, Reason, Screening, ScreeningParams, Section, SenderBlockParams, SenderSetParams,
@@ -2459,6 +2459,101 @@ async fn live_search_finds_mail_by_its_words_people_and_text() {
     search_until(&mut desktop, "garden", |f| f.messages.is_empty()).await;
     let found = search_until(&mut desktop, "garden in:trash", |f| f.messages.len() == 1).await;
     assert_eq!(found_subjects(&found), ["Garden club"]);
+
+    seed.logout().await;
+    handle.abort();
+}
+
+async fn search_server(desktop: &mut Client, query: &str) -> ServerSearchResult {
+    desktop
+        .call(
+            methods::SEARCH_SERVER,
+            SearchParams {
+                query: query.into(),
+                ..SearchParams::default()
+            },
+        )
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_the_server_finds_the_text_of_mail_not_opened_here() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    seed.create_mailbox(b"Archive").await.unwrap();
+    seed.create_mailbox(b"Trash").await.unwrap();
+    let long = |n: u32, subject: &str, from: &str, words: &str| {
+        format!(
+            "From: {from}\r\nTo: Live <live@example.test>\r\nSubject: {subject}\r\n\
+             Message-ID: <server-{n}@example.test>\r\nDate: Sun, 18 Oct 2026 0{n}:00:00 +0000\r\n\r\n{}\r\n{words}\r\n",
+            "Some news from the valley. ".repeat(10)
+        )
+        .into_bytes()
+    };
+    seed.append(
+        b"INBOX",
+        &[],
+        &long(1, "Trip plans", "Lena <lena@example.net>", "We climb the Matterhorn."),
+    )
+    .await
+    .unwrap();
+    seed.append(
+        b"INBOX",
+        &[SystemFlag::Seen],
+        &long(2, "Old trip", "Bob <bob@example.test>", "The Matterhorn again."),
+    )
+    .await
+    .unwrap();
+    seed.append(
+        b"Trash",
+        &[],
+        &long(3, "Thrown away", "Lena <lena@example.net>", "Matterhorn tickets."),
+    )
+    .await
+    .unwrap();
+    let (_temp, mut desktop, _account, _inbox, handle) = daemon_with_account(&live).await;
+    let settled = |found: &SearchResult| found.indexing == 0;
+
+    // Past the preview, never opened: not in the index here, but on the server.
+    assert!(
+        search_until(&mut desktop, "matterhorn", settled)
+            .await
+            .messages
+            .is_empty()
+    );
+    let found = search_server(&mut desktop, "matterhorn").await;
+    let subjects: Vec<&str> = found.messages.iter().map(|m| m.subject.as_str()).collect();
+    assert_eq!(subjects, ["Old trip", "Trip plans"], "newest first, Trash left out");
+    assert_eq!((found.not_here, found.unreachable.len()), (0, 0));
+    let found = search_server(&mut desktop, "matterhorn from:lena is:unread").await;
+    assert_eq!(found.messages.len(), 1);
+    assert_eq!(found.messages[0].subject, "Trip plans");
+    assert!(
+        search_server(&mut desktop, "matterhorn -lena -from:bob")
+            .await
+            .messages
+            .is_empty()
+    );
+    assert_eq!(
+        search_server(&mut desktop, "matterhorn in:trash").await.messages.len(),
+        1
+    );
+
+    // Filed elsewhere since this device last looked: found there, not here yet.
+    seed.append(
+        b"Archive",
+        &[],
+        &long(4, "Filed", "Ann <ann@example.test>", "Matterhorn photos."),
+    )
+    .await
+    .unwrap();
+    let found = search_server(&mut desktop, "matterhorn in:archive").await;
+    assert!(found.messages.is_empty());
+    assert_eq!(found.not_here, 1);
 
     seed.logout().await;
     handle.abort();

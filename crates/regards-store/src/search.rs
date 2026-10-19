@@ -375,8 +375,8 @@ fn filters(query: &Query, m: &str) -> String {
     sql
 }
 
-/// The folders a search looks in.
-fn folders(conn: &Connection, account_id: Option<&str>, folder: Option<&str>) -> Result<Vec<i64>, StoreError> {
+/// The folders a search looks in: `in:`'s, or all but Trash and Junk.
+pub fn folders(conn: &Connection, account_id: Option<&str>, folder: Option<&str>) -> Result<Vec<i64>, StoreError> {
     let mut statement =
         conn.prepare_cached("SELECT id, name, delimiter, role FROM mailboxes WHERE ?1 IS NULL OR account_id = ?1")?;
     let rows = statement.query_map([account_id], |row| {

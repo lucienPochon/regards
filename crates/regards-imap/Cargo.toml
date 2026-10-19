@@ -18,6 +18,8 @@ imap-types = "=2.0.0-alpha.7"
 # imap-codec 2.0.0-alpha.9 turns off nom's default features but uses its
 # `alloc` items, so it does not build on its own (spike 07 §5 item 1).
 nom = { version = "7", default-features = false, features = ["alloc"] }
+# For SEARCH dates; already there through imap-types.
+chrono = { version = "0.4", default-features = false }
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

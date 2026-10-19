@@ -167,6 +167,10 @@ impl Session {
                 self.require_ui()?;
                 mail::search(&self.state, params(request)?).await
             }
+            methods::SEARCH_SERVER => {
+                self.require_ui()?;
+                mail::search_server(&self.state, params(request)?).await
+            }
             methods::MESSAGE_GET => {
                 self.require_ui()?;
                 mail::get(&self.state, params(request)?).await

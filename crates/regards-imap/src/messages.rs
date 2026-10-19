@@ -4,7 +4,8 @@
 use crate::conn::Reply;
 use crate::{ImapError, Session, clean};
 use imap_types::command::{CommandBody, FetchModifier, SelectParameter};
-use imap_types::core::{AString, Literal, Vec1};
+use imap_types::core::{AString, Atom, Charset, Literal, Vec1};
+use imap_types::datetime::NaiveDate;
 use imap_types::extensions::binary::LiteralOrLiteral8;
 use imap_types::extensions::uidplus::{UidElement, UidSet};
 use imap_types::fetch::{MessageDataItem, MessageDataItemName, Section};
@@ -36,6 +37,77 @@ const HEADER_FIELDS: &[&str] = &[
     "CONTENT-TYPE",
     "FEEDBACK-ID",
 ];
+
+/// What [`Session::uid_search`] looks for (RFC 9051 §6.4.4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SearchTerm {
+    /// In the header or the text.
+    Text(String),
+    From(String),
+    /// In To or Cc.
+    To(String),
+    Subject(String),
+    Seen,
+    Unseen,
+    Flagged,
+    /// Received before this day (days since 1970-01-01).
+    Before(i64),
+    /// Received on this day or after.
+    Since(i64),
+    Not(Box<SearchTerm>),
+}
+
+impl SearchTerm {
+    fn is_ascii(&self) -> bool {
+        match self {
+            Self::Text(text) | Self::From(text) | Self::To(text) | Self::Subject(text) => text.is_ascii(),
+            Self::Not(term) => term.is_ascii(),
+            Self::Seen | Self::Unseen | Self::Flagged | Self::Before(_) | Self::Since(_) => true,
+        }
+    }
+}
+
+fn search_key(term: &SearchTerm) -> Result<SearchKey<'static>, ImapError> {
+    let text = |text: &str| {
+        AString::try_from(text.to_owned())
+            .map_err(|error| ImapError::Protocol(format!("cannot search for this text: {error}")))
+    };
+    let day = |days: i64| {
+        i32::try_from(days + 719_163)
+            .ok()
+            .and_then(chrono::NaiveDate::from_num_days_from_ce_opt)
+            .and_then(|date| NaiveDate::try_from(date).ok())
+            .ok_or_else(|| ImapError::Protocol("cannot search for this day".into()))
+    };
+    Ok(match term {
+        SearchTerm::Text(words) => SearchKey::Text(text(words)?),
+        SearchTerm::From(who) => SearchKey::From(text(who)?),
+        SearchTerm::To(who) => SearchKey::Or(Box::new(SearchKey::To(text(who)?)), Box::new(SearchKey::Cc(text(who)?))),
+        SearchTerm::Subject(words) => SearchKey::Subject(text(words)?),
+        SearchTerm::Seen => SearchKey::Seen,
+        SearchTerm::Unseen => SearchKey::Unseen,
+        SearchTerm::Flagged => SearchKey::Flagged,
+        SearchTerm::Before(days) => SearchKey::Before(day(*days)?),
+        SearchTerm::Since(days) => SearchKey::Since(day(*days)?),
+        SearchTerm::Not(term) => SearchKey::Not(Box::new(search_key(term)?)),
+    })
+}
+
+/// The UIDs a completed UID SEARCH found, in order. A cut-off answer is an
+/// error, never a shorter list (spike 07 §7).
+fn found_uids(reply: &Reply) -> Result<Vec<u32>, ImapError> {
+    ok(reply, "UID SEARCH")?;
+    let mut uids: Vec<u32> = reply
+        .data
+        .iter()
+        .flat_map(|data| match data {
+            Data::Search(uids, ..) => uids.iter().map(|uid| uid.get()).collect(),
+            _ => Vec::new(),
+        })
+        .collect();
+    uids.sort_unstable();
+    Ok(uids)
+}
 
 /// What SELECT reported about a mailbox.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -254,17 +326,19 @@ impl Session {
             .conn
             .run(CommandBody::search(None, Vec1::from(SearchKey::All), true))
             .await?;
-        ok(&reply, "UID SEARCH")?;
-        let mut uids: Vec<u32> = reply
-            .data
-            .iter()
-            .flat_map(|data| match data {
-                Data::Search(uids, ..) => uids.iter().map(|uid| uid.get()).collect(),
-                _ => Vec::new(),
-            })
-            .collect();
-        uids.sort_unstable();
-        Ok(uids)
+        found_uids(&reply)
+    }
+
+    /// The UIDs in the selected mailbox that meet every term (all of them
+    /// when there are none), as the server searches: usually substrings,
+    /// without regard to case. Words that are not ASCII are sent as UTF-8.
+    pub async fn uid_search(&mut self, terms: &[SearchTerm]) -> Result<Vec<u32>, ImapError> {
+        let keys = terms.iter().map(search_key).collect::<Result<Vec<_>, _>>()?;
+        let criteria = Vec1::try_from(keys).unwrap_or_else(|_| Vec1::from(SearchKey::All));
+        let charset = (!terms.iter().all(SearchTerm::is_ascii))
+            .then(|| Charset::from(Atom::try_from("UTF-8").expect("UTF-8 is an atom")));
+        let reply = self.conn.run(CommandBody::search(charset, criteria, true)).await?;
+        found_uids(&reply)
     }
 
     /// Flags, dates, size and the header block of `set`.
