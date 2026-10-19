@@ -1,7 +1,16 @@
 import { useEffect, useState } from "react";
 import type { AccountSummary } from "./accounts";
 import { Avatar } from "./Avatar";
-import { backgroundMode, notificationsShown, setBackgroundMode, setNotificationsShown } from "./background";
+import {
+  type BackgroundSettings,
+  backgroundSettings,
+  notificationsShown,
+  openSystemSettings,
+  openUrl,
+  setCloseToTray,
+  setNotificationsShown,
+  setStartAtLogin,
+} from "./background";
 import { Icon, type IconName } from "./icons";
 import type { Layout } from "./layout";
 import { type NewMail, type NotificationSettings, notificationSettings, setNotificationSettings } from "./notifications";
@@ -23,37 +32,52 @@ const PROJECT_URL = "https://github.com/lucienPochon/regards";
  */
 export function GeneralPage({ accounts }: { accounts: AccountSummary[] }) {
   const prefs = usePrefs();
-  const [background, setBackground] = useState<boolean | null>(null);
+  const [background, setBackground] = useState<BackgroundSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [senders, setSenders] = useState(false);
   useEffect(() => {
-    backgroundMode().then(setBackground, (failure: unknown) => setError(String(failure)));
+    backgroundSettings().then(setBackground, (failure: unknown) => setError(String(failure)));
   }, []);
+  const changeBackground = (key: keyof BackgroundSettings, on: boolean) => {
+    if (!background) return;
+    setError(null);
+    (key === "start_at_login" ? setStartAtLogin(on) : setCloseToTray(on)).then(
+      () => setBackground({ ...background, [key]: on }),
+      (failure: unknown) => setError(String(failure)),
+    );
+  };
   if (senders) return <ImageSendersPage accounts={accounts} onBack={() => setSenders(false)} />;
   return (
     <>
       <h3>General</h3>
       {error && <p className="error">{error}</p>}
       <Option
+        icon="logo"
+        label="Start Regards when you log in"
+        description="In the tray, without opening a window, so mail is up to date when you look."
+      >
+        {background && (
+          <Toggle
+            label="Start Regards when you log in"
+            on={background.start_at_login}
+            onChange={(on) => changeBackground("start_at_login", on)}
+          />
+        )}
+      </Option>
+      <Option
         icon="clock"
-        label="Start at login and keep running in the tray"
+        label="Keep running when the window is closed"
         description={
-          background === false
+          background?.close_to_tray === false
             ? "Off: closing the window quits Regards. Snoozed mail, reminders and scheduled messages then wait until it is open again."
-            : "Regards starts when you log in and stays in the tray when you close its window, so snoozed mail comes back and scheduled messages go. They need this computer to be on."
+            : "Regards stays in the tray, so snoozed mail comes back and scheduled messages go. They need this computer to be on."
         }
       >
-        {background !== null && (
+        {background && (
           <Toggle
-            label="Start at login and keep running in the tray"
-            on={background}
-            onChange={(on) => {
-              setError(null);
-              setBackgroundMode(on).then(
-                () => setBackground(on),
-                (failure: unknown) => setError(String(failure)),
-              );
-            }}
+            label="Keep running when the window is closed"
+            on={background.close_to_tray}
+            onChange={(on) => changeBackground("close_to_tray", on)}
           />
         )}
       </Option>
@@ -88,7 +112,7 @@ export function GeneralPage({ accounts }: { accounts: AccountSummary[] }) {
         <Select
           label="Undo send"
           value={prefs.undoSeconds}
-          options={[5, 10, 15, 30].map((seconds) => ({ id: seconds, label: `${seconds} seconds` }))}
+          options={[5, 10, 15, 30, 45, 60].map((seconds) => ({ id: seconds, label: seconds === 60 ? "1 minute" : `${seconds} seconds` }))}
           onChange={(undoSeconds) => setPrefs({ undoSeconds })}
         />
       </Option>
@@ -388,6 +412,10 @@ export function NotificationsPage({ accounts }: { accounts: AccountSummary[] }) 
     });
   };
   const off = shown === false;
+  const systemSettings = () => {
+    setError(null);
+    openSystemSettings("notifications").catch((failure: unknown) => setError(String(failure)));
+  };
   return (
     <>
       <h3>Notifications</h3>
@@ -443,8 +471,8 @@ export function NotificationsPage({ accounts }: { accounts: AccountSummary[] }) 
             );
           })}
           <p className="muted settings-note">
-            Not for the mail already there when an account is added, nor for what you already read elsewhere. When several
-            arrive at once, they come as one.
+            Mail that came while Regards was off is told of when it starts. Not the mail already there when an account is
+            added, nor what you already read elsewhere. When several arrive at once, they come as one.
           </p>
           <h4 className="settings-subhead">Also tell me when</h4>
           {NOTICES.map((notice) => (
@@ -458,6 +486,12 @@ export function NotificationsPage({ accounts }: { accounts: AccountSummary[] }) 
           ))}
         </div>
       )}
+      <LinkRow
+        icon="settings"
+        label="This computer's notification settings"
+        detail="Sounds, banners and quiet hours are set there, for Regards as for any app"
+        onOpen={systemSettings}
+      />
       <h4 className="settings-subhead">In Regards</h4>
       <Option icon="inbox" label="Unread counts in the sidebar" description="Beside the inbox and each account's inbox.">
         <Toggle label="Unread counts in the sidebar" on={prefs.sidebarCounts} onChange={(sidebarCounts) => setPrefs({ sidebarCounts })} />
@@ -687,6 +721,11 @@ export function AccessibilityPage() {
 /** Support: the version and updates, the background service, and where to get help. */
 export function SupportPage({ service, onRecheck }: { service: ServiceCheck; onRecheck: () => void }) {
   const [copied, setCopied] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const open = (url: string) => {
+    setError(null);
+    openUrl(url).catch((failure: unknown) => setError(String(failure)));
+  };
   const copy = (text: string) => {
     navigator.clipboard?.writeText(text).then(
       () => setCopied(text),
@@ -716,6 +755,7 @@ export function SupportPage({ service, onRecheck }: { service: ServiceCheck; onR
         Check again
       </button>
       <h4 className="settings-subhead">Get help</h4>
+      {error && <p className="error">{error}</p>}
       {links.map((link) => (
         <div key={link.url} className="option help-row">
           <span className="option-icon">
@@ -725,10 +765,20 @@ export function SupportPage({ service, onRecheck }: { service: ServiceCheck; onR
             <strong>{link.label}</strong>
             <span className="help-url">{link.url}</span>
           </span>
-          <button type="button" className="btn small" onClick={() => copy(link.url)}>
-            <Icon name={copied === link.url ? "check" : "copy"} size={14} />
-            {copied === link.url ? "Copied" : "Copy link"}
-          </button>
+          <span className="help-buttons">
+            <button type="button" className="btn small" onClick={() => open(link.url)}>
+              Open
+            </button>
+            <button
+              type="button"
+              className="icon-btn small"
+              title={copied === link.url ? "Copied" : "Copy link"}
+              aria-label={copied === link.url ? "Copied" : "Copy link"}
+              onClick={() => copy(link.url)}
+            >
+              <Icon name={copied === link.url ? "check" : "copy"} size={14} />
+            </button>
+          </span>
         </div>
       ))}
     </>

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { type AccountSummary, removeAccount, syncAccount } from "./accounts";
+import { useEffect, useState } from "react";
+import { type AccountSummary, removeAccount, syncAccount, updateAccount } from "./accounts";
 import { AgentActivity } from "./AgentActivity";
 import { AgentHolds } from "./AgentHolds";
 import { leafName } from "./views";
@@ -361,6 +361,56 @@ function AgentsTab({
   );
 }
 
+/** The account's name: who your mail is from, unless an address has a name of its own. Saved when you leave the field. */
+function AccountName({ account }: { account: AccountSummary }) {
+  const [name, setName] = useState(account.display_name);
+  const [state, setState] = useState<"idle" | "saving" | "saved">("idle");
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => setName(account.display_name), [account.display_name]);
+  const save = () => {
+    const next = name.trim();
+    if (next === account.display_name.trim()) return;
+    setState("saving");
+    setError(null);
+    updateAccount(account.id, next).then(
+      (saved) => {
+        setName(saved.display_name);
+        setState("saved");
+      },
+      (failure: unknown) => {
+        setState("idle");
+        setError(String(failure));
+      },
+    );
+  };
+  return (
+    <label className="account-title">
+      Your name
+      <input
+        className="input"
+        placeholder={account.email}
+        value={name}
+        onChange={(event) => {
+          setName(event.target.value);
+          setState("idle");
+        }}
+        onBlur={save}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+      />
+      <span className="muted small" aria-live="polite">
+        {error ??
+          (state === "saving"
+            ? "Saving…"
+            : state === "saved"
+              ? "Saved."
+              : "Who your mail is from. An address with a name of its own (Addresses & signatures) keeps it. Empty: the address.")}
+      </span>
+    </label>
+  );
+}
+
 function AccountRow({
   entry,
   confirm,
@@ -445,7 +495,7 @@ function AccountRow({
           Addresses &amp; signatures
         </button>
         <button type="button" className="btn small" aria-expanded={options} onClick={() => setOptions(!options)}>
-          In Regards
+          Details
         </button>
         <button type="button" className="btn small danger" onClick={remove}>
           Remove
@@ -464,8 +514,9 @@ function AccountRow({
     )}
     {options && (
       <li className="account-options">
+        <AccountName account={account} />
         <label className="account-title">
-          Name in Regards
+          Label in Regards
           <input
             className="input"
             placeholder={account.email}
