@@ -63,6 +63,14 @@ export function addAccount(input: AccountInput): Promise<AccountSummary> {
   return invoke<AccountSummary>("account_add", { input });
 }
 
+/**
+ * Rename an account (as listed in Regards). The name it sends with follows,
+ * unless it was set to something else (identities).
+ */
+export function updateAccount(id: string, displayName: string): Promise<AccountSummary> {
+  return invoke<AccountSummary>("account_update", { id, displayName });
+}
+
 export function removeAccount(id: string): Promise<void> {
   return invoke<void>("account_remove", { id });
 }

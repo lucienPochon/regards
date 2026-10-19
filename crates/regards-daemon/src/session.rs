@@ -250,6 +250,10 @@ impl Session {
                 self.require_ui()?;
                 accounts::remove(&self.state, params(request)?).await
             }
+            methods::ACCOUNT_UPDATE => {
+                self.require_ui()?;
+                accounts::update(&self.state, params(request)?).await
+            }
             methods::ACCOUNT_DISCOVER => {
                 self.require_ui()?;
                 discover::discover(&self.state, params(request)?).await

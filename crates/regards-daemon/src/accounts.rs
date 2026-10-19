@@ -5,8 +5,8 @@
 use crate::{State, sync};
 use regards_imap::{ImapError, ImapServer};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountCheckFailure, AccountRef, AccountRemoveParams, AccountSummary, AgentAccess,
-    AgentAccessParams, AgentSendParams, ConnectionSecurity, MailboxListResult, MailboxSummary, RpcError,
+    AccountAddParams, AccountCheckFailure, AccountRef, AccountRemoveParams, AccountSummary, AccountUpdateParams,
+    AgentAccess, AgentAccessParams, AgentSendParams, ConnectionSecurity, MailboxListResult, MailboxSummary, RpcError,
     ServerSettings, SignIn, SyncResult, codes,
 };
 use regards_store::StoreError;
@@ -113,6 +113,33 @@ pub(crate) async fn add(state: &Arc<State>, params: AccountAddParams) -> Result<
             Err(store_error(error))
         }
     }
+}
+
+/// `account.update`: rename an account.
+pub(crate) async fn update(state: &State, params: AccountUpdateParams) -> Result<Value, RpcError> {
+    let id = params.id;
+    let name = params.display_name.trim().to_owned();
+    if name.chars().count() > 200 {
+        return Err(invalid("the name is too long"));
+    }
+    let renamed = state
+        .store
+        .write(move |tx| {
+            let name = if name.is_empty() {
+                match accounts::get(tx, &id)? {
+                    Some(account) => account.email,
+                    None => return Ok(None),
+                }
+            } else {
+                name
+            };
+            accounts::rename(tx, &id, &name)
+        })
+        .await
+        .map_err(store_error)?
+        .value
+        .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such account"))?;
+    summary_of(state, renamed).await
 }
 
 pub(crate) async fn remove(state: &State, params: AccountRemoveParams) -> Result<Value, RpcError> {

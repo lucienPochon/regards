@@ -310,7 +310,7 @@ flowchart LR
 
 ### 5.7 Send later, undo send and executors (P1)
 
-- **Undo send (1.0):** every send passes through the outbox with `undo_until = now + delay` (default 10 s, configurable 0–30 s).
+- **Undo send (1.0):** every send passes through the outbox with `undo_until = now + delay` (default 10 s, configurable 0–60 s).
 - **Freezing and at-most-once (1.0):** MIME bytes are frozen and hashed at queue time, and exactly one executor claims the job. A timeout becomes `uncertain`, with no blind retries, and is reconciled with the Sent folder.
 - **No internet (1.0):** the Outbox holds messages and sends them when the connection returns.
 - **Executors:**

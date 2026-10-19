@@ -198,6 +198,23 @@ pub fn set_agent_send_window(tx: &Transaction<'_>, id: &str, window: Option<u32>
     Ok(changed > 0)
 }
 
+/// Rename an account. Its identity for its own address follows when it
+/// still had the old name (not one set for it). `None` if there is no such account.
+pub fn rename(tx: &Transaction<'_>, id: &str, display_name: &str) -> Result<Option<Account>, StoreError> {
+    let Some(before) = get(tx, id)? else {
+        return Ok(None);
+    };
+    tx.execute(
+        "UPDATE accounts SET display_name = ?2 WHERE id = ?1",
+        params![id, display_name],
+    )?;
+    tx.execute(
+        "UPDATE identities SET name = ?3 WHERE account_id = ?1 AND lower(email) = lower(?2) AND name = ?4",
+        params![id, before.email, display_name, before.display_name],
+    )?;
+    get(tx, id)
+}
+
 /// Set what an account allows agents to do; `false` if there is no such account.
 pub fn set_agent_access(tx: &Transaction<'_>, id: &str, access: Access) -> Result<bool, StoreError> {
     let changed = tx.execute(

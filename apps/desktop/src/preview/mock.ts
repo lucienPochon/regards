@@ -103,6 +103,8 @@ const templates: Template[] = [
   },
 ];
 let background = true;
+let startAtLogin = true;
+let closeToTray = true;
 let notifications = true;
 
 // The Smart Inbox, sorted roughly as the daemon's rules do. New senders get
@@ -686,6 +688,27 @@ function handle(cmd: string, args: Args): unknown {
     }
     case "sender_images":
       return { senders: [...(imageSenders.get(args.accountId as string) ?? [])].sort() };
+    case "background_settings":
+      return { start_at_login: startAtLogin, close_to_tray: closeToTray };
+    case "set_start_at_login":
+      startAtLogin = args.on as boolean;
+      return null;
+    case "set_close_to_tray":
+      closeToTray = args.on as boolean;
+      return null;
+    case "open_system_settings":
+      if (params.get("platform") === "macos" && args.pane === "default_apps")
+        throw "On a Mac, the default mail app is chosen in Mail: Mail › Settings › General.";
+      return null;
+    case "open_url":
+      return null;
+    case "account_update": {
+      const owner = accounts.find((a) => a.account.id === args.id);
+      if (!owner) throw "No such account.";
+      owner.account.display_name = String(args.displayName ?? "").trim() || owner.account.email;
+      changed();
+      return owner.account;
+    }
     case "notification_settings":
       return notificationChoices;
     case "set_notification_settings":
