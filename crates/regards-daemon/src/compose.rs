@@ -27,7 +27,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// ADR-0010 §4: undo send for 10 s by default, at most 30.
 const DEFAULT_UNDO_SECONDS: u32 = 10;
-const MAX_UNDO_SECONDS: u32 = 30;
+const MAX_UNDO_SECONDS: u32 = 60;
 /// More recipients than this is a mailing, not a message.
 const MAX_RECIPIENTS: usize = 100;
 /// Bodies larger than this are not a typed message.

@@ -299,6 +299,20 @@ function handle(cmd: string, args: Args): unknown {
       return { allow: (args.sender as { allow: boolean }).allow };
     case "sender_images":
       return { senders: [] };
+    case "background_settings":
+      return { start_at_login: true, close_to_tray: true };
+    case "set_start_at_login":
+    case "set_close_to_tray":
+    case "open_system_settings":
+    case "open_url":
+      return null;
+    case "account_update": {
+      const owner = accounts.find((a) => a.account.id === args.id);
+      if (!owner) throw "No such account.";
+      owner.account.display_name = String(args.displayName ?? "").trim() || owner.account.email;
+      changed();
+      return owner.account;
+    }
     case "notification_settings":
       return notificationChoices;
     case "set_notification_settings":

@@ -12,8 +12,9 @@ mod world;
 use regards_core::headers::{self, Person};
 use regards_daemon::DEFAULT_LATE_SEND_GRACE;
 use regards_ipc::protocol::{
-    AccountRef, DraftCreateParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
-    IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView, codes, methods,
+    AccountRef, AccountSummary, AccountUpdateParams, DraftCreateParams, DraftSendParams, DraftSendResult,
+    DraftSetFromParams, DraftUpdateParams, DraftView, IdentityListResult, IdentityRef, IdentitySaveParams,
+    IdentityView, codes, methods,
 };
 use regards_ipc::{Client, ClientError};
 use serde_json::Value;
@@ -213,5 +214,69 @@ async fn a_message_goes_out_from_the_identity_chosen_with_its_signature() {
     let _: Value = desktop.call(methods::IDENTITY_REMOVE, ref_of(own.id)).await.unwrap();
     let next = new_draft(&mut desktop, &account.id).await;
     assert_eq!(next.body, "\n\nAda Lovelace\nAnalytical Engines");
+    handle.abort();
+}
+
+async fn rename(desktop: &mut Client, id: &str, name: &str) -> Result<AccountSummary, ClientError> {
+    desktop
+        .call(
+            methods::ACCOUNT_UPDATE,
+            AccountUpdateParams {
+                id: id.into(),
+                display_name: name.into(),
+            },
+        )
+        .await
+}
+
+#[tokio::test]
+async fn renaming_an_account_renames_how_it_sends_unless_that_was_chosen() {
+    let world = World::new(DEFAULT_LATE_SEND_GRACE).await;
+    let Running {
+        mut desktop,
+        endpoint,
+        handle,
+    } = world.start().await;
+    let account = world.add_account(&mut desktop).await;
+    assert_eq!(identities(&mut desktop, &account.id).await[0].name, "Ada");
+
+    let renamed = rename(&mut desktop, &account.id, "  Ada Lovelace ").await.unwrap();
+    assert_eq!(renamed.display_name, "Ada Lovelace");
+    assert_eq!(
+        identities(&mut desktop, &account.id).await[0].name,
+        "Ada Lovelace",
+        "it followed"
+    );
+
+    // A sending name set on its own stays.
+    let own = identities(&mut desktop, &account.id).await[0].clone();
+    save(
+        &mut desktop,
+        IdentitySaveParams {
+            id: Some(own.id),
+            account_id: account.id.clone(),
+            name: "Countess of Lovelace".into(),
+            email: own.email.clone(),
+            signature: String::new(),
+        },
+    )
+    .await
+    .unwrap();
+    rename(&mut desktop, &account.id, "Work").await.unwrap();
+    assert_eq!(
+        identities(&mut desktop, &account.id).await[0].name,
+        "Countess of Lovelace"
+    );
+
+    // Empty: the address.
+    assert_eq!(
+        rename(&mut desktop, &account.id, " ").await.unwrap().display_name,
+        account.email
+    );
+    assert_eq!(code(rename(&mut desktop, "nobody", "X").await), codes::NOT_FOUND);
+    let mut agent = Client::connect(&endpoint, regards_ipc::protocol::ClientKind::Mcp)
+        .await
+        .unwrap();
+    assert_eq!(code(rename(&mut agent, &account.id, "X").await), codes::FORBIDDEN);
     handle.abort();
 }

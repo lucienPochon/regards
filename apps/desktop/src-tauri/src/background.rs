@@ -33,7 +33,10 @@ pub(crate) const BACKGROUND_ARG: &str = "--background";
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 struct Settings {
+    /// Closing the window leaves Regards in the tray.
     background: bool,
+    /// Start at login; `None`: as `background` (one setting before).
+    start_at_login: Option<bool>,
     notifications: bool,
     /// Told once that closing the window leaves Regards running.
     told_tray: bool,
@@ -49,6 +52,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             background: true,
+            start_at_login: None,
             notifications: true,
             told_tray: false,
             update_checks: None,
@@ -61,6 +65,7 @@ impl Default for Settings {
 pub(crate) struct Background {
     file: Option<PathBuf>,
     on: AtomicBool,
+    login: AtomicBool,
     notifications: AtomicBool,
     told_tray: AtomicBool,
     update_checks: Mutex<Option<bool>>,
@@ -83,6 +88,7 @@ impl Background {
         Self {
             file,
             on: AtomicBool::new(settings.background),
+            login: AtomicBool::new(settings.start_at_login.unwrap_or(settings.background)),
             notifications: AtomicBool::new(settings.notifications),
             told_tray: AtomicBool::new(settings.told_tray),
             update_checks: Mutex::new(settings.update_checks),
@@ -93,25 +99,47 @@ impl Background {
         }
     }
 
+    /// Closing the window leaves Regards in the tray.
     pub(crate) fn on(&self) -> bool {
         self.on.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn login(&self) -> bool {
+        self.login.load(Ordering::SeqCst)
     }
 
     pub(crate) fn notifications(&self) -> bool {
         self.notifications.load(Ordering::SeqCst)
     }
 
-    /// Turn background mode on or off: saved, start at login, and the tray.
+    /// Turn background mode on or off, both its halves: saved, start at
+    /// login, and the tray.
     pub(crate) fn set(&self, app: &AppHandle, on: bool) -> Result<(), String> {
+        self.set_close_to_tray(on)?;
+        self.set_start_at_login(app, on)
+    }
+
+    /// Whether closing the window leaves Regards in the tray: saved, and the tray.
+    pub(crate) fn set_close_to_tray(&self, on: bool) -> Result<(), String> {
         self.save(Settings {
             background: on,
             ..self.current()
         })?;
         self.on.store(on, Ordering::SeqCst);
-        start_at_login(app, on);
         if let Some(check) = self.check.lock().expect("never poisoned").as_ref() {
             let _ = check.set_checked(on);
         }
+        Ok(())
+    }
+
+    /// Whether Regards starts at login: saved, and the login item.
+    pub(crate) fn set_start_at_login(&self, app: &AppHandle, on: bool) -> Result<(), String> {
+        self.save(Settings {
+            start_at_login: Some(on),
+            ..self.current()
+        })?;
+        self.login.store(on, Ordering::SeqCst);
+        start_at_login(app, on);
         Ok(())
     }
 
@@ -194,6 +222,7 @@ impl Background {
     fn current(&self) -> Settings {
         Settings {
             background: self.on(),
+            start_at_login: Some(self.login()),
             notifications: self.notifications(),
             told_tray: self.told_tray.load(Ordering::SeqCst),
             update_checks: self.update_checks(),
@@ -272,7 +301,7 @@ pub(crate) fn setup(app: &App) -> tauri::Result<()> {
     }
     tray.build(app)?;
 
-    start_at_login(app.handle(), on);
+    start_at_login(app.handle(), background.login());
     let at_login = std::env::args().any(|arg| arg == BACKGROUND_ARG);
     if !(at_login && on) {
         show(app.handle());

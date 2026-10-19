@@ -16,17 +16,18 @@ mod drops;
 mod links;
 mod mail_frame;
 mod notify;
+mod system;
 mod updates;
 
 use regards_core::paths::DataDirs;
 use regards_core::secret::Secret;
 use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, AgentAccess, AgentAccessParams,
-    AgentActivityParams, AgentActivityResult, AgentSendParams, AsideParams, ClientKind, ConnectionSecurity,
-    DeleteResult, DiscoverParams, DiscoverResult, DraftAttachFileParams, DraftAttachImageParams, DraftCreateParams,
-    DraftDetachParams, DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult, DraftRef,
-    DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
+    AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, AccountUpdateParams, AgentAccess,
+    AgentAccessParams, AgentActivityParams, AgentActivityResult, AgentSendParams, AsideParams, ClientKind,
+    ConnectionSecurity, DeleteResult, DiscoverParams, DiscoverResult, DraftAttachFileParams, DraftAttachImageParams,
+    DraftCreateParams, DraftDetachParams, DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult,
+    DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
     ExplainResult, HoldListParams, HoldListResult, HoldRef, HoldView, IdentityListResult, IdentityRef,
     IdentitySaveParams, IdentityView, MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds,
     MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult, OauthFlowRef, OauthProvidersResult,
@@ -330,6 +331,16 @@ async fn account_discover(bridge: State<'_, Bridge>, email: String) -> Result<Di
     let mut client = bridge.connect().await?.client;
     client
         .call(methods::ACCOUNT_DISCOVER, DiscoverParams { email })
+        .await
+        .map_err(describe)
+}
+
+/// Rename an account; its sending name follows if it was the same.
+#[tauri::command]
+async fn account_update(bridge: State<'_, Bridge>, id: String, display_name: String) -> Result<AccountSummary, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::ACCOUNT_UPDATE, AccountUpdateParams { id, display_name })
         .await
         .map_err(describe)
 }
@@ -1085,6 +1096,32 @@ fn background_set(app: AppHandle, background: State<'_, background::Background>,
     background.set(&app, on)
 }
 
+/// Background mode's two halves on their own: starting at login, and
+/// closing the window to the tray.
+#[derive(serde::Serialize)]
+struct BackgroundSettings {
+    start_at_login: bool,
+    close_to_tray: bool,
+}
+
+#[tauri::command]
+fn background_settings(background: State<'_, background::Background>) -> BackgroundSettings {
+    BackgroundSettings {
+        start_at_login: background.login(),
+        close_to_tray: background.on(),
+    }
+}
+
+#[tauri::command]
+fn set_start_at_login(app: AppHandle, background: State<'_, background::Background>, on: bool) -> Result<(), String> {
+    background.set_start_at_login(&app, on)
+}
+
+#[tauri::command]
+fn set_close_to_tray(background: State<'_, background::Background>, on: bool) -> Result<(), String> {
+    background.set_close_to_tray(on)
+}
+
 /// Whether notifications are shown (ADR-0011).
 #[tauri::command]
 fn notifications_get(background: State<'_, background::Background>) -> bool {
@@ -1162,6 +1199,12 @@ fn main() {
             account_list,
             account_add,
             account_discover,
+            background_settings,
+            set_start_at_login,
+            set_close_to_tray,
+            system::open_system_settings,
+            system::open_url,
+            account_update,
             notify::notification_settings,
             notify::set_notification_settings,
             updates::update_status,

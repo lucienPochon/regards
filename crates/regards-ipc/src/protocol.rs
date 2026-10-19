@@ -32,6 +32,8 @@ pub mod methods {
     pub const ACCOUNT_ADD: &str = "account.add";
     /// Remove an account and its stored password. `ui` only (ADR-0006).
     pub const ACCOUNT_REMOVE: &str = "account.remove";
+    /// Rename an account; the name it sends with follows if it was the same. `ui` only.
+    pub const ACCOUNT_UPDATE: &str = "account.update";
     /// An address's mail servers, found before the person types them
     /// (known providers, DNS, then the usual names, checked). `ui` only.
     pub const ACCOUNT_DISCOVER: &str = "account.discover";
@@ -413,6 +415,14 @@ pub struct AccountAddParams {
     pub password: Secret,
     pub imap: ServerSettings,
     pub smtp: ServerSettings,
+}
+
+/// Parameters of [`methods::ACCOUNT_UPDATE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountUpdateParams {
+    pub id: String,
+    /// Empty: the address.
+    pub display_name: String,
 }
 
 /// An account as clients see it: no secrets, no credential-store keys.
@@ -1423,7 +1433,7 @@ pub struct DraftSetFromParams {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DraftSendParams {
     pub id: i64,
-    /// Seconds during which the send can be undone: 0 to 30, default 10 (ADR-0010 §4).
+    /// Seconds during which the send can be undone: 0 to 60, default 10 (ADR-0010 §4).
     #[serde(default)]
     pub undo_seconds: Option<u32>,
     /// Send later: when to send it, Unix time in milliseconds, in the future.
