@@ -1,8 +1,12 @@
 //! `regards`: the Regards command-line tool.
 
+mod commands;
 mod logging;
+mod mcp;
+mod skill;
+mod tools;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_core::paths::DataDirs;
 use regards_daemon::{Daemon, DaemonError};
@@ -35,6 +39,14 @@ enum Command {
     Daemon(DaemonCommand),
     /// Show the version and build identity.
     Version,
+    /// Serve the mail tools to an agent over MCP (stdio), as these commands.
+    Mcp,
+    /// Print instructions for agents (a skill file), or install them.
+    Skill {
+        /// Write it as <DIR>/regards/SKILL.md (such as .claude/skills).
+        #[arg(long, value_name = "DIR")]
+        install: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -56,7 +68,14 @@ enum DaemonCommand {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let cli = Cli::parse();
+    // The mail commands come from the tools agents use (ADR-0012 §1).
+    let matches = Cli::command().subcommands(commands::all()).get_matches();
+    if let Some((name, arguments)) = matches.subcommand()
+        && let Some((tool, args)) = commands::parse(name, arguments)
+    {
+        return run_tool(tool, args, matches.get_flag("json")).await;
+    }
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
     match run(cli).await {
         Ok(code) => code,
         Err(error) => {
@@ -66,6 +85,23 @@ async fn main() -> ExitCode {
     }
 }
 
+/// One tool, as an agent: the daemon is started if it is not running.
+async fn run_tool(tool: &tools::Tool, args: serde_json::Map<String, serde_json::Value>, as_json: bool) -> ExitCode {
+    let connected = async {
+        let launcher = Launcher::new(DataDirs::resolve()?, std::env::current_exe()?);
+        anyhow::Ok(launcher.connect_or_start(ClientKind::Cli, None, false).await?)
+    };
+    let mut connected = match connected.await {
+        Ok(connected) => connected,
+        Err(error) => {
+            eprintln!("error: {error:#}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let outcome = tools::run(&mut connected.client, tool, &args).await;
+    commands::print(tool, &outcome, as_json)
+}
+
 async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
     match cli.command {
         Command::Version => {
@@ -73,6 +109,24 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
                 println!("{}", json!({ "version": VERSION, "build_id": BUILD_ID }));
             } else {
                 println!("regards {VERSION} (build {BUILD_ID})");
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Mcp => {
+            mcp::Server::new(DataDirs::resolve()?).serve().await?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Skill { install } => {
+            match install {
+                Some(dir) => {
+                    let path = skill::install(&dir)?;
+                    if cli.json {
+                        println!("{}", json!({ "installed": path.display().to_string() }));
+                    } else {
+                        println!("Installed {}.", path.display());
+                    }
+                }
+                None => print!("{}", skill::text()),
             }
             Ok(ExitCode::SUCCESS)
         }
