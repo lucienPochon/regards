@@ -14,7 +14,7 @@ mod tls;
 pub mod utf7;
 
 pub use messages::{
-    Fetched, FetchedHeaders, FlagUpdate, Flags, MessageSet, Moved, Resynced, Selected, Since, SystemFlag,
+    Fetched, FetchedHeaders, FlagUpdate, Flags, MessageSet, Moved, Resynced, SearchTerm, Selected, Since, SystemFlag,
 };
 
 pub use conn::IdleEnd;

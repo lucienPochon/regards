@@ -10,7 +10,7 @@ mod fake_smtp;
 mod world;
 
 use regards_daemon::DEFAULT_LATE_SEND_GRACE;
-use regards_ipc::protocol::{ClientKind, SearchParams, SearchResult, codes, methods};
+use regards_ipc::protocol::{ClientKind, SearchParams, SearchResult, ServerSearchResult, codes, methods};
 use regards_ipc::{Client, ClientError};
 use world::{Running, World};
 
@@ -60,10 +60,34 @@ async fn search_answers_the_app_and_checks_what_it_is_asked() {
         codes::INVALID_PARAMS
     );
 
+    // The servers: nothing asked, nothing asked of them; the same checks.
+    let nothing: ServerSearchResult = desktop.call(methods::SEARCH_SERVER, search(" ")).await.unwrap();
+    assert!(nothing.messages.is_empty() && nothing.not_here == 0 && nothing.unreachable.is_empty());
+    let no_page = SearchParams {
+        limit: Some(0),
+        ..search("garden")
+    };
+    assert_eq!(
+        code(
+            desktop
+                .call::<_, ServerSearchResult>(methods::SEARCH_SERVER, no_page)
+                .await
+        ),
+        codes::INVALID_PARAMS
+    );
+
     // Agents get access levels later (ADR-0012); until then, not mail.
     let mut agent = Client::connect(&endpoint, ClientKind::Cli).await.unwrap();
     assert_eq!(
         code(agent.call::<_, SearchResult>(methods::SEARCH, search("garden")).await),
+        codes::FORBIDDEN
+    );
+    assert_eq!(
+        code(
+            agent
+                .call::<_, ServerSearchResult>(methods::SEARCH_SERVER, search("garden"))
+                .await
+        ),
         codes::FORBIDDEN
     );
     handle.abort();

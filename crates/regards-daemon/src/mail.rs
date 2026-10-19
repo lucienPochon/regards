@@ -4,11 +4,14 @@
 use crate::State;
 use crate::sync;
 use regards_core::mailbox::Role;
+use regards_core::search::{Field, Query};
 use regards_core::smart::{Screening, Section};
 use regards_core::{body, html};
+use regards_imap::SearchTerm;
 use regards_ipc::protocol::{
     MessageCursor, MessageDetail, MessageHtml, MessageHtmlParams, MessageListParams, MessageListResult, MessageRef,
-    MessageSummary, RpcError, SearchParams, SearchResult, ThreadEntry, ThreadView, View, ViewParams, codes,
+    MessageSummary, RpcError, SearchParams, SearchResult, ServerSearchResult, ThreadEntry, ThreadView, View,
+    ViewParams, codes,
 };
 use regards_store::mailboxes::Mailbox;
 use regards_store::marks::{self, Mark, Marks};
@@ -148,9 +151,9 @@ fn store_error(error: StoreError) -> RpcError {
     crate::session::internal(error)
 }
 
-/// Search the mail (plan §5.10): one copy of each message, newest first; on
-/// the first page of words that match few messages, the best matches too.
-pub(crate) async fn search(state: &State, params: SearchParams) -> Result<Value, RpcError> {
+/// What a search asks for, checked: the page size, the words and filters,
+/// and where the last page ended.
+fn search_request(params: &SearchParams) -> Result<(u32, Query, Option<Cursor>), RpcError> {
     let limit = params.limit.unwrap_or(DEFAULT_PAGE);
     if !(1..=MAX_PAGE).contains(&limit) {
         return Err(RpcError::new(
@@ -161,37 +164,62 @@ pub(crate) async fn search(state: &State, params: SearchParams) -> Result<Value,
     if params.query.len() > MAX_QUERY {
         return Err(RpcError::new(codes::INVALID_PARAMS, "the search is too long"));
     }
-    let query = regards_core::search::parse(&params.query);
-    let account_id = params.account_id;
     let before = params.before.map(|c| Cursor {
         received_at: c.received_at,
         id: c.id,
     });
+    Ok((limit, regards_core::search::parse(&params.query), before))
+}
+
+/// [`page_info`] for rows of any accounts: marks are kept by account.
+fn page_info_any(conn: &rusqlite::Connection, rows: &[Message]) -> Result<PageInfo, StoreError> {
+    let mut accounts: HashMap<i64, Option<String>> = HashMap::new();
+    let mut by_account: HashMap<String, Vec<Message>> = HashMap::new();
+    for message in rows {
+        let account = match accounts.entry(message.mailbox_id) {
+            Entry::Occupied(known) => known.get().clone(),
+            Entry::Vacant(new) => new
+                .insert(mailboxes::get(conn, message.mailbox_id)?.map(|m| m.account_id))
+                .clone(),
+        };
+        if let Some(account) = account {
+            by_account.entry(account).or_default().push(message.clone());
+        }
+    }
+    let mut info = PageInfo::default();
+    for (account, rows) in by_account {
+        let more = page_info(conn, &account, &rows)?;
+        info.marks.extend(more.marks);
+        info.threads.extend(more.threads);
+    }
+    Ok(info)
+}
+
+/// Cut `page` (asked for one row more) to `limit`; where the next one starts.
+fn cut(page: &mut Vec<Message>, limit: u32) -> Option<MessageCursor> {
+    let more = page.len() > limit as usize;
+    page.truncate(limit as usize);
+    more.then(|| {
+        let last = page.last().expect("a full page is not empty");
+        MessageCursor {
+            received_at: last.listed_at,
+            id: last.id,
+        }
+    })
+}
+
+/// Search the mail (plan §5.10): one copy of each message, newest first; on
+/// the first page of words that match few messages, the best matches too.
+pub(crate) async fn search(state: &State, params: SearchParams) -> Result<Value, RpcError> {
+    let (limit, query, before) = search_request(&params)?;
+    let account_id = params.account_id;
     let (hits, info, indexing) = state
         .store
         .read(move |conn| {
             // One extra row tells whether another page exists.
             let hits = regards_store::search::search(conn, &query, account_id.as_deref(), limit + 1, before)?;
-            // Marks are kept by account: each account's rows together.
-            let mut accounts: HashMap<i64, Option<String>> = HashMap::new();
-            let mut rows: HashMap<String, Vec<Message>> = HashMap::new();
-            for message in hits.page.iter().chain(&hits.top) {
-                let account = match accounts.entry(message.mailbox_id) {
-                    Entry::Occupied(known) => known.get().clone(),
-                    Entry::Vacant(new) => new
-                        .insert(mailboxes::get(conn, message.mailbox_id)?.map(|m| m.account_id))
-                        .clone(),
-                };
-                if let Some(account) = account {
-                    rows.entry(account).or_default().push(message.clone());
-                }
-            }
-            let mut info = PageInfo::default();
-            for (account, rows) in rows {
-                let more = page_info(conn, &account, &rows)?;
-                info.marks.extend(more.marks);
-                info.threads.extend(more.threads);
-            }
+            let rows: Vec<Message> = hits.page.iter().chain(&hits.top).cloned().collect();
+            let info = page_info_any(conn, &rows)?;
             Ok((hits, info, regards_store::search::pending(conn)?))
         })
         .await
@@ -200,21 +228,202 @@ pub(crate) async fn search(state: &State, params: SearchParams) -> Result<Value,
             other => store_error(other),
         })?;
     let mut page = hits.page;
-    let more = page.len() > limit as usize;
-    page.truncate(limit as usize);
-    let next = more.then(|| {
-        let last = page.last().expect("a full page is not empty");
-        MessageCursor {
-            received_at: last.listed_at,
-            id: last.id,
-        }
-    });
+    let next = cut(&mut page, limit);
     Ok(json!(SearchResult {
         messages: page.into_iter().map(|row| summary(row, &info)).collect(),
         top: hits.top.into_iter().map(|row| summary(row, &info)).collect(),
         next,
         indexing,
     }))
+}
+
+/// Search the servers as well (plan §5.10): they have the text of messages
+/// not opened on this device, which the index here lacks. What they find
+/// that is on this device is listed as [`search`] lists it; the rest is
+/// counted (older than what has been fetched so far, or just arrived).
+pub(crate) async fn search_server(state: &State, params: SearchParams) -> Result<Value, RpcError> {
+    let (limit, query, before) = search_request(&params)?;
+    if query.is_empty() {
+        return Ok(json!(ServerSearchResult {
+            messages: Vec::new(),
+            next: None,
+            not_here: 0,
+            unreachable: Vec::new(),
+        }));
+    }
+    let terms = server_terms(&query);
+    let (only, folder) = (params.account_id, query.folder.clone());
+    // Each account's folders to ask, and the folders results may show in.
+    let (plan, shown) = state
+        .store
+        .read(move |conn| {
+            let accounts: Vec<String> = match only {
+                Some(account) => vec![account],
+                None => regards_store::accounts::list(conn)?.into_iter().map(|a| a.id).collect(),
+            };
+            let mut plan: Vec<(String, Vec<Mailbox>)> = Vec::new();
+            let mut shown: HashMap<i64, Option<Role>> = HashMap::new();
+            for account in accounts {
+                let ids = regards_store::search::folders(conn, Some(&account), folder.as_deref())?;
+                let mut asked: Vec<Mailbox> = mailboxes::list(conn, &account)?
+                    .into_iter()
+                    .filter(|m| ids.contains(&m.id))
+                    .collect();
+                shown.extend(asked.iter().map(|m| (m.id, m.role)));
+                asked.retain(|m| m.selectable && m.uid_validity.is_some());
+                // All Mail holds what the other folders do, but Trash and Junk: one search.
+                if folder.is_none()
+                    && let Some(all) = asked.iter().find(|m| m.role == Some(Role::All)).cloned()
+                {
+                    asked = vec![all];
+                }
+                plan.push((account, asked));
+            }
+            Ok((plan, shown))
+        })
+        .await
+        .map_err(store_error)?;
+
+    let mut found: Vec<(String, Message)> = Vec::new();
+    let (mut not_here, mut unreachable) = (0, Vec::new());
+    for (account, folders) in plan {
+        if folders.is_empty() {
+            continue;
+        }
+        match ask_server(state, &account, &folders, &terms).await {
+            Ok((rows, missing)) => {
+                found.extend(rows.into_iter().map(|row| (account.clone(), row)));
+                not_here += missing;
+            }
+            Err(error) => {
+                tracing::info!(account = %account, %error, "the server was not searched");
+                unreachable.push(account);
+            }
+        }
+    }
+
+    let has_attachment = query.has_attachment;
+    let (page, next, info) = state
+        .store
+        .read(move |conn| {
+            // One copy of each message, its inbox copy first, as the index search shows them.
+            let rank = |m: &Message| {
+                let role = shown.get(&m.moving_to.unwrap_or(m.mailbox_id)).copied().flatten();
+                (role != Some(Role::Inbox), role == Some(Role::All), m.id)
+            };
+            let mut best: HashMap<(String, String), Message> = HashMap::new();
+            for (account, row) in found {
+                let copies = match &row.message_id {
+                    Some(id) => messages::copies(conn, &account, id)?,
+                    None => vec![row],
+                };
+                for copy in copies {
+                    let place = copy.moving_to.unwrap_or(copy.mailbox_id);
+                    if copy.flags.deleted
+                        || !shown.contains_key(&place)
+                        || (has_attachment && copy.has_attachments != Some(true))
+                    {
+                        continue;
+                    }
+                    let key = copy.message_id.clone().unwrap_or_else(|| format!("#{}", copy.id));
+                    match best.entry((account.clone(), key)) {
+                        Entry::Vacant(new) => {
+                            new.insert(copy);
+                        }
+                        Entry::Occupied(mut known) => {
+                            if rank(&copy) < rank(known.get()) {
+                                known.insert(copy);
+                            }
+                        }
+                    }
+                }
+            }
+            let mut page: Vec<Message> = best
+                .into_values()
+                .filter(|m| before.is_none_or(|c| (m.received_at, m.id) < (c.received_at, c.id)))
+                .collect();
+            page.sort_by_key(|m| std::cmp::Reverse((m.received_at, m.id)));
+            let next = cut(&mut page, limit);
+            let info = page_info_any(conn, &page)?;
+            Ok((page, next, info))
+        })
+        .await
+        .map_err(store_error)?;
+    Ok(json!(ServerSearchResult {
+        messages: page.into_iter().map(|row| summary(row, &info)).collect(),
+        next,
+        not_here,
+        unreachable,
+    }))
+}
+
+/// Search `folders` of `account` on its server: the matches stored here,
+/// and how many are not.
+async fn ask_server(
+    state: &State,
+    account: &str,
+    folders: &[Mailbox],
+    terms: &[SearchTerm],
+) -> Result<(Vec<Message>, u32), sync::SyncError> {
+    let mut session = sync::login(state, account).await?;
+    let outcome = async {
+        let (mut rows, mut missing) = (Vec::new(), 0);
+        for folder in folders {
+            let selected = session.select(&folder.remote_name).await?;
+            // Rebuilt on the server: its UIDs mean nothing here until it is synced again.
+            if folder.uid_validity != Some(i64::from(selected.uid_validity)) {
+                continue;
+            }
+            let uids = session.uid_search(terms).await?;
+            let (id, asked) = (folder.id, uids.len());
+            let stored = state.store.read(move |conn| messages::by_uids(conn, id, &uids)).await?;
+            missing += asked - stored.len();
+            rows.extend(stored);
+        }
+        Ok::<_, sync::SyncError>((rows, u32::try_from(missing).unwrap_or(u32::MAX)))
+    }
+    .await;
+    session.logout().await;
+    outcome
+}
+
+/// The search as IMAP terms. `has:` and `in:` are not among them: they are
+/// checked here. Servers match words their own way, often as parts of words.
+fn server_terms(query: &Query) -> Vec<SearchTerm> {
+    let mut terms: Vec<SearchTerm> = query
+        .terms
+        .iter()
+        .map(|term| {
+            let text = term.text.clone();
+            let search = match term.field {
+                None => SearchTerm::Text(text),
+                Some(Field::Sender) => SearchTerm::From(text),
+                Some(Field::Recipients) => SearchTerm::To(text),
+                Some(Field::Subject) => SearchTerm::Subject(text),
+            };
+            if term.negated {
+                SearchTerm::Not(Box::new(search))
+            } else {
+                search
+            }
+        })
+        .collect();
+    match query.unread {
+        Some(true) => terms.push(SearchTerm::Unseen),
+        Some(false) => terms.push(SearchTerm::Seen),
+        None => {}
+    }
+    if query.flagged {
+        terms.push(SearchTerm::Flagged);
+    }
+    const DAY: i64 = 86_400_000;
+    if let Some(before) = query.before {
+        terms.push(SearchTerm::Before(before.div_euclid(DAY)));
+    }
+    if let Some(after) = query.after {
+        terms.push(SearchTerm::Since(after.div_euclid(DAY)));
+    }
+    terms
 }
 
 /// One message with its body. The source is downloaded the first time and

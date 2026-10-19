@@ -472,3 +472,68 @@ async fn live_server_reports_changes_since_a_modseq_in_the_select() {
     assert!(!session.select_since(b"INBOX", &stale).await.unwrap().resynced);
     session.logout().await;
 }
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_server_searches_text_people_flags_and_days() {
+    use regards_imap::SearchTerm::{self, *};
+    let address = std::env::var("REGARDS_TEST_IMAP").unwrap();
+    let (host, port) = address.rsplit_once(':').unwrap();
+    let ca = std::fs::read(std::env::var("REGARDS_TEST_IMAP_CA").unwrap()).unwrap();
+    let tls = TlsOptions::platform().with_extra_roots_pem(&ca).unwrap();
+    let server = ImapServer {
+        host: host.into(),
+        port: port.parse().unwrap(),
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap();
+    let user = format!("search-{}-{}", std::process::id(), now.subsec_nanos());
+    let password = Secret::new(std::env::var("REGARDS_TEST_IMAP_PASSWORD").unwrap_or_else(|_| "pass".into()));
+    let mut session = Session::login(&server, &user, &password, &tls).await.unwrap();
+    let messages: [(&[SystemFlag], &str); 3] = [
+        (
+            &[],
+            "From: Lena <lena@example.net>\r\nTo: Bob <bob@example.test>\r\nSubject: Trip plans\r\n\
+             Content-Type: text/plain; charset=utf-8\r\n\r\nWe climb the Matterhorn from Zermatt, near Täsch.\r\n",
+        ),
+        (
+            &[SystemFlag::Seen, SystemFlag::Flagged],
+            "From: Shop <billing@shop.example>\r\nTo: Ann <ann@example.test>\r\nCc: Bob <bob@example.test>\r\n\
+             Subject: Invoice\r\n\r\nYour invoice for October.\r\n",
+        ),
+        (
+            &[SystemFlag::Seen],
+            "From: Ann <ann@example.test>\r\nSubject: Lunch\r\n\r\nNoon at the lake?\r\n",
+        ),
+    ];
+    for (flags, source) in messages {
+        session.append(b"INBOX", flags, source.as_bytes()).await.unwrap();
+    }
+    session.select(b"INBOX").await.unwrap();
+    let all = session.uid_search_all().await.unwrap();
+    let (trip, invoice, lunch) = (all[0], all[1], all[2]);
+    let mut find = async |terms: &[SearchTerm]| session.uid_search(terms).await.unwrap();
+
+    assert_eq!(
+        find(&[Text("matterhorn".into())]).await,
+        [trip],
+        "in the text, any case"
+    );
+    assert_eq!(find(&[Text("lunch".into())]).await, [lunch], "in the header too");
+    assert_eq!(find(&[From("lena".into())]).await, [trip]);
+    assert_eq!(
+        find(&[To("bob@example.test".into())]).await,
+        [trip, invoice],
+        "To or Cc"
+    );
+    assert_eq!(find(&[Subject("invoice".into())]).await, [invoice]);
+    assert_eq!(find(&[Unseen]).await, [trip]);
+    assert_eq!(find(&[Seen, Not(Box::new(Flagged))]).await, [lunch]);
+    assert_eq!(find(&[Text("Täsch".into())]).await, [trip], "sent as UTF-8");
+    let today = (now.as_secs() / 86_400) as i64;
+    assert_eq!(find(&[Since(today - 1)]).await, all);
+    assert!(find(&[Before(today - 1)]).await.is_empty());
+    assert_eq!(find(&[]).await, all, "no terms: everything");
+    session.logout().await;
+}

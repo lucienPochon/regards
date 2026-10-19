@@ -539,6 +539,16 @@ pub fn copies(conn: &Connection, account_id: &str, message_id: &str) -> Result<V
     Ok(rows)
 }
 
+/// The stored messages of a folder with these UIDs (those not stored left out).
+pub fn by_uids(conn: &Connection, mailbox_id: i64, uids: &[u32]) -> Result<Vec<Message>, StoreError> {
+    let uids = serde_json::to_string(uids).expect("numbers always serialize");
+    let mut statement = conn.prepare_cached(&format!(
+        "SELECT {COLUMNS} FROM messages WHERE mailbox_id = ?1 AND uid IN (SELECT value FROM json_each(?2))"
+    ))?;
+    let rows = statement.query_map(params![mailbox_id, uids], from_row)?;
+    rows.map(|row| row?).collect()
+}
+
 pub fn get(conn: &Connection, id: i64) -> Result<Option<Message>, StoreError> {
     conn.query_row(&format!("SELECT {COLUMNS} FROM messages WHERE id = ?1"), [id], from_row)
         .optional()?
