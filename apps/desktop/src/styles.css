@@ -4583,7 +4583,7 @@ button.sender-row:hover:not(:disabled) {
 }
 
 /* Settings that wait on a switch that is off: still editable, shown as resting. */
-.settings-group.dimmed {
+.notice-choices.dimmed {
   opacity: 0.55;
 }
 

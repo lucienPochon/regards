@@ -444,7 +444,7 @@ export function NotificationsPage({ accounts }: { accounts: AccountSummary[] }) 
         )}
       </Option>
       {settings && (
-        <div className={off ? "settings-group dimmed" : "settings-group"} aria-disabled={off || undefined}>
+        <div className={off ? "notice-choices dimmed" : "notice-choices"} aria-disabled={off || undefined}>
           <h4 className="settings-subhead">New mail</h4>
           {accounts.map((account) => {
             const choice = settings.new_mail[account.id] ?? "smart";
