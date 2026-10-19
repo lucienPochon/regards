@@ -8,11 +8,14 @@ const SHOW_FOR_MS = 10_000;
 
 export function UndoToast({ undo, onDone }: { undo: UndoInfo; onDone: () => void }) {
   const [error, setError] = useState<string | null>(null);
+  // Under the pointer or the keyboard, it waits (WCAG 2.2.1); it starts again on leaving.
+  const [held, setHeld] = useState(false);
 
   useEffect(() => {
+    if (held) return;
     const timer = window.setTimeout(onDone, SHOW_FOR_MS);
     return () => window.clearTimeout(timer);
-  }, [undo, onDone]);
+  }, [undo, onDone, held]);
 
   const revert = async () => {
     try {
@@ -25,7 +28,13 @@ export function UndoToast({ undo, onDone }: { undo: UndoInfo; onDone: () => void
   useShortcuts(error ? {} : { z: revert, "Mod+z": revert });
 
   return (
-    <div className="toast" role="status">
+    <div
+      className="toast"
+      onMouseEnter={() => setHeld(true)}
+      onMouseLeave={() => setHeld(false)}
+      onFocus={() => setHeld(true)}
+      onBlur={() => setHeld(false)}
+    >
       <Icon name={error ? "alert" : "check"} size={16} />
       <span>{error ?? undo.description}</span>
       {!error && (

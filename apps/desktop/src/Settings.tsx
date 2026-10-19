@@ -167,7 +167,7 @@ function AccountsTab({ mail, confirm }: { mail: MailState; confirm: (request: Co
   return (
     <>
       <h3>Accounts</h3>
-      {mail.state === "failed" && <p className="error">{mail.message}</p>}
+      {mail.state === "failed" && <p className="error" role="alert">{mail.message}</p>}
       {accounts.length > 0 && (
         <ul className="account-list">
           {accounts.map((entry) => (
@@ -272,7 +272,7 @@ function AgentsTab({
         Agents are AI assistants and other programs that work with your mail through Regards&apos; command line. Each
         account decides what they may do. Only this page can change it: an agent can&apos;t give itself more.
       </p>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
       <AgentHolds accounts={accounts.map(({ account }) => ({ id: account.id, email: account.email }))} focus={focusHold} />
       {accounts.length === 0 ? (
         <p className="muted">Add an account first.</p>
@@ -633,7 +633,7 @@ function InboxTab({
           onChange={screen}
         />
       </Option>
-      {problem && <p className="error">{problem}</p>}
+      {problem && <p className="error" role="alert">{problem}</p>}
       <PriorityRows />
       <LinkRow
         icon="newspaper"

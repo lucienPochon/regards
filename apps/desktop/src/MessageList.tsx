@@ -139,6 +139,21 @@ export interface Screener {
   block: (item: ListItem) => void;
 }
 
+/** A row's marks in words, for screen readers: the dot, pin, flag and the rest are pictures. */
+function rowState(item: ListItem, snoozedUntil: number | null): string {
+  const marks = [
+    item.seen ? null : "Unread",
+    item.pinned ? "pinned" : null,
+    item.flagged ? "flagged" : null,
+    item.has_attachments ? "attachment" : null,
+    item.answered ? "answered" : null,
+    item.reminded ? "no reply yet" : item.remind_at !== null ? "reminder set" : null,
+    item.thread_size !== undefined && item.thread_size > 1 ? `${item.thread_size} messages` : null,
+    snoozedUntil !== null ? `snoozed until ${laterDate(snoozedUntil)}` : null,
+  ].filter(Boolean);
+  return marks.length > 0 ? `${marks.join(", ")}: ` : "";
+}
+
 export function MessageList({
   title,
   subtitle,
@@ -431,7 +446,8 @@ export function MessageList({
           onDragStart={(event) => dragStart(event, item)}
           onClick={(event) => click(event, item)}
         >
-          <span className="dot" aria-label={item.seen ? undefined : "Unread"} />
+          <span className="sr-only">{rowState(item, snoozedUntil)}</span>
+          <span className="dot" aria-hidden="true" />
           <span className="row-avatar">
             <Avatar person={correspondent(item, own)} size="sm" colour={accountColour(prefs, item.accountId)} />
           </span>
@@ -562,7 +578,7 @@ export function MessageList({
           <Skeleton mode={mode} />
         ) : nothing && !feed.error ? (
           searching ? (
-            <div className="empty list-empty">
+            <div className="empty list-empty" role="status">
               <h2>Nothing found for “{query}”</h2>
               {search.suggestion && (
                 <p className="search-suggestion">

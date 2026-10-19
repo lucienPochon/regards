@@ -1329,7 +1329,7 @@ export function App() {
             pickTemplate={pickTemplate}
           />
         )}
-        <div className="dock">
+        <div className="dock" aria-live="polite">
           {notice && (
             <div className="toast error" role="alert">
               <Icon name="alert" size={16} />
@@ -1340,7 +1340,7 @@ export function App() {
             </div>
           )}
           {said && (
-            <div className="toast" role="status">
+            <div className="toast">
               <Icon name="check" size={16} />
               <span>{said}</span>
             </div>

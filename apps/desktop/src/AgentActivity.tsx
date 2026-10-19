@@ -248,7 +248,7 @@ export function AgentActivity({
           </select>
         )}
       </div>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
       {entries === null ? (
         !error && <p className="muted activity-empty">Loading…</p>
       ) : shown.length === 0 ? (
@@ -381,7 +381,7 @@ function Row({
             </button>
           ) : null}
         </summary>
-        {problem && <p className="error activity-problem">{problem}</p>}
+        {problem && <p className="error activity-problem" role="alert">{problem}</p>}
         <div className="activity-details">
           {entry.error && <p className={entry.decision === "denied" ? "activity-error" : "error"}>{entry.error}</p>}
           <dl>

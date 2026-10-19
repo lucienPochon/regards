@@ -283,12 +283,16 @@ export function Sidebar({
           className={syncing ? "side-tool spinning" : "side-tool"}
           title={syncProblem ? `Sync problem: ${syncProblem}` : "Check for new mail"}
           aria-label="Check for new mail"
+          aria-describedby={syncProblem ? "sync-problem" : undefined}
           onClick={onSync}
           disabled={syncing}
         >
           <Icon name="refresh" size={15} />
           {syncProblem && <span className="side-alert" aria-hidden="true" />}
         </button>
+        <span id="sync-problem" className="sr-only" role="status">
+          {syncProblem ? `Sync problem: ${syncProblem}` : ""}
+        </span>
         <button
           type="button"
           className="side-tool"
