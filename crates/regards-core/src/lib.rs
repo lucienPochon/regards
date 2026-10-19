@@ -12,6 +12,7 @@ pub mod encoding;
 pub mod headers;
 pub mod html;
 pub mod mailbox;
+pub mod oauth;
 pub mod paths;
 pub mod search;
 pub mod secret;

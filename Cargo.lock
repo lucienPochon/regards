@@ -3757,6 +3757,8 @@ dependencies = [
  "mail-builder",
  "mail-parser",
  "serde",
+ "serde_json",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "zeroize",
@@ -3848,6 +3850,7 @@ name = "regards-net"
 version = "0.1.0"
 dependencies = [
  "futures-util",
+ "rcgen",
  "rustls-platform-verifier",
  "thiserror 2.0.21",
  "tokio",
