@@ -322,6 +322,10 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return owner.account;
     }
+    case "mail_app_status":
+      return { registered: false, can_register: true };
+    case "make_mail_app":
+      return null;
     case "badge_settings":
       return badgeChoices;
     case "set_badge_settings":

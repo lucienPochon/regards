@@ -1158,8 +1158,10 @@ fn main() {
     let app = tauri::Builder::default()
         // Must come first: a second app instance would replace this one's daemon.
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            background::show(app)
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            background::show(app);
+            // regards:// links come through the deep-link plugin; mailto: ones here.
+            links::open(app, links::mailto_args(&args), false);
         }))
         // regards:// links; one opened while Regards runs reaches it through the above.
         .plugin(tauri_plugin_deep_link::init())
@@ -1195,6 +1197,8 @@ fn main() {
             if let Ok(Some(urls)) = app.deep_link().get_current() {
                 links::open(app.handle(), urls.iter().map(ToString::to_string), true);
             }
+            let args: Vec<String> = std::env::args().collect();
+            links::open(app.handle(), links::mailto_args(&args), true);
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -1230,6 +1234,8 @@ fn main() {
             system::open_url,
             account_update,
             account_set_auto_copy,
+            links::mail_app_status,
+            links::make_mail_app,
             badge::badge_settings,
             badge::set_badge_settings,
             support::support_settings,
