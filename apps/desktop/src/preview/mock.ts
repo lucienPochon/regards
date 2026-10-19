@@ -326,6 +326,48 @@ function agentActivity(): AgentActivity[] {
   ];
 }
 
+/**
+ * "Did you mean": each word that finds nothing mended to the closest word of
+ * the samples (two edits at most), filters kept; offered only if it finds something.
+ */
+function suggest(query: string, accountId: string | null): string | null {
+  const words = new Set(
+    messages.flatMap((m) => fold(`${m.subject} ${m.from.name} ${m.text}`).split(/[^a-z0-9]+/).filter((w) => w.length > 2)),
+  );
+  const distance = (a: string, b: string) => {
+    const row = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      let diagonal = row[0];
+      row[0] = i;
+      for (let j = 1; j <= b.length; j++) {
+        const above = row[j];
+        row[j] = Math.min(row[j] + 1, row[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+        diagonal = above;
+      }
+    }
+    return row[b.length];
+  };
+  let changed = false;
+  const mended = query
+    .split(/\s+/)
+    .map((term) => {
+      if (!term || term.includes(":") || term.startsWith("-") || term.startsWith('"')) return term;
+      const word = fold(term);
+      if (words.has(word)) return term;
+      let best: string | null = null;
+      let bestDistance = 3;
+      for (const candidate of words) {
+        const d = distance(word, candidate);
+        if (d < bestDistance) [best, bestDistance] = [candidate, d];
+      }
+      if (best === null) return term;
+      changed = true;
+      return best;
+    })
+    .join(" ");
+  return changed && searchSamples(mended, accountId).found.length > 0 ? mended : null;
+}
+
 /** What a section's list shows: without screening, new senders are with People. */
 const shownIn = (asked: Section, section: Section) =>
   section === asked || (asked === "people" && section === "new_senders" && screeningMode === "off");
@@ -975,7 +1017,10 @@ function handle(cmd: string, args: Args): unknown {
       );
       const page = after.slice(0, limit);
       const last = page[page.length - 1];
+      const query = String(args.query ?? "");
+      const suggestion = !before && found.length === 0 ? suggest(query, (args.accountId as string | null) ?? null) : null;
       return {
+        ...(suggestion ? { suggestion } : {}),
         messages: page.map((m) => summary(m)),
         top: before ? [] : top.map((m) => summary(m)),
         next: after.length > limit && last ? { received_at: last.received_at, id: last.id } : null,

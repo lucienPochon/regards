@@ -1416,6 +1416,20 @@ button.list-title:hover {
   text-decoration: underline;
 }
 
+/* Nothing found, but a mended search would find something: offered as a link. */
+.search-suggestion {
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.search-suggestion button {
+  padding: 0;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* Searching the servers: an offer at the end of the summary, then what it found. */
 .server-ask,
 .server-status {

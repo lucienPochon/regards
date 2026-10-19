@@ -424,6 +424,7 @@ flowchart LR
       - When there are more than a few, the best three come first as "Top results".
     - **Remembering:** Enter remembers the search and goes to the first result. Opening a result remembers it too.
     - **The sender card** has "Search mail from them".
+    - **"Did you mean …?"**: when a search finds nothing and the daemon has a mended search that finds something, "Nothing found" offers it as a link that runs it. It is never run unasked.
     - **Search on the server**, offered beside the count and when nothing is found here, asks `search.server` for the same words and scope.
       - Its matches join the results, once each.
       - Then a line says how many it added, how many are on the server but not on this device yet, and which accounts could not be reached.

@@ -202,6 +202,8 @@ export interface Search {
   top: ListItem[];
   /** Changes not indexed yet: recent mail may be missing while above 0. */
   indexing: number;
+  /** When nothing was found: a search, typos mended, that finds something ("did you mean"). */
+  suggestion: string | null;
 }
 
 /**
@@ -211,7 +213,10 @@ export interface Search {
  */
 export function useSearch(accounts: AccountMail[], query: string, accountId: string | null, round: number): Search {
   const key = `${round}:${accountId ?? ""}:${query}`;
-  const [firsts, setFirsts] = useState<{ key: string; by: Record<string, { top: ListItem[]; indexing: number }> }>({
+  const [firsts, setFirsts] = useState<{
+    key: string;
+    by: Record<string, { top: ListItem[]; indexing: number; suggestion: string | null }>;
+  }>({
     key: "",
     by: {},
   });
@@ -236,7 +241,10 @@ export function useSearch(accounts: AccountMail[], query: string, accountId: str
                 );
                 setFirsts((now) => ({
                   key,
-                  by: { ...(now.key === key ? now.by : {}), [account.id]: { top, indexing: result.indexing } },
+                  by: {
+                    ...(now.key === key ? now.by : {}),
+                    [account.id]: { top, indexing: result.indexing, suggestion: result.suggestion ?? null },
+                  },
                 }));
               }
               return { messages: result.messages, next: result.next };
@@ -250,7 +258,13 @@ export function useSearch(accounts: AccountMail[], query: string, accountId: str
   for (let index = 0; top.length < 3 && found.some((one) => one.top.length > index); index++) {
     for (const one of found) if (one.top[index] && top.length < 3) top.push(one.top[index]);
   }
-  return { sources, top, indexing: found.reduce((sum, one) => sum + one.indexing, 0) };
+  return {
+    sources,
+    top,
+    indexing: found.reduce((sum, one) => sum + one.indexing, 0),
+    // Searching several accounts, the first that has one.
+    suggestion: found.find((one) => one.suggestion)?.suggestion ?? null,
+  };
 }
 
 /** A message in a list, with the folder it was listed from. */

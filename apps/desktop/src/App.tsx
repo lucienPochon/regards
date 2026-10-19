@@ -1098,6 +1098,7 @@ export function App() {
           top: found.top,
           indexing: found.indexing,
           onRetry: () => setSearchRound((round) => round + 1),
+          suggestion: found.suggestion,
           server: {
             state: serverNow?.state ?? "idle",
             added: serverNow ? serverNow.items.filter((item) => !local.items.some((other) => other.id === item.id)).length : 0,

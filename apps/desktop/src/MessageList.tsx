@@ -97,6 +97,8 @@ export interface SearchControls {
   /** Changes not indexed yet: recent mail may be missing. */
   indexing: number;
   onRetry: () => void;
+  /** When nothing was found: a mended search that finds something, offered, never run unasked. */
+  suggestion: string | null;
   /** Asking the servers, for words in mail not opened here. */
   server: ServerSearch;
 }
@@ -544,6 +546,21 @@ export function MessageList({
           searching ? (
             <div className="empty list-empty">
               <h2>Nothing found for “{query}”</h2>
+              {search.suggestion && (
+                <p className="search-suggestion">
+                  Did you mean{" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      search.onQuery(search.suggestion);
+                      field.current?.focus();
+                    }}
+                  >
+                    {search.suggestion}
+                  </button>
+                  ?
+                </p>
+              )}
               <p>
                 {search.indexing > 0
                   ? "Recent mail is still being indexed and may be missing. Try again in a moment."
