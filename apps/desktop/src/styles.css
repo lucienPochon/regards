@@ -3923,6 +3923,11 @@ button.sender-row:hover:not(:disabled) {
   margin-top: 0;
 }
 
+/* The one a link asked to see. */
+.hold-card.focused {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
 /* In the main window: a pill that leads to them. */
 .aside-bubble.agent-waiting {
   border-color: var(--warm-line);

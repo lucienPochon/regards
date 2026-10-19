@@ -7,6 +7,7 @@ import {
   type Person,
   type UndoInfo,
   archiveMessages,
+  getMessage,
   moveMessages,
   pinMessages,
   remindMessages,
@@ -18,7 +19,7 @@ import { type Action, type ActionHost, type Target, choose, messageActions } fro
 import { usePendingHolds } from "./AgentHolds";
 import { Avatar } from "./Avatar";
 import { Composer } from "./Composer";
-import { type Draft, type Queued, newDraft, saveDraft } from "./compose";
+import { type Draft, type Queued, getDraft, newDraft, saveDraft } from "./compose";
 import { Confirm, type ConfirmRequest } from "./Confirm";
 import { DraftsList } from "./DraftsList";
 import { Icon, type IconName } from "./icons";
@@ -39,6 +40,7 @@ import {
   useService,
   useSmartOverview,
 } from "./mail";
+import { type OpenLink, onOpenLink, takeLink } from "./links";
 import { useRecentSearches } from "./recent-searches";
 import { searchServer, searchTerm } from "./search";
 import { type Anchor, Menu, type MenuEntry, type MenuRequest } from "./Menu";
@@ -205,6 +207,8 @@ export function App() {
   const [chooser, setChooser] = useState<Anchor | null>(null);
   // What agents asked for and is waiting for the person (Settings › Agents).
   const holds = usePendingHolds();
+  // A hold a link asked to see, in Settings › Agents.
+  const [focusHold, setFocusHold] = useState<number | null>(null);
   const [sender, setSenderCard] = useState<SenderRequest | null>(null);
   const [screen, setScreen] = useState<Screening>("off");
   useEffect(() => {
@@ -511,6 +515,49 @@ export function App() {
     setOverlay(false);
   }, []);
 
+  // A regards:// link (agents give them, so the person can see what they found or did).
+  // It only ever opens a view: any web page can open such a link, so it never acts.
+  const openLink = (link: OpenLink) => {
+    setOverlay(false);
+    if (link.kind === "hold") {
+      setFocusHold(link.id);
+      setSettings("agents");
+      return;
+    }
+    setSettings(null);
+    if (link.kind === "draft") {
+      getDraft(link.id).then(
+        (draft) => setComposer({ id: draft.id, mode: "full" }),
+        () => setNotice("That draft is no longer here."),
+      );
+      return;
+    }
+    getMessage(link.id)
+      .then((detail) => {
+        const owner = accounts.find((entry) => entry.mailboxes.some((m) => m.id === detail.mailbox_id));
+        const mailbox = owner?.mailboxes.find((m) => m.id === detail.mailbox_id);
+        if (!owner || !mailbox) throw new Error("not here");
+        // Its folder, with it open.
+        changeView({ kind: "mailbox", mailboxId: mailbox.id, accountId: owner.account.id });
+        setOpen({ ...detail.message, mailboxId: mailbox.id, accountId: owner.account.id, role: mailbox.role });
+      })
+      .catch(() => setNotice("That message is no longer on this computer."));
+  };
+  const linkTo = useRef(openLink);
+  linkTo.current = openLink;
+  useEffect(() => {
+    const stop = onOpenLink((link) => linkTo.current(link));
+    return () => void stop.then((unlisten) => unlisten()).catch(() => {});
+  }, []);
+  // The link Regards was started with: once its accounts are known.
+  const tookLink = useRef(false);
+  const mailReady = mail.state === "ready";
+  useEffect(() => {
+    if (!mailReady || tookLink.current) return;
+    tookLink.current = true;
+    takeLink().then((link) => link && linkTo.current(link), () => {});
+  }, [mailReady]);
+
   const composeFrom =
     openItem?.accountId ?? (view.kind === "mailbox" ? view.accountId : accounts[0]?.account.id) ?? null;
   const writeNew = () => {
@@ -789,7 +836,11 @@ export function App() {
             screening={screen}
             onScreening={setScreen}
             confirm={confirm}
-            onClose={() => setSettings(null)}
+            focusHold={focusHold}
+            onClose={() => {
+              setSettings(null);
+              setFocusHold(null);
+            }}
           />
         )}
         {asking && (
@@ -1233,7 +1284,11 @@ export function App() {
           screening={screen}
           onScreening={setScreen}
           confirm={confirm}
-          onClose={() => setSettings(null)}
+          focusHold={focusHold}
+          onClose={() => {
+            setSettings(null);
+            setFocusHold(null);
+          }}
         />
       )}
       {asking && (

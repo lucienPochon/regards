@@ -45,6 +45,7 @@ export function Settings({
   screening,
   onScreening,
   confirm,
+  focusHold = null,
   onClose,
 }: {
   tab: SettingsTab;
@@ -57,6 +58,8 @@ export function Settings({
   screening: Screening;
   onScreening: (mode: Screening) => void;
   confirm: (request: ConfirmRequest) => Promise<boolean>;
+  /** A hold a link asked to see (Agents). */
+  focusHold?: number | null;
   onClose: () => void;
 }) {
   useShortcuts({ Escape: onClose }, { modal: true });
@@ -109,7 +112,7 @@ export function Settings({
           </button>
           {tab === "general" && <GeneralTab />}
           {tab === "accounts" && <AccountsTab mail={mail} confirm={confirm} />}
-          {tab === "agents" && <AgentsTab mail={mail} confirm={confirm} />}
+          {tab === "agents" && <AgentsTab mail={mail} confirm={confirm} focusHold={focusHold} />}
           {tab === "inbox" && (
             <InboxTab layout={layout} onLayout={onLayout} screening={screening} onScreening={onScreening} />
           )}
@@ -259,7 +262,15 @@ const COMING: ReadonlySet<AgentAccess> = new Set();
  * command line) may do with each account. Only this page changes it; an
  * agent that is refused is sent here, by this name.
  */
-function AgentsTab({ mail, confirm }: { mail: MailState; confirm: (request: ConfirmRequest) => Promise<boolean> }) {
+function AgentsTab({
+  mail,
+  confirm,
+  focusHold,
+}: {
+  mail: MailState;
+  confirm: (request: ConfirmRequest) => Promise<boolean>;
+  focusHold: number | null;
+}) {
   const accounts = mail.state === "ready" ? mail.accounts : [];
   // What was chosen here, until the accounts are read again.
   const [chosen, setChosen] = useState<Record<string, AgentAccess>>({});
@@ -295,7 +306,7 @@ function AgentsTab({ mail, confirm }: { mail: MailState; confirm: (request: Conf
         account decides what they may do. Only this page can change it: an agent can&apos;t give itself more.
       </p>
       {error && <p className="error">{error}</p>}
-      <AgentHolds accounts={accounts.map(({ account }) => ({ id: account.id, email: account.email }))} />
+      <AgentHolds accounts={accounts.map(({ account }) => ({ id: account.id, email: account.email }))} focus={focusHold} />
       {accounts.length === 0 ? (
         <p className="muted">Add an account first.</p>
       ) : (

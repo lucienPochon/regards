@@ -556,6 +556,11 @@ function handle(cmd: string, args: Args): unknown {
       const page = after.slice(0, limit);
       return { entries: page, next: after.length > limit ? page[page.length - 1].id : null };
     }
+    case "link_take": {
+      // `?link=message:3`, `draft:…` or `hold:2`: what Regards was started with.
+      const [kind, id] = (params.get("link") ?? "").split(":");
+      return kind && id ? { kind, id: Number(id) } : null;
+    }
     case "hold_list":
       return { holds: sampleHolds().filter((hold) => !args.pending || hold.status === "pending") };
     case "hold_approve":

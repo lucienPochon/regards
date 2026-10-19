@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { applyUndo } from "./accounts";
 import { type Hold, approveHold, listHolds, rejectHold } from "./agents";
 import { useChanges } from "./changes";
@@ -30,12 +30,31 @@ const until = (at: number) => {
  * every send, changes to more than 50 messages, deleting for good. Each can
  * be approved (it runs as asked) or rejected; a send shows its draft first.
  */
-export function AgentHolds({ accounts }: { accounts: { id: string; email: string }[] }) {
+export function AgentHolds({
+  accounts,
+  focus = null,
+}: {
+  accounts: { id: string; email: string }[];
+  /** One a link asked to see: shown and scrolled to, even once decided. */
+  focus?: number | null;
+}) {
   const pending = usePendingHolds();
   // Decided here: shown with how it went until the page closes.
   const [decided, setDecided] = useState<Hold[]>([]);
   const waiting = pending.filter((hold) => !decided.some((done) => done.id === hold.id));
-  if (waiting.length === 0 && decided.length === 0) return null;
+  // The hold a link named, when it no longer waits: how it went, or that it is gone.
+  const [looked, setLooked] = useState<Hold | "gone" | null>(null);
+  const focusWaits = focus !== null && pending.some((hold) => hold.id === focus);
+  const focusDecidedHere = focus !== null && decided.some((hold) => hold.id === focus);
+  useEffect(() => {
+    setLooked(null);
+    if (focus === null || focusWaits || focusDecidedHere) return;
+    listHolds(false).then(
+      (all) => setLooked(all.find((hold) => hold.id === focus) ?? "gone"),
+      () => setLooked("gone"),
+    );
+  }, [focus, focusWaits, focusDecidedHere]);
+  if (waiting.length === 0 && decided.length === 0 && looked === null) return null;
   const emailOf = (id: string) => accounts.find((account) => account.id === id)?.email ?? null;
   return (
     <section className="agent-holds" aria-label="Waiting for you">
@@ -44,23 +63,57 @@ export function AgentHolds({ accounts }: { accounts: { id: string; email: string
         {waiting.length > 0 && <span className="smart-card-count">{waiting.length}</span>}
       </h4>
       <ul>
+        {looked === "gone" && (
+          <li className="hold-card decided focused">
+            <p className="muted">That request is no longer here: requests are kept for a while after they are decided.</p>
+          </li>
+        )}
+        {looked && looked !== "gone" && (
+          <Outcome hold={looked} focused onDismiss={() => setLooked(null)} />
+        )}
         {waiting.map((hold) => (
           <HoldCard
             key={hold.id}
+            focused={hold.id === focus}
             hold={hold}
             email={accounts.length > 1 ? emailOf(hold.account_id) : null}
             onDecided={(result) => setDecided((now) => [result, ...now.filter((done) => done.id !== result.id)])}
           />
         ))}
         {decided.map((hold) => (
-          <Outcome key={hold.id} hold={hold} onDismiss={() => setDecided((now) => now.filter((done) => done.id !== hold.id))} />
+          <Outcome
+            key={hold.id}
+            hold={hold}
+            focused={hold.id === focus}
+            onDismiss={() => setDecided((now) => now.filter((done) => done.id !== hold.id))}
+          />
         ))}
       </ul>
     </section>
   );
 }
 
-function HoldCard({ hold, email, onDecided }: { hold: Hold; email: string | null; onDecided: (hold: Hold) => void }) {
+/** A card a link asked to see: brought into view once. */
+function useFocused(focused: boolean) {
+  const card = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (focused) card.current?.scrollIntoView({ block: "center" });
+  }, [focused]);
+  return card;
+}
+
+function HoldCard({
+  hold,
+  email,
+  focused,
+  onDecided,
+}: {
+  hold: Hold;
+  email: string | null;
+  focused: boolean;
+  onDecided: (hold: Hold) => void;
+}) {
+  const card = useFocused(focused);
   const [draft, setDraft] = useState<Draft | "gone" | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -80,7 +133,7 @@ function HoldCard({ hold, email, onDecided }: { hold: Hold; email: string | null
     hold.reason === "sending" ? "Send" : hold.reason === "delete" ? "Delete for good" : "Approve";
 
   return (
-    <li className={`hold-card ${hold.reason}`}>
+    <li ref={card} className={`hold-card ${hold.reason}${focused ? " focused" : ""}`}>
       <div className="hold-head">
         <Icon name={hold.reason === "sending" ? "send" : hold.reason === "delete" ? "trash" : "agent"} size={16} />
         <span className="hold-what">
@@ -161,7 +214,8 @@ function HoldCard({ hold, email, onDecided }: { hold: Hold; email: string | null
  * send's undo while it lasts (the agent may have set none), a scheduled
  * send's "take back" until it goes, or a change's undo.
  */
-function Outcome({ hold, onDismiss }: { hold: Hold; onDismiss: () => void }) {
+function Outcome({ hold, focused = false, onDismiss }: { hold: Hold; focused?: boolean; onDismiss: () => void }) {
+  const card = useFocused(focused);
   const [undone, setUndone] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -202,9 +256,11 @@ function Outcome({ hold, onDismiss }: { hold: Hold; onDismiss: () => void }) {
           ? `Not done: ${hold.error ?? "it could not run"}`
           : hold.status === "expired"
             ? "It waited too long and expired."
-            : "";
+            : hold.status === "pending"
+              ? "Still waiting."
+              : "";
   return (
-    <li className={`hold-card decided ${hold.status}`}>
+    <li ref={card} className={`hold-card decided ${hold.status}${focused ? " focused" : ""}`}>
       <div className="hold-head">
         <Icon name={hold.status === "approved" ? "check" : hold.status === "failed" ? "alert" : "close"} size={16} />
         <span className="hold-what">

@@ -446,6 +446,10 @@ flowchart LR
       - A send shows its draft (From, To, Cc, Bcc, subject, text, files) before Send or Reject.
       - Once decided, the card says how it went, with "Undo send" while the send can be taken back, or Undo for a change.
       - While anything waits, the main window shows "An agent is waiting for you", which opens the page.
+  - **Links** (`regards://`, in agents' results) open in the app, and only ever open a view, never act:
+    - a message opens in its folder
+    - a draft opens in the composer
+    - a hold opens Settings › Agents with its card in view, or how it was decided, or that it is gone
     - The page sits at the top of the settings, under the person's card, where the reference app keeps its AI agents.
     - **Activity:** what agents did, newest first, grouped by session (the command line, or an assistant through MCP).
       - Each request is in plain words ("Read a message", "Searched “invoice”"), with "Refused" and its reason when it was not allowed.
