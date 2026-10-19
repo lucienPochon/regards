@@ -12,16 +12,13 @@ import { type Theme, applyTheme, savedTheme } from "./theme";
 
 export type SettingsTab = "general" | "accounts" | "appearance" | "shortcuts" | "about";
 
-/** Grouped as in the nav; each item has its own colour. */
+/** Grouped as in the nav; each item has its own colour. Accounts is the person's card above them. */
 const GROUPS: { id: SettingsTab; label: string; icon: IconName; tone: string }[][] = [
   [
     { id: "general", label: "General", icon: "settings", tone: "tone-slate" },
-    { id: "accounts", label: "Accounts", icon: "user", tone: "tone-blue" },
-  ],
-  [
     { id: "appearance", label: "Appearance", icon: "sun", tone: "tone-violet" },
-    { id: "shortcuts", label: "Shortcuts", icon: "keyboard", tone: "tone-amber" },
   ],
+  [{ id: "shortcuts", label: "Shortcuts", icon: "keyboard", tone: "tone-amber" }],
   [{ id: "about", label: "About", icon: "info", tone: "tone-green" }],
 ];
 
@@ -49,7 +46,7 @@ export function Settings({
   useShortcuts({ Escape: onClose }, { modal: true });
   const me = mail.state === "ready" ? mail.accounts[0]?.account : undefined;
   return (
-    <div className="backdrop" onMouseDown={onClose}>
+    <div className="backdrop sheet" onMouseDown={onClose}>
       <section
         className="dialog settings"
         role="dialog"
@@ -58,13 +55,19 @@ export function Settings({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <nav className="settings-nav" aria-label="Settings">
-          <div className="settings-me">
+          {/* The person, on a card at the top: their accounts page. */}
+          <button
+            type="button"
+            className={tab === "accounts" ? "settings-me active" : "settings-me"}
+            aria-current={tab === "accounts" ? "page" : undefined}
+            onClick={() => onTab("accounts")}
+          >
             {me ? <Avatar person={{ name: me.display_name, address: me.email }} size="md" /> : <Icon name="user" />}
             <span>
               <strong>{me?.display_name || "Regards"}</strong>
               {me && <span className="muted">{me.email}</span>}
             </span>
-          </div>
+          </button>
           {GROUPS.map((group, index) => (
             <div key={index} className="settings-group">
               {group.map((entry) => (

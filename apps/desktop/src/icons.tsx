@@ -224,6 +224,15 @@ const PATHS = {
       <path d="M8 10.5h3M8 14h3" />
     </>
   ),
+  sidebarOn: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <path d="M9.5 4v16" />
+      <path d="M3.8 5.5h5v13h-5z" fill="currentColor" stroke="none" />
+    </>
+  ),
+  star: <path d="M12 3.8l2.5 5.1 5.6.8-4 4 .9 5.6-5-2.7-5 2.7.9-5.6-4-4 5.6-.8z" />,
+  starFilled: <path d="M12 3.8l2.5 5.1 5.6.8-4 4 .9 5.6-5-2.7-5 2.7.9-5.6-4-4 5.6-.8z" fill="currentColor" />,
   back: (
     <>
       <path d="M19 12H5.5" />

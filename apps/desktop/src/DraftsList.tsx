@@ -37,7 +37,7 @@ export function DraftsList({
               <button type="button" className="row-main" onClick={() => onOpen(draft.id)}>
                 <span className="dot" />
                 <span className="row-avatar">
-                  <Avatar person={draft.to[0] ?? null} size="md" ring />
+                  <Avatar person={draft.to[0] ?? null} size="sm" />
                 </span>
                 <span className="from">
                   <span className="draft-mark">{draft.sending ? "Sending" : "Draft"}</span>

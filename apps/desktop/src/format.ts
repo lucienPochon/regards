@@ -65,18 +65,17 @@ export function fullDate(ms: number): string {
   });
 }
 
-/** The heading a message sits under in a list: Today, Yesterday, this week, this month, then by month. */
+/** The heading a message sits under in a list: Today, Yesterday, This week, Last week, then by month. */
 export function dateSection(ms: number, now = Date.now()): string {
   const today = new Date(now);
   const start = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
   if (ms >= start) return "Today";
   if (ms >= start - DAY_MS) return "Yesterday";
   // Weeks start on Monday.
-  if (ms >= start - ((today.getDay() + 6) % 7) * DAY_MS) return "Earlier this week";
+  const weekStart = start - ((today.getDay() + 6) % 7) * DAY_MS;
+  if (ms >= weekStart) return "This week";
+  if (ms >= weekStart - 7 * DAY_MS) return "Last week";
   const date = new Date(ms);
-  if (date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth()) {
-    return "Earlier this month";
-  }
   const month = date.toLocaleDateString([], {
     month: "long",
     year: date.getFullYear() === today.getFullYear() ? undefined : "numeric",

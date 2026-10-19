@@ -1,35 +1,56 @@
-import { useState } from "react";
+import { type DragEvent, type MouseEvent, useState } from "react";
 import type { MailboxSummary, Role } from "./accounts";
 import { Avatar } from "./Avatar";
-import type { Draft, OutboxEntry } from "./compose";
+import type { OutboxEntry } from "./compose";
 import { Icon, type IconName } from "./icons";
 import type { AccountMail, MailState } from "./mail";
-import type { SettingsTab } from "./Settings";
-import {
-  MARKED_ICONS,
-  MARKED_LABELS,
-  MARKED_VIEWS,
-  ROLE_ICONS,
-  ROLE_LABELS,
-  type View,
-  depth,
-  leafName,
-  sameView,
-  sortFolders,
-} from "./views";
+import type { MenuEntry, MenuRequest } from "./Menu";
+import type { SidebarChanges, SidebarPrefs } from "./sidebar-prefs";
+import { useShortcuts } from "./shortcuts";
+import { MARKED_ICONS, MARKED_LABELS, ROLE_ICONS, ROLE_LABELS, type View, depth, leafName, sameView, viewKey } from "./views";
 
-/** System folders shown across accounts, after the inbox and the marked views. */
-const ACROSS: Role[] = ["sent", "archive", "junk", "trash"];
-/** In the rail, which has less room: the folders used most. */
-const RAIL_ROLES: Role[] = ["sent", "archive", "trash"];
+/** What dragging messages carries: the messages, and the account and folder each is in. */
+export const DRAG_TYPE = "application/x-regards-messages";
+export interface DragPayload {
+  ids: number[];
+  accounts: string[];
+  mailboxes: number[];
+}
+
+interface Row {
+  view: View;
+  icon: IconName;
+  label: string;
+}
+
+const INBOX: Row = { view: { kind: "role", role: "inbox" }, icon: "inbox", label: "Inbox" };
+const PINNED: Row = { view: { kind: "marked", mark: "pinned" }, icon: "pin", label: MARKED_LABELS.pinned };
+const DRAFTS: Row = { view: { kind: "drafts" }, icon: "draft", label: "Drafts" };
+const OUTBOX: Row = { view: { kind: "outbox" }, icon: "outbox", label: "Outbox" };
+const role = (r: Role): Row => ({ view: { kind: "role", role: r }, icon: ROLE_ICONS[r], label: ROLE_LABELS[r] });
+const marked = (mark: "snoozed" | "reminders" | "aside"): Row => ({
+  view: { kind: "marked", mark },
+  icon: MARKED_ICONS[mark],
+  label: MARKED_LABELS[mark],
+});
+
+/** The top section, under the inbox, in this order. */
+const TOP: Row[] = [PINNED, DRAFTS, role("sent"), role("trash"), OUTBOX];
+/** Under the Folders header before any starred folder. Archive is where Done mail goes, so it shows a check. */
+const ARCHIVE: Row = { ...role("archive"), icon: "check" };
+/** The rows the sidebar has unless taken out (they then wait in the All folders panel). */
+const STANDARD = [...TOP, ARCHIVE];
+/** The other system views, only in the All folders panel unless starred. */
+const EXTRA: Row[] = [marked("snoozed"), marked("reminders"), marked("aside"), role("junk"), role("all"), role("flagged")];
+/** Roles that can be opened per account from a chevron. */
+const PER_ACCOUNT: Role[] = ["inbox", "sent", "trash"];
 
 /**
- * The folders. Usually a dark rail of icons; it opens out (with `/` or the
- * menu button) over the content, or stays open beside it when locked.
+ * The folders. Locked open beside the mail, or a dark rail of icons that
+ * opens out over it (`/`). More opens the All folders panel beside it.
  */
 export function Sidebar({
   mail,
-  drafts,
   outbox,
   view,
   onView,
@@ -39,16 +60,19 @@ export function Sidebar({
   onToggleLock,
   onExpand,
   onSettings,
-  onHelp,
   onSync,
   syncing,
+  syncProblem,
+  prefs,
+  changes,
+  onMenu,
+  onDrop,
 }: {
   mail: MailState;
-  drafts: Draft[];
   outbox: OutboxEntry[];
   view: View;
   onView: (view: View) => void;
-  /** With names and folders; otherwise icons only. */
+  /** With names and folders; otherwise the icon rail. */
   expanded: boolean;
   /** Open over the content, not beside it. */
   overlay?: boolean;
@@ -56,132 +80,209 @@ export function Sidebar({
   onToggleLock: () => void;
   /** Open the full sidebar over the content. */
   onExpand: () => void;
-  onSettings: (tab: SettingsTab) => void;
-  onHelp: () => void;
+  onSettings: () => void;
   onSync: () => void;
   syncing: boolean;
+  /** Why the last sync failed, if it did. */
+  syncProblem: string | null;
+  prefs: SidebarPrefs;
+  changes: SidebarChanges;
+  onMenu: (request: MenuRequest) => void;
+  onDrop: (view: View, payload: DragPayload) => void;
 }) {
-  const [accountsOpen, setAccountsOpen] = useState(false);
+  const [open, setOpen] = useState<Set<Role>>(() => new Set());
+  const [panel, setPanel] = useState(false);
+  const [recentsOpen, setRecentsOpen] = useState(true);
+  const [dropOn, setDropOn] = useState<string | null>(null);
   const accounts = mail.state === "ready" ? mail.accounts : [];
-  const has = (role: Role) => accounts.some((a) => a.mailboxes.some((m) => m.role === role && m.selectable));
-  const troubled = outbox.some((e) => e.state === "failed" || e.state === "uncertain" || e.state === "held");
-  const me = accounts[0]?.account;
-  const status = summarise(accounts);
   const many = accounts.length > 1;
+  const me = accounts[0]?.account;
+  const hidden = new Set(prefs.hidden);
 
-  const entry = (target: View, icon: IconName, label: string, count?: number, alert?: boolean) => {
-    const active = sameView(view, target);
-    const isInbox = target.kind === "role" && target.role === "inbox";
+  const roleExists = (r: Role) => accounts.some((a) => a.mailboxes.some((m) => m.role === r && m.selectable));
+  const exists = (row: Row) => (row.view.kind === "role" ? roleExists(row.view.role) : accounts.length > 0 || row.view.kind !== "marked");
+  const inboxes = accounts.flatMap((a) => a.mailboxes.filter((m) => m.role === "inbox"));
+  const unread = inboxes.some((m) => m.unread !== undefined)
+    ? inboxes.reduce((sum, m) => sum + (m.unread ?? 0), 0)
+    : undefined;
+  const troubled = outbox.some((e) => e.state === "failed" || e.state === "uncertain" || e.state === "held");
+  const count = (row: Row): { value: number; alert: boolean } | null => {
+    if (row.view.kind === "role" && row.view.role === "inbox" && unread) return { value: unread, alert: false };
+    if (row.view.kind === "outbox" && outbox.length > 0) return { value: outbox.length, alert: troubled };
+    return null;
+  };
+  const folderName = (target: View): Row | null => {
+    if (target.kind !== "mailbox") {
+      return [...STANDARD, ...EXTRA, INBOX].find((row) => sameView(row.view, target)) ?? null;
+    }
+    const account = accounts.find((a) => a.account.id === target.accountId);
+    const mailbox = account?.mailboxes.find((m) => m.id === target.mailboxId);
+    if (!mailbox) return null;
+    const label = many && mailbox.role ? `${leafName(mailbox)} · ${account?.account.email}` : leafName(mailbox);
+    return { view: target, icon: mailbox.role ? ROLE_ICONS[mailbox.role] : "folder", label };
+  };
+
+  const go = (target: View) => {
+    setPanel(false);
+    onView(target);
+  };
+
+  // Messages dropped on a folder go there (see App's onDrop for what each one does).
+  const droppable = (target: View) =>
+    !(target.kind === "drafts" || target.kind === "outbox" || (target.kind === "role" && (target.role === "sent" || target.role === "drafts")));
+  const dragProps = (target: View) =>
+    droppable(target)
+      ? {
+          onDragOver: (event: DragEvent) => {
+            if (!event.dataTransfer.types.includes(DRAG_TYPE)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            setDropOn(viewKey(target));
+          },
+          onDragLeave: () => setDropOn((now) => (now === viewKey(target) ? null : now)),
+          onDrop: (event: DragEvent) => {
+            event.preventDefault();
+            setDropOn(null);
+            try {
+              onDrop(target, JSON.parse(event.dataTransfer.getData(DRAG_TYPE)) as DragPayload);
+            } catch {
+              // Not ours.
+            }
+          },
+        }
+      : {};
+
+  const rowMenu = (event: MouseEvent, entries: MenuEntry[]) => {
+    if (entries.length === 0) return;
+    event.preventDefault();
+    onMenu({ anchor: { x: event.clientX, y: event.clientY }, entries, label: "Folder" });
+  };
+
+  const item = (
+    row: Row,
+    options: { count?: { value: number; alert: boolean } | null; chevron?: Role; menu?: MenuEntry[]; indent?: number } = {},
+  ) => {
+    const active = sameView(view, row.view);
+    const key = viewKey(row.view);
     return (
-      <li key={label} className="side-entry">
-        {isInbox && many && (
+      <li key={key} className="side-entry">
+        {options.chevron && many && (
           <button
             type="button"
             className="side-chevron"
-            aria-label={accountsOpen ? "Hide accounts" : "Show accounts"}
-            aria-expanded={accountsOpen}
-            onClick={() => setAccountsOpen(!accountsOpen)}
+            aria-label={open.has(options.chevron) ? "Hide accounts" : "Show accounts"}
+            aria-expanded={open.has(options.chevron)}
+            onClick={() =>
+              setOpen((now) => {
+                const next = new Set(now);
+                const chevron = options.chevron as Role;
+                if (next.has(chevron)) next.delete(chevron);
+                else next.add(chevron);
+                return next;
+              })
+            }
           >
-            <Icon name={accountsOpen ? "chevronDown" : "chevronRight"} size={12} />
+            <Icon name={options.chevron && open.has(options.chevron) ? "chevronDown" : "chevronRight"} size={11} />
           </button>
         )}
         <button
           type="button"
-          className={active ? "side-item active" : "side-item"}
+          className={[
+            "side-item",
+            active ? "active" : "",
+            dropOn === key ? "drop" : "",
+            options.indent ? `depth-${Math.min(options.indent, 4)}` : "",
+          ].join(" ")}
           aria-current={active ? "page" : undefined}
-          title={expanded ? undefined : label}
-          onClick={() => onView(target)}
+          title={expanded ? undefined : row.label}
+          onClick={() => go(row.view)}
+          onContextMenu={(event) => rowMenu(event, options.menu ?? [])}
+          {...dragProps(row.view)}
         >
-          <Icon name={icon} size={expanded ? 18 : 20} />
-          {expanded && <span className="label">{label}</span>}
-          {count !== undefined && count > 0 && (
-            <span className={alert ? "count alert" : "count"}>{expanded ? count : count > 99 ? "99+" : count}</span>
+          <Icon name={row.icon} size={16} />
+          {expanded && <span className="label">{row.label}</span>}
+          {expanded && options.count && (
+            <span className={options.count.alert ? "count alert" : "count"}>{options.count.value}</span>
           )}
         </button>
       </li>
     );
   };
 
-  const accountEntries =
+  // Each account's folder with that role, under the chevron.
+  const perAccount = (r: Role) =>
     many &&
-    accountsOpen &&
-    accounts.map((account) => {
-      const inbox = account.mailboxes.find((m) => m.role === "inbox");
-      if (!inbox) return null;
-      const target: View = { kind: "mailbox", mailboxId: inbox.id, accountId: account.account.id };
+    open.has(r) &&
+    accounts.flatMap((account) => {
+      const mailbox = account.mailboxes.find((m) => m.role === r && m.selectable);
+      if (!mailbox) return [];
+      const target: View = { kind: "mailbox", mailboxId: mailbox.id, accountId: account.account.id };
       const active = sameView(view, target);
-      return (
-        <li key={account.account.id} className="side-entry account">
+      const person = { name: account.account.display_name, address: account.account.email };
+      return [
+        <li key={`${r}-${account.account.id}`} className="side-entry account">
           <button
             type="button"
             className={active ? "side-item active" : "side-item"}
             title={expanded ? undefined : account.account.email}
-            onClick={() => onView(target)}
+            onClick={() => go(target)}
+            {...dragProps(target)}
           >
-            <Avatar person={{ name: account.account.display_name, address: account.account.email }} size="xs" ring />
+            <Avatar person={person} size="xs" ring />
             {expanded && <span className="label">{account.account.email}</span>}
+            {expanded && r === "inbox" && mailbox.unread ? <span className="count">{mailbox.unread}</span> : null}
           </button>
-        </li>
-      );
+        </li>,
+      ];
     });
+
+  const hideMenu = (row: Row): MenuEntry[] => [{ label: "Remove from sidebar", onSelect: () => changes.hide(row.view) }];
+  const top = TOP.filter((row) => !hidden.has(viewKey(row.view)) && exists(row));
 
   if (!expanded) {
     return (
       <nav className="sidebar rail" aria-label="Folders">
         <ul className="side-list">
-          {entry({ kind: "role", role: "inbox" }, "inbox", "Inbox")}
-          {accountEntries}
+          {item(INBOX, { chevron: "inbox" })}
+          {perAccount("inbox")}
           <li className="rail-gap" aria-hidden="true" />
-          {accounts.length > 0 &&
-            MARKED_VIEWS.map((mark) => entry({ kind: "marked", mark }, MARKED_ICONS[mark], MARKED_LABELS[mark]))}
-          <li className="rail-gap" aria-hidden="true" />
-          {entry({ kind: "drafts" }, "draft", "Drafts", drafts.length)}
-          {RAIL_ROLES.filter(has).map((role) => entry({ kind: "role", role }, ROLE_ICONS[role], ROLE_LABELS[role]))}
-          {outbox.length > 0 && entry({ kind: "outbox" }, "outbox", "Outbox", outbox.length, troubled)}
-          <li className="rail-gap" aria-hidden="true" />
+          {top.map((row) => item(row, { menu: hideMenu(row) }))}
           <li className="side-entry">
-            <button type="button" className="side-item" title="All folders (/)" onClick={onExpand}>
-              <Icon name="folder" size={20} />
+            <button type="button" className="side-item" title="Show the sidebar (/)" aria-label="Show the sidebar" onClick={onExpand}>
+              <Icon name="menu" size={16} />
             </button>
           </li>
         </ul>
+        {/* Empty rail space opens the sidebar too. */}
+        <div className="rail-space" onClick={onExpand} aria-hidden="true" />
         <div className="rail-foot">
-          <button type="button" className="side-item" title="Show the sidebar (/)" aria-label="Show the sidebar" onClick={onExpand}>
-            <Icon name="menu" size={20} />
-          </button>
-          <button
-            type="button"
-            className="rail-me"
-            title={`Settings · ${status.label}`}
-            aria-label="Settings"
-            onClick={() => onSettings("accounts")}
-          >
-            {me ? <Avatar person={{ name: me.display_name, address: me.email }} size="sm" /> : <Icon name="settings" />}
-            <span className={`status-dot ${status.tone}`} aria-hidden="true" />
+          <button type="button" className="rail-me" title="Settings" aria-label="Settings" onClick={onSettings}>
+            {me ? <Avatar person={{ name: me.display_name, address: me.email }} size="xs" /> : <Icon name="settings" size={16} />}
           </button>
         </div>
       </nav>
     );
   }
 
+  const folders = [
+    ...(hidden.has(viewKey(ARCHIVE.view)) || !exists(ARCHIVE) ? [] : [ARCHIVE]),
+    ...prefs.starred.map(folderName).filter((row): row is Row => row !== null),
+  ];
+  const recents = prefs.recents.map(folderName).filter((row): row is Row => row !== null);
+
   return (
     <nav className={overlay ? "sidebar expanded overlay" : "sidebar expanded"} aria-label="Folders">
-      <div className="side-top">
-        <span className="side-brand">
-          <span className="app-mark tiny">
-            <Icon name="logo" size={15} />
-          </span>
-          Regards
-        </span>
+      <div className="side-top" data-tauri-drag-region>
         <button
           type="button"
           className={syncing ? "side-tool spinning" : "side-tool"}
-          title="Check for new mail"
+          title={syncProblem ? `Sync problem: ${syncProblem}` : "Check for new mail"}
           aria-label="Check for new mail"
           onClick={onSync}
           disabled={syncing}
         >
-          <Icon name="refresh" size={17} />
+          <Icon name="refresh" size={15} />
+          {syncProblem && <span className="side-alert" aria-hidden="true" />}
         </button>
         <button
           type="button"
@@ -191,131 +292,197 @@ export function Sidebar({
           aria-pressed={locked}
           onClick={onToggleLock}
         >
-          <Icon name="sidebar" size={17} />
+          <Icon name={locked ? "sidebarOn" : "sidebar"} size={15} />
         </button>
       </div>
       <div className="side-scroll">
         <ul className="side-list">
-          {entry({ kind: "role", role: "inbox" }, "inbox", "Inbox")}
-          {accountEntries}
-          {accounts.length > 0 &&
-            MARKED_VIEWS.map((mark) => entry({ kind: "marked", mark }, MARKED_ICONS[mark], MARKED_LABELS[mark]))}
-          {entry({ kind: "drafts" }, "draft", "Drafts", drafts.length)}
-          {ACROSS.filter(has).map((role) => entry({ kind: "role", role }, ROLE_ICONS[role], ROLE_LABELS[role]))}
-          {outbox.length > 0 && entry({ kind: "outbox" }, "outbox", "Outbox", outbox.length, troubled)}
+          {item(INBOX, { count: count(INBOX), chevron: "inbox" })}
+          {perAccount("inbox")}
+          <li className="side-gap" aria-hidden="true" />
+          {top.map((row) => {
+            const chevron = row.view.kind === "role" && PER_ACCOUNT.includes(row.view.role) ? row.view.role : undefined;
+            return [
+              item(row, { count: count(row), chevron, menu: hideMenu(row) }),
+              chevron ? perAccount(chevron) : null,
+            ];
+          })}
         </ul>
-        {accounts.length === 1 ? (
-          <FolderGroup
-            title="Folders"
-            account={accounts[0]}
-            mailboxes={accounts[0].mailboxes.filter((m) => !m.role || m.role === "all" || m.role === "flagged")}
-            view={view}
-            onView={onView}
-          />
-        ) : (
-          accounts.map((account) => (
-            <FolderGroup
-              key={account.account.id}
-              title={account.account.email}
-              account={account}
-              mailboxes={sortFolders(account.mailboxes)}
-              view={view}
-              onView={onView}
-              collapsible
-            />
-          ))
+        <h2 className="side-heading">Folders</h2>
+        <ul className="side-list">
+          {folders.map((row) =>
+            item(row, {
+              menu:
+                row === ARCHIVE
+                  ? hideMenu(row)
+                  : [{ label: "Remove from sidebar", onSelect: () => changes.unstar(row.view) }],
+            }),
+          )}
+          <li className="side-entry">
+            <button
+              type="button"
+              className={panel ? "side-item open" : "side-item"}
+              aria-expanded={panel}
+              onClick={() => setPanel(!panel)}
+            >
+              <Icon name="more" size={16} />
+              <span className="label">More</span>
+            </button>
+          </li>
+        </ul>
+        {recents.length > 0 && (
+          <section className="side-recents">
+            <div className="side-heading with-tools">
+              <button type="button" className="side-fold" aria-expanded={recentsOpen} onClick={() => setRecentsOpen(!recentsOpen)}>
+                <Icon name={recentsOpen ? "chevronDown" : "chevronRight"} size={11} />
+                Recents
+              </button>
+              <button type="button" className="side-clear" onClick={changes.clearRecents}>
+                Clear
+              </button>
+            </div>
+            {recentsOpen && (
+              <ul className="side-list">
+                {recents.map((row) =>
+                  item(row, {
+                    menu: [
+                      { label: "Pin to the top", onSelect: () => changes.star(row.view) },
+                      { label: "Remove from sidebar", onSelect: () => changes.forget(row.view) },
+                    ],
+                  }),
+                )}
+              </ul>
+            )}
+          </section>
         )}
       </div>
       <div className="side-foot">
-        <button type="button" className="side-item" onClick={() => onSettings("accounts")}>
-          {me ? <Avatar person={{ name: me.display_name, address: me.email }} size="xs" /> : <Icon name="settings" />}
+        <button type="button" className="side-item" onClick={onSettings}>
+          {me ? <Avatar person={{ name: me.display_name, address: me.email }} size="xs" /> : <Icon name="settings" size={16} />}
           <span className="label">Settings</span>
-          <span className={`status-dot ${status.tone}`} title={status.label} aria-label={status.label} />
-        </button>
-        <button type="button" className="side-tool" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" onClick={onHelp}>
-          <Icon name="keyboard" size={17} />
         </button>
       </div>
+      {panel && (
+        <FolderPanel
+          accounts={accounts}
+          view={view}
+          prefs={prefs}
+          changes={changes}
+          onOpen={(target) => {
+            changes.visit(target);
+            go(target);
+          }}
+          onClose={() => setPanel(false)}
+        />
+      )}
     </nav>
   );
 }
 
-function FolderGroup({
-  title,
-  account,
-  mailboxes,
+/**
+ * Every folder: the system ones not in the sidebar, then each account's
+ * folders. The star adds one to the sidebar; Ctrl+click stars without closing.
+ */
+function FolderPanel({
+  accounts,
   view,
-  onView,
-  collapsible = false,
+  prefs,
+  changes,
+  onOpen,
+  onClose,
 }: {
-  title: string;
-  account: AccountMail;
-  mailboxes: MailboxSummary[];
+  accounts: AccountMail[];
   view: View;
-  onView: (view: View) => void;
-  collapsible?: boolean;
+  prefs: SidebarPrefs;
+  changes: SidebarChanges;
+  onOpen: (view: View) => void;
+  onClose: () => void;
 }) {
-  const [open, setOpen] = useState(true);
-  if (mailboxes.length === 0 && !account.error) return null;
-  return (
-    <section className="side-group">
-      {collapsible ? (
-        <button type="button" className="side-heading" aria-expanded={open} onClick={() => setOpen(!open)}>
-          <span className="label">{title}</span>
-          <Icon name={open ? "chevronDown" : "chevronRight"} size={12} />
-        </button>
-      ) : (
-        <h2 className="side-heading">
-          <span className="label">{title}</span>
-        </h2>
-      )}
-      {open && (
-        <ul className="side-list">
-          {account.error && <li className="side-note">{account.error}</li>}
-          {mailboxes.map((mailbox) => {
-            const target: View = { kind: "mailbox", mailboxId: mailbox.id, accountId: account.account.id };
-            const indent = depth(mailbox) ? ` depth-${depth(mailbox)}` : "";
-            if (!mailbox.selectable) {
-              return (
-                <li key={mailbox.id} className="side-entry">
-                  <span className={`side-item static${indent}`}>
-                    <Icon name="folder" size={18} />
-                    <span className="label">{leafName(mailbox)}</span>
-                  </span>
-                </li>
-              );
-            }
-            const active = sameView(view, target);
-            return (
-              <li key={mailbox.id} className="side-entry">
-                <button
-                  type="button"
-                  className={`side-item${active ? " active" : ""}${indent}`}
-                  aria-current={active ? "page" : undefined}
-                  title={mailbox.name}
-                  onClick={() => onView(target)}
-                >
-                  <Icon name={mailbox.role ? ROLE_ICONS[mailbox.role] : "folder"} size={18} />
-                  <span className="label">{leafName(mailbox)}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
-  );
-}
+  useShortcuts({ Escape: onClose }, { modal: true });
+  const hidden = new Set(prefs.hidden);
+  const starred = new Set(prefs.starred.map(viewKey));
+  const roleExists = (r: Role) => accounts.some((a) => a.mailboxes.some((m) => m.role === r && m.selectable));
+  const system = [
+    ...STANDARD.filter((row) => hidden.has(viewKey(row.view))),
+    ...EXTRA.filter((row) => row.view.kind !== "role" || roleExists(row.view.role)),
+  ];
+  const inSidebar = (target: View) =>
+    starred.has(viewKey(target)) || (STANDARD.some((row) => sameView(row.view, target)) && !hidden.has(viewKey(target)));
+  const toggle = (target: View) => {
+    const standard = STANDARD.some((row) => sameView(row.view, target));
+    if (standard) {
+      if (hidden.has(viewKey(target))) changes.show(target);
+      else changes.hide(target);
+    } else if (starred.has(viewKey(target))) changes.unstar(target);
+    else changes.star(target);
+  };
 
-export function summarise(accounts: AccountMail[]): { tone: "ok" | "busy" | "bad" | "idle"; label: string } {
-  if (accounts.length === 0) return { tone: "idle", label: "No accounts" };
-  if (accounts.some((a) => a.error || a.sync?.last_error)) return { tone: "bad", label: "Sync problem" };
-  if (accounts.some((a) => a.sync?.running)) return { tone: "busy", label: "Syncing…" };
-  if (accounts.every((a) => a.sync?.push_active)) return { tone: "ok", label: "Up to date" };
-  const last = Math.max(0, ...accounts.map((a) => a.sync?.last_success_at ?? 0));
-  if (last > 0) {
-    const time = new Date(last).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    return { tone: "ok", label: `Synced at ${time}` };
-  }
-  return { tone: "idle", label: "Not synced yet" };
+  const row = (target: View, icon: IconName, label: string, indent = 0) => {
+    const on = inSidebar(target);
+    return (
+      <li key={viewKey(target)} className={sameView(view, target) ? "panel-row active" : "panel-row"}>
+        <button
+          type="button"
+          className={indent ? `panel-open depth-${Math.min(indent, 4)}` : "panel-open"}
+          title={label}
+          onClick={(event) => (event.ctrlKey || event.metaKey ? toggle(target) : onOpen(target))}
+        >
+          <Icon name={icon} size={15} />
+          <span className="label">{label}</span>
+        </button>
+        <button
+          type="button"
+          className={on ? "panel-star on" : "panel-star"}
+          title={on ? "Remove from the sidebar" : "Add to the sidebar"}
+          aria-label={on ? `Remove ${label} from the sidebar` : `Add ${label} to the sidebar`}
+          aria-pressed={on}
+          onClick={() => toggle(target)}
+        >
+          <Icon name={on ? "starFilled" : "star"} size={14} />
+        </button>
+      </li>
+    );
+  };
+
+  const tree = (mailboxes: MailboxSummary[]) =>
+    mailboxes
+      .filter((m) => m.role === null)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+
+  return (
+    <>
+      <div className="panel-catcher" onMouseDown={onClose} aria-hidden="true" />
+      <aside className="folder-panel" aria-label="All folders">
+        <div className="panel-scroll">
+          <h2 className="panel-head">All folders</h2>
+          <ul>{system.map((entry) => row(entry.view, entry.icon, entry.label))}</ul>
+          {accounts.map((account) => (
+            <section key={account.account.id} className="panel-account">
+              <h3 className="panel-head account">
+                <Avatar person={{ name: account.account.display_name, address: account.account.email }} size="xs" />
+                <span className="label">{account.account.email}</span>
+              </h3>
+              <ul>
+                {tree(account.mailboxes).map((mailbox) =>
+                  mailbox.selectable ? (
+                    row({ kind: "mailbox", mailboxId: mailbox.id, accountId: account.account.id }, "folder", leafName(mailbox), depth(mailbox))
+                  ) : (
+                    <li key={mailbox.id} className="panel-row static">
+                      <span className={depth(mailbox) ? `panel-open depth-${Math.min(depth(mailbox), 4)}` : "panel-open"}>
+                        <Icon name="folder" size={15} />
+                        <span className="label">{leafName(mailbox)}</span>
+                      </span>
+                    </li>
+                  ),
+                )}
+              </ul>
+            </section>
+          ))}
+        </div>
+        <p className="panel-hint">
+          Hold <strong>Ctrl</strong> and click to add several folders to the sidebar.
+        </p>
+      </aside>
+    </>
+  );
 }

@@ -1,12 +1,12 @@
-import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MessageSummary, Person } from "./accounts";
+import { type DragEvent, type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Action, choose } from "./actions";
 import { Avatar } from "./Avatar";
 import { dateSection, laterDate, listDate, peopleShort, personName } from "./format";
-import { Icon, type IconName } from "./icons";
+import { Icon } from "./icons";
 import type { ListItem, MessageFeed } from "./mail";
-import { type Anchor, type MenuEntry, type MenuRequest, anchorOf } from "./Menu";
+import { type Anchor, anchorOf } from "./Menu";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
+import { DRAG_TYPE, type DragPayload } from "./Sidebar";
 
 /** "Someday" in the daemon: no time to come back (regards_store::marks::SOMEDAY). */
 const SOMEDAY = 32_503_680_000_000;
@@ -31,13 +31,13 @@ export function ListHeader({
     <>
       <span className="list-name">
         {title}
-        {onTitle && <Icon name="chevronDown" size={14} />}
+        {onTitle && <Icon name="chevronDown" size={12} />}
       </span>
       {subtitle && <span className="list-sub">{subtitle}</span>}
     </>
   );
   return (
-    <header className="list-head">
+    <header className="list-head" data-tauri-drag-region>
       {onTitle ? (
         <button type="button" className="list-title" onClick={(event) => onTitle(anchorOf(event.currentTarget))}>
           {heading}
@@ -48,14 +48,6 @@ export function ListHeader({
       <div className="list-tools">{children}</div>
     </header>
   );
-}
-
-/** A row that stands for a group of messages (the pinned ones, say): who is in it, and how many. */
-export interface Bundle {
-  label: string;
-  icon: IconName;
-  messages: MessageSummary[];
-  onOpen: () => void;
 }
 
 export function MessageList({
@@ -71,9 +63,8 @@ export function MessageList({
   onOpen,
   onPick,
   actionsFor,
-  onMenu,
+  onPalette,
   empty,
-  bundle,
   onSplit,
   own,
 }: {
@@ -83,17 +74,16 @@ export function MessageList({
   onCompose: () => void;
   canCompose: boolean;
   feed: MessageFeed;
-  /** One line per message beside nothing ("single"), or two lines beside the reading pane ("split"). */
+  /** One line per message beside nothing ("single"), or three beside the reading pane ("split"). */
   mode: "single" | "split";
   openId: number | null;
   picked: ReadonlySet<number>;
   onOpen: (item: ListItem) => void;
   onPick: (ids: Set<number>) => void;
   actionsFor: (items: ListItem[]) => Action[];
-  onMenu: (request: MenuRequest) => void;
+  /** The command palette, for these actions (right-click and the ⋯ buttons). */
+  onPalette: (actions: Action[], title: string) => void;
   empty: { title: string; body: string };
-  /** A group row at the top (the inbox's pinned messages). */
-  bundle?: Bundle | null;
   /** Show the reading pane beside the list (the handle on the list's edge). */
   onSplit?: () => void;
   /** The person's own addresses, lowercase: their mail reads "to Lena". */
@@ -111,7 +101,7 @@ export function MessageList({
     const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (words.length === 0) return feed.items;
     return feed.items.filter((item) => {
-      const text = `${item.subject} ${item.from?.name ?? ""} ${item.from?.address ?? ""}`.toLowerCase();
+      const text = `${item.subject} ${item.from?.name ?? ""} ${item.from?.address ?? ""} ${item.preview ?? ""}`.toLowerCase();
       return words.every((word) => text.includes(word));
     });
   }, [feed.items, query]);
@@ -162,6 +152,12 @@ export function MessageList({
     if (mode === "split") onOpen(item);
   };
 
+  // What an action applies to: the selection when the row is in it, else the row.
+  const targetsFor = (item: ListItem) =>
+    picked.has(item.id) && picked.size > 1 ? items.filter((other) => picked.has(other.id)) : [item];
+  const palette = (targets: ListItem[]) =>
+    onPalette(actionsFor(targets), targets.length > 1 ? `${targets.length} messages` : targets[0].subject || "(no subject)");
+
   // Shortcuts act on the selection, else the message under the pointer, else the
   // highlighted one (looked up when pressed).
   const current = () => items.find((item) => item.id === (hovered.current ?? focus));
@@ -209,34 +205,19 @@ export function MessageList({
   }, [more, loadMore, query]);
   useEffect(nearEnd, [items.length, nearEnd]);
 
-  const menuEntries = (actions: Action[], at: Anchor | null): MenuEntry[] => {
-    const groups = [
-      choose(actions, "reply", "replyAll", "forward"),
-      choose(actions, "read", "unread", "flag"),
-      choose(actions, "pin", "snooze", "remind", "aside"),
-      choose(actions, "archive", "move"),
-      choose(actions, "delete"),
-    ].filter((group) => group.length > 0);
-    return groups.flatMap((group, index) => [
-      ...(index > 0 ? (["separator"] as const) : []),
-      ...group.map((action) => ({
-        label: action.label,
-        icon: action.icon,
-        hint: action.keys[0],
-        danger: action.danger,
-        onSelect: () => action.run(at),
-      })),
-    ]);
+  // Rows drag onto the sidebar's folders.
+  const dragStart = (event: DragEvent, item: ListItem) => {
+    const targets = targetsFor(item);
+    const payload: DragPayload = {
+      ids: targets.map((target) => target.id),
+      accounts: targets.map((target) => target.accountId),
+      mailboxes: targets.map((target) => target.mailboxId),
+    };
+    event.dataTransfer.setData(DRAG_TYPE, JSON.stringify(payload));
+    event.dataTransfer.effectAllowed = "move";
   };
 
-  const contextMenu = (event: MouseEvent, item: ListItem) => {
-    event.preventDefault();
-    const targets = picked.has(item.id) && picked.size > 1 ? items.filter((other) => picked.has(other.id)) : [item];
-    const at = { x: event.clientX, y: event.clientY };
-    onMenu({ anchor: at, entries: menuEntries(actionsFor(targets), at), label: targets.length > 1 ? `${targets.length} messages` : "Message" });
-  };
-
-  // Group by day: Today, Yesterday, this week … by place in the list, so what
+  // Group by day: Today, Yesterday, This week … by place in the list, so what
   // came back to the inbox (a snooze that ended, a reminder) is under the day it did.
   const sections: { label: string; items: ListItem[] }[] = [];
   for (const item of items) {
@@ -245,17 +226,10 @@ export function MessageList({
     if (last?.label === label) last.items.push(item);
     else sections.push({ label, items: [item] });
   }
-  const showBundle = bundle && bundle.messages.length > 0 && !query;
-  if (showBundle && sections[0]?.label !== "Today") sections.unshift({ label: "Today", items: [] });
 
   const header =
     pickedItems.length > 0 ? (
-      <SelectionBar
-        count={pickedItems.length}
-        actions={actionsFor(pickedItems)}
-        onClear={() => onPick(new Set())}
-        onMore={(at) => onMenu({ anchor: at, entries: menuEntries(actionsFor(pickedItems), at), label: "Selected messages" })}
-      />
+      <SelectionBar count={pickedItems.length} actions={actionsFor(pickedItems)} onClear={() => onPick(new Set())} onMore={() => palette(pickedItems)} />
     ) : searching ? (
       <SearchBar
         query={query}
@@ -268,10 +242,10 @@ export function MessageList({
     ) : (
       <ListHeader title={title} subtitle={subtitle} onTitle={onTitle}>
         <button type="button" className="icon-btn" title={`Search (${MOD_KEY}+F)`} aria-label="Search" onClick={() => setSearching(true)}>
-          <Icon name="search" />
+          <Icon name="search" size={17} />
         </button>
         <button type="button" className="icon-btn" title="New message (c)" aria-label="New message" onClick={onCompose} disabled={!canCompose}>
-          <Icon name="compose" />
+          <Icon name="compose" size={17} />
         </button>
       </ListHeader>
     );
@@ -287,11 +261,11 @@ export function MessageList({
         )}
         {feed.loading ? (
           <Skeleton mode={mode} />
-        ) : items.length === 0 && !showBundle && !feed.error ? (
+        ) : items.length === 0 && !feed.error ? (
           query ? (
             <div className="empty list-empty">
               <h2>Nothing matches “{query}”</h2>
-              <p>This searches the messages already in this list, by sender and subject.</p>
+              <p>This searches the messages already in this list, by sender, subject and preview.</p>
             </div>
           ) : (
             <div className="empty list-empty">
@@ -304,28 +278,35 @@ export function MessageList({
           )
         ) : (
           <div className={`rows ${mode === "single" ? "wide" : "tall"}${picked.size > 0 ? " picking" : ""}`}>
-            {sections.map((section, sectionIndex) => (
+            {sections.map((section) => (
               <section key={section.label} className="day" aria-label={section.label}>
                 <h3 className="day-head">{section.label}</h3>
                 <ul>
-                  {sectionIndex === 0 && showBundle && <BundleRow bundle={bundle} />}
                   {section.items.map((item) => {
                     const index = items.indexOf(item);
                     const isPicked = picked.has(item.id);
-                    // Beside the reader the row is narrow: fewer buttons, the rest under More.
-                    const hover =
-                      mode === "single"
-                        ? choose(actionsFor([item]), "archive", "delete", "flag", "read", "unread", "pin", "aside", "snooze")
-                        : choose(actionsFor([item]), "archive", "delete", "read", "unread", "snooze");
+                    const actions = actionsFor([item]);
                     const snoozedUntil =
                       item.snoozed_until !== null && item.snoozed_until < SOMEDAY ? item.snoozed_until : null;
+                    const button = (action: Action, size: number, className: string) => (
+                      <button
+                        key={action.id}
+                        type="button"
+                        className={className}
+                        title={`${action.label} (${action.keys[0]})`}
+                        aria-label={action.label}
+                        onClick={(event) => action.run(anchorOf(event.currentTarget, "end"))}
+                      >
+                        <Icon name={action.icon} size={size} />
+                      </button>
+                    );
                     return (
                       <li
                         key={`${item.mailboxId}:${item.id}`}
                         className={[
                           "row",
                           item.seen ? "" : "unread",
-                          mode === "split" && item.id === openId && picked.size === 0 ? "open" : "",
+                          item.id === openId && picked.size === 0 ? "open" : "",
                           item.id === focus ? "cursor" : "",
                           isPicked ? "picked" : "",
                         ].join(" ")}
@@ -335,21 +316,46 @@ export function MessageList({
                         onMouseLeave={() => {
                           if (hovered.current === item.id) hovered.current = null;
                         }}
-                        onContextMenu={(event) => contextMenu(event, item)}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          palette(targetsFor(item));
+                        }}
                       >
+                        {mode === "split" ? (
+                          // Beside the reader: Done, read/unread and delete, stacked in the margin.
+                          <span className="row-gutter">
+                            {isPicked ? (
+                              <button type="button" className="gutter-check" aria-label="Unselect" aria-pressed onClick={() => toggle(item)}>
+                                <Icon name="check" size={11} />
+                              </button>
+                            ) : (
+                              choose(actions, "archive", "read", "unread", "delete").map((action) =>
+                                // Done (archive) shows a check here, as in the reader's Back | Done.
+                                button(action.id === "archive" ? { ...action, icon: "check" } : action, 13, "gutter-btn"),
+                              )
+                            )}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="row-check"
+                            aria-label={isPicked ? "Unselect" : "Select"}
+                            aria-pressed={isPicked}
+                            onClick={() => toggle(item)}
+                          >
+                            <Icon name="check" size={12} />
+                          </button>
+                        )}
                         <button
                           type="button"
-                          className="row-check"
-                          aria-label={isPicked ? "Unselect" : "Select"}
-                          aria-pressed={isPicked}
-                          onClick={() => toggle(item)}
+                          className="row-main"
+                          draggable
+                          onDragStart={(event) => dragStart(event, item)}
+                          onClick={(event) => click(event, item, index)}
                         >
-                          <Icon name="check" size={12} />
-                        </button>
-                        <button type="button" className="row-main" onClick={(event) => click(event, item, index)}>
                           <span className="dot" aria-label={item.seen ? undefined : "Unread"} />
                           <span className="row-avatar">
-                            <Avatar person={correspondent(item, own)} size={mode === "single" ? "sm" : "md"} ring />
+                            <Avatar person={correspondent(item, own)} size="sm" />
                           </span>
                           <span className="from">{who(item, own)}</span>
                           <span className="subject">
@@ -357,6 +363,12 @@ export function MessageList({
                             {item.subject || "(no subject)"}
                           </span>
                           <span className="marks">
+                            {item.thread_size !== undefined && item.thread_size > 1 && (
+                              <span className="thread-count" title={`${item.thread_size} messages`}>
+                                {item.thread_size}
+                              </span>
+                            )}
+                            {item.has_attachments && <Icon name="paperclip" size={14} className="clip" />}
                             {(item.reminded || item.remind_at !== null) && (
                               <span
                                 className={item.reminded ? "reminder due" : "reminder"}
@@ -380,33 +392,25 @@ export function MessageList({
                           ) : (
                             <span className="date">{listDate(item.received_at)}</span>
                           )}
+                          {mode === "split" && item.preview && <span className="preview">{item.preview}</span>}
                         </button>
-                        <span className="row-actions">
-                          {hover.map((action) => (
+                        {mode === "single" && (
+                          // Alone, the row's actions take the place of the date.
+                          <span className="row-actions">
+                            {choose(actions, "delete", "flag", "read", "unread", "pin", "aside", "snooze").map((action) =>
+                              button(action, 16, "icon-btn small"),
+                            )}
                             <button
-                              key={action.id}
                               type="button"
                               className="icon-btn small"
-                              title={`${action.label} (${action.keys[0]})`}
-                              aria-label={action.label}
-                              onClick={(event) => action.run(anchorOf(event.currentTarget, "end"))}
+                              title={`More (${MOD_KEY}+K)`}
+                              aria-label="More"
+                              onClick={() => palette(targetsFor(item))}
                             >
-                              <Icon name={action.icon} size={16} />
+                              <Icon name="more" size={16} />
                             </button>
-                          ))}
-                          <button
-                            type="button"
-                            className="icon-btn small"
-                            title="More"
-                            aria-label="More"
-                            onClick={(event) => {
-                              const at = anchorOf(event.currentTarget, "end");
-                              onMenu({ anchor: at, entries: menuEntries(actionsFor([item]), at), label: "Message" });
-                            }}
-                          >
-                            <Icon name="more" size={16} />
-                          </button>
-                        </span>
+                          </span>
+                        )}
                       </li>
                     );
                   })}
@@ -430,46 +434,6 @@ export function MessageList({
   );
 }
 
-/** The group row: an icon, the name and count, then who is in it. */
-function BundleRow({ bundle }: { bundle: Bundle }) {
-  const senders: { person: Person | null; count: number }[] = [];
-  for (const message of bundle.messages) {
-    const name = personName(message.from);
-    const known = senders.find((sender) => personName(sender.person) === name);
-    if (known) known.count++;
-    else senders.push({ person: message.from, count: 1 });
-  }
-  const unread = bundle.messages.some((message) => !message.seen);
-  return (
-    <li className={unread ? "row bundle unread" : "row bundle"}>
-      <button type="button" className="row-main" onClick={bundle.onOpen}>
-        <span className="dot" />
-        <span className="row-avatar">
-          <span className="bundle-icon">
-            <Icon name={bundle.icon} size={15} />
-          </span>
-        </span>
-        <span className="from">
-          {bundle.label} <span className="bundle-count">{bundle.messages.length}</span>
-        </span>
-        <span className="subject chips">
-          {senders.slice(0, 6).map((sender) => (
-            <span key={personName(sender.person)} className="sender-chip">
-              <Avatar person={sender.person} size="xs" />
-              {personName(sender.person)}
-              {sender.count > 1 && <span className="bundle-count">{sender.count}</span>}
-            </span>
-          ))}
-        </span>
-        <span className="marks" />
-        <span className="date">
-          <Icon name="chevronRight" size={16} />
-        </span>
-      </button>
-    </li>
-  );
-}
-
 /** In place of the header while messages are selected: how many, and what to do with them. */
 function SelectionBar({
   count,
@@ -480,16 +444,19 @@ function SelectionBar({
   count: number;
   actions: Action[];
   onClear: () => void;
-  onMore: (anchor: Anchor) => void;
+  onMore: () => void;
 }) {
   return (
     <header className="list-head selection" role="toolbar" aria-label="Selected messages">
       <button type="button" className="icon-btn" title="Clear the selection (Esc)" aria-label="Clear the selection" onClick={onClear}>
-        <Icon name="close" />
+        <Icon name="close" size={16} />
       </button>
-      <span className="selection-count">{count} selected</span>
+      <span className="selection-count">
+        <Icon name="mail" size={16} />
+        {count} selected
+      </span>
       <div className="list-tools">
-        {choose(actions, "aside", "flag", "archive", "read", "unread", "pin", "move", "delete", "snooze", "remind").map((action) => (
+        {choose(actions, "aside", "flag", "archive", "read", "unread", "pin", "delete", "snooze").map((action) => (
           <button
             key={action.id}
             type="button"
@@ -498,11 +465,11 @@ function SelectionBar({
             aria-label={action.label}
             onClick={(event) => action.run(anchorOf(event.currentTarget, "end"))}
           >
-            <Icon name={action.icon} />
+            <Icon name={action.icon} size={17} />
           </button>
         ))}
-        <button type="button" className="icon-btn" title="More" aria-label="More" onClick={(event) => onMore(anchorOf(event.currentTarget, "end"))}>
-          <Icon name="more" />
+        <button type="button" className="icon-btn" title={`More (${MOD_KEY}+K)`} aria-label="More" onClick={onMore}>
+          <Icon name="more" size={17} />
         </button>
       </div>
     </header>
@@ -511,13 +478,13 @@ function SelectionBar({
 
 function SearchBar({ query, onQuery, onClose }: { query: string; onQuery: (query: string) => void; onClose: () => void }) {
   return (
-    <header className="list-head searching">
+    <header className="list-head searching" data-tauri-drag-region>
       <label className="search-field">
-        <Icon name="search" size={17} />
+        <Icon name="search" size={16} />
         <input
           autoFocus
           value={query}
-          placeholder="Search this list by sender or subject"
+          placeholder="Search this list"
           aria-label="Search this list"
           onChange={(event) => onQuery(event.target.value)}
           onKeyDown={(event) => {
@@ -528,7 +495,7 @@ function SearchBar({ query, onQuery, onClose }: { query: string; onQuery: (query
           }}
         />
         <button type="button" className="search-clear" title="Close the search (Esc)" aria-label="Close the search" onClick={onClose}>
-          <Icon name="close" size={13} />
+          <Icon name="close" size={12} />
         </button>
       </label>
     </header>

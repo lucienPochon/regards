@@ -16,12 +16,15 @@ import { useChanges } from "./changes";
 import { fileKind, fileSize, fullDate, peopleFull, personName } from "./format";
 import { Icon } from "./icons";
 import type { ListItem } from "./mail";
-import { type MenuEntry, type MenuRequest, anchorOf } from "./Menu";
-import { useShortcuts } from "./shortcuts";
+import { type MenuEntry, anchorOf } from "./Menu";
+import { MOD_KEY, useShortcuts } from "./shortcuts";
 
 type Load = { state: "loading" } | { state: "ready"; detail: MessageDetail } | { state: "failed"; message: string };
 
 const disposable = (role: Role | null | undefined) => role === "trash" || role === "junk";
+
+/** The command palette for these actions, with any extra entries (a message's own view options). */
+export type Palette = (actions: Action[], title: string, extra?: MenuEntry[]) => void;
 
 /** One message with its body, kept current (the body is cached, so refreshing is cheap). */
 function useDetail(id: number, enabled: boolean): Load {
@@ -63,7 +66,7 @@ export function ReadingPane({
   folders,
   mode,
   actionsFor,
-  onMenu,
+  onPalette,
   onClose,
   onStep,
 }: {
@@ -73,7 +76,7 @@ export function ReadingPane({
   /** "single": the message is shown in place of the list, with a way back. */
   mode: "single" | "split";
   actionsFor: (target: Target) => Action[];
-  onMenu: (request: MenuRequest) => void;
+  onPalette: Palette;
   onClose: () => void;
   /** The next (1) or previous (-1) message of the list, when the list is not beside it. */
   onStep?: (by: number) => void;
@@ -124,6 +127,7 @@ export function ReadingPane({
   };
   const actions = actionsFor(target);
   const done = choose(actions, "archive")[0];
+  const subject = message.subject || "(no subject)";
   useShortcuts({
     Escape: onClose,
     ...(onStep ? { j: () => onStep(1), k: () => onStep(-1) } : {}),
@@ -147,42 +151,20 @@ export function ReadingPane({
     <button
       key={action.id}
       type="button"
-      className={action.danger ? "icon-btn danger" : "icon-btn"}
+      className="icon-btn"
       title={`${action.label} (${action.keys[0]})`}
       aria-label={action.label}
       aria-pressed={action.id === "flag" ? message.flagged : action.id === "pin" ? message.pinned : undefined}
       disabled={load.state !== "ready"}
       onClick={(event) => action.run(anchorOf(event.currentTarget, "end"))}
     >
-      <Icon name={action.icon} />
+      <Icon name={action.icon} size={17} />
     </button>
   );
-  const more = (button: HTMLElement) => {
-    const at = anchorOf(button, "end");
-    onMenu({
-      anchor: at,
-      label: "More",
-      entries: [
-        ...choose(actions, "reply", "replyAll", "forward").map((action) => ({
-          label: action.label,
-          icon: action.icon,
-          hint: action.keys[0],
-          onSelect: () => action.run(at),
-        })),
-        "separator",
-        ...choose(actions, "archive").map((action) => ({
-          label: action.label,
-          icon: action.icon,
-          hint: action.keys[0],
-          onSelect: () => action.run(at),
-        })),
-      ],
-    });
-  };
 
   return (
     <section className={`reader ${mode}`} aria-label="Message">
-      <header className="reader-bar" role="toolbar" aria-label="Message actions">
+      <header className="reader-bar" role="toolbar" aria-label="Message actions" data-tauri-drag-region>
         <div className="segmented">
           <button
             type="button"
@@ -190,31 +172,36 @@ export function ReadingPane({
             aria-label={mode === "single" ? "Back to the list" : "Close"}
             onClick={onClose}
           >
-            <Icon name={mode === "single" ? "back" : "close"} size={16} />
+            <Icon name={mode === "single" ? "back" : "close"} size={14} />
           </button>
           {done && (
             <button
               type="button"
-              title={`${done.label} (${done.keys[0]})`}
+              title={`Done: ${done.label} (${done.keys[0]})`}
               aria-label={done.label}
               disabled={load.state !== "ready"}
               onClick={() => done.run(null)}
             >
-              <Icon name="check" size={16} />
+              <Icon name="check" size={14} />
             </button>
           )}
         </div>
-        <h1 className="reader-subject" title={message.subject}>
-          {message.subject || "(no subject)"}
-        </h1>
         <div className="reader-tools">
-          {choose(actions, "aside", "flag", "unread", "read", "pin", "delete", "snooze", "remind", "move").map(tool)}
-          <button type="button" className="icon-btn" title="More" aria-label="More" onClick={(event) => more(event.currentTarget)}>
-            <Icon name="more" />
+          {choose(actions, "delete", "flag", "unread", "read", "pin", "aside", "snooze").map(tool)}
+          <button
+            type="button"
+            className="icon-btn"
+            title={`More (${MOD_KEY}+K)`}
+            aria-label="More"
+            disabled={load.state !== "ready"}
+            onClick={() => onPalette(actions, subject)}
+          >
+            <Icon name="more" size={17} />
           </button>
         </div>
       </header>
       <div className="reader-scroll">
+        <h1 className="reader-subject">{subject}</h1>
         {load.state === "failed" ? (
           <p className="error reader-error">{load.message}</p>
         ) : (
@@ -232,7 +219,7 @@ export function ReadingPane({
                   otherFolder={entry.mailbox_id !== mailboxId}
                   onToggle={entries.length > 1 ? () => toggle(entry.message.id) : null}
                   actionsFor={actionsFor}
-                  onMenu={onMenu}
+                  onPalette={onPalette}
                 />
               );
             })}
@@ -252,7 +239,7 @@ function ThreadMessage({
   otherFolder,
   onToggle,
   actionsFor,
-  onMenu,
+  onPalette,
 }: {
   ref?: Ref<HTMLLIElement>;
   entry: ThreadEntry;
@@ -265,7 +252,7 @@ function ThreadMessage({
   /** Expand or collapse; null when it is the only message. */
   onToggle: (() => void) | null;
   actionsFor: (target: Target) => Action[];
-  onMenu: (request: MenuRequest) => void;
+  onPalette: Palette;
 }) {
   const own = useDetail(entry.message.id, given === null && expanded);
   const load = given ?? own;
@@ -280,7 +267,7 @@ function ThreadMessage({
     return (
       <li className="mail-card collapsed" ref={ref}>
         <button type="button" className="mail-line" onClick={onToggle ?? undefined}>
-          <Avatar person={message.from} size="sm" ring />
+          <Avatar person={message.from} size="sm" />
           <span className={message.seen ? "who" : "who unread"}>{personName(message.from)}</span>
           {otherFolder && entry.mailbox_name && <span className="chip">{entry.mailbox_name}</span>}
           <span className="when">{when}</span>
@@ -303,17 +290,17 @@ function ThreadMessage({
     reminding: (ready?.message.remind_at ?? message.remind_at) !== null,
     reminded: ready?.message.reminded ?? message.reminded,
   });
-  const more = (button: HTMLElement) => {
-    const entries: MenuEntry[] = [];
+  // The message's own view options join its actions in the palette.
+  const more = () => {
+    const extra: MenuEntry[] = [];
     if (ready?.has_html) {
-      entries.push({ label: showText ? "Show formatted" : "Show plain text", icon: "text", onSelect: () => setShowText(!showText) });
+      extra.push({ label: showText ? "Show formatted" : "Show plain text", icon: "text", onSelect: () => setShowText(!showText) });
     }
-    entries.push({ label: details ? "Hide details" : "Show details", icon: "info", onSelect: () => setDetails(!details) });
-    entries.push("separator");
-    for (const action of choose(actions, "unread", "flag", "pin")) {
-      entries.push({ label: action.label, icon: action.icon, hint: action.keys[0], onSelect: () => action.run(null) });
+    if (ready?.has_html && ready.remote_images > 0 && !allowRemote) {
+      extra.push({ label: "Load remote images", icon: "image", onSelect: () => setAllowRemote(true) });
     }
-    onMenu({ anchor: anchorOf(button, "end"), entries, label: "More" });
+    extra.push({ label: details ? "Hide details" : "Show details", icon: "info", onSelect: () => setDetails(!details) });
+    onPalette(actions, message.subject || "(no subject)", extra);
   };
   const to = ready?.to ?? [];
   const cc = ready?.cc ?? [];
@@ -323,7 +310,7 @@ function ThreadMessage({
   return (
     <li className="mail-card" ref={ref}>
       <div className="mail-head">
-        <Avatar person={message.from} size="md" ring />
+        <Avatar person={message.from} size="sm" />
         <button
           type="button"
           className="mail-who"
@@ -331,26 +318,15 @@ function ThreadMessage({
           title={message.from?.address ?? undefined}
         >
           <strong>{personName(message.from)}</strong>
-          {ready && (
+          {ready && (to.length > 0 || cc.length > 0) && (
             <span className="mail-to">
-              {to.length > 0 ? (
-                <>
-                  to <span className="people">{recipients(to)}</span>
-                </>
-              ) : (
-                "to undisclosed recipients"
-              )}
-              {cc.length > 0 && (
-                <>
-                  , cc <span className="people">{recipients(cc)}</span>
-                </>
-              )}
+              to <span className="people">{recipients([...to, ...cc])}</span>
             </span>
           )}
         </button>
         <time className="when">{when}</time>
-        <button type="button" className="icon-btn small" title="More" aria-label="More" onClick={(event) => more(event.currentTarget)}>
-          <Icon name="more" size={16} />
+        <button type="button" className="icon-btn small" title={`More (${MOD_KEY}+K)`} aria-label="More" onClick={more}>
+          <Icon name="more" size={15} />
         </button>
       </div>
       {details && ready && <Details detail={ready} />}
@@ -412,16 +388,16 @@ function ThreadMessage({
       </div>
       {ready && (
         <div className="mail-foot">
-          {choose(actions, "reply", "replyAll", "forward").map((action) => (
+          {choose(actions, "reply", "forward").map((action) => (
             <button
               key={action.id}
               type="button"
-              className="icon-btn"
+              className="icon-btn small"
               title={`${action.label} (${action.keys[0]})`}
               aria-label={action.label}
               onClick={() => action.run(null)}
             >
-              <Icon name={action.icon} />
+              <Icon name={action.icon} size={16} />
             </button>
           ))}
         </div>

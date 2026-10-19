@@ -1,12 +1,16 @@
 import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "./icons";
-import { useShortcuts } from "./shortcuts";
+import { MOD_KEY, useShortcuts } from "./shortcuts";
 
 export interface MenuItem {
   label: string;
   icon?: IconName;
   /** A shortcut or a time to show at the end of the row. */
   hint?: string;
+  /** A shortcut shown as key caps ("Shift+U" → two caps), in the palette. */
+  keys?: string;
+  /** A second, quieter line or a path, shown after the label. */
+  detail?: string;
   danger?: boolean;
   disabled?: boolean;
   /** Indent, for folders in a tree. */
@@ -35,6 +39,12 @@ export interface MenuRequest {
   title?: string;
   /** Called when it closes without a pick. */
   onDismiss?: () => void;
+}
+
+/** "Shift+U" → ["Shift", "U"]; "Mod+k" → [Ctrl or ⌘, "K"]; a lone "+" stays a key. */
+export function keyCaps(keys: string): string[] {
+  if (keys === "+") return ["+"];
+  return keys.split("+").map((part) => (part === "Mod" ? MOD_KEY : part.length === 1 ? part.toUpperCase() : part));
 }
 
 export function anchorOf(element: Element, align: "start" | "end" = "start"): Anchor {
@@ -187,7 +197,15 @@ export function Menu({ request, onClose }: { request: MenuRequest; onClose: () =
               >
                 {entry.icon && <Icon name={entry.icon} size={16} />}
                 <span className="menu-label">{entry.label}</span>
+                {entry.detail && <span className="menu-detail">{entry.detail}</span>}
                 {entry.hint && <kbd className="menu-hint">{entry.hint}</kbd>}
+                {entry.keys && (
+                  <span className="keycaps">
+                    {keyCaps(entry.keys).map((cap, at) => (
+                      <kbd key={at}>{cap}</kbd>
+                    ))}
+                  </span>
+                )}
               </button>
             ),
           )}

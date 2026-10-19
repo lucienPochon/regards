@@ -1,6 +1,18 @@
+import { invoke } from "@tauri-apps/api/core";
 import { type CSSProperties, type KeyboardEvent, type PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type MarkResult, type MoveResult, type UndoInfo, syncAccount } from "./accounts";
-import { type ActionHost, type Target, choose, messageActions } from "./actions";
+import {
+  type MarkResult,
+  type MoveResult,
+  type UndoInfo,
+  archiveMessages,
+  moveMessages,
+  pinMessages,
+  remindMessages,
+  setAside,
+  syncAccount,
+  trashMessages,
+} from "./accounts";
+import { type Action, type ActionHost, type Target, choose, messageActions } from "./actions";
 import { Avatar } from "./Avatar";
 import { Composer } from "./Composer";
 import { type Draft, type Queued, newDraft } from "./compose";
@@ -17,10 +29,12 @@ import { SendToast } from "./SendToast";
 import { Settings, type SettingsTab } from "./Settings";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
-import { Sidebar } from "./Sidebar";
-import { presets, reminderPresets } from "./snooze";
+import { type DragPayload, Sidebar } from "./Sidebar";
+import { useSidebarPrefs } from "./sidebar-prefs";
+import { presets, reminderPresets, snoozeMessages } from "./snooze";
 import { applyTheme } from "./theme";
 import { TimePicker } from "./TimePicker";
+import { PLATFORM, TitleBar } from "./TitleBar";
 import { UndoToast } from "./UndoToast";
 import {
   INBOX,
@@ -32,7 +46,6 @@ import {
   type View,
   depth,
   leafName,
-
   sortFolders,
   viewKey,
 } from "./views";
@@ -88,6 +101,24 @@ function sendPresets(now = new Date()): { label: string; until: number }[] {
   return list;
 }
 
+/** The palette's order of message actions; archive is Done. */
+const PALETTE_ACTIONS = [
+  "archive",
+  "snooze",
+  "pin",
+  "aside",
+  "flag",
+  "read",
+  "unread",
+  "move",
+  "junk",
+  "delete",
+  "reply",
+  "replyAll",
+  "forward",
+  "remind",
+] as const;
+
 type Picking = { title: string; confirm: string; initial: number; resolve: (time: number | null) => void };
 
 export function App() {
@@ -96,6 +127,7 @@ export function App() {
   const drafts = useDrafts();
   const outbox = useOutbox();
   const [layout, setLayout] = useLayout();
+  const [prefs, sidebarChanges] = useSidebarPrefs();
   const [overlay, setOverlay] = useState(false);
 
   const [view, setView] = useState<View>(INBOX);
@@ -119,7 +151,6 @@ export function App() {
   const sources = useMemo(() => sourcesFor(accounts, view), [accounts, view]);
   const feed = useFeed(sources);
   const inInbox = view.kind === "role" && view.role === "inbox";
-  const pinned = useMarked(accounts, "pinned", inInbox);
   const aside = useMarked(accounts, "aside", inInbox);
   const items = useRef(feed.items);
   items.current = feed.items;
@@ -155,14 +186,23 @@ export function App() {
     (request: ConfirmRequest) => new Promise<boolean>((resolve) => setAsking({ request, resolve })),
     [],
   );
+  const folderOf = useCallback(
+    (accountId: string, role: string) =>
+      accounts.find((entry) => entry.account.id === accountId)?.mailboxes.find((m) => m.role === role && m.selectable)?.id ??
+      null,
+    [accounts],
+  );
+  /** Move to: a page of the palette listing the account's folders. */
   const pickFolder = useCallback(
-    (accountId: string, current: number | null, anchor: Anchor | null) =>
+    (accountId: string, current: number | null) =>
       new Promise<number | null>((resolve) => {
         const folders = accounts.find((entry) => entry.account.id === accountId)?.mailboxes ?? [];
         setMenu({
-          anchor: anchor ?? { x: window.innerWidth / 2 - 120, y: window.innerHeight / 4 },
+          anchor: { x: 0, y: 0 },
+          variant: "palette",
+          title: "Move to",
           label: "Move to folder",
-          filter: "Move to…",
+          filter: "Type a folder name",
           entries: sortFolders(folders.filter((folder) => folder.selectable && folder.id !== current)).map((folder) => ({
             label: leafName(folder),
             icon: folder.role ? ROLE_ICONS[folder.role] : "folder",
@@ -200,7 +240,7 @@ export function App() {
   const marked = useCallback((result: MarkResult) => {
     if (result.undo) setUndo(result.undo);
   }, []);
-  /** The palette of times, with a way to pick any date. */
+  /** A palette page of times, with a way to pick any date. */
   const pickTime = useCallback(
     (title: string, confirmLabel: string, choices: { label: string; until: number | "someday" }[]) =>
       new Promise<number | "someday" | null>((resolve) => {
@@ -241,20 +281,21 @@ export function App() {
     () => pickTime("Send at", "Schedule", sendPresets()).then((time) => (typeof time === "number" ? time : null)),
     [pickTime],
   );
+  const junkFolder = useCallback((accountId: string) => folderOf(accountId, "junk"), [folderOf]);
 
   const host = useMemo<ActionHost>(
-    () => ({ compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder }),
-    [compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder],
+    () => ({ compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder, junkFolder }),
+    [compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder, junkFolder],
   );
   const actionsForItems = useCallback((list: ListItem[]) => messageActions(targetOf(list), host), [host]);
   const actionsFor = useCallback((target: Target) => messageActions(target, host), [host]);
 
-  const changeView = (next: View) => {
+  const changeView = useCallback((next: View) => {
     setView(next);
     setOpen(null);
     setPicked(new Set());
     setOverlay(false);
-  };
+  }, []);
 
   const composeFrom =
     openItem?.accountId ?? (view.kind === "mailbox" ? view.accountId : accounts[0]?.account.id) ?? null;
@@ -266,6 +307,7 @@ export function App() {
   const viewAccounts = [...new Set(sources.map((source) => source.accountId))];
   const syncAccounts = viewAccounts.length > 0 ? viewAccounts : accounts.map((entry) => entry.account.id);
   const busy = syncing || accounts.some((entry) => entry.sync?.running);
+  const syncProblem = accounts.map((entry) => entry.error ?? entry.sync?.last_error).find(Boolean) ?? null;
   const syncNow = () => {
     setSyncing(true);
     Promise.all(syncAccounts.map((id) => syncAccount(id)))
@@ -285,45 +327,148 @@ export function App() {
     if (index !== -1 && next) setOpen(next);
   };
 
-  const palette = () => {
-    const entries: MenuEntry[] = [];
-    if (openItem) {
-      const message = actionsForItems([openItem]);
-      for (const action of choose(message, "reply", "replyAll", "forward", "archive", "snooze", "pin", "aside", "flag", "read", "unread", "move", "delete")) {
-        entries.push({ label: action.label, icon: action.icon, hint: action.keys[0], danger: action.danger, onSelect: () => action.run(null) });
+  /** Messages dropped on a sidebar folder: filed there, or marked as the folder says. */
+  const dropOn = (target: View, payload: DragPayload) => {
+    const { ids } = payload;
+    if (ids.length === 0) return;
+    const left = (result: MarkResult) => moved(ids, { moved: result.changed, undo: result.undo });
+    // Per account: each message goes to its own account's folder with that role.
+    const toRole = (role: string) => {
+      const byAccount = new Map<string, number[]>();
+      payload.accounts.forEach((account, index) => byAccount.set(account, [...(byAccount.get(account) ?? []), ids[index]]));
+      for (const [account, group] of byAccount) {
+        const folder = folderOf(account, role);
+        if (folder === null) continue;
+        moveMessages(group, folder)
+          .then((result) => moved(group, result))
+          .catch(failed);
       }
-      entries.push("separator");
+    };
+    if (target.kind === "role") {
+      if (target.role === "archive") archiveMessages(ids).then((result) => moved(ids, result)).catch(failed);
+      else if (target.role === "trash") trashMessages(ids).then((result) => moved(ids, result)).catch(failed);
+      else toRole(target.role);
+    } else if (target.kind === "mailbox") {
+      if (payload.accounts.some((account) => account !== target.accountId)) {
+        failed("Messages can only be moved to a folder of their own account.");
+        return;
+      }
+      moveMessages(ids, target.mailboxId)
+        .then((result) => moved(ids, result))
+        .catch(failed);
+    } else if (target.kind === "marked") {
+      if (target.mark === "pinned") pinMessages(ids, true).then(marked).catch(failed);
+      else if (target.mark === "aside") setAside(ids, true).then(left).catch(failed);
+      else if (target.mark === "snoozed") {
+        void pickSnooze().then((until) => {
+          if (until !== null) snoozeMessages(ids, until).then(left).catch(failed);
+        });
+      } else if (target.mark === "reminders") {
+        void pickReminder().then((at) => {
+          if (at !== null) remindMessages(ids, at).then(marked).catch(failed);
+        });
+      }
     }
-    entries.push({ label: "New message", icon: "compose", hint: "c", onSelect: writeNew });
-    entries.push({ label: "Check for new mail", icon: "refresh", onSelect: syncNow });
+  };
+
+  /**
+   * The command palette: the actions on what it was opened for (a row, the
+   * selection, a conversation or one message), then going places and the app's own commands.
+   */
+  const palette = (actions: Action[] | null, title?: string, extra: MenuEntry[] = []) => {
+    const entries: MenuEntry[] = [];
+    if (actions) {
+      for (const action of choose(actions, ...PALETTE_ACTIONS)) {
+        const done = action.id === "archive";
+        entries.push({
+          label: done ? "Done (archive)" : action.label,
+          icon: done ? "check" : action.icon,
+          keys: action.keys[0],
+          danger: action.danger,
+          onSelect: () => action.run(null),
+        });
+      }
+      entries.push(...extra, "separator");
+    }
     const go = (target: View, label: string, icon: IconName) =>
       entries.push({ label: `Go to ${label}`, icon, onSelect: () => changeView(target) });
     go(INBOX, "Inbox", "inbox");
     for (const mark of MARKED_VIEWS) go({ kind: "marked", mark }, MARKED_LABELS[mark], MARKED_ICONS[mark]);
     go({ kind: "drafts" }, "Drafts", "draft");
     for (const role of ["sent", "archive", "junk", "trash"] as const) go({ kind: "role", role }, ROLE_LABELS[role], ROLE_ICONS[role]);
-    if (outbox.length > 0) go({ kind: "outbox" }, "Outbox", "outbox");
+    go({ kind: "outbox" }, "Outbox", "outbox");
+    entries.push({
+      label: "Go to folder…",
+      icon: "folder",
+      onSelect: () =>
+        setMenu({
+          anchor: { x: 0, y: 0 },
+          variant: "palette",
+          title: "Go to folder",
+          label: "Go to folder",
+          filter: "Type a folder name",
+          entries: accounts.flatMap((entry) =>
+            sortFolders(entry.mailboxes.filter((m) => m.selectable)).map((mailbox) => ({
+              label: leafName(mailbox),
+              icon: mailbox.role ? ROLE_ICONS[mailbox.role] : "folder",
+              depth: depth(mailbox),
+              detail: accounts.length > 1 ? entry.account.email : undefined,
+              onSelect: () => changeView({ kind: "mailbox", mailboxId: mailbox.id, accountId: entry.account.id }),
+            })),
+          ),
+        }),
+    });
     entries.push(
+      "separator",
+      { label: "New message", icon: "compose", keys: "c", onSelect: writeNew },
+      { label: "Check for new mail", icon: "refresh", onSelect: syncNow },
+      { label: layout.locked ? "Fold the sidebar" : "Show the sidebar", icon: "sidebar", keys: "/", onSelect: toggleSidebar },
       {
         label: layout.mode === "split" ? "Open messages in place of the list" : "Open messages beside the list",
         icon: layout.mode === "split" ? "single" : "split",
         onSelect: () => setLayout({ mode: layout.mode === "split" ? "single" : "split" }),
       },
-      { label: layout.locked ? "Fold the sidebar" : "Show the sidebar", icon: "sidebar", hint: "/", onSelect: toggleSidebar },
       { label: "Light theme", icon: "sun", onSelect: () => applyTheme("light", true) },
       { label: "Dark theme", icon: "moon", onSelect: () => applyTheme("dark", true) },
       { label: "Theme as the system", icon: "sun", onSelect: () => applyTheme("system", true) },
-      { label: "Settings", icon: "settings", hint: `${MOD_KEY}+,`, onSelect: () => setSettings("accounts") },
-      { label: "Keyboard shortcuts", icon: "keyboard", hint: "?", onSelect: () => setHelp(true) },
+      { label: "Settings", icon: "settings", keys: "Mod+,", onSelect: () => setSettings("accounts") },
+      { label: "Keyboard shortcuts", icon: "keyboard", keys: "?", onSelect: () => setHelp(true) },
     );
-    setMenu({ anchor: { x: 0, y: 0 }, variant: "palette", filter: "Type a command or a folder", label: "Commands", entries });
+    setMenu({
+      anchor: { x: 0, y: 0 },
+      variant: "palette",
+      title: title ?? "Actions",
+      filter: "Type a command, or “go to”",
+      label: "Commands",
+      entries,
+    });
   };
+
+  const quit = () => {
+    invoke("app_quit").catch(failed);
+  };
+  /** The window's ⌄ menu on Windows: the app's own commands. */
+  const appMenu = (anchor: Anchor) =>
+    setMenu({
+      anchor,
+      label: "Regards",
+      entries: [
+        { label: "About Regards", onSelect: () => setSettings("about") },
+        "separator",
+        { label: "Settings…", hint: `${MOD_KEY}+,`, onSelect: () => setSettings("accounts") },
+        { label: "Accounts…", onSelect: () => setSettings("accounts") },
+        { label: "Keyboard shortcuts", hint: "?", onSelect: () => setHelp(true) },
+        "separator",
+        { label: "Quit Regards", hint: `${MOD_KEY}+Q`, onSelect: quit },
+      ],
+    });
 
   useShortcuts({
     "?": () => setHelp(true),
     c: writeNew,
     "Mod+,": () => setSettings("accounts"),
-    "Mod+k": palette,
+    "Mod+k": () => palette(openItem ? actionsForItems([openItem]) : null, openItem?.subject || undefined),
+    "Mod+q": quit,
     "/": toggleSidebar,
     ...(overlay ? { Escape: () => setOverlay(false) } : {}),
   });
@@ -400,13 +545,11 @@ export function App() {
   const subtitle =
     view.kind === "mailbox"
       ? viewAccount?.account.email
-      : view.kind === "role" || view.kind === "marked"
-        ? accounts.length > 1
-          ? "All accounts"
-          : accounts[0]?.account.email
-        : view.kind === "drafts"
-          ? `${drafts.length} ${drafts.length === 1 ? "draft" : "drafts"}`
-          : `${outbox.length} waiting`;
+      : view.kind === "drafts"
+        ? `${drafts.length} ${drafts.length === 1 ? "draft" : "drafts"}`
+        : view.kind === "outbox"
+          ? `${outbox.length} waiting`
+          : "By date";
   const empty =
     view.kind === "role" && view.role === "inbox"
       ? { title: "You're all caught up", body: "New mail shows here as it arrives." }
@@ -457,7 +600,7 @@ export function App() {
       <section className="list-pane" aria-label="Drafts">
         <ListHeader title={title} subtitle={subtitle}>
           <button type="button" className="icon-btn" title="New message (c)" aria-label="New message" onClick={writeNew}>
-            <Icon name="compose" />
+            <Icon name="compose" size={17} />
           </button>
         </ListHeader>
         <DraftsList drafts={drafts} open={composer?.id ?? null} onOpen={editDraft} onFailed={failed} />
@@ -482,9 +625,8 @@ export function App() {
         onOpen={setOpen}
         onPick={setPicked}
         actionsFor={actionsForItems}
-        onMenu={setMenu}
+        onPalette={(actions, paletteTitle) => palette(actions, paletteTitle)}
         empty={empty}
-        bundle={inInbox ? { label: "Pinned", icon: "pin", messages: pinned, onOpen: () => changeView({ kind: "marked", mark: "pinned" }) } : null}
         onSplit={layout.mode === "single" ? () => setLayout({ mode: "split" }) : undefined}
         own={ownAddresses}
       />
@@ -497,7 +639,7 @@ export function App() {
       folders={folders}
       mode={layout.mode}
       actionsFor={actionsFor}
-      onMenu={setMenu}
+      onPalette={palette}
       onClose={() => setOpen(null)}
       onStep={layout.mode === "single" ? step : undefined}
     />
@@ -507,7 +649,7 @@ export function App() {
   if (composer?.mode === "full") {
     body = null;
   } else if (layout.mode === "single") {
-    body = reader && picked.size === 0 ? reader : listPane;
+    body = reader && picked.size === 0 ? <div className="reader-column">{reader}</div> : listPane;
   } else {
     body = (
       <>
@@ -536,7 +678,7 @@ export function App() {
             </div>
           ) : (
             (reader ?? (
-              <div className="empty">
+              <div className="empty reader-empty" data-tauri-drag-region>
                 <span className="zero-mark" aria-hidden="true">
                   <Icon name="mail" size={30} />
                 </span>
@@ -554,30 +696,41 @@ export function App() {
 
   const showBubble = inInbox && aside.length > 0 && !openItem && composer?.mode !== "full";
   const asideFaces = aside.slice(0, 3);
+  const framed = PLATFORM !== "linux";
+  const sidebarProps = {
+    mail,
+    outbox,
+    view,
+    onView: changeView,
+    onSettings: () => {
+      setOverlay(false);
+      setSettings("accounts");
+    },
+    onSync: syncNow,
+    syncing: busy,
+    syncProblem,
+    prefs,
+    changes: sidebarChanges,
+    onMenu: setMenu,
+    onDrop: dropOn,
+  };
 
   return (
-    <div className={layout.locked ? "app locked" : "app"}>
+    <div className={["app", layout.locked ? "locked" : "", framed ? "framed" : "", PLATFORM].join(" ")}>
       {banner}
       <Sidebar
-        mail={mail}
-        drafts={drafts}
-        outbox={outbox}
-        view={view}
-        onView={changeView}
+        {...sidebarProps}
         expanded={layout.locked}
         locked={layout.locked}
         onToggleLock={() => setLayout({ locked: !layout.locked })}
         onExpand={() => setOverlay(true)}
-        onSettings={setSettings}
-        onHelp={() => setHelp(true)}
-        onSync={syncNow}
-        syncing={busy}
       />
       <main
         className={`content ${layout.mode}`}
         ref={content}
         style={{ "--list-w": `${layout.listWidth}px` } as CSSProperties}
       >
+        {framed && <div className="drag-band" data-tauri-drag-region aria-hidden="true" />}
         {body}
         {composer && (
           <Composer
@@ -632,16 +785,13 @@ export function App() {
             </button>
           )}
         </div>
+        <TitleBar onAppMenu={appMenu} />
       </main>
       {overlay && !layout.locked && (
         <>
           <div className="scrim" onMouseDown={() => setOverlay(false)} />
           <Sidebar
-            mail={mail}
-            drafts={drafts}
-            outbox={outbox}
-            view={view}
-            onView={changeView}
+            {...sidebarProps}
             expanded
             overlay
             locked={false}
@@ -650,13 +800,6 @@ export function App() {
               setLayout({ locked: true });
             }}
             onExpand={() => {}}
-            onSettings={(tab) => {
-              setOverlay(false);
-              setSettings(tab);
-            }}
-            onHelp={() => setHelp(true)}
-            onSync={syncNow}
-            syncing={busy}
           />
         </>
       )}
@@ -698,4 +841,3 @@ export function App() {
     </div>
   );
 }
-

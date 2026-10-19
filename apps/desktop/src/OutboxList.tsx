@@ -50,7 +50,7 @@ export function OutboxList({
                 <div className="row-main">
                   <span className="dot" />
                   <span className="row-avatar">
-                    <Avatar person={entry.recipients[0] ?? null} size="md" ring />
+                    <Avatar person={entry.recipients[0] ?? null} size="sm" />
                   </span>
                   <span className="from">to {peopleShort(entry.recipients)}</span>
                   <span className="subject">{entry.subject || "(no subject)"}</span>

@@ -60,6 +60,8 @@ export interface ActionHost {
   pickSnooze: (anchor: Anchor | null) => Promise<number | "someday" | null>;
   /** Ask when to be reminded if nobody replies: a time (Unix ms), or null if cancelled. */
   pickReminder: (anchor: Anchor | null) => Promise<number | null>;
+  /** The account's Junk folder, if it has one (for Mark as junk). */
+  junkFolder?: (accountId: string) => number | null;
 }
 
 export type ActionId =
@@ -75,6 +77,7 @@ export type ActionId =
   | "aside"
   | "archive"
   | "move"
+  | "junk"
   | "delete";
 
 export interface Action {
@@ -202,6 +205,18 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
         });
       },
     });
+    // Junk is a move to the account's Junk folder, when it has one and they are not there already.
+    const junk = host.junkFolder?.(account) ?? null;
+    if (junk !== null && junk !== target.mailboxId) {
+      actions.push({
+        id: "junk",
+        label: "Mark as junk",
+        icon: "junk",
+        keys: ["!"],
+        shown: true,
+        run: () => move(() => moveMessages(ids, junk)),
+      });
+    }
   }
   actions.push({
     id: "delete",

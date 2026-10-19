@@ -13,7 +13,7 @@ export interface Layout {
 const KEY = "regards.layout";
 export const LIST_MIN = 320;
 export const LIST_MAX = 640;
-const DEFAULT: Layout = { mode: "single", locked: false, listWidth: 420 };
+const DEFAULT: Layout = { mode: "split", locked: true, listWidth: 460 };
 
 export const clampList = (width: number) => Math.round(Math.min(LIST_MAX, Math.max(LIST_MIN, width)));
 
@@ -21,8 +21,8 @@ function load(): Layout {
   try {
     const saved = JSON.parse(window.localStorage.getItem(KEY) ?? "null") as Partial<Layout> | null;
     return {
-      mode: saved?.mode === "split" ? "split" : "single",
-      locked: saved?.locked === true,
+      mode: saved?.mode === "single" ? "single" : "split",
+      locked: saved?.locked !== false,
       listWidth: typeof saved?.listWidth === "number" ? clampList(saved.listWidth) : DEFAULT.listWidth,
     };
   } catch {

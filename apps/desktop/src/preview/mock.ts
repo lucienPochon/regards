@@ -143,6 +143,9 @@ function summary(message: FixtureMessage, listedAt = message.received_at): Messa
     remind_at: message.remind_at ?? null,
     reminded: message.reminded ?? false,
     listed_at: listedAt,
+    preview: message.text.replace(/\s+/g, " ").trim().slice(0, 140) || null,
+    has_attachments: message.attachments.length > 0,
+    thread_size: messages.filter((m) => m.thread === message.thread).length,
   };
 }
 
@@ -244,8 +247,11 @@ function handle(cmd: string, args: Args): unknown {
       return new Promise((resolve) => window.setTimeout(() => resolve(null), 900));
     case "mailbox_list": {
       const owner = accounts.find((a) => a.account.id === args.accountId);
+      // Unread per folder; the inbox leaves out what is set aside or snoozed.
+      const unread = (id: number, role: string | null) =>
+        messages.filter((m) => m.mailboxId === id && !m.seen && (role !== "inbox" || !parked(m))).length;
       return {
-        mailboxes: owner?.mailboxes ?? [],
+        mailboxes: (owner?.mailboxes ?? []).map((m) => ({ ...m, unread: unread(m.id, m.role) })),
         sync: { running: false, last_success_at: Date.now(), last_error: null, push_active: true },
       };
     }

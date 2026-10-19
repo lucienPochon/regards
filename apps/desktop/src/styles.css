@@ -22,14 +22,21 @@
   --border-strong: #d7dbd9;
 
   /* The sidebar is dark in both themes. */
-  --rail: #151817;
-  --rail-2: #202422;
-  --rail-text: #a7afab;
-  --rail-strong: #f0f3f1;
-  --rail-dim: #78807c;
-  --rail-hover: rgb(255 255 255 / 0.07);
+  --rail: #1d2023;
+  --rail-2: #26292c;
+  --rail-3: #303438;
+  --rail-text: #cbd0d4;
+  --rail-strong: #ffffff;
+  --rail-dim: #8d949a;
+  --rail-hover: rgb(255 255 255 / 0.08);
   --rail-line: rgb(255 255 255 / 0.08);
-  --rail-active: #23926f;
+  --rail-active: #1f8a69;
+
+  /* The reader's very light grey, a row under the pointer, the command palette. */
+  --reader-bg: #f4f6f5;
+  --row-hover: #f3f4f4;
+  --palette: #173f36;
+  --palette-accent: #5fd0aa;
 
   --flag: #df8a00;
   --danger: #c63a2f;
@@ -69,8 +76,12 @@
     --muted: #8a928e;
     --border: #2a2e2c;
     --border-strong: #3a3f3c;
-    --rail: #0f1110;
-    --rail-2: #191c1b;
+    --rail: #121415;
+    --rail-2: #1b1e20;
+    --rail-3: #24282b;
+    --reader-bg: #141615;
+    --row-hover: #212423;
+    --palette: #12332b;
     --flag: #f2a73a;
     --danger: #f08075;
     --danger-soft: #3a2422;
@@ -101,8 +112,12 @@
   --muted: #8a928e;
   --border: #2a2e2c;
   --border-strong: #3a3f3c;
-  --rail: #0f1110;
-  --rail-2: #191c1b;
+  --rail: #121415;
+  --rail-2: #1b1e20;
+  --rail-3: #24282b;
+  --reader-bg: #141615;
+  --row-hover: #212423;
+  --palette: #12332b;
   --flag: #f2a73a;
   --danger: #f08075;
   --danger-soft: #3a2422;
@@ -484,17 +499,23 @@ button.link:hover {
   border-radius: 20px;
 }
 
-/* ---------- The window: rail · content ---------- */
+/* ---------- The window: sidebar · content ---------- */
 
 .app {
+  --band: 0px;
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
+  grid-template-columns: 72px minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
 }
 
 .app.locked {
-  grid-template-columns: 252px minmax(0, 1fr);
+  grid-template-columns: 238px minmax(0, 1fr);
+}
+
+/* On Windows and macOS the app draws the window's top band itself: the caption buttons, or room for the traffic lights. */
+.app.framed {
+  --band: 32px;
 }
 
 .banner {
@@ -518,7 +539,7 @@ button.link:hover {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--rail-dim);
+  background: var(--muted);
   vertical-align: middle;
 }
 
@@ -529,15 +550,17 @@ button.link:hover {
   animation: pulse 1.2s ease-in-out infinite;
 }
 
-/* The sidebar: a rail of icons, or open with names */
+/* The sidebar: a rail of icons, or open with names. Dark in both themes. */
 
 .sidebar {
+  position: relative;
   grid-row: 2;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--rail);
+  background: var(--rail-2);
   color: var(--rail-text);
+  user-select: none;
 }
 
 .sidebar .side-list {
@@ -545,49 +568,15 @@ button.link:hover {
   padding: 0;
 }
 
-.sidebar.rail {
-  align-items: center;
-  padding: 14px 0 12px;
-}
-
-.rail .side-list {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
-.rail .side-list::-webkit-scrollbar {
-  width: 0;
-}
-
 .side-entry {
   position: relative;
 }
 
-.rail .side-entry {
-  display: flex;
-  justify-content: center;
-  width: 100%;
+.side-item .icon {
+  color: inherit;
 }
 
-.rail .side-item {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  color: var(--rail-text);
-  transition: background 0.12s, color 0.12s;
-}
-
-.side-item:hover {
+.side-item:hover:not(.static) {
   background: var(--rail-hover);
   color: var(--rail-strong);
 }
@@ -598,47 +587,74 @@ button.link:hover {
   color: #fff;
 }
 
-.rail .count {
-  position: absolute;
-  top: 1px;
-  right: -1px;
-  display: grid;
-  place-items: center;
-  min-width: 17px;
-  height: 17px;
-  padding: 0 4px;
-  border: 2px solid var(--rail);
-  border-radius: 9px;
-  background: #3b413e;
-  color: #eef2f0;
-  font-size: 9.5px;
-  font-weight: 700;
+.side-item.drop {
+  background: var(--rail-hover);
+  box-shadow: inset 0 0 0 1.5px var(--rail-active);
 }
 
-.rail .count.alert {
-  background: var(--danger);
-  color: #fff;
-}
-
-.rail .side-chevron {
+.side-chevron {
   position: absolute;
   top: 50%;
-  left: 2px;
   display: grid;
   place-items: center;
-  width: 10px;
-  height: 24px;
+  width: 12px;
+  height: 22px;
   color: var(--rail-dim);
   transform: translateY(-50%);
 }
 
-.rail .side-chevron:hover {
+.side-chevron:hover {
   color: var(--rail-strong);
+}
+
+/* The rail */
+
+.sidebar.rail {
+  align-items: center;
+  padding: calc(var(--band) + 6px) 0 14px;
+  background: var(--rail);
+}
+
+.mac .sidebar.rail {
+  padding-top: 44px;
+}
+
+.rail .side-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+}
+
+.rail .side-entry {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.rail .side-item {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  color: var(--rail-text);
+}
+
+.rail .side-chevron {
+  left: 6px;
 }
 
 .rail-gap {
   flex: none;
-  height: 12px;
+  height: 17px;
+}
+
+.rail-space {
+  flex: 1;
+  width: 100%;
+  cursor: pointer;
 }
 
 .rail-foot {
@@ -646,15 +662,13 @@ button.link:hover {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding-top: 8px;
 }
 
 .rail-me {
-  position: relative;
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
 }
 
@@ -662,18 +676,7 @@ button.link:hover {
   background: var(--rail-hover);
 }
 
-.rail-me .status-dot {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
-  box-shadow: 0 0 0 2px var(--rail);
-}
-
-.sidebar.expanded {
-  width: 100%;
-  padding: 10px 0 8px;
-  background: var(--rail-2);
-}
+/* Open */
 
 .sidebar.overlay {
   position: fixed;
@@ -681,8 +684,8 @@ button.link:hover {
   bottom: 0;
   left: 0;
   z-index: 45;
-  width: 252px;
-  box-shadow: 10px 0 30px rgb(0 0 0 / 0.3);
+  width: 238px;
+  box-shadow: 10px 0 30px rgb(0 0 0 / 0.28);
   animation: slide-in 0.16s ease-out;
 }
 
@@ -690,34 +693,30 @@ button.link:hover {
   position: fixed;
   inset: 0;
   z-index: 44;
-  background: rgb(8 12 10 / 0.12);
 }
 
 .side-top {
   display: flex;
+  flex: none;
   align-items: center;
+  justify-content: flex-end;
   gap: 2px;
-  padding: 4px 10px 12px 16px;
+  height: max(var(--band), 30px);
+  padding: 0 14px 0 16px;
 }
 
-.side-brand {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 9px;
-  color: var(--rail-strong);
-  font-size: 14px;
-  font-weight: 650;
+.mac .side-top {
+  padding-left: 80px;
 }
 
 .side-tool {
+  position: relative;
   display: grid;
-  flex: none;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  color: var(--rail-text);
+  width: 28px;
+  height: 26px;
+  border-radius: 6px;
+  color: var(--rail-dim);
 }
 
 .side-tool:hover:not(:disabled) {
@@ -726,36 +725,46 @@ button.link:hover {
 }
 
 .side-tool[aria-pressed="true"] {
-  color: var(--rail-strong);
+  color: var(--rail-text);
+}
+
+.side-alert {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--danger);
 }
 
 .side-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 10px 10px 14px;
+  padding: 6px 0 12px;
 }
 
 .side-scroll::-webkit-scrollbar-thumb {
-  background-color: #3a403d;
+  background-color: #454b50;
 }
 
 .expanded .side-list {
   display: grid;
-  gap: 1px;
+  gap: 2px;
 }
 
 .expanded .side-item {
   display: flex;
   align-items: center;
-  gap: 11px;
-  width: 100%;
-  height: 32px;
-  padding: 0 10px 0 11px;
-  border-radius: 8px;
+  gap: 13px;
+  width: calc(100% - 22px);
+  height: 30px;
+  margin: 0 11px;
+  padding: 0 10px 0 15px;
+  border-radius: 7px;
   color: var(--rail-text);
-  font-size: 13.5px;
-  font-weight: 500;
+  font-size: 14px;
   text-align: left;
 }
 
@@ -770,32 +779,21 @@ button.link:hover {
 .expanded .count {
   color: var(--rail-dim);
   font-size: 12px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .expanded .active .count {
-  color: rgb(255 255 255 / 0.8);
+  color: #fff;
+  font-weight: 700;
 }
 
 .expanded .count.alert {
   color: #ff9b90;
-  font-weight: 700;
 }
 
 .expanded .side-chevron {
-  position: absolute;
-  top: 50%;
-  left: -12px;
-  display: grid;
-  place-items: center;
-  width: 12px;
-  height: 24px;
-  color: var(--rail-dim);
-  transform: translateY(-50%);
-}
-
-.expanded .side-chevron:hover {
-  color: var(--rail-strong);
+  left: 1px;
 }
 
 .expanded .side-entry.account .side-item {
@@ -808,69 +806,227 @@ button.link:hover {
   cursor: default;
 }
 
-.expanded .side-item.static:hover {
-  background: none;
-  color: var(--rail-text);
-}
-
 .expanded .side-item.depth-1 { padding-left: 27px; }
-.expanded .side-item.depth-2 { padding-left: 43px; }
-.expanded .side-item.depth-3 { padding-left: 59px; }
-.expanded .side-item.depth-4 { padding-left: 75px; }
+.expanded .side-item.depth-2 { padding-left: 39px; }
+.expanded .side-item.depth-3 { padding-left: 51px; }
+.expanded .side-item.depth-4 { padding-left: 63px; }
 
-.side-group {
-  margin-top: 18px;
+.side-gap {
+  height: 17px;
 }
 
 .side-heading {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
-  height: 24px;
-  margin: 0 0 2px;
-  padding: 0 11px;
+  margin: 24px 0 6px;
+  padding: 0 19px;
   color: var(--rail-dim);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 500;
 }
 
-.side-heading .label {
+.side-heading.with-tools {
+  justify-content: space-between;
+  padding-right: 22px;
+}
+
+.side-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.side-fold:hover,
+.side-clear:hover {
+  color: var(--rail-strong);
+}
+
+.side-clear {
+  color: var(--rail-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.side-foot {
+  flex: none;
+  padding: 8px 0 16px;
+}
+
+/* All folders: a second dark panel beside the sidebar, over the mail */
+
+.panel-catcher {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+}
+
+.folder-panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 100%;
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+  width: 250px;
+  background: var(--rail-3);
+  color: var(--rail-text);
+  box-shadow: 12px 0 28px rgb(0 0 0 / 0.22);
+  animation: slide-in 0.14s ease-out;
+}
+
+.panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: calc(var(--band) + 8px) 0 10px;
+}
+
+.panel-scroll::-webkit-scrollbar-thumb {
+  background-color: #4b5156;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 6px;
+  padding: 0 18px;
+  color: var(--rail-dim);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.panel-head:first-child {
+  margin-top: 2px;
+}
+
+.panel-head.account {
+  color: var(--rail-text);
+  font-size: 13px;
+}
+
+.panel-head .label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-button.side-heading {
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 12px;
+.panel-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0 9px;
+  border-radius: 6px;
 }
 
-button.side-heading:hover {
+.panel-row:hover:not(.static),
+.panel-row.active {
+  background: var(--rail-hover);
+}
+
+.panel-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 6px 0 14px;
+  color: var(--rail-text);
+  font-size: 13.5px;
+  text-align: left;
+}
+
+.panel-open .label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-row:hover .panel-open {
   color: var(--rail-strong);
 }
 
-.side-note {
-  padding: 4px 11px;
-  color: #ff9b90;
-  font-size: 12px;
+.panel-open.depth-1 { padding-left: 24px; }
+.panel-open.depth-2 { padding-left: 34px; }
+.panel-open.depth-3 { padding-left: 44px; }
+.panel-open.depth-4 { padding-left: 54px; }
+
+.panel-row.static .panel-open {
+  opacity: 0.6;
+  cursor: default;
 }
 
-.side-foot {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 6px;
-  padding: 8px 10px 0 14px;
+.panel-star {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 2px;
+  border-radius: 6px;
+  color: var(--rail-dim);
+  visibility: hidden;
+}
+
+.panel-row:hover .panel-star,
+.panel-star.on,
+.panel-star:focus-visible {
+  visibility: visible;
+}
+
+.panel-star.on {
+  color: #f2b544;
+}
+
+.panel-star:hover {
+  color: var(--rail-strong);
+}
+
+.panel-hint {
+  flex: none;
+  padding: 10px 18px 14px;
   border-top: 1px solid var(--rail-line);
+  color: var(--rail-dim);
+  font-size: 11.5px;
+  line-height: 1.4;
 }
 
-.side-foot .side-item {
-  flex: 1;
+.panel-hint strong {
+  color: var(--rail-text);
+}
+
+/* Windows: the caption buttons, drawn by the app at the top right */
+
+.caption {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  height: var(--band);
+}
+
+.caption-btn {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 100%;
+  color: var(--text-2);
+}
+
+.caption-btn:hover {
+  background: rgb(0 0 0 / 0.06);
+  color: var(--text);
+}
+
+.caption-btn.close:hover {
+  background: #e81123;
+  color: #fff;
 }
 
 /* ---------- Content ---------- */
@@ -881,7 +1037,17 @@ button.side-heading:hover {
   display: flex;
   min-width: 0;
   min-height: 0;
+  padding-top: var(--band);
   background: var(--bg);
+}
+
+/* The top band drags the window (Windows and macOS). */
+.drag-band {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--band);
 }
 
 .list-pane {
@@ -897,20 +1063,21 @@ button.side-heading:hover {
   flex: 0 0 var(--list-w);
 }
 
+/* The reader is a light grey; that change of colour is the edge, without a line. */
 .reader-column {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  background: var(--reader-bg);
 }
 
 .splitter {
   position: relative;
   z-index: 5;
   flex: none;
-  width: 1px;
-  background: var(--border);
+  width: 0;
   cursor: col-resize;
   touch-action: none;
 }
@@ -920,7 +1087,7 @@ button.side-heading:hover {
   top: 0;
   bottom: 0;
   left: -4px;
-  width: 9px;
+  width: 8px;
   content: "";
 }
 
@@ -928,7 +1095,7 @@ button.side-heading:hover {
   position: absolute;
   top: 50%;
   left: -3px;
-  width: 7px;
+  width: 6px;
   height: 56px;
   border-radius: 4px;
   background: var(--accent);
@@ -955,12 +1122,8 @@ button.side-heading:hover {
   flex: none;
   align-items: center;
   gap: 8px;
-  height: 72px;
-  padding: 10px 20px 4px 56px;
-}
-
-.split .list-head {
-  padding-left: 40px;
+  height: 60px;
+  padding: 2px 16px 0 33px;
 }
 
 .list-title {
@@ -973,11 +1136,11 @@ button.side-heading:hover {
 button.list-title {
   margin-left: -8px;
   padding: 3px 8px;
-  border-radius: 9px;
+  border-radius: 8px;
 }
 
 button.list-title:hover {
-  background: var(--hover);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 
 .list-name {
@@ -985,21 +1148,20 @@ button.list-title:hover {
   align-items: center;
   gap: 4px;
   overflow: hidden;
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 700;
-  letter-spacing: -0.015em;
-  line-height: 1.25;
+  line-height: 1.3;
   white-space: nowrap;
 }
 
 .list-name .icon {
-  color: var(--muted);
+  color: var(--text-2);
 }
 
 .list-sub {
   overflow: hidden;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 11.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1008,23 +1170,30 @@ button.list-title:hover {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   margin-left: auto;
 }
 
 .list-head.selection {
-  gap: 8px;
-  padding-left: 16px;
+  gap: 6px;
+  padding-left: 12px;
   border-bottom: 1px solid var(--border);
 }
 
 .selection-count {
-  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
   font-weight: 700;
 }
 
+.selection-count .icon {
+  color: var(--muted);
+}
+
 .list-head.searching {
-  padding: 10px 20px 4px 40px;
+  padding: 2px 16px 0;
 }
 
 .search-field {
@@ -1032,10 +1201,10 @@ button.list-title:hover {
   flex: 1;
   align-items: center;
   gap: 10px;
-  height: 42px;
-  padding: 0 8px 0 14px;
+  height: 40px;
+  padding: 0 8px 0 13px;
   border: 2px solid var(--accent);
-  border-radius: 11px;
+  border-radius: 9px;
   background: var(--bg);
   color: var(--muted);
 }
@@ -1046,7 +1215,7 @@ button.list-title:hover {
   border: 0;
   background: transparent;
   color: var(--text);
-  font-size: 14.5px;
+  font-size: 14px;
   outline: none;
 }
 
@@ -1070,7 +1239,7 @@ button.list-title:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 8px 24px 0 56px;
+  margin: 8px 16px 0 33px;
   padding: 8px 12px;
   border-radius: 8px;
   background: var(--danger-soft);
@@ -1078,56 +1247,60 @@ button.list-title:hover {
   font-size: 12.5px;
 }
 
-/* Rows. "wide": one line, beside nothing. "tall": two lines, beside the reader. */
+/* Rows. "tall": three lines, full width, beside the reader. "wide": one line, alone. */
 
 .rows {
+  padding: 0 0 96px;
+}
+
+.rows.wide {
   padding: 0 24px 96px 44px;
 }
 
-.rows.tall {
-  padding: 0 12px 96px 30px;
-}
-
 .day-head {
-  padding: 14px 0 4px 44px;
+  padding: 12px 0 5px 33px;
   color: var(--text-2);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
 }
 
-.rows.tall .day-head {
+.rows.wide .day-head {
   padding-left: 32px;
 }
 
-/* No content-visibility here: it would clip the select check, which sits in the gutter. */
 .row {
   position: relative;
-  border-radius: 12px;
 }
 
-.row:hover,
-.row.cursor,
-.row:has(> .row-main:focus-visible) {
-  background: var(--pill);
+.rows.tall .row:not(.open):hover,
+.rows.tall .row.cursor:not(.open),
+.rows.tall .row:not(.open):has(> .row-main:focus-visible) {
+  background: var(--row-hover);
 }
 
-.row.open,
-.row.open:hover {
+.rows.tall .row.open,
+.rows.tall .row.open:hover {
   background: var(--pill-strong);
 }
 
-.row.picked,
-.row.picked:hover {
+.rows.tall .row.picked,
+.rows.tall .row.picked:hover {
   background: var(--pill);
 }
 
-.row-main {
-  display: grid;
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-  padding: 0 12px;
-  text-align: left;
+.rows.wide .row {
+  border-radius: 12px;
+}
+
+.rows.wide .row:not(.open):hover,
+.rows.wide .row.cursor:not(.open),
+.rows.wide .row:not(.open):has(> .row-main:focus-visible),
+.rows.wide .row.picked {
+  background: var(--pill);
+}
+
+.rows.wide .row.open {
+  background: var(--pill-strong);
 }
 
 /* The highlighted row's tint shows the keyboard focus. */
@@ -1135,22 +1308,39 @@ button.list-title:hover {
   outline: none;
 }
 
-.rows.wide .row-main {
-  grid-template-areas: "dot avatar from subject marks date";
-  grid-template-columns: 8px 26px minmax(0, 168px) minmax(0, 1fr) auto auto;
-  column-gap: 12px;
-  height: 40px;
+.row-main {
+  display: grid;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
 }
 
 .rows.tall .row-main {
   grid-template-areas:
     "dot avatar from date"
     "dot avatar subject marks"
+    "dot avatar preview preview"
     "dot avatar extra extra";
-  grid-template-columns: 8px 34px minmax(0, 1fr) auto;
-  column-gap: 10px;
+  grid-template-columns: 8px 26px minmax(0, 1fr) auto;
+  column-gap: 7px;
   row-gap: 1px;
-  padding: 10px 12px 10px 10px;
+  min-height: 70px;
+  padding: 9px 21px 9px 17px;
+}
+
+.rows.tall .row-main .from,
+.rows.tall .row-main .subject,
+.rows.tall .row-main .preview {
+  margin-left: 1px;
+}
+
+.rows.wide .row-main {
+  grid-template-areas: "dot avatar from subject marks date";
+  grid-template-columns: 8px 26px minmax(0, 168px) minmax(0, 1fr) auto auto;
+  column-gap: 12px;
+  height: 40px;
+  padding: 0 12px;
 }
 
 .row-main .dot { grid-area: dot; }
@@ -1159,12 +1349,8 @@ button.list-title:hover {
 .row-main .subject { grid-area: subject; }
 .row-main .marks { grid-area: marks; }
 .row-main .date { grid-area: date; }
+.row-main .preview { grid-area: preview; }
 .row-main .row-extra { grid-area: extra; }
-
-.rows.tall .row-avatar {
-  align-self: start;
-  margin-top: 2px;
-}
 
 .row-avatar {
   display: grid;
@@ -1177,17 +1363,13 @@ button.list-title:hover {
   border-radius: 50%;
 }
 
-.rows.tall .dot {
-  align-self: start;
-  margin-top: 6px;
-}
-
 .row.unread .dot {
   background: var(--accent);
 }
 
 .row .from,
-.row .subject {
+.row .subject,
+.row .preview {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1196,23 +1378,27 @@ button.list-title:hover {
 
 .row .from {
   color: var(--text);
-  font-weight: 600;
-}
-
-.row.unread .from {
+  font-size: 14.5px;
   font-weight: 700;
 }
 
 .row .subject {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.rows.wide .row .subject {
   color: var(--text-2);
 }
 
-.row.unread .subject {
+.rows.wide .row.unread .subject {
   color: var(--text);
+  font-weight: 600;
 }
 
-.rows.tall .row.unread .subject {
-  font-weight: 600;
+.row .preview {
+  color: var(--muted);
+  font-size: 14px;
 }
 
 .row .subject .pinned {
@@ -1226,12 +1412,12 @@ button.list-title:hover {
   color: var(--muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-  font-weight: 500;
   white-space: nowrap;
 }
 
-.row.unread .date {
+.rows.wide .row.unread .date {
   color: var(--text);
+  font-weight: 600;
 }
 
 .row .date.snoozed {
@@ -1243,7 +1429,9 @@ button.list-title:hover {
 
 .row .marks {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  justify-self: end;
+  gap: 6px;
   color: var(--muted);
 }
 
@@ -1260,7 +1448,69 @@ button.list-title:hover {
   color: var(--accent);
 }
 
-/* The round check in the gutter: on hover, while selecting, and when picked. */
+/* How many messages the conversation has. */
+.thread-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--chip);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Beside the reader: on hover, Done, read and delete stacked in the margin, in place of the dot. */
+.row-gutter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 9px;
+  z-index: 1;
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+}
+
+.rows.tall .row:hover .row-gutter,
+.rows.tall .row.picked .row-gutter {
+  display: flex;
+}
+
+.rows.tall .row:hover .dot,
+.rows.tall .row.picked .dot {
+  visibility: hidden;
+}
+
+.gutter-btn {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--muted);
+}
+
+.gutter-btn:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.gutter-check {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 2px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+/* Alone: the round check in the gutter, on hover, while selecting, and when picked. */
 .row-check {
   position: absolute;
   top: 50%;
@@ -1275,11 +1525,6 @@ button.list-title:hover {
   color: transparent;
   transform: translateY(-50%);
   visibility: hidden;
-}
-
-.rows.tall .row-check {
-  top: 22px;
-  left: -26px;
 }
 
 .row:hover .row-check,
@@ -1299,7 +1544,7 @@ button.list-title:hover {
   visibility: visible;
 }
 
-/* Actions over the end of the row, in place of the date. */
+/* Alone: the row's actions over its end, in place of the date. */
 .row-actions {
   position: absolute;
   top: 50%;
@@ -1312,20 +1557,15 @@ button.list-title:hover {
   transform: translateY(-50%);
 }
 
-.rows.tall .row-actions {
-  top: 8px;
-  transform: none;
-}
-
 .row.open .row-actions {
   background: linear-gradient(to right, transparent, var(--pill-strong) 28px);
 }
 
-.row:hover .row-actions {
+.rows.wide .row:hover .row-actions {
   display: flex;
 }
 
-.row:hover .date {
+.rows.wide .row:hover .date {
   visibility: hidden;
 }
 
@@ -1333,50 +1573,17 @@ button.list-title:hover {
   background: var(--bg);
 }
 
-/* A group row: an icon, the name and count, and who is in it */
-
-.bundle-icon {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: var(--warm-soft);
-  color: var(--warm);
+/* Drafts and the Outbox: their own rows, actions on hover at the right. */
+.rows.tall .row > .row-actions {
+  top: 10px;
+  right: 14px;
+  padding-left: 24px;
+  background: linear-gradient(to right, transparent, var(--row-hover) 20px);
+  transform: none;
 }
 
-.rows.tall .bundle-icon {
-  width: 34px;
-  height: 34px;
-}
-
-.bundle-count {
-  margin-left: 3px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.row .chips {
+.rows.tall .row:hover > .row-actions {
   display: flex;
-  gap: 16px;
-}
-
-.sender-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-2);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.row.bundle .date {
-  color: var(--muted);
-}
-
-.row.bundle:hover .date {
-  visibility: visible;
 }
 
 .draft-mark {
@@ -1411,7 +1618,7 @@ button.list-title:hover {
   display: none;
 }
 
-.outbox-row:hover {
+.rows.tall .outbox-row:hover {
   background: none;
 }
 
@@ -1448,18 +1655,13 @@ button.list-title:hover {
   border-radius: 50%;
 }
 
-.rows.tall .avatar-bone {
-  width: 34px;
-  height: 34px;
-}
-
 .line-a {
-  width: 70%;
+  width: 60%;
   height: 11px;
 }
 
 .line-b {
-  width: 55%;
+  width: 80%;
   height: 11px;
 }
 
@@ -1564,44 +1766,51 @@ button.list-title:hover {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  background: var(--reader-bg);
 }
 
 .reader-bar {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 14px;
-  height: 60px;
-  padding: 6px 16px 0 24px;
+  gap: 10px;
+  height: 50px;
+  padding: 2px 16px 0 12px;
 }
 
-.reader-subject {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  font-size: 16px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.reader-bar .segmented {
+  background: var(--bg-elev);
 }
 
 .reader-tools {
   display: flex;
-  flex: none;
+  flex: 1;
   align-items: center;
-  gap: 1px;
+  gap: 4px;
+}
+
+.reader-tools .icon-btn {
+  width: 34px;
+  height: 32px;
 }
 
 .reader-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px 72px 48px;
+  padding: 4px 12px 40px;
 }
 
-.reader.split .reader-scroll {
-  padding: 8px 20px 40px;
+.reader.single .reader-scroll {
+  padding: 4px 72px 48px;
+}
+
+.reader-subject {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .reader-error {
@@ -1610,11 +1819,11 @@ button.list-title:hover {
 
 .thread {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .mail-card {
-  padding: 18px 20px 12px;
+  padding: 14px 16px 8px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg-elev);
@@ -1631,10 +1840,10 @@ button.list-title:hover {
 .mail-line {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 11px;
   width: 100%;
   min-width: 0;
-  padding: 12px 20px;
+  padding: 11px 16px;
 }
 
 .mail-line .who {
@@ -1655,40 +1864,43 @@ button.list-title:hover {
 .when {
   flex: none;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
 .mail-head {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.mail-head .when {
-  margin-top: 2px;
+  align-items: center;
+  gap: 11px;
 }
 
 .mail-head .icon-btn {
-  margin: -4px -6px 0 -4px;
+  margin-right: -8px;
+  color: var(--muted);
 }
 
+/* Sender in bold, then "to" and the recipients in the accent colour, on one line. */
 .mail-who {
-  display: grid;
+  display: flex;
   flex: 1;
+  align-items: baseline;
+  gap: 6px;
   min-width: 0;
-  gap: 1px;
   text-align: left;
 }
 
 .mail-who strong {
+  flex: none;
+  max-width: 60%;
   overflow: hidden;
+  font-size: 14px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .mail-to {
+  min-width: 0;
   overflow: hidden;
   color: var(--muted);
   font-size: 12.5px;
@@ -1705,7 +1917,7 @@ button.list-title:hover {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 3px 14px;
-  margin: 12px 0 0 46px;
+  margin: 10px 0 0 37px;
   padding: 10px 12px;
   border-radius: 8px;
   background: var(--notice);
@@ -1722,7 +1934,7 @@ button.list-title:hover {
 }
 
 .mail-body {
-  padding-top: 16px;
+  padding-top: 12px;
 }
 
 .notice {
@@ -1748,7 +1960,7 @@ button.list-title:hover {
 .html-body {
   display: block;
   width: 100%;
-  height: max(380px, calc(100vh - 250px));
+  height: max(360px, calc(100vh - 250px));
   border: 0;
   border-radius: 6px;
   background: #fff;
@@ -1757,22 +1969,27 @@ button.list-title:hover {
 .text-body {
   margin: 0;
   font: inherit;
-  font-size: 14.5px;
+  font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
+/* Reply and forward, quietly, at the card's bottom right. */
 .mail-foot {
   display: flex;
   justify-content: flex-end;
   gap: 2px;
-  margin-top: 8px;
+  margin-top: 4px;
+}
+
+.mail-foot .icon-btn {
+  color: var(--muted);
 }
 
 .attachments {
-  margin-top: 18px;
-  padding-top: 14px;
+  margin-top: 16px;
+  padding-top: 12px;
   border-top: 1px solid var(--border);
 }
 
@@ -1871,7 +2088,7 @@ button.list-title:hover {
 
 .composer.full {
   position: absolute;
-  inset: 0;
+  inset: var(--band) 0 0;
   z-index: 20;
   background: var(--bg);
 }
@@ -2284,11 +2501,29 @@ button.list-title:hover {
 
 /* Settings */
 
+/* Settings: a sheet over the window, which shows blurred behind it. */
+.backdrop.sheet {
+  align-items: start;
+  padding: 32px 24px 24px;
+  background: rgb(236 239 238 / 0.55);
+  backdrop-filter: blur(6px);
+}
+
+:root[data-theme="dark"] .backdrop.sheet {
+  background: rgb(0 0 0 / 0.45);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .backdrop.sheet {
+    background: rgb(0 0 0 / 0.45);
+  }
+}
+
 .settings {
   display: grid;
-  grid-template-columns: 252px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   width: min(900px, 100%);
-  height: min(660px, 100%);
+  height: calc(100vh - 64px);
   padding: 0;
   overflow: hidden;
 }
@@ -2299,11 +2534,25 @@ button.list-title:hover {
   border-right: 1px solid var(--border);
 }
 
+/* The person's card at the top of the nav. */
 .settings-me {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 2px 8px 18px;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 18px;
+  padding: 12px;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.settings-me:hover {
+  background: var(--hover);
+}
+
+.settings-me.active {
+  background: var(--pill);
+  box-shadow: inset 0 0 0 1px var(--pill-strong);
 }
 
 .settings-me > span {
@@ -2628,7 +2877,7 @@ button.list-title:hover {
   margin-top: 20px;
 }
 
-/* Menus and the palette */
+/* Menus: small, light and plain. The palette: a dark panel in the upper middle. */
 
 .menu-layer {
   position: fixed;
@@ -2637,19 +2886,19 @@ button.list-title:hover {
 }
 
 .menu-layer.dim {
-  background: rgb(8 12 10 / 0.18);
+  background: rgb(8 12 10 / 0.12);
 }
 
 .menu {
   position: fixed;
   display: flex;
   flex-direction: column;
-  min-width: 220px;
+  min-width: 190px;
   max-width: 340px;
   max-height: min(460px, calc(100vh - 16px));
-  padding: 6px;
+  padding: 5px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 9px;
   background: var(--bg-elev);
   box-shadow: var(--shadow-lg);
   animation: fade 0.08s ease-out;
@@ -2666,38 +2915,17 @@ button.list-title:hover {
   overflow-y: auto;
 }
 
-.menu.palette {
-  width: min(600px, calc(100vw - 32px));
-  max-width: none;
-  max-height: min(540px, 72vh);
-  padding: 14px 8px 8px;
-  border-radius: 14px;
-}
-
-.palette-title {
-  padding: 0 14px 10px;
-  color: var(--text);
-  font-size: 15px;
-  font-weight: 650;
-}
-
 .menu-item {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  height: 32px;
+  height: 30px;
   padding: 0 10px;
-  border-radius: 7px;
+  border-radius: 6px;
   color: var(--text);
   font-size: 13.5px;
   text-align: left;
-}
-
-.palette .menu-item {
-  height: 38px;
-  padding: 0 12px;
-  font-size: 14px;
 }
 
 .menu-item .icon {
@@ -2733,17 +2961,18 @@ button.list-title:hover {
   white-space: nowrap;
 }
 
+.menu-detail {
+  overflow: hidden;
+  max-width: 45%;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .menu-hint {
   border-bottom-width: 1px;
   font-size: 11px;
-}
-
-.palette .menu-hint {
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font-family: inherit;
-  font-size: 12.5px;
 }
 
 .menu hr {
@@ -2769,26 +2998,117 @@ button.list-title:hover {
   outline-offset: -1px;
 }
 
+.menu-empty {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.keycaps {
+  display: inline-flex;
+  flex: none;
+  gap: 3px;
+}
+
+.keycaps kbd {
+  min-width: 20px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--chip);
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 11.5px;
+  line-height: 20px;
+}
+
+.menu.palette {
+  width: min(640px, calc(100vw - 32px));
+  max-width: none;
+  max-height: min(560px, 72vh);
+  padding: 12px 8px 8px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--palette);
+  color: #eef3f1;
+  box-shadow: 0 30px 80px rgb(0 0 0 / 0.35);
+}
+
+.palette-title {
+  flex: none;
+  overflow: hidden;
+  padding: 0 16px 6px;
+  color: rgb(255 255 255 / 0.7);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .palette .menu-filter {
   width: auto;
   height: 42px;
-  margin: 0 6px 8px;
-  padding: 0 8px;
+  margin: 0 8px 8px;
+  padding: 0 6px;
   border: 0;
-  border-bottom: 2px solid var(--accent);
+  border-bottom: 2px solid var(--palette-accent);
   border-radius: 0;
   background: transparent;
+  color: #fff;
   font-size: 16px;
+}
+
+.palette .menu-filter::placeholder {
+  color: rgb(255 255 255 / 0.45);
 }
 
 .palette .menu-filter:focus-visible {
   outline: none;
 }
 
-.menu-empty {
-  padding: 8px 10px;
-  color: var(--muted);
-  font-size: 13px;
+.palette .menu-item {
+  height: 34px;
+  padding: 0 10px;
+  color: #eef3f1;
+  font-size: 14px;
+}
+
+.palette .menu-item .icon {
+  color: rgb(255 255 255 / 0.7);
+}
+
+.palette .menu-item:hover,
+.palette .menu-item:focus-visible,
+.palette .menu-item.highlighted {
+  background: rgb(255 255 255 / 0.12);
+}
+
+.palette .menu-item.danger,
+.palette .menu-item.danger .icon {
+  color: #ffb4ab;
+}
+
+.palette .menu-detail,
+.palette .menu-hint {
+  border: 0;
+  background: transparent;
+  color: rgb(255 255 255 / 0.55);
+  font-family: inherit;
+  font-size: 12.5px;
+}
+
+.palette .keycaps kbd {
+  background: rgb(255 255 255 / 0.16);
+  color: #fff;
+}
+
+.palette hr {
+  border-top-color: rgb(255 255 255 / 0.12);
+}
+
+.palette .menu-empty {
+  color: rgb(255 255 255 / 0.6);
 }
 
 /* ---------- Motion ---------- */
