@@ -58,6 +58,11 @@ export interface OutboxEntry {
   executor?: Executor;
   /** See `Queued.needs_this_computer`. */
   needs_this_computer?: boolean;
+  /**
+   * Queued, and its account must be signed in again (`AccountSummary.needs_sign_in`):
+   * it goes as soon as that is done.
+   */
+  waiting_for_sign_in?: boolean;
 }
 
 export interface Queued {
