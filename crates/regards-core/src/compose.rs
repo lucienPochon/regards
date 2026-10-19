@@ -332,6 +332,56 @@ pub fn forwarded(text: &str, from: Option<&Person>, to: &[Person], subject: &str
     block
 }
 
+/// A signature as it goes into a body: after a blank line; nothing for none.
+pub fn signature_block(signature: &str) -> String {
+    let signature = signature.trim_end();
+    if signature.trim().is_empty() {
+        String::new()
+    } else {
+        format!("\n\n{signature}")
+    }
+}
+
+/// `body` sent from another identity: the signature `old` becomes `new`.
+/// Where `old` is not in it (none, or edited away), `new` goes above the
+/// quoted or forwarded message, or at the end.
+pub fn swap_signature(body: &str, old: &str, new: &str) -> String {
+    let (old, new) = (signature_block(old), signature_block(new));
+    if !old.is_empty()
+        && let Some(at) = body.find(&old)
+    {
+        return format!("{}{new}{}", &body[..at], &body[at + old.len()..]);
+    }
+    if new.is_empty() {
+        return body.to_owned();
+    }
+    let at = quote_start(body).unwrap_or(body.trim_end().len());
+    format!("{}{new}{}", &body[..at], &body[at..])
+}
+
+/// Where a quoted reply ("On …, Ada wrote:" then "> " lines) or a forwarded
+/// message begins in a body made by [`quote`] or [`forwarded`]: at its blank line.
+fn quote_start(body: &str) -> Option<usize> {
+    let forward = body.find("\n\n---------- Forwarded message ----------\n");
+    let mut offset = 0;
+    let mut reply = None;
+    let lines: Vec<&str> = body.split('\n').collect();
+    for (index, line) in lines.iter().enumerate() {
+        let quoted_next = lines.get(index + 1).is_some_and(|next| next.starts_with('>'));
+        let blank_before = index >= 2 && lines[index - 1].is_empty();
+        if line.ends_with(" wrote:") && quoted_next && blank_before {
+            // Back over the blank line before the intro line.
+            reply = Some(offset - 2);
+            break;
+        }
+        offset += line.len() + 1;
+    }
+    match (reply, forward) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
+}
+
 /// "2026-10-18 10:05 UTC".
 fn utc(ms: i64) -> String {
     let secs = ms.div_euclid(1000);
@@ -562,5 +612,37 @@ mod tests {
         );
         assert_eq!(utc(0), "1970-01-01 00:00 UTC");
         assert_eq!(utc(951_782_400_000), "2000-02-29 00:00 UTC");
+    }
+    #[test]
+    fn signatures_go_after_a_blank_line_and_swap_with_the_sender() {
+        assert_eq!(signature_block(""), "");
+        assert_eq!(signature_block("  \n"), "");
+        assert_eq!(signature_block("Ada\nEngines Ltd\n"), "\n\nAda\nEngines Ltd");
+
+        // A reply made with a signature: the signature is swapped in place.
+        let quote = quote("Plans?", Some(&person(Some("Bob"), "bob@x.test")), Some(0));
+        let body = format!("Yes!{}{quote}", signature_block("Ada"));
+        assert_eq!(
+            swap_signature(&body, "Ada", "Ada (work)"),
+            format!("Yes!\n\nAda (work){quote}")
+        );
+        assert_eq!(
+            swap_signature(&body, "Ada", ""),
+            format!("Yes!{quote}"),
+            "no signature from the new one"
+        );
+
+        // Made without one: the new one goes above the quote, not inside it.
+        let plain = format!("Yes!{quote}");
+        assert_eq!(swap_signature(&plain, "", "Ada"), format!("Yes!\n\nAda{quote}"));
+        // ...or above a forwarded message, or at the end.
+        let fwd = forwarded("Hi", None, &[], "Plans", None);
+        assert_eq!(
+            swap_signature(&format!("See below{fwd}"), "", "Ada"),
+            format!("See below\n\nAda{fwd}")
+        );
+        assert_eq!(swap_signature("Hello\n\n", "", "Ada"), "Hello\n\nAda\n\n");
+        // Edited away: left as written, the new one added.
+        assert_eq!(swap_signature("Hello", "Ada", "Bea"), "Hello\n\nBea");
     }
 }

@@ -9,6 +9,7 @@ mod actions;
 mod backfill;
 mod compose;
 mod feed;
+mod identities;
 mod mail;
 mod notices;
 mod push;

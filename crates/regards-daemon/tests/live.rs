@@ -11,11 +11,11 @@ use regards_imap::{ImapServer, Session, SystemFlag, TlsOptions};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountSummary, AsideParams, ClientKind, ConnectionSecurity, DeleteResult,
     DraftAttachFileParams, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult, DraftRef,
-    DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MailboxListResult, MarkResult,
-    MessageDetail, MessageHtml, MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef,
-    MoveResult, NoticeKind, NoticeListResult, OutboxEntryView, OutboxListResult, OutboxRef, OutboxState,
-    OutboxUndoResult, PinParams, RemindParams, ServerSettings, SetFlagsParams, SetFlagsResult, SnoozeParams,
-    SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
+    DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, IdentitySaveParams, IdentityView,
+    MailboxListResult, MarkResult, MessageDetail, MessageHtml, MessageHtmlParams, MessageIds, MessageListParams,
+    MessageListResult, MessageRef, MoveResult, NoticeKind, NoticeListResult, OutboxEntryView, OutboxListResult,
+    OutboxRef, OutboxState, OutboxUndoResult, PinParams, RemindParams, ServerSettings, SetFlagsParams, SetFlagsResult,
+    SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -1800,6 +1800,60 @@ async fn live_a_reminder_with_no_reply_comes_back_on_top_and_a_reply_ends_it() {
     let shown = subjects(messages(&mut desktop, inbox).await);
     assert!(shown.contains(&"Re: Lunch on Friday?".to_owned()), "{shown:?}");
     assert!(!shown.contains(&"Lunch on Friday?".to_owned()), "{shown:?}");
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_a_reply_goes_out_from_the_address_it_was_written_to() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let to_alias = b"From: Bob <bob@example.test>\r\nTo: Work <work@example.test>\r\nCc: Cy <cy@example.test>\r\n\
+        Subject: Quote\r\nMessage-ID: <quote@example.test>\r\nDate: Sun, 18 Oct 2026 09:00:00 +0000\r\n\r\nHow much?\r\n";
+    seed.append(b"INBOX", &[], to_alias).await.unwrap();
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
+    let alias: IdentityView = desktop
+        .call(
+            methods::IDENTITY_SAVE,
+            IdentitySaveParams {
+                id: None,
+                account_id: account.id.clone(),
+                name: "Work".into(),
+                email: "work@example.test".into(),
+                signature: "The Workshop".into(),
+            },
+        )
+        .await
+        .unwrap();
+    let id = messages(&mut desktop, inbox).await.messages[0].id;
+    let reply: DraftView = desktop
+        .call(
+            methods::DRAFT_REPLY,
+            DraftReplyParams {
+                message_id: id,
+                all: true,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(reply.identity_id, Some(alias.id));
+    assert_eq!(reply.from.address.as_deref(), Some("work@example.test"));
+    assert!(reply.body.starts_with("\n\nThe Workshop\n\nOn "), "{:?}", reply.body);
+    let everyone: Vec<_> = reply
+        .to
+        .iter()
+        .chain(&reply.cc)
+        .filter_map(|p| p.address.clone())
+        .collect();
+    assert!(everyone.contains(&"bob@example.test".to_owned()) && everyone.contains(&"cy@example.test".to_owned()));
+    assert!(
+        !everyone.contains(&"work@example.test".to_owned()),
+        "not to itself: {everyone:?}"
+    );
 
     seed.logout().await;
     handle.abort();

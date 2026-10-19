@@ -13,6 +13,7 @@
 pub mod accounts;
 pub mod blobs;
 pub mod drafts;
+pub mod identities;
 pub mod mailboxes;
 pub mod marks;
 pub mod messages;

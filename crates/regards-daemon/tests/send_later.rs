@@ -8,139 +8,20 @@
 mod fake_imap;
 #[path = "../../regards-smtp/tests/support/fake_smtp.rs"]
 mod fake_smtp;
+#[path = "support/world.rs"]
+mod world;
 
 use regards_core::headers::{self, Person};
-use regards_core::paths::DataDirs;
-use regards_core::secret::Secret;
-use regards_daemon::{DEFAULT_LATE_SEND_GRACE, Daemon};
-use regards_imap::TlsOptions;
+use regards_daemon::DEFAULT_LATE_SEND_GRACE;
 use regards_ipc::protocol::{
-    AccountAddParams, AccountSummary, ClientKind, ConnectionSecurity, DraftCreateParams, DraftRef, DraftSendParams,
-    DraftSendResult, DraftView, NoticeKind, NoticeListResult, NoticeShownParams, OutboxEntryView, OutboxListResult,
-    OutboxRef, OutboxRescheduleParams, OutboxState, OutboxUndoResult, ServerSettings, codes, methods,
+    AccountSummary, DraftCreateParams, DraftRef, DraftSendParams, DraftSendResult, DraftView, NoticeKind,
+    NoticeListResult, NoticeShownParams, OutboxEntryView, OutboxListResult, OutboxRef, OutboxRescheduleParams,
+    OutboxState, OutboxUndoResult, codes, methods,
 };
-use regards_ipc::{Client, ClientError, Endpoint, UiToken};
-use regards_vault::Vault;
+use regards_ipc::{Client, ClientError};
 use serde_json::Value;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tokio::task::JoinHandle;
-
-/// One data directory and its fake servers; [`World::start`] starts (or
-/// restarts) a daemon on it.
-struct World {
-    temp: tempfile::TempDir,
-    vault: Vault,
-    token: UiToken,
-    tls: TlsOptions,
-    grace: Duration,
-    imap_port: u16,
-    smtp_port: u16,
-    sent: fake_smtp::Sessions,
-}
-
-struct Running {
-    endpoint: Endpoint,
-    desktop: Client,
-    handle: JoinHandle<()>,
-}
-
-impl World {
-    async fn new(grace: Duration) -> Self {
-        let imap_pki = fake_imap::pki(&["localhost"]);
-        let (imap_port, _) = fake_imap::fake_server(&imap_pki, "* OK ready\r\n", fake_imap::PASSWORD).await;
-        let smtp_pki = fake_smtp::pki();
-        let (smtp_port, sent) = fake_smtp::serve(
-            &smtp_pki,
-            fake_smtp::Script {
-                password: fake_imap::PASSWORD,
-                ..fake_smtp::Script::new(fake_smtp::Mode::StartTls {
-                    offer: true,
-                    inject: false,
-                })
-            },
-        )
-        .await;
-        let tls = TlsOptions::platform()
-            .with_extra_roots_pem(imap_pki.ca_pem.as_bytes())
-            .unwrap()
-            .with_extra_roots_pem(smtp_pki.ca_pem.as_bytes())
-            .unwrap();
-        Self {
-            temp: tempfile::tempdir().unwrap(),
-            vault: Vault::in_memory(),
-            token: UiToken::generate().unwrap(),
-            tls,
-            grace,
-            imap_port,
-            smtp_port,
-            sent,
-        }
-    }
-
-    async fn start(&self) -> Running {
-        let daemon = Daemon::bind(DataDirs::at(self.temp.path()))
-            .await
-            .unwrap()
-            .with_ui_token(self.token.clone())
-            .with_vault(self.vault.clone())
-            .with_tls(self.tls.clone())
-            .with_late_send_grace(self.grace);
-        let endpoint = daemon.endpoint().clone();
-        let handle = tokio::spawn(daemon.serve(std::future::pending()));
-        let desktop = Client::connect_with(&endpoint, ClientKind::Desktop, Some(&self.token))
-            .await
-            .unwrap();
-        Running {
-            endpoint,
-            desktop,
-            handle,
-        }
-    }
-
-    async fn add_account(&self, desktop: &mut Client) -> AccountSummary {
-        desktop
-            .call(
-                methods::ACCOUNT_ADD,
-                AccountAddParams {
-                    display_name: "Ada".into(),
-                    email: "ada@example.test".into(),
-                    username: None,
-                    password: Secret::new(fake_imap::PASSWORD),
-                    imap: ServerSettings {
-                        host: "localhost".into(),
-                        port: self.imap_port,
-                        security: ConnectionSecurity::Tls,
-                    },
-                    smtp: ServerSettings {
-                        host: "127.0.0.1".into(),
-                        port: self.smtp_port,
-                        security: ConnectionSecurity::Starttls,
-                    },
-                },
-            )
-            .await
-            .unwrap()
-    }
-
-    /// The next message the SMTP server received.
-    async fn next_message(&mut self) -> Vec<u8> {
-        let deadline = Instant::now() + Duration::from_secs(15);
-        loop {
-            let left = deadline.saturating_duration_since(Instant::now());
-            let session = tokio::time::timeout(left, self.sent.next())
-                .await
-                .expect("nothing was sent");
-            if let Some(data) = session.data {
-                return data;
-            }
-        }
-    }
-
-    /// Nothing reached the SMTP server so far.
-    fn nothing_sent(&mut self) -> bool {
-        std::iter::from_fn(|| self.sent.try_next()).all(|session| session.data.is_none())
-    }
-}
+use world::{Running, World};
 
 async fn draft(desktop: &mut Client, account: &AccountSummary, subject: &str) -> DraftView {
     desktop

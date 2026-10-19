@@ -11,8 +11,11 @@ import {
   parseRecipients,
   saveDraft,
   sendDraft,
+  setDraftFrom,
+  swapSignatureHtml,
   textToHtml,
 } from "./compose";
+import { type Identity, listIdentities } from "./identities";
 import { fileKind, fileSize, laterDate } from "./format";
 import { Icon } from "./icons";
 import { type Anchor, anchorOf } from "./Menu";
@@ -68,6 +71,9 @@ export function Composer({
   const [busy, setBusy] = useState(false);
   // "Remind me if no reply by" this time, once it has gone.
   const [remindAt, setRemindAt] = useState<number | null>(null);
+  // Who it can go out from, and a new editor when that changes the text.
+  const [identities, setIdentities] = useState<Identity[]>([]);
+  const [editorKey, setEditorKey] = useState(0);
   const saved = useRef<string>("");
   const timer = useRef<number | undefined>(undefined);
   const toField = useRef<HTMLInputElement>(null);
@@ -94,6 +100,28 @@ export function Composer({
       current = false;
     };
   }, [draftId]);
+
+  const accountId = draft?.account_id;
+  useEffect(() => {
+    if (accountId === undefined) return;
+    listIdentities(accountId).then(setIdentities, () => setIdentities([]));
+  }, [accountId]);
+
+  /** Send it from another identity: its signature takes the old one's place. */
+  const changeFrom = async (identityId: number) => {
+    if (!draft || !fields) return;
+    const old = identities.find((identity) => identity.id === draft.identity_id);
+    const next = identities.find((identity) => identity.id === identityId);
+    if (!next) return;
+    setError(null);
+    try {
+      setDraft(await setDraftFrom(draft.id, next.id));
+      setFields({ ...fields, html: swapSignatureHtml(fields.html, old?.signature ?? "", next.signature) });
+      setEditorKey((key) => key + 1);
+    } catch (failure) {
+      setError(String(failure));
+    }
+  };
 
   // Start where the writing goes: the address for a new message (the editor
   // takes the focus itself for a reply). Once per draft, not on every change.
@@ -286,10 +314,27 @@ export function Composer({
         <Icon name="sendLater" />
       </button>
       <span className="sep" />
-      {draft && (
-        <span className="composer-from" title={formatRecipients([draft.from])}>
-          {draft.from.address}
-        </span>
+      {draft && identities.length > 1 ? (
+        <select
+          className="composer-from"
+          aria-label="From"
+          title={formatRecipients([draft.from])}
+          value={draft.identity_id ?? ""}
+          onChange={(event) => void changeFrom(Number(event.target.value))}
+          disabled={locked}
+        >
+          {identities.map((identity) => (
+            <option key={identity.id} value={identity.id}>
+              {identity.name ? `${identity.name} <${identity.email}>` : identity.email}
+            </option>
+          ))}
+        </select>
+      ) : (
+        draft && (
+          <span className="composer-from" title={formatRecipients([draft.from])}>
+            {draft.from.address}
+          </span>
+        )
       )}
       <button
         type="button"
@@ -358,6 +403,7 @@ export function Composer({
             )}
             <Suspense fallback={<p className="muted small">Opening the editor…</p>}>
               <RichEditor
+                key={editorKey}
                 initial={fields.html}
                 onChange={(html) => {
                   setError(null);

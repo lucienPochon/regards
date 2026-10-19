@@ -319,7 +319,13 @@ flowchart LR
   - **The composer in the app:** new message, reply, reply all and forward; Cc/Bcc; autosave; a list of drafts; undo send; the Outbox with its actions.
   - **Attachments:** picked with the system dialog and read by the daemon (ADR-0006 §4), at most 25 MB per message, frozen into the MIME at send. A forward carries the original's files (not its inline images).
   - **Formatting:** a Tiptap (ProseMirror) editor with bold, italic, underline, strikethrough, links, lists and quotes. The daemon sanitises the HTML (an allowlist of formatting tags; web and mail links only) and derives the text part from it, so a message goes as `multipart/alternative`. The editor loads on demand, and ProseMirror's styles ship as a file because the app's CSP allows no injected styles.
-- **Still to come in Phase 2:** checking the HTML in major clients (the acceptance test), inline images, identities and signatures, templates, IMAP draft sync, and dropping files onto the composer.
+  - **Identities and signatures:**
+    - **What they are:** an account sends as its own address (the default at first) or an alias. Each has a name and a plain-text signature, in migration 0016 and `identity.*`.
+    - **New drafts:** a new message, reply or forward starts with the identity's signature, above any quote.
+    - **Replies:** a reply goes out from the address it was written to, and none of the account's addresses is answered.
+    - **Changing From** in the composer swaps the signature: the daemon swaps it in plain text (`draft.set_from`), the app in the editor's HTML.
+    - **What changes on the wire:** the envelope, From and the Message-ID's domain follow the identity.
+- **Still to come in Phase 2:** checking the HTML in major clients (the acceptance test), inline images, templates, IMAP draft sync, and dropping files onto the composer.
 
 ### 5.10 Search (P0 keyword, P2 semantic, 1.0)
 

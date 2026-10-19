@@ -81,6 +81,18 @@ pub mod methods {
     /// only: an agent must never make the daemon read and send local files.
     pub const DRAFT_ATTACH_FILE: &str = "draft.attach_file";
     pub const DRAFT_DETACH: &str = "draft.detach";
+    /// An account's identities: the names and addresses it sends as, each with
+    /// its signature, the default first. `ui` only.
+    pub const IDENTITY_LIST: &str = "identity.list";
+    /// Add an identity (without `id`) or change one.
+    pub const IDENTITY_SAVE: &str = "identity.save";
+    /// Remove an identity; not the default.
+    pub const IDENTITY_REMOVE: &str = "identity.remove";
+    /// Make an identity its account's default (new messages go out from it).
+    pub const IDENTITY_MAKE_DEFAULT: &str = "identity.make_default";
+    /// Send a draft from another of its account's identities; the signature
+    /// in a plain-text draft is swapped for the new one's.
+    pub const DRAFT_SET_FROM: &str = "draft.set_from";
     /// Freeze the draft into the outbox; it goes once the undo window is over,
     /// or at the time asked for (send later).
     pub const DRAFT_SEND: &str = "draft.send";
@@ -635,8 +647,11 @@ pub struct ViewParams {
 pub struct DraftView {
     pub id: i64,
     pub account_id: String,
-    /// Who it goes out from: the account's name and address.
+    /// Who it goes out from: its identity's name and address.
     pub from: Person,
+    /// That identity (`None` only for an account without one).
+    #[serde(default)]
+    pub identity_id: Option<i64>,
     pub to: Vec<Person>,
     pub cc: Vec<Person>,
     pub bcc: Vec<Person>,
@@ -709,6 +724,9 @@ pub struct DraftCreateParams {
     pub subject: String,
     #[serde(default)]
     pub body: String,
+    /// Who it is from; the account's default identity when not given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_id: Option<i64>,
 }
 
 /// Parameters of [`methods::DRAFT_REPLY`].
@@ -740,6 +758,51 @@ pub struct DraftUpdateParams {
     /// The formatted version; the daemon sanitises it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub html: Option<String>,
+}
+
+/// One of the names and addresses an account sends as.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IdentityView {
+    pub id: i64,
+    pub account_id: String,
+    pub name: String,
+    pub email: String,
+    /// Plain text, put below what is written and above a quote.
+    pub signature: String,
+    pub is_default: bool,
+}
+
+/// Result of [`methods::IDENTITY_LIST`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IdentityListResult {
+    pub identities: Vec<IdentityView>,
+}
+
+/// Parameters of [`methods::IDENTITY_SAVE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IdentitySaveParams {
+    /// The identity to change; none to add one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    pub account_id: String,
+    #[serde(default)]
+    pub name: String,
+    pub email: String,
+    #[serde(default)]
+    pub signature: String,
+}
+
+/// Names an identity: [`methods::IDENTITY_REMOVE`], [`methods::IDENTITY_MAKE_DEFAULT`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IdentityRef {
+    pub id: i64,
+}
+
+/// Parameters of [`methods::DRAFT_SET_FROM`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftSetFromParams {
+    pub id: i64,
+    pub identity_id: i64,
 }
 
 /// Parameters of [`methods::DRAFT_SEND`].

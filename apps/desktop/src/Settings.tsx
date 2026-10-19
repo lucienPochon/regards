@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { removeAccount, syncAccount } from "./accounts";
 import { backgroundMode, notificationsShown, setBackgroundMode, setNotificationsShown } from "./background";
 import { AccountForm } from "./AccountForm";
+import { IdentitiesEditor } from "./IdentitiesEditor";
 import { Avatar } from "./Avatar";
 import type { ConfirmRequest } from "./Confirm";
 import { Icon, type IconName } from "./icons";
@@ -231,6 +232,7 @@ function AccountRow({ entry, confirm }: { entry: AccountMail; confirm: (request:
   const { account, sync } = entry;
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [addresses, setAddresses] = useState(false);
 
   const syncNow = async () => {
     setSyncing(true);
@@ -271,6 +273,7 @@ function AccountRow({ entry, confirm }: { entry: AccountMail; confirm: (request:
             : "Not synced yet";
 
   return (
+    <>
     <li className="account-row">
       <Avatar person={{ name: account.display_name, address: account.email }} size="lg" ring />
       <div className="account-text">
@@ -283,11 +286,20 @@ function AccountRow({ entry, confirm }: { entry: AccountMail; confirm: (request:
           <Icon name="refresh" size={15} />
           Sync now
         </button>
+        <button type="button" className="btn small" aria-expanded={addresses} onClick={() => setAddresses(!addresses)}>
+          Addresses &amp; signatures
+        </button>
         <button type="button" className="btn small danger" onClick={remove}>
           Remove
         </button>
       </div>
     </li>
+    {addresses && (
+      <li>
+        <IdentitiesEditor accountId={account.id} />
+      </li>
+    )}
+    </>
   );
 }
 

@@ -8,11 +8,12 @@ use regards_core::compose::{self, Outgoing};
 use regards_core::headers::{self, Person};
 use regards_ipc::protocol::{
     DraftAttachFileParams, DraftAttachment, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult,
-    DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MessageRef,
-    OutboxEntryView, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxState, OutboxUndoResult, RpcError,
-    codes,
+    DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
+    MessageRef, OutboxEntryView, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxState, OutboxUndoResult,
+    RpcError, codes,
 };
 use regards_store::drafts::{self, Content, Draft, Edit};
+use regards_store::identities::{self, Identity};
 use regards_store::marks::{self, Mark};
 use regards_store::outbox::{self, Entry, NewEntry, State as EntryState};
 use regards_store::{StoreError, accounts, mailboxes};
@@ -39,13 +40,16 @@ pub(crate) async fn create(state: &State, params: DraftCreateParams) -> Result<V
     let id = state
         .store
         .write(move |tx| {
-            accounts::get(tx, &account_id)?.ok_or_else(|| StoreError::Conflict("no such account".into()))?;
+            let account =
+                accounts::get(tx, &account_id)?.ok_or_else(|| StoreError::Conflict("no such account".into()))?;
+            let identity = identity_of(tx, &account, params.identity_id)?;
             let content = Content {
                 to: params.to,
                 cc: params.cc,
                 bcc: params.bcc,
                 subject: params.subject,
-                body: params.body,
+                body: format!("{}{}", params.body, compose::signature_block(&identity.signature)),
+                identity_id: stored(&identity),
                 ..Content::default()
             };
             drafts::create(tx, &account_id, &content, now)
@@ -60,21 +64,41 @@ pub(crate) async fn create(state: &State, params: DraftCreateParams) -> Result<V
 pub(crate) async fn reply(state: &State, params: DraftReplyParams) -> Result<Value, RpcError> {
     let (message, source) = crate::mail::load(state, params.message_id).await?;
     let mailbox_id = message.mailbox_id;
-    let account = state
+    let original = headers::parse(&source);
+    // It goes out from the address it was written to, if that is one of the account's.
+    let written_to: Vec<String> = original
+        .to
+        .iter()
+        .chain(&original.cc)
+        .filter_map(|person| person.address.clone())
+        .collect();
+    let (account, identity, mine) = state
         .store
         .read(move |conn| {
-            let mailbox = mailboxes::get(conn, mailbox_id)?;
-            Ok(match mailbox {
-                Some(mailbox) => accounts::get(conn, &mailbox.account_id)?,
-                None => None,
-            })
+            let Some(mailbox) = mailboxes::get(conn, mailbox_id)? else {
+                return Ok(None);
+            };
+            let Some(account) = accounts::get(conn, &mailbox.account_id)? else {
+                return Ok(None);
+            };
+            let addresses: Vec<&str> = written_to.iter().map(String::as_str).collect();
+            let identity = match identities::for_addresses(conn, &account.id, &addresses)? {
+                Some(found) => found,
+                None => identity_of(conn, &account, None)?,
+            };
+            let mut mine: Vec<String> = identities::list(conn, &account.id)?
+                .into_iter()
+                .map(|i| i.email)
+                .collect();
+            mine.push(account.email.clone());
+            Ok(Some((account, identity, mine)))
         })
         .await
         .map_err(crate::session::internal)?
         .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "the message's account no longer exists"))?;
-    let original = headers::parse(&source);
     let text = regards_core::body::parse(&source).text;
-    let me = [account.email.as_str()];
+    // None of the account's own addresses is answered.
+    let me: Vec<&str> = mine.iter().map(String::as_str).collect();
     let (to, cc) = compose::reply_recipients(
         original.from.as_ref(),
         &original.reply_to,
@@ -88,10 +112,15 @@ pub(crate) async fn reply(state: &State, params: DraftReplyParams) -> Result<Val
         cc,
         bcc: Vec::new(),
         subject: compose::reply_subject(&original.subject),
-        body: compose::quote(&text, original.from.as_ref(), original.date),
+        body: format!(
+            "{}{}",
+            compose::signature_block(&identity.signature),
+            compose::quote(&text, original.from.as_ref(), original.date)
+        ),
         in_reply_to: original.message_id.clone(),
         references: compose::reply_references(&original.references, original.message_id.as_deref()),
         replying_to: Some(message.id),
+        identity_id: stored(&identity),
     };
     store_new(state, account.id, content).await
 }
@@ -126,21 +155,27 @@ pub(crate) async fn forward(state: &State, params: MessageRef) -> Result<Value, 
     .await
     .map_err(crate::session::internal)?
     .map_err(crate::session::internal)?;
-    let content = Content {
-        subject: compose::forward_subject(&original.subject),
-        body: compose::forwarded(
-            &text,
-            original.from.as_ref(),
-            &original.to,
-            &original.subject,
-            original.date,
-        ),
-        ..Content::default()
-    };
+    let forwarded = compose::forwarded(
+        &text,
+        original.from.as_ref(),
+        &original.to,
+        &original.subject,
+        original.date,
+    );
+    let subject = compose::forward_subject(&original.subject);
     let now = now_ms();
     let id = state
         .store
         .write(move |tx| {
+            let account =
+                accounts::get(tx, &account_id)?.ok_or_else(|| StoreError::Conflict("no such account".into()))?;
+            let identity = identity_of(tx, &account, None)?;
+            let content = Content {
+                subject,
+                body: format!("{}{forwarded}", compose::signature_block(&identity.signature)),
+                identity_id: stored(&identity),
+                ..Content::default()
+            };
             let id = drafts::create(tx, &account_id, &content, now)?;
             for (hash, name, mime, size) in &files {
                 drafts::attach(tx, id, hash, name, mime, *size)?;
@@ -170,29 +205,26 @@ pub(crate) async fn get(state: &State, params: DraftRef) -> Result<Value, RpcErr
 
 pub(crate) async fn list(state: &State, params: DraftListParams) -> Result<Value, RpcError> {
     let account_id = params.account_id;
-    let (drafts, senders) = state
+    let drafts = state
         .store
         .read(move |conn| {
-            let senders: HashMap<String, Person> = accounts::list(conn)?
-                .iter()
-                .map(|account| (account.id.clone(), sender(account)))
+            let accounts: HashMap<String, accounts::Account> = accounts::list(conn)?
+                .into_iter()
+                .map(|account| (account.id.clone(), account))
                 .collect();
             let mut drafts = Vec::new();
             for draft in drafts::list(conn, account_id.as_deref())? {
+                let Some(account) = accounts.get(&draft.account_id) else {
+                    continue;
+                };
+                let identity = identity_of(conn, account, draft.identity_id)?;
                 let files = drafts::attachments(conn, draft.id)?;
-                drafts.push((draft, files));
+                drafts.push(draft_view(draft, &identity, files));
             }
-            Ok((drafts, senders))
+            Ok(drafts)
         })
         .await
         .map_err(crate::session::internal)?;
-    let drafts = drafts
-        .into_iter()
-        .filter_map(|(draft, files)| {
-            let from = senders.get(&draft.account_id)?.clone();
-            Some(draft_view(draft, from, files))
-        })
-        .collect();
     Ok(json!(DraftListResult { drafts }))
 }
 
@@ -340,13 +372,13 @@ pub(crate) async fn send(state: &Arc<State>, params: DraftSendParams) -> Result<
     let outbox_id = state
         .store
         .write(move |tx| {
-            let (draft, account) = unchanged_draft(tx, id, seen_version)?;
+            let (draft, account, identity) = unchanged_draft(tx, id, seen_version)?;
             if draft.sending {
                 return Err(StoreError::Conflict("this message is already being sent".into()));
             }
             // Dated for when it goes, so a scheduled one does not arrive looking old.
-            let message_id = compose::new_message_id(&account.email);
-            let outgoing = outgoing(&draft, &account, files, message_id, send_at.unwrap_or(now));
+            let message_id = compose::new_message_id(&identity.email);
+            let outgoing = outgoing(&draft, &identity, files, message_id, send_at.unwrap_or(now));
             let mime = outgoing
                 .build()
                 .map_err(|error| StoreError::Conflict(error.to_string()))?;
@@ -356,7 +388,7 @@ pub(crate) async fn send(state: &Arc<State>, params: DraftSendParams) -> Result<
                 message_id: outgoing.message_id.clone(),
                 subject: draft.subject.clone(),
                 recipients: draft.to.iter().chain(&draft.cc).chain(&draft.bcc).cloned().collect(),
-                envelope_from: account.email.clone(),
+                envelope_from: identity.email.clone(),
                 envelope_to: outgoing.recipients(),
                 mime,
                 undo_until,
@@ -409,8 +441,8 @@ pub(crate) async fn reschedule(state: &Arc<State>, params: OutboxRescheduleParam
     let moved = state
         .store
         .write(move |tx| {
-            let (draft, account) = unchanged_draft(tx, draft_id, seen_version)?;
-            let mime = outgoing(&draft, &account, files, message_id, send_at.unwrap_or(now))
+            let (draft, _, identity) = unchanged_draft(tx, draft_id, seen_version)?;
+            let mime = outgoing(&draft, &identity, files, message_id, send_at.unwrap_or(now))
                 .build()
                 .map_err(|error| StoreError::Conflict(error.to_string()))?;
             outbox::reschedule(tx, id, send_at, &mime, now)
@@ -475,9 +507,13 @@ async fn draft_files(state: &State, id: i64) -> Result<(i64, Vec<compose::Attach
     Ok((version, files))
 }
 
-/// The draft and its account, if the draft is as it was when its files were
-/// read: what is frozen must be what was shown.
-fn unchanged_draft(tx: &Transaction<'_>, id: i64, seen_version: i64) -> Result<(Draft, accounts::Account), StoreError> {
+/// The draft, its account and who it goes out from, if the draft is as it
+/// was when its files were read: what is frozen must be what was shown.
+fn unchanged_draft(
+    tx: &Transaction<'_>,
+    id: i64,
+    seen_version: i64,
+) -> Result<(Draft, accounts::Account, Identity), StoreError> {
     let draft = drafts::get(tx, id)?.ok_or_else(|| StoreError::Conflict("no such draft".into()))?;
     if draft.updated_at != seen_version {
         return Err(StoreError::Conflict(
@@ -486,19 +522,20 @@ fn unchanged_draft(tx: &Transaction<'_>, id: i64, seen_version: i64) -> Result<(
     }
     let account =
         accounts::get(tx, &draft.account_id)?.ok_or_else(|| StoreError::Conflict("no such account".into()))?;
-    Ok((draft, account))
+    let identity = identity_of(tx, &account, draft.identity_id)?;
+    Ok((draft, account, identity))
 }
 
 fn outgoing(
     draft: &Draft,
-    account: &accounts::Account,
+    identity: &Identity,
     attachments: Vec<compose::Attachment>,
     message_id: String,
     date: i64,
 ) -> Outgoing {
     Outgoing {
         attachments,
-        from: sender(account),
+        from: sender(identity),
         to: draft.to.clone(),
         cc: draft.cc.clone(),
         bcc: draft.bcc.clone(),
@@ -588,25 +625,86 @@ async fn view(state: &State, id: i64) -> Result<Value, RpcError> {
             let Some(draft) = drafts::get(conn, id)? else {
                 return Ok(None);
             };
-            let account = accounts::get(conn, &draft.account_id)?;
+            let Some(account) = accounts::get(conn, &draft.account_id)? else {
+                return Ok(None);
+            };
+            let identity = identity_of(conn, &account, draft.identity_id)?;
             let files = drafts::attachments(conn, id)?;
-            Ok(account.map(|account| (draft, sender(&account), files)))
+            Ok(Some(draft_view(draft, &identity, files)))
         })
         .await
         .map_err(crate::session::internal)?;
-    let (draft, from, files) = found.ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such draft"))?;
-    Ok(json!(draft_view(draft, from, files)))
+    let view = found.ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such draft"))?;
+    Ok(json!(view))
 }
 
 /// Who an account's messages come from: its name (when it is not just the address) and address.
-fn sender(account: &accounts::Account) -> Person {
+/// Who an identity's messages come from: its name (when it is not just the address) and address.
+fn sender(identity: &Identity) -> Person {
     Person {
-        name: Some(account.display_name.clone()).filter(|name| name != &account.email && !name.trim().is_empty()),
-        address: Some(account.email.clone()),
+        name: Some(identity.name.clone()).filter(|name| name != &identity.email && !name.trim().is_empty()),
+        address: Some(identity.email.clone()),
     }
 }
 
-fn draft_view(draft: Draft, from: Person, files: Vec<drafts::Attachment>) -> DraftView {
+/// Who a draft of `account` goes out from: identity `id` if it is one of the
+/// account's, else its default. An account always has one; the account
+/// itself stands in otherwise.
+fn identity_of(
+    conn: &rusqlite::Connection,
+    account: &accounts::Account,
+    id: Option<i64>,
+) -> Result<Identity, StoreError> {
+    if let Some(id) = id
+        && let Some(found) = identities::get(conn, id)?.filter(|i| i.account_id == account.id)
+    {
+        return Ok(found);
+    }
+    if let Some(found) = identities::default_for(conn, &account.id)? {
+        return Ok(found);
+    }
+    Ok(Identity {
+        id: 0,
+        account_id: account.id.clone(),
+        name: account.display_name.clone(),
+        email: account.email.clone(),
+        signature: String::new(),
+        is_default: true,
+    })
+}
+
+/// The identity to record on a draft: none for the stand-in.
+fn stored(identity: &Identity) -> Option<i64> {
+    (identity.id != 0).then_some(identity.id)
+}
+
+/// Send a draft from another of its account's identities. A plain-text
+/// draft's signature is swapped; a formatted one keeps its text.
+pub(crate) async fn set_from(state: &State, params: DraftSetFromParams) -> Result<Value, RpcError> {
+    let (id, identity_id, now) = (params.id, params.identity_id, now_ms());
+    state
+        .store
+        .write(move |tx| {
+            let draft = drafts::get(tx, id)?.ok_or_else(|| StoreError::Conflict("no such draft".into()))?;
+            let account =
+                accounts::get(tx, &draft.account_id)?.ok_or_else(|| StoreError::Conflict("no such account".into()))?;
+            let new = identities::get(tx, identity_id)?
+                .filter(|i| i.account_id == account.id)
+                .ok_or_else(|| StoreError::Conflict("that address is not one of this account's".into()))?;
+            let old = identity_of(tx, &account, draft.identity_id)?;
+            let body = if draft.html.is_some() {
+                draft.body.clone()
+            } else {
+                compose::swap_signature(&draft.body, &old.signature, &new.signature)
+            };
+            drafts::set_identity(tx, id, new.id, &body, now)
+        })
+        .await
+        .map_err(conflict)?;
+    view(state, id).await
+}
+
+fn draft_view(draft: Draft, identity: &Identity, files: Vec<drafts::Attachment>) -> DraftView {
     DraftView {
         attachments: files
             .into_iter()
@@ -619,7 +717,8 @@ fn draft_view(draft: Draft, from: Person, files: Vec<drafts::Attachment>) -> Dra
             .collect(),
         id: draft.id,
         account_id: draft.account_id,
-        from,
+        from: sender(identity),
+        identity_id: stored(identity),
         to: draft.to,
         cc: draft.cc,
         bcc: draft.bcc,

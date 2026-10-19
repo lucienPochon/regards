@@ -116,6 +116,17 @@ pub fn insert(tx: &Transaction<'_>, new: NewAccount) -> Result<Account, StoreErr
         }
         Err(error) => return Err(error.into()),
     }
+    // Its own address is the identity it sends as by default.
+    crate::identities::add(
+        tx,
+        &new.id,
+        &crate::identities::Fields {
+            name: new.display_name.clone(),
+            email: new.email.clone(),
+            signature: String::new(),
+        },
+        created_at,
+    )?;
     Ok(Account {
         id: new.id,
         display_name: new.display_name,

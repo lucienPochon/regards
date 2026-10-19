@@ -21,11 +21,12 @@ use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, AsideParams, ClientKind, ConnectionSecurity,
     DeleteResult, DraftAttachFileParams, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult,
-    DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftUpdateParams, DraftView, MailboxListResult,
-    MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams,
-    MoveResult, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal,
-    RemindParams, ServerSettings, SetFlagsParams, SetFlagsResult, SnoozeParams, SyncResult, ThreadView, UndoParams,
-    UndoResult, View, ViewParams, methods,
+    DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
+    IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView, MailboxListResult, MarkResult, MessageCursor,
+    MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult,
+    OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams,
+    ServerSettings, SetFlagsParams, SetFlagsResult, SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult, View,
+    ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -523,6 +524,50 @@ async fn draft_update(bridge: State<'_, Bridge>, draft: DraftUpdateParams) -> Re
     client.call(methods::DRAFT_UPDATE, draft).await.map_err(describe)
 }
 
+/// Send a draft from another of its account's identities (its signature swaps).
+#[tauri::command]
+async fn draft_set_from(bridge: State<'_, Bridge>, id: i64, identity_id: i64) -> Result<DraftView, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::DRAFT_SET_FROM, DraftSetFromParams { id, identity_id })
+        .await
+        .map_err(describe)
+}
+
+/// An account's identities: the names and addresses it sends as, with signatures.
+#[tauri::command]
+async fn identity_list(bridge: State<'_, Bridge>, account_id: String) -> Result<IdentityListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::IDENTITY_LIST, AccountRef { account_id })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn identity_save(bridge: State<'_, Bridge>, identity: IdentitySaveParams) -> Result<IdentityView, String> {
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::IDENTITY_SAVE, identity).await.map_err(describe)
+}
+
+#[tauri::command]
+async fn identity_remove(bridge: State<'_, Bridge>, id: i64) -> Result<Value, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::IDENTITY_REMOVE, IdentityRef { id })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn identity_make_default(bridge: State<'_, Bridge>, id: i64) -> Result<Value, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::IDENTITY_MAKE_DEFAULT, IdentityRef { id })
+        .await
+        .map_err(describe)
+}
+
 #[tauri::command]
 async fn draft_delete(bridge: State<'_, Bridge>, id: i64) -> Result<Value, String> {
     let mut client = bridge.connect().await?.client;
@@ -742,6 +787,11 @@ fn main() {
             draft_detach,
             draft_update,
             draft_delete,
+            draft_set_from,
+            identity_list,
+            identity_save,
+            identity_remove,
+            identity_make_default,
             draft_send,
             outbox_list,
             outbox_undo,
