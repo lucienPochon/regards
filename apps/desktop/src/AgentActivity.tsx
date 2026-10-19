@@ -52,6 +52,21 @@ const DECISIONS: Partial<Record<AgentDecision, { label: string; tone: string }>>
   rejected: { label: "Rejected", tone: "refused" },
 };
 
+/** The daemon's answer to an agent going faster than its pace (RATE_LIMITED). */
+const RATE_LIMITED = -32015;
+const slowed = (entry: Entry) => entry.decision === "denied" && entry.error_code === RATE_LIMITED;
+
+/** How a request was answered, for its chip: refused, or only slowed down. */
+function decisionOf(entry: Entry): { label: string; tone: string } | undefined {
+  if (slowed(entry)) {
+    // Too many at once, or too many already waiting for the person.
+    return /wait/i.test(entry.error ?? "") && !/try again/i.test(entry.error ?? "")
+      ? { label: "Too many waiting", tone: "held" }
+      : { label: "Too fast", tone: "held" };
+  }
+  return DECISIONS[entry.decision];
+}
+
 /** The action in words: what was searched for, which flags, how many messages. */
 function describe(entry: Entry): string {
   const args = (entry.args ?? {}) as { query?: unknown; ids?: unknown; seen?: unknown; flagged?: unknown };
@@ -279,7 +294,8 @@ function Session({
   const [open, setOpen] = useState(false);
   const newest = entries[0];
   const oldest = entries[entries.length - 1];
-  const refused = entries.filter((entry) => entry.decision === "denied").length;
+  const refused = entries.filter((entry) => entry.decision === "denied" && !slowed(entry)).length;
+  const tooFast = entries.filter(slowed).length;
   const shown = open ? entries : entries.slice(0, FOLDED);
   return (
     <li className="activity-session">
@@ -291,6 +307,7 @@ function Session({
           {newest.at - oldest.at > 60_000 ? ` – ${time(newest.at)}` : ""} · {entries.length}{" "}
           {entries.length === 1 ? "request" : "requests"}
           {refused > 0 && ` · ${refused} refused`}
+          {tooFast > 0 && ` · ${tooFast} slowed down`}
         </span>
       </div>
       <ul className="activity-entries">
@@ -318,7 +335,7 @@ function Row({
   folderName: (mailboxId: number) => string | null;
   onChanged: () => void;
 }) {
-  const decision = DECISIONS[entry.decision];
+  const decision = decisionOf(entry);
   // What was done about it here: undone, or why that failed.
   const [done, setDone] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);

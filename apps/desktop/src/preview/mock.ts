@@ -282,6 +282,11 @@ function agentActivity(): AgentActivity[] {
     entry(14, 0.5, "mcp-1", "mcp", "message.get", { id: 105 }),
     entry(13, 1, "cli-2", "cli", "search.query", { query: "is:unread" }),
     entry(12, 2, "mcp-1", "mcp", "draft.create", { account_id: account }, true),
+    {
+      ...entry(17, 2.5, "mcp-1", "mcp", "message.get", { id: 108 }, true),
+      error_code: -32015,
+      error: "too many requests: try again in 0.4 s",
+    },
     entry(11, 3, "mcp-1", "mcp", "message.get", { id: 101 }),
     entry(10, 3, "mcp-1", "mcp", "search.query", { query: "garden rota" }),
     entry(9, 4, "mcp-1", "mcp", "account.list", {}),

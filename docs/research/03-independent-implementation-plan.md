@@ -453,6 +453,7 @@ flowchart LR
     - The page sits at the top of the settings, under the person's card, where the reference app keeps its AI agents.
     - **Activity:** what agents did, newest first, grouped by session (the command line, or an assistant through MCP).
       - Each request is in plain words ("Read a message", "Searched “invoice”"), with "Refused" and its reason when it was not allowed.
+      - A request over an agent's pace reads "Too fast", or "Too many waiting" when 20 already wait for the person, and its session counts it as slowed down rather than refused.
       - Its parameters can be opened under it.
       - Filters: everything or refused only, and with several accounts, one of them.
       - It looks for new entries every 5 s while shown, and on focus. Older entries page with "Show older".
