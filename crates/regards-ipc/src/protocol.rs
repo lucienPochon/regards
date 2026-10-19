@@ -169,6 +169,10 @@ pub mod methods {
     pub const NOTICE_LIST: &str = "notice.list";
     /// The notices up to an id have been shown (or seen in the app).
     pub const NOTICE_SHOWN: &str = "notice.shown";
+    /// How messages are shown: [`ReadingSettings`]. `ui` only.
+    pub const READING_SETTINGS: &str = "reading.settings";
+    /// Change [`ReadingSettings`]. `ui` only.
+    pub const READING_SET_SETTINGS: &str = "reading.set_settings";
     /// Whether recent inbox mail is downloaded ahead (off by default). `ui` only.
     pub const PREFETCH_GET: &str = "prefetch.get";
     /// Download recent inbox mail ahead, or not; on starts at once. `ui` only.
@@ -1589,6 +1593,14 @@ pub struct NoticeView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NoticeListResult {
     pub notices: Vec<NoticeView>,
+}
+
+/// How messages are shown, kept by the daemon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadingSettings {
+    /// Links in messages lose their tracking parameters (`utm_…`, `fbclid`
+    /// …) before they can be opened (ADR-0015 §4). On by default.
+    pub clean_links: bool,
 }
 
 /// Parameters of [`methods::PREFETCH_SET`], and the result of both.

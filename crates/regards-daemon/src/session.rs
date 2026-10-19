@@ -445,6 +445,14 @@ impl Session {
                 self.require_ui()?;
                 notices::shown(&self.state, params(request)?).await
             }
+            methods::READING_SETTINGS => {
+                self.require_ui()?;
+                mail::reading_settings(&self.state).await
+            }
+            methods::READING_SET_SETTINGS => {
+                self.require_ui()?;
+                mail::set_reading_settings(&self.state, params(request)?).await
+            }
             methods::PREFETCH_GET => {
                 self.require_ui()?;
                 prefetch::get(&self.state).await
