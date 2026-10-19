@@ -195,7 +195,11 @@ export function messageHtmlUrl(id: number, allowRemote: boolean): string {
 }
 
 /** Mark messages read or unread, flagged or not. Applied at once; the server is told in the background. */
-export function setFlags(ids: number[], flags: { seen?: boolean; flagged?: boolean }): Promise<{ changed: number }> {
+/** Mark read or unread, flag or unflag; undoable (undo leaves alone what was changed again since). */
+export function setFlags(
+  ids: number[],
+  flags: { seen?: boolean; flagged?: boolean },
+): Promise<{ changed: number; undo: UndoInfo | null }> {
   return invoke("message_set_flags", { ids, seen: flags.seen ?? null, flagged: flags.flagged ?? null });
 }
 

@@ -183,8 +183,8 @@ function searchSamples(query: string, accountId: string | null, server = false) 
 }
 
 /** Sample agent sessions: the command line two hours ago, an assistant just now (one request refused), and a script during it. */
-/** The sample archive an agent made: undone from Settings › Agents once. */
-const AGENT_UNDO = 9001;
+/** The sample archive and flag change an agent made: each undone from Settings › Agents once. */
+const AGENT_UNDOS = new Set([9001, 9002]);
 const agentUndone = new Set<number>();
 
 function agentActivity(): AgentActivity[] {
@@ -231,7 +231,7 @@ function agentActivity(): AgentActivity[] {
   });
   // A script on the command line ran while the assistant was connected: their requests interleave.
   return [
-    entry(16, 0.2, "mcp-1", "mcp", "message.set_flags", { ids: [104], seen: true }, false, [was(104, "Book club: next pick", false)]),
+    entry(16, 0.2, "mcp-1", "mcp", "message.set_flags", { ids: [104], seen: true }, false, [was(104, "Book club: next pick", false)], 9002),
     entry(
       15,
       0.3,
@@ -241,7 +241,7 @@ function agentActivity(): AgentActivity[] {
       { ids: [106, 107] },
       false,
       [was(106, "Your parcel is out for delivery", true), was(107, "Your October statement is ready", true)],
-      AGENT_UNDO,
+      9001,
     ),
     entry(14, 0.5, "mcp-1", "mcp", "message.get", { id: 105 }),
     entry(13, 1, "cli-2", "cli", "search.query", { query: "is:unread" }),
@@ -597,7 +597,8 @@ function handle(cmd: string, args: Args): unknown {
         if (typeof args.flagged === "boolean") message.flagged = args.flagged;
       }
       changed();
-      return { changed: ids.length };
+      // The daemon records an undo for it too; the app shows none for its own flag changes.
+      return { changed: ids.length, undo: null };
     }
     case "message_archive": {
       // Done with a reminder shown from another folder: it leaves the inbox and stays filed.
@@ -654,11 +655,11 @@ function handle(cmd: string, args: Args): unknown {
       return { messages: shown.map((m) => summary(m)), next: null };
     }
     case "undo_apply": {
-      if (args.id === AGENT_UNDO) {
-        if (agentUndone.has(AGENT_UNDO)) throw new Error("It is too late to undo that.");
-        agentUndone.add(AGENT_UNDO);
+      if (AGENT_UNDOS.has(args.id as number)) {
+        if (agentUndone.has(args.id as number)) throw new Error("It is too late to undo that.");
+        agentUndone.add(args.id as number);
         changed();
-        return { undone: 2 };
+        return { undone: args.id === 9001 ? 2 : 1 };
       }
       const undo = undos.get(args.id as number);
       if (!undo) throw new Error("It is too late to undo that.");

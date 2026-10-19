@@ -450,8 +450,7 @@ flowchart LR
       - Filters: everything or refused only, and with several accounts, one of them.
       - It looks for new entries every 5 s while shown, and on focus. Older entries page with "Show older".
       - What an agent changed shows how it was ("Was: “Book club”, in Inbox, unread").
-      - Undo appears while the daemon says the change can be undone: ten minutes, once.
-      - Flag changes keep no undo entry, so they offer "Set back" from how they were, for the same ten minutes.
+      - Undo appears while the daemon says the change can be undone: ten minutes, once. Flag changes included.
 - **Holds** for send-tier and bulk or destructive intents.
 - **Audit log** with before-state and undo.
   - **As built (2026-10-19):**

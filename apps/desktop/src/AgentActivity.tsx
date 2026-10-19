@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { applyUndo, setFlags } from "./accounts";
+import { applyUndo } from "./accounts";
 import { type AgentActivity as Entry, type AgentDecision, listAgentActivity } from "./agents";
 import { fullDate } from "./format";
 import { Icon } from "./icons";
@@ -8,8 +8,6 @@ import { Icon } from "./icons";
 const POLL_MS = 5000;
 /** Entries a session shows before "Show all". */
 const FOLDED = 5;
-/** How long a flag change can be set back from here, as long as an undo lasts. */
-const SET_BACK_MS = 10 * 60_000;
 
 /** What agents did, in plain words; other methods show as named. */
 const ACTIONS: Record<string, string> = {
@@ -320,7 +318,7 @@ function Row({
   onChanged: () => void;
 }) {
   const decision = DECISIONS[entry.decision];
-  // What was done about it here: undone, set back, or why that failed.
+  // What was done about it here: undone, or why that failed.
   const [done, setDone] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -329,13 +327,6 @@ function Row({
     : entry.before && typeof entry.before === "object"
       ? [entry.before as Record<string, unknown>]
       : [];
-  // Flag changes keep no undo entry; what they changed can be set back from how it was.
-  const settable =
-    entry.method === "message.set_flags" &&
-    entry.decision === "allowed" &&
-    !entry.error &&
-    before.length > 0 &&
-    Date.now() - entry.at < SET_BACK_MS;
 
   const act = (label: string, work: () => Promise<unknown>) => (event: { preventDefault: () => void; stopPropagation: () => void }) => {
     // Inside the row's summary: act, without opening the details.
@@ -354,19 +345,6 @@ function Row({
       .finally(() => setBusy(false));
   };
   const undo = act("Undone", () => applyUndo(entry.undo_id ?? 0));
-  const setBack = act("Set back", () => {
-    const groups = new Map<string, { seen?: boolean; flagged?: boolean; ids: number[] }>();
-    for (const item of before) {
-      if (typeof item.id !== "number") continue;
-      const seen = typeof item.seen === "boolean" ? item.seen : undefined;
-      const flagged = typeof item.flagged === "boolean" ? item.flagged : undefined;
-      const key = `${seen}|${flagged}`;
-      const group = groups.get(key) ?? { seen, flagged, ids: [] };
-      group.ids.push(item.id);
-      groups.set(key, group);
-    }
-    return Promise.all([...groups.values()].map((group) => setFlags(group.ids, group)));
-  });
 
   return (
     <li className="activity-entry">
@@ -382,10 +360,6 @@ function Row({
           ) : entry.undoable && entry.undo_id !== null ? (
             <button type="button" className="activity-undo" onClick={undo} disabled={busy}>
               Undo
-            </button>
-          ) : settable ? (
-            <button type="button" className="activity-undo" title="Set the flags back as they were" onClick={setBack} disabled={busy}>
-              Set back
             </button>
           ) : null}
         </summary>
