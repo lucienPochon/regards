@@ -344,6 +344,11 @@ impl Session {
                 self.allow_draft(Access::Triage, params.id).await?;
                 compose::get(&self.state, params).await
             }
+            methods::DRAFT_CHECK => {
+                let params: DraftRef = params(request)?;
+                self.allow_draft(Access::Triage, params.id).await?;
+                compose::check(&self.state, params).await
+            }
             methods::DRAFT_LIST => {
                 let params: DraftListParams = params(request)?;
                 let scope = self.scope(Access::Triage, params.account_id.as_deref()).await?;

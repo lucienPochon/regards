@@ -375,6 +375,10 @@ flowchart LR
   - **Left out:** no-reply, notification and bounce addresses (unless written to), blocked senders, and the account's own addresses.
   - **Agents:** they get the same through the `people` tool, for accounts open to them.
 - **Send validation:** recipients, subject (or confirmation), attachments ready, no unresolved placeholders.
+  - **As built (2026-10-19), `draft.check`** (`regards_core::compose::send_checks`), for the composer, the CLI and agents alike:
+    - **No recipients:** it cannot go.
+    - **To confirm** (sending again goes anyway; each is asked once): no subject; an attachment mentioned but none attached (English, French, German, Spanish, Italian and Dutch words, at a word's start); `{{…}}` or `[[…]]` still to be filled in. That is the placeholder form templates use.
+    - **What counts:** only what the person wrote, not the quoted reply, the forwarded message or `>` lines.
 - **Built so far (Phase 2):**
   - **Sending:** the SMTP submission client (`regards-smtp`, at-most-once).
   - **Drafts:** stored in the daemon. A new message, reply and reply all (Reply-To honoured, my own addresses left out) and forward start addressed and quoted. A reply's References are kept to 20 (the root and the latest).

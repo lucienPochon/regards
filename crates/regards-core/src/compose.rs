@@ -461,6 +461,111 @@ pub fn swap_signature(body: &str, old: &str, new: &str) -> String {
     format!("{}{new}{}", &body[..at], &body[at..])
 }
 
+/// Something to ask about before a message goes (plan §5.9, send validation).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SendCheck {
+    /// Nobody to send it to: it cannot go.
+    NoRecipients,
+    /// No subject.
+    NoSubject,
+    /// The text speaks of an attachment (`word`), and nothing is attached.
+    MissingAttachment { word: String },
+    /// Something still to fill in, as a template leaves it: `{{…}}` or `[[…]]`.
+    Placeholder { text: String },
+}
+
+/// Words that say a file comes with a message, matched at the start of a
+/// word, in any case: English, French, German, Spanish, Italian, Dutch.
+const ATTACHMENT_WORDS: &[&str] = &[
+    "attach",
+    "enclosed",
+    "pièce jointe",
+    "pièces jointes",
+    "ci-joint",
+    "en pj",
+    "anhang",
+    "angehängt",
+    "anbei",
+    "adjunto",
+    "adjunta",
+    "allegato",
+    "allegata",
+    "bijlage",
+    "bijgevoegd",
+];
+
+/// What to ask about before a message with these parts goes. Only what the
+/// person wrote counts: not the quoted reply or forwarded message below it.
+pub fn send_checks(recipients: usize, subject: &str, body: &str, attachments: usize) -> Vec<SendCheck> {
+    let mut checks = Vec::new();
+    if recipients == 0 {
+        checks.push(SendCheck::NoRecipients);
+    }
+    if subject.trim().is_empty() {
+        checks.push(SendCheck::NoSubject);
+    }
+    let written = written_part(body);
+    if attachments == 0
+        && let Some(word) = attachment_word(&written)
+    {
+        checks.push(SendCheck::MissingAttachment { word });
+    }
+    if let Some(text) = placeholder(&written).or_else(|| placeholder(subject)) {
+        checks.push(SendCheck::Placeholder { text });
+    }
+    checks
+}
+
+/// A body without its quoted reply, forwarded message and `>` lines.
+fn written_part(body: &str) -> String {
+    let end = quote_start(body).unwrap_or(body.len());
+    body[..end]
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('>'))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The first attachment word starting a word of `text`, as written there.
+fn attachment_word(text: &str) -> Option<String> {
+    let lower = text.to_lowercase();
+    for word in ATTACHMENT_WORDS {
+        let mut from = 0;
+        while let Some(at) = lower[from..].find(word) {
+            let start = from + at;
+            if lower[..start].chars().next_back().is_none_or(|c| !c.is_alphanumeric()) {
+                let rest = &lower[start..];
+                let end = rest
+                    .char_indices()
+                    .find(|(i, c)| *i >= word.len() && !c.is_alphanumeric())
+                    .map_or(rest.len(), |(i, _)| i);
+                return Some(rest[..end].to_owned());
+            }
+            from = start + word.len();
+        }
+    }
+    None
+}
+
+/// The first `{{…}}` or `[[…]]` in `text`, if short enough to be one.
+fn placeholder(text: &str) -> Option<String> {
+    for (open, close) in [("{{", "}}"), ("[[", "]]")] {
+        let mut from = 0;
+        while let Some(at) = text[from..].find(open) {
+            let start = from + at;
+            if let Some(length) = text[start + open.len()..].find(close)
+                && length <= 60
+                && !text[start + open.len()..start + open.len() + length].contains('\n')
+            {
+                return Some(text[start..start + open.len() + length + close.len()].to_owned());
+            }
+            from = start + open.len();
+        }
+    }
+    None
+}
+
 /// Where a quoted reply ("On …, Ada wrote:" then "> " lines) or a forwarded
 /// message begins in a body made by [`quote`] or [`forwarded`]: at its blank line.
 fn quote_start(body: &str) -> Option<usize> {
@@ -508,6 +613,51 @@ fn utc(ms: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_to_ask_before_a_message_goes() {
+        assert_eq!(send_checks(1, "Plans", "See you", 0), []);
+        assert_eq!(
+            send_checks(0, " ", "Hi", 0),
+            [SendCheck::NoRecipients, SendCheck::NoSubject]
+        );
+        assert_eq!(
+            send_checks(1, "Report", "Please find the report Attached.", 0),
+            [SendCheck::MissingAttachment {
+                word: "attached".into()
+            }]
+        );
+        assert_eq!(send_checks(1, "Report", "Please find the report attached.", 1), []);
+        assert_eq!(
+            send_checks(1, "Rapport", "Voici le rapport en pièce jointe.", 0),
+            [SendCheck::MissingAttachment {
+                word: "pièce jointe".into()
+            }]
+        );
+        assert_eq!(send_checks(1, "Hi", "Anbei die Unterlagen", 0).len(), 1);
+        assert_eq!(
+            send_checks(1, "Hi", "I reattached nothing; detachment", 0),
+            [],
+            "not a word's start"
+        );
+        // Only what was written: the quoted original may speak of attachments.
+        let reply = format!("Thanks!{}", quote("See the attached plan.", None, Some(0)));
+        assert_eq!(send_checks(1, "Re: Plan", &reply, 0), []);
+        assert_eq!(send_checks(1, "Hi", "> attached below\nThanks", 0), []);
+        assert_eq!(
+            send_checks(1, "Hi {{name}}", "Dear [[client]], hello", 0),
+            [SendCheck::Placeholder {
+                text: "[[client]]".into()
+            }]
+        );
+        assert_eq!(
+            send_checks(1, "Hi {{name}}", "Hello", 0),
+            [SendCheck::Placeholder {
+                text: "{{name}}".into()
+            }]
+        );
+        assert_eq!(send_checks(1, "Hi", "a {{ b", 0), [], "not closed");
+    }
 
     #[test]
     fn an_automatic_copy_is_added_once() {
