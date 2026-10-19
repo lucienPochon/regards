@@ -4582,6 +4582,13 @@ button.sender-row:hover:not(:disabled) {
   text-transform: uppercase;
 }
 
+/* An address as a heading: kept as written. */
+.settings-subhead.plain {
+  font-size: 12.5px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
 /* Colours to pick from. */
 .swatches {
   display: flex;

@@ -141,7 +141,7 @@ export function Settings({
           <button type="button" className="icon-btn settings-close" aria-label="Close" title="Close (Esc)" onClick={onClose}>
             <Icon name="close" />
           </button>
-          {tab === "general" && <GeneralPage />}
+          {tab === "general" && <GeneralPage accounts={accounts} />}
           {tab === "accounts" && <AccountsTab mail={mail} confirm={confirm} />}
           {tab === "agents" && <AgentsTab mail={mail} confirm={confirm} focusHold={focusHold} />}
           {tab === "inbox" && (

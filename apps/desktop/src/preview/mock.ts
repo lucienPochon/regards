@@ -110,6 +110,14 @@ let notifications = true;
 let screeningMode = (params.get("screen") ?? "section") as Screening;
 type Choice = { policy: Policy | null; priority: boolean; blocked: boolean };
 const choices = new Map<string, Choice>();
+/** Per account, the senders (addresses and `@domain`s) whose remote images load. */
+const imageSenders = new Map<string, Set<string>>();
+const imagesFrom = (accountId: string, address: string | null | undefined) => {
+  const allowed = imageSenders.get(accountId);
+  if (!allowed || !address) return false;
+  const lower = address.toLowerCase();
+  return allowed.has(lower) || allowed.has(`@${lower.split("@")[1]}`);
+};
 const choiceKey = (accountId: string, address: string) => `${accountId} ${address.toLowerCase()}`;
 // People the sample accounts have written to, besides what is in Sent.
 const KNOWN = new Set([
@@ -660,10 +668,16 @@ function handle(cmd: string, args: Args): unknown {
           }
         : { source: null, imap: null, smtp: null, oauth_only: false };
     }
-    case "sender_set_images":
-      return { allow: (args.sender as { allow: boolean }).allow };
+    case "sender_set_images": {
+      const sender = args.sender as { account_id: string; address: string; allow: boolean };
+      const allowed = imageSenders.get(sender.account_id) ?? new Set<string>();
+      if (sender.allow) allowed.add(sender.address.toLowerCase());
+      else allowed.delete(sender.address.toLowerCase());
+      imageSenders.set(sender.account_id, allowed);
+      return { allow: sender.allow };
+    }
     case "sender_images":
-      return { senders: [] };
+      return { senders: [...(imageSenders.get(args.accountId as string) ?? [])].sort() };
     case "update_status":
       return { checks: updateChecks, current: "0.1.0", available: updateFound, checked_at: updateCheckedAt };
     case "update_set_checks":
@@ -840,6 +854,7 @@ function handle(cmd: string, args: Args): unknown {
         text: message.text,
         has_html: message.html !== null,
         remote_images: message.remote_images,
+        images_from_sender: imagesFrom(accountOfMailbox(message.mailboxId)?.account.id ?? "", message.from?.address),
         attachments: message.attachments,
       };
     }

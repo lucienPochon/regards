@@ -7,6 +7,7 @@ import type { Layout } from "./layout";
 import type { ServiceCheck } from "./mail";
 import { ACCOUNT_COLOURS, type Prefs, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
 import { LinkRow, Option, Select, SubPageHead, Toggle } from "./SettingsControls";
+import { senderImages, setSenderImages } from "./smart";
 import { type PresetDef, type PresetPrefs, REMINDER_PRESETS, SEND_PRESETS, SNOOZE_PRESETS } from "./snooze";
 import { type Theme, applyTheme, savedTheme } from "./theme";
 import { AboutUpdates } from "./UpdateCheck";
@@ -19,13 +20,15 @@ const PROJECT_URL = "https://github.com/lucienPochon/regards";
  * sending, and reading. Background mode is kept by the app (desktop.json);
  * the rest on this computer.
  */
-export function GeneralPage() {
+export function GeneralPage({ accounts }: { accounts: AccountSummary[] }) {
   const prefs = usePrefs();
   const [background, setBackground] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [senders, setSenders] = useState(false);
   useEffect(() => {
     backgroundMode().then(setBackground, (failure: unknown) => setError(String(failure)));
   }, []);
+  if (senders) return <ImageSendersPage accounts={accounts} onBack={() => setSenders(false)} />;
   return (
     <>
       <h3>General</h3>
@@ -102,6 +105,72 @@ export function GeneralPage() {
       >
         <Toggle label="Load images from the web" on={prefs.remoteImages} onChange={(remoteImages) => setPrefs({ remoteImages })} />
       </Option>
+      {!prefs.remoteImages && (
+        <LinkRow
+          icon="people"
+          label="Senders whose images load"
+          detail="Allowed from a message with “Always from this sender”"
+          onOpen={() => setSenders(true)}
+        />
+      )}
+    </>
+  );
+}
+
+/** The senders and domains whose images load without asking, per account; each can be blocked again. */
+function ImageSendersPage({ accounts, onBack }: { accounts: AccountSummary[]; onBack: () => void }) {
+  const prefs = usePrefs();
+  const [lists, setLists] = useState<Record<string, string[]> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    Promise.all(accounts.map((account) => senderImages(account.id).then((list) => [account.id, list] as const))).then(
+      (entries) => setLists(Object.fromEntries(entries)),
+      (failure: unknown) => setError(String(failure)),
+    );
+  }, [accounts]);
+  const block = (accountId: string, who: string) => {
+    setError(null);
+    setSenderImages(accountId, who, false).then(
+      () => setLists((now) => now && { ...now, [accountId]: (now[accountId] ?? []).filter((one) => one !== who) }),
+      (failure: unknown) => setError(String(failure)),
+    );
+  };
+  const none = lists !== null && accounts.every((account) => (lists[account.id] ?? []).length === 0);
+  return (
+    <>
+      <SubPageHead title="Senders whose images load" onBack={onBack} />
+      <p className="muted settings-note">
+        Their messages show images from the web without asking, so they can tell when you open them. To add one, open a
+        message from them and choose “Always from this sender”.
+      </p>
+      {error && <p className="error">{error}</p>}
+      {lists === null && !error && <p className="muted">Loading…</p>}
+      {none && <p className="muted">Nobody yet: every message asks before loading images.</p>}
+      {lists !== null &&
+        accounts.map((account) => {
+          const list = lists[account.id] ?? [];
+          if (list.length === 0) return null;
+          return (
+            <section key={account.id} aria-label={accountLabel(prefs, account)}>
+              {accounts.length > 1 && <h4 className="settings-subhead plain">{accountLabel(prefs, account)}</h4>}
+              {list.map((who) => (
+                <div key={who} className="option">
+                  <span className="option-icon">
+                    <Icon name={who.startsWith("@") ? "people" : "user"} size={18} />
+                  </span>
+                  <span className="option-text">
+                    <strong>{who.startsWith("@") ? `Anyone at ${who.slice(1)}` : who}</strong>
+                  </span>
+                  <span className="option-control">
+                    <button type="button" className="btn small" onClick={() => block(account.id, who)}>
+                      Block again
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </section>
+          );
+        })}
     </>
   );
 }

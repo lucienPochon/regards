@@ -18,6 +18,7 @@ import { Icon } from "./icons";
 import type { ListItem } from "./mail";
 import { type Anchor, type MenuEntry, anchorOf } from "./Menu";
 import { getPrefs, usePrefs } from "./prefs";
+import { senderImages, setSenderImages } from "./smart";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 
 type Load = { state: "loading" } | { state: "ready"; detail: MessageDetail } | { state: "failed"; message: string };
@@ -279,6 +280,41 @@ function ThreadMessage({
   const { message } = entry;
   const ready = load.state === "ready" ? load.detail : null;
   const when = fullDate(message.sent_at ?? message.received_at);
+  // This sender's (or its domain's) images load: the person said so once, for all their mail.
+  const [fromSender, setFromSender] = useState<boolean | null>(null);
+  const trusted = fromSender ?? ready?.images_from_sender === true;
+  const [imagesError, setImagesError] = useState<string | null>(null);
+  const address = message.from?.address ?? null;
+  const domain = address?.includes("@") ? `@${address.split("@")[1].toLowerCase()}` : null;
+  const alwaysFrom = (who: string) => {
+    setImagesError(null);
+    setSenderImages(accountId, who, true).then(
+      () => {
+        setFromSender(true);
+        setAllowRemote(true);
+      },
+      (failure: unknown) => setImagesError(String(failure)),
+    );
+  };
+  const stopFrom = () => {
+    setImagesError(null);
+    // Allowed by address, by domain, or both: block every way it was allowed.
+    senderImages(accountId)
+      .then((allowed) =>
+        Promise.all(
+          [address?.toLowerCase(), domain]
+            .filter((who): who is string => !!who && allowed.includes(who))
+            .map((who) => setSenderImages(accountId, who, false)),
+        ),
+      )
+      .then(
+        () => {
+          setFromSender(false);
+          setAllowRemote(getPrefs().remoteImages);
+        },
+        (failure: unknown) => setImagesError(String(failure)),
+      );
+  };
 
   if (!expanded) {
     return (
@@ -313,8 +349,15 @@ function ThreadMessage({
     if (ready?.has_html) {
       extra.push({ label: showText ? "Show formatted" : "Show plain text", icon: "text", onSelect: () => setShowText(!showText) });
     }
-    if (ready?.has_html && ready.remote_images > 0 && !allowRemote) {
+    if (ready?.has_html && ready.remote_images > 0 && !allowRemote && !trusted) {
       extra.push({ label: "Load remote images", icon: "image", onSelect: () => setAllowRemote(true) });
+    }
+    if (ready?.has_html && ready.remote_images > 0 && address && !trusted) {
+      extra.push({ label: `Always load images from ${address}`, icon: "image", onSelect: () => alwaysFrom(address) });
+      if (domain) extra.push({ label: `Always load images from anyone at ${domain.slice(1)}`, icon: "image", onSelect: () => alwaysFrom(domain) });
+    }
+    if (ready?.has_html && trusted) {
+      extra.push({ label: "Stop loading images from this sender", icon: "shield", onSelect: stopFrom });
     }
     extra.push({ label: details ? "Hide details" : "Show details", icon: "info", onSelect: () => setDetails(!details) });
     const from = message.from;
@@ -372,26 +415,34 @@ function ThreadMessage({
         {load.state === "failed" && <p className="error">{load.message}</p>}
         {ready && (
           <>
-            {ready.has_html && !showText && ready.remote_images > 0 && !allowRemote && (
-              <div className="notice">
+            {ready.has_html && !showText && ready.remote_images > 0 && !allowRemote && !trusted && (
+              <div className="notice images-notice">
                 <Icon name="shield" size={16} />
                 <span>
                   {ready.remote_images} remote {ready.remote_images === 1 ? "image is" : "images are"} blocked. They
                   can tell the sender you opened this message.
                 </span>
                 <button type="button" className="btn small" onClick={() => setAllowRemote(true)}>
-                  Load images
+                  Load once
                 </button>
+                {address && (
+                  <button type="button" className="btn small" title={`Images from ${address} load from now on`} onClick={() => alwaysFrom(address)}>
+                    Always from this sender
+                  </button>
+                )}
               </div>
             )}
+            {imagesError && <p className="error">{imagesError}</p>}
             {ready.has_html && !showText ? (
               // No scripts, no same-origin access, no popups or navigation: an empty sandbox.
               <iframe
+                // Loaded again when the sender's images are allowed or blocked.
+                key={String(fromSender)}
                 className="html-body"
                 sandbox=""
                 referrerPolicy="no-referrer"
                 title="Message content"
-                src={messageHtmlUrl(message.id, allowRemote)}
+                src={messageHtmlUrl(message.id, allowRemote || fromSender === true)}
               />
             ) : (
               <pre className="text-body">{ready.text.trim() || "(no text)"}</pre>
