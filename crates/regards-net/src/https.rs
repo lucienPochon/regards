@@ -1,11 +1,13 @@
-//! A small HTTPS client, for OAuth token requests (ADR-0018) and the update
-//! check: POST a form or GET, and read the answer. HTTP/1.1, one request per
-//! connection, over the same TLS as mail (the platform's verifier, never an
-//! invalid certificate). Enough for those; not a general web client.
+//! A small HTTPS client, for OAuth token requests (ADR-0018), the update
+//! check and the assistant: POST a form or JSON, or GET, and read the
+//! answer. HTTP/1.1, one request per connection, over the same TLS as mail
+//! (the platform's verifier, never an invalid certificate). Plain HTTP only
+//! to this computer (a model server run locally). Not a general web client.
 
 use crate::{NetError, TlsOptions, connect_tls};
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::TcpStream;
 
 /// How long the whole exchange may take.
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -25,12 +27,38 @@ pub async fn post_form(url: &str, form: &[(&str, &str)], options: &TlsOptions) -
         "Content-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n",
         body.len()
     );
-    exchange("POST", url, &head, &body, options).await
+    exchange("POST", url, &head, &body, options, TIMEOUT).await
 }
 
 /// GET an `https://` URL.
 pub async fn get(url: &str, options: &TlsOptions) -> Result<HttpsResponse, NetError> {
-    exchange("GET", url, "", "", options).await
+    exchange("GET", url, "", "", options, TIMEOUT).await
+}
+
+/// POST a JSON `body` with these extra `headers`, waiting up to `wait` (an
+/// AI model can take a while). `https://` anywhere; `http://` only to this
+/// computer (`localhost`, `127.0.0.1`, `[::1]`).
+pub async fn post_json(
+    url: &str,
+    headers: &[(&str, &str)],
+    body: &str,
+    wait: Duration,
+    options: &TlsOptions,
+) -> Result<HttpsResponse, NetError> {
+    let mut head = String::new();
+    for (name, value) in headers {
+        // Nothing may end the header line: no header or request can be smuggled in.
+        let clean = |text: &str| !text.is_empty() && !text.chars().any(|c| c.is_control());
+        if !clean(name) || !clean(value) || name.contains(':') {
+            return Err(NetError::Connect(format!("a header that cannot be sent: {name}")));
+        }
+        head.push_str(&format!("{name}: {value}\r\n"));
+    }
+    head.push_str(&format!(
+        "Content-Type: application/json\r\nContent-Length: {}\r\n",
+        body.len()
+    ));
+    exchange("POST", url, &head, body, options, wait).await
 }
 
 async fn exchange(
@@ -39,9 +67,11 @@ async fn exchange(
     head: &str,
     body: &str,
     options: &TlsOptions,
+    wait: Duration,
 ) -> Result<HttpsResponse, NetError> {
-    let (host, port, path) = split_url(url)?;
-    let host_header = if port == 443 {
+    let (secure, host, port, path) = split_url(url)?;
+    let default_port = if secure { 443 } else { 80 };
+    let host_header = if port == default_port {
         host.clone()
     } else {
         format!("{host}:{port}")
@@ -51,60 +81,89 @@ async fn exchange(
          {head}Connection: close\r\n\r\n{body}"
     );
     let exchange = async {
-        let mut stream = connect_tls(&host, port, options).await?;
-        stream
-            .write_all(request.as_bytes())
-            .await
-            .map_err(|error| NetError::Connect(format!("could not send to {host}: {error}")))?;
-        stream
-            .flush()
-            .await
-            .map_err(|error| NetError::Connect(format!("could not send to {host}: {error}")))?;
-        let mut answer = Vec::new();
-        let mut chunk = [0u8; 8192];
-        loop {
-            let read = match stream.read(&mut chunk).await {
-                Ok(read) => read,
-                // Servers often end a Connection: close answer without TLS close_notify.
-                Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => 0,
-                Err(error) => return Err(NetError::Connect(format!("could not read from {host}: {error}"))),
+        if secure {
+            talk(connect_tls(&host, port, options).await?, &request, &host).await
+        } else {
+            let address = if host == "localhost" {
+                "127.0.0.1"
+            } else {
+                host.trim_matches(['[', ']'])
             };
-            if read == 0 {
-                break;
-            }
-            answer.extend_from_slice(&chunk[..read]);
-            if answer.len() > MAX_ANSWER {
-                return Err(NetError::Connect(format!("{host} answered with too much")));
-            }
+            let stream = TcpStream::connect((address, port))
+                .await
+                .map_err(|error| NetError::Connect(format!("could not reach {host}: {error}")))?;
+            talk(stream, &request, &host).await
         }
-        parse_response(&answer).ok_or_else(|| NetError::Connect(format!("{host} gave an answer that is not HTTP")))
     };
-    tokio::time::timeout(TIMEOUT, exchange)
+    tokio::time::timeout(wait, exchange)
         .await
         .map_err(|_| NetError::Timeout("HTTPS request"))?
 }
 
-/// `https://host[:port]/path?query` as its host, port and path.
-fn split_url(url: &str) -> Result<(String, u16, String), NetError> {
-    let rest = url
-        .strip_prefix("https://")
-        .ok_or_else(|| NetError::Connect(format!("not an https:// address: {url}")))?;
+/// Send the request and read the whole answer.
+async fn talk<S: AsyncRead + AsyncWrite + Unpin>(
+    mut stream: S,
+    request: &str,
+    host: &str,
+) -> Result<HttpsResponse, NetError> {
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .map_err(|error| NetError::Connect(format!("could not send to {host}: {error}")))?;
+    stream
+        .flush()
+        .await
+        .map_err(|error| NetError::Connect(format!("could not send to {host}: {error}")))?;
+    let mut answer = Vec::new();
+    let mut chunk = [0u8; 8192];
+    loop {
+        let read = match stream.read(&mut chunk).await {
+            Ok(read) => read,
+            // Servers often end a Connection: close answer without TLS close_notify.
+            Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => 0,
+            Err(error) => return Err(NetError::Connect(format!("could not read from {host}: {error}"))),
+        };
+        if read == 0 {
+            break;
+        }
+        answer.extend_from_slice(&chunk[..read]);
+        if answer.len() > MAX_ANSWER {
+            return Err(NetError::Connect(format!("{host} answered with too much")));
+        }
+    }
+    parse_response(&answer).ok_or_else(|| NetError::Connect(format!("{host} gave an answer that is not HTTP")))
+}
+
+/// `https://host[:port]/path?query` (or `http://` to this computer) as
+/// whether it is secure, its host, port and path.
+fn split_url(url: &str) -> Result<(bool, String, u16, String), NetError> {
+    let (secure, rest) = match (url.strip_prefix("https://"), url.strip_prefix("http://")) {
+        (Some(rest), _) => (true, rest),
+        (None, Some(rest)) => (false, rest),
+        (None, None) => return Err(NetError::Connect(format!("not an https:// address: {url}"))),
+    };
     let (authority, path) = match rest.find('/') {
         Some(at) => (&rest[..at], &rest[at..]),
         None => (rest, "/"),
     };
     let (host, port) = match authority.rsplit_once(':') {
-        Some((host, port)) if !host.is_empty() => (
+        Some((host, port)) if !host.is_empty() && !port.contains(']') => (
             host,
             port.parse()
                 .map_err(|_| NetError::Connect(format!("not a port: {port}")))?,
         ),
-        _ => (authority, 443),
+        _ => (authority, if secure { 443 } else { 80 }),
     };
     if host.is_empty() {
         return Err(NetError::Connect(format!("no host in {url}")));
     }
-    Ok((host.to_owned(), port, path.to_owned()))
+    // In the clear only on this computer: nothing on the way can read it.
+    if !secure && !matches!(host, "localhost" | "127.0.0.1" | "[::1]") {
+        return Err(NetError::Connect(format!(
+            "not an https:// address: {url} (plain http:// is for this computer only)"
+        )));
+    }
+    Ok((secure, host.to_owned(), port, path.to_owned()))
 }
 
 /// `a=1&b=two%20words`.
@@ -186,15 +245,28 @@ mod tests {
     fn addresses_split_into_host_port_and_path() {
         assert_eq!(
             split_url("https://login.example.test/common/oauth2/v2.0/token").unwrap(),
-            ("login.example.test".into(), 443, "/common/oauth2/v2.0/token".into())
+            (
+                true,
+                "login.example.test".into(),
+                443,
+                "/common/oauth2/v2.0/token".into()
+            )
         );
         assert_eq!(
             split_url("https://localhost:8443/token?x=1").unwrap(),
-            ("localhost".into(), 8443, "/token?x=1".into())
+            (true, "localhost".into(), 8443, "/token?x=1".into())
         );
-        assert_eq!(split_url("https://example.test").unwrap().2, "/");
+        assert_eq!(split_url("https://example.test").unwrap().3, "/");
         assert!(split_url("http://example.test/token").is_err(), "never in the clear");
         assert!(split_url("https:///token").is_err());
+        // A model server on this computer may be plain HTTP.
+        assert_eq!(
+            split_url("http://localhost:11434/v1/chat/completions").unwrap(),
+            (false, "localhost".into(), 11434, "/v1/chat/completions".into())
+        );
+        assert_eq!(split_url("http://127.0.0.1/v1").unwrap().2, 80);
+        assert!(split_url("http://192.168.1.5:8080/v1").is_err(), "not this computer");
+        assert!(split_url("http://localhost.evil.test/v1").is_err());
     }
 
     #[test]

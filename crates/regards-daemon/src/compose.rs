@@ -72,6 +72,11 @@ pub(crate) async fn create(state: &State, params: DraftCreateParams) -> Result<V
 
 /// A reply, addressed (Reply-To, sender, everyone for reply all) and quoted.
 pub(crate) async fn reply(state: &State, params: DraftReplyParams) -> Result<Value, RpcError> {
+    reply_with(state, params, "").await
+}
+
+/// A reply with `written` already in it, above the signature and the quote.
+pub(crate) async fn reply_with(state: &State, params: DraftReplyParams, written: &str) -> Result<Value, RpcError> {
     let (message, source) = crate::mail::load(state, params.message_id).await?;
     let mailbox_id = message.mailbox_id;
     let original = headers::parse(&source);
@@ -123,7 +128,7 @@ pub(crate) async fn reply(state: &State, params: DraftReplyParams) -> Result<Val
         bcc: Vec::new(),
         subject: compose::reply_subject(&original.subject),
         body: format!(
-            "{}{}",
+            "{written}{}{}",
             compose::signature_block(&identity.signature),
             compose::quote(&text, original.from.as_ref(), original.date)
         ),

@@ -637,6 +637,12 @@ const draftById = (id: number) => {
 let detailedLogs = false;
 let prefetch = false;
 let reading = { clean_links: true };
+let assistant: { kind: string | null; base_url: string | null; model: string | null; has_key: boolean } = {
+  kind: null,
+  base_url: null,
+  model: null,
+  has_key: false,
+};
 let mailApp = params.get("mailapp") === "1";
 
 /** A link as the desktop reads it: `message:5`, `hold:2`, or a mailto: link. */
@@ -807,6 +813,61 @@ function handle(cmd: string, args: Args): unknown {
     case "set_reading_settings":
       reading = args.settings as typeof reading;
       return null;
+    case "assistant_settings":
+      return assistant;
+    case "set_assistant_settings": {
+      const choice = args.settings as { kind: string | null; base_url?: string; model?: string; api_key?: string };
+      if (!choice.kind) {
+        assistant = { kind: null, base_url: null, model: null, has_key: false };
+        return assistant;
+      }
+      const anthropic = choice.kind === "anthropic";
+      const base_url = choice.base_url?.trim().replace(/\/+$/, "") || (anthropic ? "https://api.anthropic.com" : "");
+      const model = choice.model?.trim() || (anthropic ? "claude-opus-5-5" : "");
+      if (!base_url) throw new Error("an OpenAI-compatible server needs its address");
+      if (!model) throw new Error("which model should answer?");
+      const sameServer = assistant.kind === choice.kind && assistant.base_url === base_url;
+      const has_key = Boolean(choice.api_key?.trim()) || (sameServer && assistant.has_key);
+      if (anthropic && !has_key) throw new Error("an Anthropic API key is needed (from the Anthropic Console)");
+      assistant = { kind: choice.kind, base_url, model, has_key };
+      return assistant;
+    }
+    case "assistant_preview":
+    case "assistant_run": {
+      if (!assistant.kind) throw new Error("the assistant is off; choose a provider in Settings to use it");
+      const message = byId(args.messageId as number);
+      const thread = messages.filter((m) => m.thread === message.thread).slice(-8);
+      const task = args.task as { kind: "summary" } | { kind: "reply"; instructions: string };
+      if (cmd === "assistant_preview") {
+        return {
+          messages: thread.length,
+          characters: thread.reduce((sum, m) => sum + Math.min(m.text.length, 8000), 0),
+          left_out: 0,
+          destination: (assistant.base_url ?? "").replace(/^https?:\/\//, "").split("/")[0],
+          model: assistant.model,
+        };
+      }
+      // A model takes a moment.
+      const later = (result: unknown) => new Promise((resolve) => window.setTimeout(() => resolve(result), 900));
+      const from = message.from.name ?? message.from.address ?? "They";
+      if (task.kind === "summary") {
+        return later({
+          text: `${from} writes about “${message.subject}”. (A sample summary: the preview sends nothing to a model.)`,
+          draft: null,
+        });
+      }
+      const text = task.instructions.trim()
+        ? `Thanks, ${from.split(" ")[0]}. ${task.instructions.trim()}.`
+        : `Thanks, ${from.split(" ")[0]}. That works for me.`;
+      const owner = accountOfMailbox(message.mailboxId);
+      const draft = newDraftFor(owner?.account.id ?? "", {
+        to: [message.from],
+        subject: message.subject.startsWith("Re:") ? message.subject : `Re: ${message.subject}`,
+        body: `${text}${quote(message)}`,
+        replying_to: message.id,
+      });
+      return later({ text, draft });
+    }
     case "prefetch_get":
       return prefetch;
     case "prefetch_set":

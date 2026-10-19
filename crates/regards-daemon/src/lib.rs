@@ -7,6 +7,7 @@
 mod access;
 mod accounts;
 mod actions;
+mod assistant;
 mod audit;
 mod backfill;
 mod compose;

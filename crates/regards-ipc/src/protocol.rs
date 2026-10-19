@@ -2,6 +2,7 @@
 
 use crate::token::UiToken;
 pub use regards_core::agents::Access as AgentAccess;
+pub use regards_core::assistant::{Kind as AssistantKind, Task as AssistantTask};
 use regards_core::body::Attachment;
 pub use regards_core::compose::{AutoCopy, CopyKind, SendCheck};
 pub use regards_core::executor::Executor;
@@ -183,6 +184,15 @@ pub mod methods {
     pub const PREFETCH_GET: &str = "prefetch.get";
     /// Download recent inbox mail ahead, or not; on starts at once. `ui` only.
     pub const PREFETCH_SET: &str = "prefetch.set";
+    /// The assistant (ADR-0015 §5): which AI model, if any, with the person's
+    /// own key: [`AssistantSettings`]. `ui` only, like the three below.
+    pub const ASSISTANT_SETTINGS: &str = "assistant.settings";
+    /// Choose the assistant's provider, model and key, or turn it off.
+    pub const ASSISTANT_SET_SETTINGS: &str = "assistant.set_settings";
+    /// What a task would send, and where, before it is sent.
+    pub const ASSISTANT_PREVIEW: &str = "assistant.preview";
+    /// Do a task: a conversation's summary, or a reply drafted (never sent).
+    pub const ASSISTANT_RUN: &str = "assistant.run";
     /// New mail not told of yet (plan §5.12): what came into an inbox since
     /// sync last looked, still unread, oldest first. `ui` only.
     pub const MAIL_ARRIVED: &str = "mail.arrived";
@@ -258,6 +268,9 @@ pub mod codes {
     /// A sign-in with a provider did not complete. `data.reason` is an
     /// [`OauthFailure`](super::OauthFailure).
     pub const OAUTH_FAILED: i32 = -32016;
+    /// The assistant's provider could not be reached, refused the key, was
+    /// busy or declined: the message says which.
+    pub const ASSISTANT_FAILED: i32 = -32017;
 }
 
 /// A client request.
@@ -1635,6 +1648,73 @@ pub struct ReadingSettings {
     /// Links in messages lose their tracking parameters (`utm_…`, `fbclid`
     /// …) before they can be opened (ADR-0015 §4). On by default.
     pub clean_links: bool,
+}
+
+/// The result of [`methods::ASSISTANT_SETTINGS`] and
+/// [`methods::ASSISTANT_SET_SETTINGS`]. The key never comes back.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssistantSettings {
+    /// `None`: off (the default). Nothing is ever sent then.
+    pub kind: Option<AssistantKind>,
+    /// Where requests go: `https://api.anthropic.com`, or an OpenAI-compatible
+    /// server's base (`https://…/v1`, `http://localhost:11434/v1`).
+    pub base_url: Option<String>,
+    pub model: Option<String>,
+    /// A key is kept in the system's credential store.
+    pub has_key: bool,
+}
+
+/// Parameters of [`methods::ASSISTANT_SET_SETTINGS`].
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AssistantSetSettingsParams {
+    /// `None` turns the assistant off and forgets the key.
+    pub kind: Option<AssistantKind>,
+    /// The provider's own when omitted (Anthropic); needed otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    /// The provider's suggested model when omitted (Anthropic); needed otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// A new key. Omitted: the one kept stays. A server on this computer may need none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<Secret>,
+}
+
+/// Parameters of [`methods::ASSISTANT_PREVIEW`] and [`methods::ASSISTANT_RUN`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssistantParams {
+    /// A message of the conversation; a reply answers this one.
+    pub message_id: i64,
+    pub task: AssistantTask,
+    /// A reply to everyone, not just the sender.
+    #[serde(default)]
+    pub all: bool,
+}
+
+/// The result of [`methods::ASSISTANT_PREVIEW`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssistantPreview {
+    /// Messages of the conversation that would be sent: the latest.
+    pub messages: u32,
+    /// Characters of their text, together.
+    pub characters: u32,
+    /// Messages left out because they look like they carry a sign-in or
+    /// verification code.
+    pub left_out: u32,
+    /// The host that would get them (`api.anthropic.com`, `localhost` …).
+    pub destination: String,
+    pub model: String,
+}
+
+/// The result of [`methods::ASSISTANT_RUN`]: text written by a model, to
+/// read and check, never followed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssistantResult {
+    /// The summary, or the reply's text.
+    pub text: String,
+    /// For a reply: the draft it was written into, above the signature and
+    /// the quoted message, to review and send (or not).
+    pub draft: Option<DraftView>,
 }
 
 /// Parameters of [`methods::PREFETCH_SET`], and the result of both.
