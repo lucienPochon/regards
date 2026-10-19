@@ -2,9 +2,12 @@ import { type KeyboardEvent, Suspense, lazy, useCallback, useEffect, useRef, use
 import {
   type Draft,
   type Queued,
+  attachDropped,
   attachFiles,
   deleteDraft,
   detachFile,
+  onFilesDrag,
+  onFilesDropped,
   formatRecipients,
   getDraft,
   invalidAddresses,
@@ -82,6 +85,8 @@ export function Composer({
   // Who it can go out from, and a new editor when that changes the text.
   const [identities, setIdentities] = useState<Identity[]>([]);
   const [editorKey, setEditorKey] = useState(0);
+  /** Files are dragged over the window: dropped, they are attached. */
+  const [dragging, setDragging] = useState(false);
   const saved = useRef<string>("");
   const timer = useRef<number | undefined>(undefined);
   const toField = useRef<HTMLInputElement>(null);
@@ -269,6 +274,36 @@ export function Composer({
     }
   };
 
+  // Files dropped on the window are attached to this draft.
+  const openDraft = draft?.id;
+  const frozen = draft?.sending ?? false;
+  useEffect(() => {
+    if (openDraft === undefined) return;
+    let gone = false;
+    const unlisten = [
+      onFilesDrag((over) => !gone && setDragging(over)),
+      onFilesDropped((dropped) => {
+        if (gone) return;
+        setDragging(false);
+        if (frozen) {
+          setError("This message is being sent. Undo it first to attach files.");
+          return;
+        }
+        setError(null);
+        attachDropped(openDraft, dropped.id)
+          .then(({ draft: updated, refused }) => {
+            if (updated) setDraft(updated);
+            if (refused.length) setError(refused.map((file) => `${file.name}: ${file.error}`).join("\n"));
+          })
+          .catch((failure) => setError(String(failure)));
+      }),
+    ];
+    return () => {
+      gone = true;
+      for (const stop of unlisten) void stop.then((off) => off());
+    };
+  }, [openDraft, frozen]);
+
   const detach = async (attachmentId: number) => {
     if (!draft) return;
     try {
@@ -401,7 +436,18 @@ export function Composer({
   );
 
   return (
-    <section className={`composer ${mode}`} role="dialog" aria-label={mode === "panel" ? "Reply" : "New message"} onKeyDown={keys} onKeyDownCapture={escape}>
+    <section
+      className={`composer ${mode}${dragging ? " dropping" : ""}`}
+      role="dialog"
+      aria-label={mode === "panel" ? "Reply" : "New message"}
+      onKeyDown={keys}
+      onKeyDownCapture={escape}
+    >
+      {dragging && (
+        <div className="composer-drop" aria-hidden>
+          Drop to attach
+        </div>
+      )}
       <div className="composer-top">
         <div className="segmented">
           <button type="button" title="Close (Esc). The draft is kept." aria-label="Close" onClick={() => void close()}>

@@ -12,6 +12,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod background;
+mod drops;
 mod links;
 mod mail_frame;
 mod notify;
@@ -962,6 +963,7 @@ fn main() {
         .manage(notify::Notifier::default())
         .manage(Bridge::new())
         .manage(links::Pending::default())
+        .manage(drops::Drops::default())
         .manage(background::Background::load(DataDirs::resolve().ok().as_ref()))
         .register_asynchronous_uri_scheme_protocol(mail_frame::SCHEME, mail_frame::handle)
         .setup(|app| {
@@ -981,6 +983,10 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // Files dropped to attach: the paths stay on this side.
+            if let WindowEvent::DragDrop(drop) = event {
+                drops::on_window(window, drop);
+            }
             // In background mode, closing the window leaves Regards in the tray.
             if let WindowEvent::CloseRequested { api, .. } = event
                 && window.state::<background::Background>().on()
@@ -994,6 +1000,7 @@ fn main() {
             daemon_status,
             app_quit,
             links::link_take,
+            drops::draft_attach_dropped,
             background_get,
             background_set,
             notifications_get,

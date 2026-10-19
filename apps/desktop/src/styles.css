@@ -2357,10 +2357,30 @@ button.list-title:hover {
 /* ---------- Composer: the whole pane, or a panel over the conversation ---------- */
 
 .composer {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
   background: var(--bg-elev);
+}
+
+/* Files dragged over the window: dropped, they are attached. */
+.composer.dropping {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+}
+
+.composer-drop {
+  position: absolute;
+  inset: 6px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+  pointer-events: none;
 }
 
 .composer.full {
@@ -2533,6 +2553,7 @@ button.list-title:hover {
 .composer-note {
   padding: 6px 80px 0;
   font-size: 12.5px;
+  white-space: pre-line;
 }
 
 .panel .composer-note {
