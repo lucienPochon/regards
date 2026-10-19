@@ -571,7 +571,8 @@ function handle(cmd: string, args: Args): unknown {
         decided_at: Date.now(),
         result: approved
           ? hold.reason === "sending"
-            ? { outbox_id: 777, undo_until: Date.now() + 10_000, send_at: null }
+            ? // `?scheduled=1`: the agent asked to send it in an hour.
+              { outbox_id: 777, undo_until: Date.now() + 10_000, send_at: params.get("scheduled") ? Date.now() + 3_600_000 : null }
             : { moved: 120, undo: { id: 9003, description: "Archive 120 messages" } }
           : null,
       };

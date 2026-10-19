@@ -156,16 +156,34 @@ function HoldCard({ hold, email, onDecided }: { hold: Hold; email: string | null
   );
 }
 
-/** How a hold decided here went, with its undo while it lasts (a send's, or a change's). */
+/**
+ * How a hold decided here went, with a way back while there is one: a
+ * send's undo while it lasts (the agent may have set none), a scheduled
+ * send's "take back" until it goes, or a change's undo.
+ */
 function Outcome({ hold, onDismiss }: { hold: Hold; onDismiss: () => void }) {
   const [undone, setUndone] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const result = (hold.result ?? {}) as { outbox_id?: unknown; undo_until?: unknown; undo?: { id?: unknown } | null };
-  const sendUndo =
-    typeof result.outbox_id === "number" && typeof result.undo_until === "number" && result.undo_until > Date.now()
-      ? result.outbox_id
-      : null;
+  const [now, setNow] = useState(() => Date.now());
+  const result = (hold.result ?? {}) as {
+    outbox_id?: unknown;
+    undo_until?: unknown;
+    send_at?: unknown;
+    undo?: { id?: unknown } | null;
+  };
+  const outbox = typeof result.outbox_id === "number" ? result.outbox_id : null;
+  const undoUntil = typeof result.undo_until === "number" ? result.undo_until : 0;
+  const sendAt = typeof result.send_at === "number" ? result.send_at : null;
+  const scheduled = outbox !== null && sendAt !== null && sendAt > now;
+  const sendUndo = outbox !== null && (scheduled || undoUntil > now) ? outbox : null;
   const changeUndo = typeof result.undo?.id === "number" ? result.undo.id : null;
+  // Look again when the way back ends, so no dead button stays.
+  useEffect(() => {
+    const ends = scheduled ? (sendAt ?? 0) : undoUntil;
+    if (outbox === null || ends <= now) return;
+    const timer = window.setTimeout(() => setNow(Date.now()), Math.min(ends - now + 50, 2 ** 31 - 1));
+    return () => window.clearTimeout(timer);
+  }, [outbox, scheduled, sendAt, undoUntil, now]);
   const undo = () => {
     setProblem(null);
     const work = sendUndo !== null ? undoSend(sendUndo).then(() => "Taken back: the message is in Drafts.") : applyUndo(changeUndo ?? 0).then(() => "Undone.");
@@ -174,7 +192,9 @@ function Outcome({ hold, onDismiss }: { hold: Hold; onDismiss: () => void }) {
   const said =
     hold.status === "approved"
       ? hold.reason === "sending"
-        ? "Sent to the Outbox."
+        ? sendAt !== null && sendAt > Date.now()
+          ? `Scheduled for ${fullDate(sendAt)}.`
+          : "Sent to the Outbox."
         : "Done."
       : hold.status === "rejected"
         ? "Rejected: nothing was done."
@@ -194,7 +214,7 @@ function Outcome({ hold, onDismiss }: { hold: Hold; onDismiss: () => void }) {
         </span>
         {!undone && hold.status === "approved" && (sendUndo !== null || changeUndo !== null) && (
           <button type="button" className="activity-undo" onClick={undo}>
-            {sendUndo !== null ? "Undo send" : "Undo"}
+            {sendUndo !== null ? (scheduled ? "Take back" : "Undo send") : "Undo"}
           </button>
         )}
         <button type="button" className="icon-btn small" title="Dismiss" aria-label="Dismiss" onClick={onDismiss}>
