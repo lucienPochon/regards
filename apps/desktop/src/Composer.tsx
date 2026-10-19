@@ -1,3 +1,4 @@
+import type { Editor } from "@tiptap/core";
 import { type KeyboardEvent, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import {
   type Draft,
@@ -20,6 +21,7 @@ import {
   textToHtml,
 } from "./compose";
 import { type Identity, listIdentities } from "./identities";
+import { IMAGE_TYPES, attachImage, draftImages, fileBase64, insertImage, toEditorHtml, toStoredHtml } from "./images";
 import type { Template } from "./templates";
 import { fileKind, fileSize, laterDate } from "./format";
 import { Icon } from "./icons";
@@ -85,20 +87,28 @@ export function Composer({
   /** Files are dragged over the window: dropped, they are attached. */
   const [dragging, setDragging] = useState(false);
   const saved = useRef<string>("");
+  /** The editor, to put images in. */
+  const editor = useRef<Editor | null>(null);
+  const keepEditor = useCallback((instance: Editor) => {
+    editor.current = instance;
+  }, []);
   const timer = useRef<number | undefined>(undefined);
   const toField = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let current = true;
     getDraft(draftId)
-      .then((loaded) => {
+      .then(async (loaded) => {
+        // Images in the text are shown from their bytes while writing.
+        let html = loaded.html ?? textToHtml(loaded.body);
+        if (html.includes('src="cid:')) html = toEditorHtml(html, await draftImages(loaded.id));
         if (!current) return;
         const initial: Fields = {
           to: formatRecipients(loaded.to),
           cc: formatRecipients(loaded.cc),
           bcc: formatRecipients(loaded.bcc),
           subject: loaded.subject,
-          html: loaded.html ?? textToHtml(loaded.body),
+          html,
         };
         saved.current = JSON.stringify(initial);
         setDraft(loaded);
@@ -156,7 +166,7 @@ export function Composer({
         bcc: parseRecipients(fields.bcc),
         subject: fields.subject,
         body: "",
-        html: fields.html,
+        html: toStoredHtml(fields.html),
       });
       saved.current = snapshot;
       setStatus("Saved");
@@ -279,9 +289,22 @@ export function Composer({
           return;
         }
         setError(null);
-        attachDropped(openDraft, dropped.id)
-          .then(({ draft: updated, refused }) => {
-            if (updated) setDraft(updated);
+        // Images dropped on the text go in it; anything else beside it.
+        const onText = document.elementFromPoint(dropped.x, dropped.y)?.closest(".compose-body") != null;
+        const inline = onText && editor.current != null && dropped.files.every((file) => file.image);
+        attachDropped(openDraft, dropped.id, inline)
+          .then(async ({ draft: updated, refused }) => {
+            if (updated) {
+              setDraft(updated);
+              if (inline && editor.current) {
+                const shown = new Set(
+                  [...editor.current.getHTML().matchAll(/data-cid="([^"]+)"/g)].map((found) => found[1]),
+                );
+                for (const image of await draftImages(openDraft)) {
+                  if (!shown.has(image.content_id)) insertImage(editor.current, image);
+                }
+              }
+            }
             if (refused.length) setError(refused.map((file) => `${file.name}: ${file.error}`).join("\n"));
           })
           .catch((failure) => setError(String(failure)));
@@ -292,6 +315,27 @@ export function Composer({
       for (const stop of unlisten) void stop.then((off) => off());
     };
   }, [openDraft, frozen]);
+
+  /** Pasted images: stored, then put in the text. */
+  const pasteImages = useCallback(
+    async (files: File[]) => {
+      if (!draft || draft.sending) return;
+      setError(null);
+      for (const file of files) {
+        if (!IMAGE_TYPES.includes(file.type)) continue;
+        try {
+          const data = await fileBase64(file);
+          const name = file.name || `image.${file.type.split("/")[1]}`;
+          const stored = await attachImage(draft.id, { name, mime: file.type, data });
+          setDraft(stored.draft);
+          if (editor.current) insertImage(editor.current, { content_id: stored.content_id, mime: file.type, data });
+        } catch (failure) {
+          setError(String(failure));
+        }
+      }
+    },
+    [draft],
+  );
 
   const detach = async (attachmentId: number) => {
     if (!draft) return;
@@ -327,7 +371,9 @@ export function Composer({
 
   const locked = Boolean(draft?.sending) || busy;
   const hasRecipients = fields ? `${fields.to}${fields.cc}${fields.bcc}`.trim().length > 0 : false;
-  const total = draft?.attachments.reduce((sum, file) => sum + file.size, 0) ?? 0;
+  // Images in the text are shown there, not as files.
+  const files = draft?.attachments.filter((file) => !file.content_id) ?? [];
+  const total = files.reduce((sum, file) => sum + file.size, 0);
 
   const tools = (
     <div className="composer-tools">
@@ -484,21 +530,23 @@ export function Composer({
                   setFields((current) => (current ? { ...current, html } : current));
                 }}
                 onSend={() => void send()}
+                onImages={(pasted) => void pasteImages(pasted)}
+                onEditor={keepEditor}
                 disabled={locked}
                 autofocus={!needsAddress}
               />
             </Suspense>
-            {draft && draft.attachments.length > 0 && (
+            {draft && files.length > 0 && (
               <div className="attachments">
                 <p className="attachments-head">
                   <Icon name="paperclip" size={15} />
                   <strong>
-                    {draft.attachments.length} {draft.attachments.length === 1 ? "attachment" : "attachments"}
+                    {files.length} {files.length === 1 ? "attachment" : "attachments"}
                   </strong>
                   <span className="muted">{fileSize(total)}</span>
                 </p>
                 <ul className="tiles" aria-label="Attachments">
-                  {draft.attachments.map((file) => (
+                  {files.map((file) => (
                     <li key={file.id} className="tile">
                       <span className="tile-face">{fileKind(file.name, file.mime)}</span>
                       <span className="tile-name" title={file.name}>

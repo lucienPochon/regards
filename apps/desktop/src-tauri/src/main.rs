@@ -23,15 +23,16 @@ use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, AgentAccess, AgentAccessParams,
     AgentActivityParams, AgentActivityResult, AsideParams, ClientKind, ConnectionSecurity, DeleteResult,
-    DraftAttachFileParams, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult, DraftRef,
-    DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
-    ExplainResult, HoldListParams, HoldListResult, HoldRef, HoldView, IdentityListResult, IdentityRef,
-    IdentitySaveParams, IdentityView, MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds,
-    MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult, OutboxListResult, OutboxRef,
-    OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams, Screening, ScreeningParams,
-    SearchParams, SearchResult, Section, SenderBlockParams, SenderSetParams, SenderSetResult, ServerSearchResult,
-    ServerSettings, SetFlagsParams, SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult,
-    TemplateRef, TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
+    DraftAttachFileParams, DraftAttachImageParams, DraftCreateParams, DraftDetachParams, DraftImageAttached,
+    DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult,
+    DraftSetFromParams, DraftUpdateParams, DraftView, ExplainResult, HoldListParams, HoldListResult, HoldRef, HoldView,
+    IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView, MailboxListResult, MarkResult, MessageCursor,
+    MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult,
+    OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams,
+    Screening, ScreeningParams, SearchParams, SearchResult, Section, SenderBlockParams, SenderSetParams,
+    SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SmartOverviewResult,
+    SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView,
+    UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -659,6 +660,7 @@ async fn draft_attach_files(
                 DraftAttachFileParams {
                     draft_id,
                     path: path.to_string_lossy().into_owned(),
+                    inline: false,
                 },
             )
             .await
@@ -666,6 +668,40 @@ async fn draft_attach_files(
         latest = Some(draft);
     }
     Ok(latest)
+}
+
+/// Put an image in a draft's text (pasted): its Content-ID, and the draft.
+#[tauri::command]
+async fn draft_attach_image(
+    bridge: State<'_, Bridge>,
+    draft_id: i64,
+    name: String,
+    mime: String,
+    data: String,
+) -> Result<DraftImageAttached, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::DRAFT_ATTACH_IMAGE,
+            DraftAttachImageParams {
+                draft_id,
+                name,
+                mime,
+                data,
+            },
+        )
+        .await
+        .map_err(describe)
+}
+
+/// The images in a draft's text, to show while writing.
+#[tauri::command]
+async fn draft_images(bridge: State<'_, Bridge>, draft_id: i64) -> Result<DraftImagesResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::DRAFT_IMAGES, DraftRef { id: draft_id })
+        .await
+        .map_err(describe)
 }
 
 #[tauri::command]
@@ -1044,6 +1080,8 @@ fn main() {
             draft_list,
             draft_attach_files,
             draft_detach,
+            draft_attach_image,
+            draft_images,
             draft_update,
             draft_delete,
             draft_set_from,

@@ -94,10 +94,11 @@ pub fn render(raw: &[u8], allow_remote: bool, links: Option<&str>) -> Option<Ren
 }
 
 /// Formatting a message written in Regards may carry: text styles, lists,
-/// quotes, headings and web or mail links. Everything else (scripts, styles,
-/// images, frames, forms, event handlers) is removed before sending.
+/// quotes, headings, web or mail links, and its own images (`cid:`, sent
+/// with it). Everything else (scripts, styles, images from the web, frames,
+/// forms, event handlers) is removed before sending.
 pub fn sanitize_outgoing(html: &str) -> String {
-    Builder::empty()
+    let clean = Builder::empty()
         .add_tags([
             "p",
             "br",
@@ -118,14 +119,41 @@ pub fn sanitize_outgoing(html: &str) -> String {
             "h2",
             "h3",
             "hr",
+            "img",
         ])
         .add_tag_attributes("a", ["href"])
-        .add_url_schemes(["http", "https", "mailto"])
+        .add_tag_attributes("img", ["src", "alt"])
+        .add_url_schemes(["http", "https", "mailto", "cid"])
+        // An image is one of the message's own, never fetched from the web.
+        .attribute_filter(|element, attribute, value| match (element, attribute) {
+            ("img", "src") if !value.starts_with("cid:") => None,
+            ("a", "href") if value.starts_with("cid:") => None,
+            _ => Some(value.into()),
+        })
         .url_relative(UrlRelative::Deny)
         .link_rel(None)
         .strip_comments(true)
         .clean(html)
-        .to_string()
+        .to_string();
+    without_empty_images(&clean)
+}
+
+/// Images left without a source (it was from the web) are taken out. The
+/// sanitiser's output is regular: attributes quoted, tags well formed.
+fn without_empty_images(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(at) = rest.find("<img") {
+        out.push_str(&rest[..at]);
+        let tag_end = rest[at..].find('>').map_or(rest.len(), |end| at + end + 1);
+        let tag = &rest[at..tag_end];
+        if tag.contains(" src=\"") {
+            out.push_str(tag);
+        }
+        rest = &rest[tag_end..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// The plain-text version of written HTML, for the `text/plain` part.
@@ -273,6 +301,18 @@ pub fn percent_encode(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_message_carries_its_own_images_never_ones_from_the_web() {
+        let written = r#"<p>Hi <img src="cid:lake@regards" alt="Lake"><img src="https://tracker.example/p.gif"><img src="data:image/png;base64,AAAA"> <a href="cid:x">x</a></p>"#;
+        let clean = sanitize_outgoing(written);
+        assert!(clean.contains(r#"<img src="cid:lake@regards" alt="Lake">"#), "{clean}");
+        assert!(
+            !clean.contains("tracker.example") && !clean.contains("data:"),
+            "{clean}"
+        );
+        assert!(!clean.contains("href=\"cid:"), "{clean}");
+    }
 
     fn clean(html: &str, allow_remote: bool) -> (String, usize) {
         sanitize(html, allow_remote, &HashMap::new(), None)

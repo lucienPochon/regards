@@ -2145,6 +2145,17 @@ button.list-title:hover {
   overflow-wrap: anywhere;
 }
 
+/* Images in the text: within the page; a chosen one outlined. */
+.compose-body img {
+  max-width: 100%;
+  height: auto;
+  vertical-align: bottom;
+}
+
+.compose-body img.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+}
+
 .compose-body p {
   margin: 0 0 0.6em;
 }

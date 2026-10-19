@@ -33,6 +33,9 @@ pub(crate) struct DroppedFile {
 struct Dropped {
     id: u64,
     files: Vec<DroppedFile>,
+    /// Where in the window, in CSS pixels: on the text, images go in it.
+    x: f64,
+    y: f64,
 }
 
 /// What attaching a drop gave: the draft as it now is, and what could not be attached.
@@ -72,7 +75,8 @@ pub(crate) fn on_window(window: &Window, event: &DragDropEvent) {
         DragDropEvent::Leave => {
             let _ = window.emit("files_drag", serde_json::json!({ "over": false }));
         }
-        DragDropEvent::Drop { paths, .. } => {
+        DragDropEvent::Drop { paths, position } => {
+            let at = position.to_logical::<f64>(window.scale_factor().unwrap_or(1.0));
             let _ = window.emit("files_drag", serde_json::json!({ "over": false }));
             let files: Vec<DroppedFile> = paths
                 .iter()
@@ -90,19 +94,29 @@ pub(crate) fn on_window(window: &Window, event: &DragDropEvent) {
             let excess = kept.1.len().saturating_sub(KEPT);
             kept.1.drain(..excess);
             drop(kept);
-            let _ = window.emit("files_dropped", Dropped { id, files });
+            let _ = window.emit(
+                "files_dropped",
+                Dropped {
+                    id,
+                    files,
+                    x: at.x,
+                    y: at.y,
+                },
+            );
         }
         _ => {}
     }
 }
 
-/// Attach the files of a drop to a draft (once: the drop is then forgotten).
+/// Attach the files of a drop to a draft (once: the drop is then forgotten),
+/// with `inline` as images in its text.
 #[tauri::command]
 pub(crate) async fn draft_attach_dropped(
     bridge: State<'_, Bridge>,
     drops: State<'_, Drops>,
     draft_id: i64,
     drop_id: u64,
+    inline: Option<bool>,
 ) -> Result<Attached, String> {
     let paths = {
         let mut kept = drops.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -122,6 +136,7 @@ pub(crate) async fn draft_attach_dropped(
         let params = DraftAttachFileParams {
             draft_id,
             path: path.to_string_lossy().into_owned(),
+            inline: inline.unwrap_or(false),
         };
         match client.call::<_, DraftView>(methods::DRAFT_ATTACH_FILE, params).await {
             Ok(draft) => attached.draft = Some(draft),

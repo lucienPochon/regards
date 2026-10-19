@@ -370,6 +370,14 @@ impl Session {
                 self.require_ui()?;
                 identities::make_default(&self.state, params(request)?).await
             }
+            methods::DRAFT_ATTACH_IMAGE => {
+                self.require_ui()?;
+                compose::attach_image(&self.state, params(request)?).await
+            }
+            methods::DRAFT_IMAGES => {
+                self.require_ui()?;
+                compose::images(&self.state, params(request)?).await
+            }
             methods::DRAFT_SET_FROM => {
                 let params: DraftSetFromParams = params(request)?;
                 self.allow_draft(Access::Triage, params.id).await?;

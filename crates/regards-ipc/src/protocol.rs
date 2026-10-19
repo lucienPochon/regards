@@ -116,6 +116,11 @@ pub mod methods {
     /// Add a template (without `id`) or change one.
     pub const TEMPLATE_SAVE: &str = "template.save";
     pub const TEMPLATE_REMOVE: &str = "template.remove";
+    /// Put an image in a draft's text (pasted, say): stored with a
+    /// Content-ID, which the HTML refers to as `cid:`. `ui` only.
+    pub const DRAFT_ATTACH_IMAGE: &str = "draft.attach_image";
+    /// The images in a draft's text, to show while writing. `ui` only.
+    pub const DRAFT_IMAGES: &str = "draft.images";
     /// Send a draft from another of its account's identities; the signature
     /// in a plain-text draft is swapped for the new one's.
     pub const DRAFT_SET_FROM: &str = "draft.set_from";
@@ -1027,6 +1032,42 @@ pub struct DraftAttachment {
     pub name: String,
     pub mime: String,
     pub size: u64,
+    /// An image in the text: the draft's HTML refers to it as `cid:<content_id>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_id: Option<String>,
+}
+
+/// Parameters of [`methods::DRAFT_ATTACH_IMAGE`]: an image put in the text
+/// (pasted, say), as its bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftAttachImageParams {
+    pub draft_id: i64,
+    pub name: String,
+    /// image/png, image/jpeg, image/gif or image/webp.
+    pub mime: String,
+    /// The bytes, base64.
+    pub data: String,
+}
+
+/// What [`methods::DRAFT_ATTACH_IMAGE`] gives: the image's Content-ID, and the draft.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftImageAttached {
+    pub content_id: String,
+    pub draft: DraftView,
+}
+
+/// What [`methods::DRAFT_IMAGES`] gives: the images in a draft's text, to show while writing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftImagesResult {
+    pub images: Vec<DraftImage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftImage {
+    pub content_id: String,
+    pub mime: String,
+    /// The bytes, base64.
+    pub data: String,
 }
 
 /// Parameters of [`methods::DRAFT_ATTACH_FILE`].
@@ -1035,6 +1076,9 @@ pub struct DraftAttachFileParams {
     pub draft_id: i64,
     /// An absolute path to a file the user chose.
     pub path: String,
+    /// An image to put in the text rather than beside it.
+    #[serde(default)]
+    pub inline: bool,
 }
 
 /// Parameters of [`methods::DRAFT_DETACH`].

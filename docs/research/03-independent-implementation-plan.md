@@ -369,7 +369,11 @@ flowchart LR
     - **Drafts from webmail or another device** are listed (`draft.elsewhere`) and picked up (`draft.adopt`).
     - **Servers without UIDPLUS:** drafts stay on the device.
 - **Dropping files onto the composer** (2026-10-19): the system's drop reaches the app's Rust side with the paths, which stay there. The UI learns names and sizes, and attaches a drop to the open draft by its id (`draft_attach_dropped`), as the file picker does: the WebView never handles a path (ADR-0006 §4). Files that cannot be attached (a folder, over 25 MB) are named, with why.
-- **Still to come in Phase 2:** checking the HTML in major clients (the acceptance test), and inline images.
+- **Images in the text** (2026-10-19): pasted, or dropped on the text. Each is a draft attachment with a Content-ID (migration 0027), PNG, JPEG, GIF or WebP, at most 5 MB, 10 MB in all.
+  - The draft's HTML refers to it as `<img src="cid:…">`. The editor shows it from its bytes, and the two are turned into each other on opening and saving.
+  - Sent, it goes with the HTML as `multipart/related`. The outgoing sanitiser keeps only `cid:` images, never images from the web.
+  - An image taken out of the text is not sent, and leaves the draft once it has been there a minute: a save begun before it was put in does not have it yet.
+- **Still to come in Phase 2:** checking the HTML in major clients (the acceptance test).
 
 ### 5.10 Search (P0 keyword, P2 semantic, 1.0)
 

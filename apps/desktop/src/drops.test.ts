@@ -8,7 +8,7 @@ describe("dropped files", () => {
   it("are attached by the drop's id, never by a path", async () => {
     invoke.mockResolvedValueOnce({ draft: null, refused: [{ name: "folder", error: "that is not a file" }] });
     const attached = await attachDropped(7, 3);
-    expect(invoke).toHaveBeenLastCalledWith("draft_attach_dropped", { draftId: 7, dropId: 3 });
+    expect(invoke).toHaveBeenLastCalledWith("draft_attach_dropped", { draftId: 7, dropId: 3, inline: false });
     expect(attached.refused[0].name).toBe("folder");
   });
 });
