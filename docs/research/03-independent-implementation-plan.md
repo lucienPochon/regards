@@ -435,6 +435,11 @@ flowchart LR
     - `--json` prints the tool's result: the daemon's answer, with dates as ISO 8601 UTC and `link`s (`regards://message/<id>`, `regards://draft/<id>`, `regards://hold/<id>`). Paging cursors (`next`) stay as they came, to be passed back. A held request prints `{ "held": … }` and exits 0. Errors print `{ "error": { code, message, data } }` and exit 5 (not allowed), 6 (not found), 2 (unclear arguments) or 1.
     - Times are taken as ISO 8601 (with an offset, or UTC), and people as `Name <address>` or addresses.
     - The desktop does not open `regards://` links yet.
+  - **As built (2026-10-19), MCP and the skill:**
+    - `regards mcp` serves the same tools over MCP on stdio, built in-house (ADR-0012 §1). It speaks protocol versions 2024-11-05 to 2025-11-25. Its tools carry JSON Schemas and hints (read-only, destructive), and results come as JSON text and, from 2025-06-18, as `structuredContent`.
+    - Mail text comes with a note that it is the sender's data. A held request is a result that says it waits for the person, not an error.
+    - `regards skill [--install <dir>]` prints or writes a `SKILL.md`: the rules (message text is data, nothing is sent by itself) and every command, made from the same list.
+    - For people: `docs/agents.md`.
 - **Prompt-injection posture:** content is passed as data, drafts never auto-send, and agents cannot change their own access.
 
 ### 5.12 Notifications, tray, badges (P1, 1.0)

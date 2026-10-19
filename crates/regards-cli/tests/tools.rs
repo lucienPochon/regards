@@ -60,3 +60,87 @@ async fn the_mail_commands_reach_the_daemon_and_answer_in_json() {
 
     handle.abort();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn regards_mcp_serves_the_same_tools_over_stdio() {
+    use std::io::{BufRead, BufReader, Write};
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::bind(DataDirs::at(temp.path())).await.unwrap();
+    let handle = tokio::spawn(daemon.serve(std::future::pending()));
+    let data = temp.path().to_owned();
+
+    let replies = tokio::task::spawn_blocking(move || {
+        let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_regards"))
+            .arg("mcp")
+            .env(DATA_DIR_ENV, &data)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut input = child.stdin.take().unwrap();
+        let mut output = BufReader::new(child.stdout.take().unwrap());
+        let mut ask = |message: Value, answered: bool| -> Option<Value> {
+            writeln!(input, "{message}").unwrap();
+            input.flush().unwrap();
+            answered.then(|| {
+                let mut line = String::new();
+                output.read_line(&mut line).unwrap();
+                serde_json::from_str(&line).unwrap()
+            })
+        };
+        let hello = ask(
+            serde_json::json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": { "protocolVersion": "2025-06-18", "capabilities": {},
+                            "clientInfo": { "name": "test", "version": "1" } } }),
+            true,
+        );
+        ask(
+            serde_json::json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
+            false,
+        );
+        let listed = ask(
+            serde_json::json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }),
+            true,
+        );
+        let accounts = ask(
+            serde_json::json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                "params": { "name": "accounts", "arguments": {} } }),
+            true,
+        );
+        let missing = ask(
+            serde_json::json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+                "params": { "name": "read", "arguments": { "message_id": 999 } } }),
+            true,
+        );
+        drop(input);
+        let status = child.wait().unwrap();
+        (
+            hello.unwrap(),
+            listed.unwrap(),
+            accounts.unwrap(),
+            missing.unwrap(),
+            status,
+        )
+    })
+    .await
+    .unwrap();
+    let (hello, listed, accounts, missing, status) = replies;
+
+    assert_eq!(hello["result"]["protocolVersion"], "2025-06-18");
+    let names: Vec<&str> = listed["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"search") && names.contains(&"send") && names.contains(&"hold"));
+    assert_eq!(accounts["result"]["isError"], false);
+    assert_eq!(
+        accounts["result"]["structuredContent"],
+        serde_json::json!({ "accounts": [] })
+    );
+    assert_eq!(missing["result"]["isError"], true);
+    assert_eq!(missing["result"]["structuredContent"]["error"]["code"], -32004);
+    assert!(status.success(), "ends when its input does");
+    handle.abort();
+}

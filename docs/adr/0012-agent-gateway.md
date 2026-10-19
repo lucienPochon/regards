@@ -19,6 +19,7 @@ AI agents (Claude Code, Codex, Cursor and others) are first-class users of our c
    - `regards skill [--install <dir>]` prints or installs agent instructions.
    - All three use the `agent` principal over the IPC transport (ADR-0006).
    - Implementation choice: the official Rust MCP SDK versus a minimal in-house JSON-RPC implementation, decided in a Phase-5 spike, subject to licence and maintenance checks.
+     - **Decided (2026-10-19): in-house.** MCP over stdio is newline-delimited JSON-RPC 2.0, and Regards needs four methods (`initialize`, `ping`, `tools/list`, `tools/call`). The daemon already speaks JSON-RPC, so an SDK would be a much larger dependency than the code it saves. The tools come from the same list as the CLI's commands (`regards-cli/src/tools.rs`). This can be revisited if Regards needs more of the protocol (resources, prompts, sampling).
 2. **Access levels**, set **per account** (and per shared mailbox later), enforced **in the daemon** for every intent, with the default **Off**:
 
    | Level | Allows |

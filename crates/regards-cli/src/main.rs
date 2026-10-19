@@ -2,6 +2,8 @@
 
 mod commands;
 mod logging;
+mod mcp;
+mod skill;
 mod tools;
 
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
@@ -37,6 +39,14 @@ enum Command {
     Daemon(DaemonCommand),
     /// Show the version and build identity.
     Version,
+    /// Serve the mail tools to an agent over MCP (stdio), as these commands.
+    Mcp,
+    /// Print instructions for agents (a skill file), or install them.
+    Skill {
+        /// Write it as <DIR>/regards/SKILL.md (such as .claude/skills).
+        #[arg(long, value_name = "DIR")]
+        install: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -99,6 +109,24 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
                 println!("{}", json!({ "version": VERSION, "build_id": BUILD_ID }));
             } else {
                 println!("regards {VERSION} (build {BUILD_ID})");
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Mcp => {
+            mcp::Server::new(DataDirs::resolve()?).serve().await?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Skill { install } => {
+            match install {
+                Some(dir) => {
+                    let path = skill::install(&dir)?;
+                    if cli.json {
+                        println!("{}", json!({ "installed": path.display().to_string() }));
+                    } else {
+                        println!("Installed {}.", path.display());
+                    }
+                }
+                None => print!("{}", skill::text()),
             }
             Ok(ExitCode::SUCCESS)
         }
