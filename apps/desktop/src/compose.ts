@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { MessageSummary, Person } from "./accounts";
 
 /** Mirrors `DraftView` in `regards-ipc`. */
@@ -208,3 +209,31 @@ export function textToHtml(text: string): string {
   endQuote();
   return blocks.join("") || "<p></p>";
 }
+
+/** A file dropped on the window (its path stays in the app's Rust side). */
+export interface DroppedFile {
+  name: string;
+  size: number | null;
+  /** An image, which could go in the text instead. */
+  image: boolean;
+}
+
+export interface Dropped {
+  id: number;
+  files: DroppedFile[];
+}
+
+/** Attach the files of a drop to a draft, once; what could not be attached, and why. */
+export const attachDropped = (draftId: number, dropId: number) =>
+  invoke<{ draft: Draft | null; refused: { name: string; error: string }[] }>("draft_attach_dropped", {
+    draftId,
+    dropId,
+  });
+
+/** Files are dragged over the window (`true`), or no longer are. */
+export const onFilesDrag = (handler: (over: boolean) => void): Promise<UnlistenFn> =>
+  listen<{ over: boolean }>("files_drag", (event) => handler(event.payload.over));
+
+/** Files were dropped on the window. */
+export const onFilesDropped = (handler: (dropped: Dropped) => void): Promise<UnlistenFn> =>
+  listen<Dropped>("files_dropped", (event) => handler(event.payload));
