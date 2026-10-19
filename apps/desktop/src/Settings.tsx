@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { type AccountSummary, removeAccount, syncAccount, updateAccount } from "./accounts";
 import { AgentActivity } from "./AgentActivity";
+import { AgentConnect } from "./AgentConnect";
 import { AgentHolds } from "./AgentHolds";
 import { leafName } from "./views";
 import { AGENT_ACCESS_LEVELS, AGENT_SEND_WINDOW, type AgentAccess, setAgentAccess, setAgentSend } from "./agents";
@@ -362,6 +363,7 @@ function AgentsTab({
           }}
         />
       )}
+      <AgentConnect />
     </>
   );
 }

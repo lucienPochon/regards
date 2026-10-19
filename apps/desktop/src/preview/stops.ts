@@ -133,6 +133,7 @@ export const TOUR: Group[] = [
     stops: [
       { id: "holds", label: "Agents waiting for you", note: "What agents asked to do, to allow or refuse.", steps: ["wait:800", "text:button=Agents are waiting"] },
       { id: "hold-link", label: "A hold opened from a link", note: "regards://hold/2 from a notification.", steps: ["wait:800", "call:link=hold:2"] },
+      { id: "agent-connect", label: "Connect an agent", note: "The command to run, or the lines to paste, for Claude Code, Codex, Cursor and others.", steps: settings("Agents", "wait:300", "see:.agent-connect=Connect") },
       { id: "agents", label: "Agent settings", note: "Access per account, sending, limits, activity and undo.", steps: settings("Agents") },
     ],
   },
