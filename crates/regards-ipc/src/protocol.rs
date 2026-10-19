@@ -3,6 +3,7 @@
 use crate::token::UiToken;
 pub use regards_core::agents::Access as AgentAccess;
 use regards_core::body::Attachment;
+pub use regards_core::executor::Executor;
 use regards_core::headers::Person;
 use regards_core::mailbox::Role;
 pub use regards_core::oauth::Provider;
@@ -1349,6 +1350,14 @@ pub struct DraftSendResult {
     pub undo_until: i64,
     #[serde(default)]
     pub send_at: Option<i64>,
+    /// Who sends it (plan §5.7); in 1.0 always this device.
+    #[serde(default)]
+    pub executor: Executor,
+    /// It goes from this computer: with `send_at`, the computer must be on,
+    /// with Regards running, at that time. Say so ("your computer must be on
+    /// at 09:00", ADR-0019).
+    #[serde(default)]
+    pub needs_this_computer: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1359,6 +1368,9 @@ pub enum OutboxState {
     /// Scheduled, but found well past its time (the computer was off or
     /// asleep): it waits for the person to send it, move it or take it back.
     Held,
+    /// A remote executor holds it and sends it at its time, with this
+    /// computer on or off (from 1.1).
+    HandedOff,
     Sending,
     /// Not sent; something must change first.
     Failed,
@@ -1381,6 +1393,12 @@ pub struct OutboxEntryView {
     pub next_attempt_at: i64,
     pub attempts: u32,
     pub last_error: Option<String>,
+    /// Who sends it; see [`DraftSendResult::executor`].
+    #[serde(default)]
+    pub executor: Executor,
+    /// See [`DraftSendResult::needs_this_computer`].
+    #[serde(default)]
+    pub needs_this_computer: bool,
 }
 
 /// Result of [`methods::OUTBOX_LIST`].

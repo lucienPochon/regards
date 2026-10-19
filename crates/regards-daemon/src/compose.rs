@@ -5,6 +5,7 @@
 
 use crate::State;
 use regards_core::compose::{self, Outgoing};
+use regards_core::executor::Executor;
 use regards_core::headers::{self, Person};
 use regards_ipc::protocol::{
     DraftAttachFileParams, DraftAttachImageParams, DraftAttachment, DraftCreateParams, DraftDetachParams, DraftImage,
@@ -533,6 +534,7 @@ pub(crate) async fn send_unchanged(
                 undo_until,
                 send_at,
                 answering: draft.replying_to,
+                executor: executor_for(&account, send_at),
             };
             let queued = outbox::queue(tx, &entry, now)?;
             // Keyed by the new Message-ID, so it applies to the copy in Sent.
@@ -552,7 +554,17 @@ pub(crate) async fn send_unchanged(
         outbox_id,
         undo_until,
         send_at,
+        executor: Executor::Device,
+        needs_this_computer: Executor::Device.needs_this_computer(),
     }))
+}
+
+/// Who sends a message (plan §5.7): in 1.0, always this device. From 1.1 a
+/// remote executor the person has set up (the provider's own scheduled
+/// delivery, a Send Service) is picked here for a scheduled message, and
+/// handed the frozen bytes once they are queued.
+fn executor_for(_account: &accounts::Account, _send_at: Option<i64>) -> Executor {
+    Executor::Device
 }
 
 /// Send a scheduled or held message at another time, or now. Its draft is
@@ -943,6 +955,7 @@ fn entry_view(entry: Entry) -> OutboxEntryView {
         state: match entry.state {
             EntryState::Queued => OutboxState::Queued,
             EntryState::Held => OutboxState::Held,
+            EntryState::HandedOff => OutboxState::HandedOff,
             // Sent entries are not listed; a sending one shows as sending.
             EntryState::Sending | EntryState::Sent => OutboxState::Sending,
             EntryState::Failed => OutboxState::Failed,
@@ -953,6 +966,8 @@ fn entry_view(entry: Entry) -> OutboxEntryView {
         next_attempt_at: entry.next_attempt_at,
         attempts: entry.attempts,
         last_error: entry.last_error,
+        executor: entry.executor,
+        needs_this_computer: entry.executor.needs_this_computer(),
     }
 }
 

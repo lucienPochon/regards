@@ -92,6 +92,8 @@ if (params.get("outbox") === "1" && accounts.length > 0) {
     next_attempt_at: sendAt,
     attempts: 0,
     last_error: null,
+    executor: "device",
+    needs_this_computer: true,
   });
   outbox.push(waiting("Seed order for spring", tomorrow.getTime(), "queued"));
   outbox.push(waiting("Monday's rota", started - 3 * 3600_000, "held"));
@@ -479,11 +481,19 @@ function handle(cmd: string, args: Args): unknown {
         next_attempt_at: sendAt ?? Date.now(),
         attempts: 0,
         last_error: null,
+        executor: "device",
+        needs_this_computer: true,
       };
       outbox.push(entry);
       sendWhenDue(entry);
       changed();
-      return { outbox_id: entry.id, undo_until: entry.undo_until, send_at: sendAt };
+      return {
+        outbox_id: entry.id,
+        undo_until: entry.undo_until,
+        send_at: sendAt,
+        executor: "device",
+        needs_this_computer: true,
+      };
     }
     case "outbox_reschedule": {
       const entry = outbox.find((e) => e.id === args.id);

@@ -14,7 +14,7 @@ mod world;
 use regards_core::headers::{self, Person};
 use regards_daemon::DEFAULT_LATE_SEND_GRACE;
 use regards_ipc::protocol::{
-    AccountSummary, DraftCreateParams, DraftRef, DraftSendParams, DraftSendResult, DraftView, NoticeKind,
+    AccountSummary, DraftCreateParams, DraftRef, DraftSendParams, DraftSendResult, DraftView, Executor, NoticeKind,
     NoticeListResult, NoticeShownParams, OutboxEntryView, OutboxListResult, OutboxRef, OutboxRescheduleParams,
     OutboxState, OutboxUndoResult, codes, methods,
 };
@@ -148,10 +148,15 @@ async fn a_scheduled_message_can_be_moved_sent_now_or_taken_back() {
     // Moved: still waiting, at the new time.
     let later = draft(&mut desktop, &account, "Later").await;
     let queued = send(&mut desktop, later.id, Some(in_an_hour)).await.unwrap();
+    // Regards 1.0 sends it from this computer, and says so.
+    assert_eq!(queued.executor, Executor::Device);
+    assert!(queued.needs_this_computer);
     reschedule(&mut desktop, queued.outbox_id, Some(in_an_hour + 60_000))
         .await
         .unwrap();
-    assert_eq!(outbox(&mut desktop).await[0].send_at, Some(in_an_hour + 60_000));
+    let waiting = outbox(&mut desktop).await;
+    assert_eq!(waiting[0].send_at, Some(in_an_hour + 60_000));
+    assert!(waiting[0].executor == Executor::Device && waiting[0].needs_this_computer);
     assert_eq!(
         code(reschedule(&mut desktop, queued.outbox_id, Some(now_ms() - 1_000)).await),
         codes::INVALID_PARAMS
