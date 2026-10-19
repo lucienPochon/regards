@@ -50,6 +50,37 @@ impl DataDirs {
         self.data.join("run")
     }
 
+    /// The main database (ADR-0008).
+    pub fn mail_db(&self) -> PathBuf {
+        self.data.join("mail.db")
+    }
+
+    /// The keyword index, which can be deleted and rebuilt (ADR-0008).
+    pub fn search_db(&self) -> PathBuf {
+        self.data.join("search.db")
+    }
+
+    /// Content-addressed files: downloaded messages (ADR-0008).
+    pub fn blobs(&self) -> PathBuf {
+        self.data.join("blobs")
+    }
+
+    /// Copies of `mail.db` taken before each schema migration.
+    pub fn backups(&self) -> PathBuf {
+        self.data.join("backups")
+    }
+
+    /// The desktop app's own settings, such as background mode.
+    pub fn desktop_settings(&self) -> PathBuf {
+        self.data.join("desktop.json")
+    }
+
+    /// Log of a daemon started in the background by a client. It never
+    /// contains message content or secrets.
+    pub fn daemon_log(&self) -> PathBuf {
+        self.data.join("logs").join("daemon.log")
+    }
+
     /// Short identifier derived from the data directory. It names per-instance
     /// resources such as the Windows named pipe; it is not a secret.
     pub fn scope_id(&self) -> String {

@@ -1,6 +1,6 @@
 # ADR-0009: Mail protocol stack and provider abstraction
 
-- **Status:** Accepted. The IMAP crate choice is pending the Phase-0 spike. **Adapter order and timing are amended by [ADR-0018](0018-modern-minimal-v1.md):** 1.0 syncs through IMAP/SMTP only, with OAuth sign-in for Microsoft and Google (Google once approved) and app passwords elsewhere. The Gmail API and Graph serve only as **send-only** paths in the Send Service; full Gmail API / Graph sync adapters come after 1.0. The engine must also run efficiently on servers **without** CONDSTORE, QRESYNC or MOVE (Infomaniak's capabilities, ADR-0018).
+- **Status:** Accepted. **IMAP library chosen by the Phase-0 spike (2026-10-18): `imap-next` + `imap-codec`**, under the conditions in §3 ([spike report](../research/07-imap-library-spike.md)). **Adapter order and timing are amended by [ADR-0018](0018-modern-minimal-v1.md):** 1.0 syncs through IMAP/SMTP only, with OAuth sign-in for Microsoft and Google (Google once approved) and app passwords elsewhere. The Gmail API and Graph serve only as **send-only** paths in the Send Service; full Gmail API / Graph sync adapters come after 1.0. The engine must also run efficiently on servers **without** CONDSTORE, QRESYNC or MOVE (Infomaniak's capabilities, ADR-0018).
 - **Date:** 2026-10-18
 - **Deciders:** Project owner
 
@@ -33,24 +33,62 @@ We must support generic IMAP/SMTP, Gmail and Microsoft 365/Outlook. Tenants may 
    3. **Gmail API** (Phase 7). History-based sync, native labels and threads, and drafts, for performance and label fidelity at scale.
    4. **JMAP** (later). An open standard; Fastmail and others support it.
 3. **Libraries:** all permissive, with versions current on crates.io on 2026-10-18.
-   - **IMAP:** a Phase-0 spike picks between `async-imap` (0.12, MIT/Apache) and `imap-next` + `imap-codec` (MIT/Apache, sans-I/O, strong extension coverage). Criteria: IDLE cancellation, QRESYNC/VANISHED, COPYUID, X-GM attributes, robustness to malformed server responses (**no panics on bad input**), and maintenance activity.
-   - **SMTP:** `lettre` (MIT), async with rustls.
+   - **IMAP: `imap-next` 0.3 + `imap-codec` 2.0 (MIT/Apache, typed, sans-I/O).** It was chosen over `async-imap` 0.12 by the [Phase-0 spike](../research/07-imap-library-spike.md).
+     - **Rejecting async-imap:** it silently dropped 60 of 151 QRESYNC changes, reported a dropped connection as a complete FETCH, and was killed by a stack overflow from a hostile server.
+     - **imap-next in the same tests:** it delivered every change, skipped malformed responses and carried on, and survived every hostile-server case.
+
+     Conditions:
+     - **Isolation:** only the `regards-imap` crate depends on imap-next/imap-types, and it exposes Regards types.
+     - **Pins:** exact versions, each update reviewed.
+     - **Upstream fixes first:**
+       - the codec's `nom` feature
+       - the final bytes lost before a TLS close
+       - a Gmail `X-GM-*` extension, required before Gmail-over-IMAP acceptance in Phase 1
+       - an 8-bit quoted-string quirk
+
+       Until merged, these are carried in a fork through `[patch.crates-io]`, allowed by name in `deny.toml`.
+     - **Engine rules:**
+       - skip and re-fetch a malformed response
+       - never infer deletions from an incomplete response
+       - fetch headers as literals (`BODY.PEEK[HEADER.FIELDS …]`)
+       - download large bodies in chunks
+       - tolerate a missing HIGHESTMODSEQ (observed on Dovecot 2.4.5)
+   - **SMTP:** ~~`lettre` (MIT), async with rustls.~~ **Amended (Phase 2):** our own small submission client, `regards-smtp`. At-most-once sending (ADR-0010 §3) needs to know whether a failure came before or after the final `.` of DATA, and `lettre`'s errors do not tell.
+     - **Supports:** one message per connection, implicit TLS or required STARTTLS, AUTH PLAIN/LOGIN, SIZE and SMTPUTF8.
+     - **Outcomes:** each failure is classed as *not sent* (with or without retry) or *uncertain*.
+     - **Defences:** plaintext injected ahead of the STARTTLS handshake is refused (CVE-2011-0411), and addresses that could smuggle in commands are refused.
+     - **Shared networking:** `regards-net` holds the connection code (Happy Eyeballs, rustls with the platform verifier) for both IMAP and SMTP.
    - **MIME:** `mail-parser` (Apache-2.0 OR MIT) for parsing; `mail-builder` (Apache-2.0 OR MIT) for building `multipart/alternative` + `related` + attachments.
    - **TLS:** `rustls` with the platform certificate verifier. Certificate validation is always on, with no "accept invalid certs" option in the UI.
+     - **Implementation (Phase 1):**
+       - **Verifier and crypto:** `rustls-platform-verifier` with the `ring` crypto provider. ring builds with a plain C compiler on every OS.
+       - **IMAP connection:** TLS from the first byte (port 993). IMAP STARTTLS is not supported yet.
+       - **Extra trust roots:** only tests can add extra root certificates, and debug builds through `REGARDS_DEV_EXTRA_CA` for local test servers. Release builds ignore that variable.
+     - **Logging:** imap-next logs raw protocol bytes at TRACE level, so its log target is capped at INFO ([spike 07](../research/07-imap-library-spike.md) §5 item 6).
    - **OAuth2:** the `oauth2` crate (MIT/Apache) with PKCE and a loopback redirect; tokens are refreshed by the daemon.
    - **HTTP:** `reqwest` with rustls (for Graph, the Gmail API and autodiscovery).
 4. **Account setup and autoconfiguration:** in order, Mozilla ISPDB-style autoconfig, the provider's well-known endpoints, DNS SRV (RFC 6186), then manual entry. Our own provider presets are written from public provider documentation.
 5. **Threading:** JWZ-style `References`/`In-Reply-To` threading, with provider thread IDs (Gmail thread ID, Graph `conversationId`) preferred when available and subject fallback only as a last resort.
+   - **Implementation (Phase 1, References first):**
+     - **Grouping:** every Message-ID a message has or refers to (Message-ID, In-Reply-To, References) maps to one thread per account (`thread_ids`). A message joins the thread of any ID it shares, so a reply that arrives before its parent still meets it. A message that links two threads merges them.
+     - **Across folders:** copies in Inbox, Sent and All Mail share a Message-ID and so a thread. `thread.get` returns the conversation oldest first, one entry per message, with the folder it is in (or on its way to).
+     - **When:** each message is threaded as sync stores it. Messages stored before threading existed are threaded in the background at startup, 500 at a time.
+     - **Not yet:** the JWZ parent tree (replies are a flat list), subject fallback, and Gmail thread IDs.
 
 ## Alternatives considered
 
 - **Blocking `imap` 2.x (Alice).** Unmaintained parser, panics on bad input, IDLE cannot be cancelled. Rejected.
+- **`async-imap` 0.12** (more widely used: Delta Chat, about 35× the downloads). Rejected after the spike.
+  - **Defects:** silent loss of unsolicited responses over a 100-entry buffer; EOF treated as success; a stack overflow and a 60 s+ stall on hostile input; string-built commands; no APPENDUID.
+  - **Cost of fixing:** forking both async-imap and imap-proto.
 - **Binding MailCore2/libetpan (Spark's choice) via FFI.** Brings C/C++ into the build on every OS, contrary to ADR-0002. Rejected.
 - **EWS.** Microsoft is retiring EWS for Exchange Online in favour of Graph. Rejected.
 
 ## Consequences
 
-- Phase 1 is the largest phase (sync correctness is hard). We need containerised Dovecot/Postfix fixtures plus a fault-injection proxy (dropped connections, UIDVALIDITY changes, malformed responses).
+- Phase 1 is the largest phase (sync correctness is hard). We need containerised Dovecot/Postfix fixtures plus a fault-injection proxy (dropped connections, UIDVALIDITY changes, malformed responses). The spike's hostile-server cases and fuzzer are the starting point.
+- **Dependence on an alpha codec with a small user base.** We take on reviewing its updates and contributing fixes upstream. If upstream stalls, we maintain the fork; the `regards-imap` boundary keeps that contained.
+- **Open question [U]:** whether Gmail, Microsoft, Infomaniak or iCloud send raw 8-bit bytes in quoted strings. Phase-1 live tests answer it.
 - Google and Microsoft OAuth app registrations and verification are required (costs and timeline in [06](../research/06-costs-and-business-model.md)).
 - Users may bring their own OAuth client ID as a documented advanced option.
 

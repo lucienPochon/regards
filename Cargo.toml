@@ -5,8 +5,15 @@ members = [
     "crates/regards-ipc",
     "crates/regards-daemon",
     "crates/regards-cli",
+    "crates/regards-imap",
+    "crates/regards-net",
+    "crates/regards-smtp",
+    "crates/regards-store",
+    "crates/regards-vault",
     "apps/desktop/src-tauri",
 ]
+# Throwaway Phase-0 experiments; each has its own workspace and lockfile.
+exclude = ["spikes"]
 
 [workspace.package]
 version = "0.1.0"
@@ -19,21 +26,40 @@ publish = false
 regards-core = { path = "crates/regards-core" }
 regards-ipc = { path = "crates/regards-ipc" }
 regards-daemon = { path = "crates/regards-daemon" }
+regards-imap = { path = "crates/regards-imap" }
+regards-net = { path = "crates/regards-net" }
+regards-smtp = { path = "crates/regards-smtp" }
+regards-store = { path = "crates/regards-store" }
+regards-vault = { path = "crates/regards-vault" }
 
+ammonia = "4.2"
 anyhow = "1"
 bytes = "1"
-clap = { version = "4.6", features = ["derive"] }
+clap = { version = "4.6", features = ["derive", "string"] }
 dirs = "7"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+getrandom = "0.4"
+# DNS for finding an address's mail servers (MX, SRV); the system's resolvers.
+hickory-resolver = { version = "=0.26.3", default-features = false, features = ["system-config", "tokio"] }
+keyring-core = "1"
 libc = "0.2"
+mail-builder = { version = "1", default-features = false }
+mail-parser = { version = "0.11", default-features = false, features = ["full_encoding"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite_migration = "2.6"
+rcgen = "0.14"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.11"
 tempfile = "3"
 thiserror = "2"
-tokio = { version = "1.53", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1.53", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "ring", "tls12"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry"] }
+uuid = { version = "1", features = ["v4"] }
+zeroize = "1"
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",

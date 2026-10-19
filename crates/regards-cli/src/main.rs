@@ -1,11 +1,18 @@
 //! `regards`: the Regards command-line tool.
 
-use clap::{Parser, Subcommand};
+mod commands;
+mod logging;
+mod mcp;
+mod skill;
+mod tools;
+
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_core::paths::DataDirs;
 use regards_daemon::{Daemon, DaemonError};
+use regards_ipc::launcher::Announcement;
 use regards_ipc::protocol::ClientKind;
-use regards_ipc::{Client, ClientError, Endpoint};
+use regards_ipc::{Client, ClientError, Endpoint, Launcher, UiToken};
 use serde_json::json;
 use std::process::ExitCode;
 
@@ -32,12 +39,27 @@ enum Command {
     Daemon(DaemonCommand),
     /// Show the version and build identity.
     Version,
+    /// Serve the mail tools to an agent over MCP (stdio), as these commands.
+    Mcp,
+    /// Print instructions for agents (a skill file), or install them.
+    Skill {
+        /// Write it as <DIR>/regards/SKILL.md (such as .claude/skills).
+        #[arg(long, value_name = "DIR")]
+        install: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
 enum DaemonCommand {
     /// Run the daemon in the foreground (Ctrl+C to stop).
-    Run,
+    Run {
+        /// Print one readiness line with a per-launch desktop token on stdout.
+        /// Used by clients that start the daemon in the background.
+        #[arg(long = "ui-handoff", hide = true)]
+        ui_handoff: bool,
+    },
+    /// Start the daemon in the background if it is not already running.
+    Start,
     /// Report whether the daemon is running.
     Status,
     /// Ask the running daemon to stop.
@@ -46,7 +68,14 @@ enum DaemonCommand {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let cli = Cli::parse();
+    // The mail commands come from the tools agents use (ADR-0012 §1).
+    let matches = Cli::command().subcommands(commands::all()).get_matches();
+    if let Some((name, arguments)) = matches.subcommand()
+        && let Some((tool, args)) = commands::parse(name, arguments)
+    {
+        return run_tool(tool, args, matches.get_flag("json")).await;
+    }
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
     match run(cli).await {
         Ok(code) => code,
         Err(error) => {
@@ -54,6 +83,23 @@ async fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// One tool, as an agent: the daemon is started if it is not running.
+async fn run_tool(tool: &tools::Tool, args: serde_json::Map<String, serde_json::Value>, as_json: bool) -> ExitCode {
+    let connected = async {
+        let launcher = Launcher::new(DataDirs::resolve()?, std::env::current_exe()?);
+        anyhow::Ok(launcher.connect_or_start(ClientKind::Cli, None, false).await?)
+    };
+    let mut connected = match connected.await {
+        Ok(connected) => connected,
+        Err(error) => {
+            eprintln!("error: {error:#}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let outcome = tools::run(&mut connected.client, tool, &args).await;
+    commands::print(tool, &outcome, as_json)
 }
 
 async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
@@ -66,10 +112,29 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
             }
             Ok(ExitCode::SUCCESS)
         }
+        Command::Mcp => {
+            mcp::Server::new(DataDirs::resolve()?).serve().await?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Skill { install } => {
+            match install {
+                Some(dir) => {
+                    let path = skill::install(&dir)?;
+                    if cli.json {
+                        println!("{}", json!({ "installed": path.display().to_string() }));
+                    } else {
+                        println!("Installed {}.", path.display());
+                    }
+                }
+                None => print!("{}", skill::text()),
+            }
+            Ok(ExitCode::SUCCESS)
+        }
         Command::Daemon(command) => {
             let dirs = DataDirs::resolve()?;
             match command {
-                DaemonCommand::Run => daemon_run(dirs).await,
+                DaemonCommand::Run { ui_handoff } => daemon_run(dirs, ui_handoff).await,
+                DaemonCommand::Start => daemon_start(dirs, cli.json).await,
                 DaemonCommand::Status => daemon_status(&dirs, cli.json).await,
                 DaemonCommand::Stop => daemon_stop(&dirs, cli.json).await,
             }
@@ -77,15 +142,48 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
     }
 }
 
-async fn daemon_run(dirs: DataDirs) -> anyhow::Result<ExitCode> {
-    init_logging();
+async fn daemon_run(dirs: DataDirs, ui_handoff: bool) -> anyhow::Result<ExitCode> {
+    logging::init();
+    // With --ui-handoff, the starting process reads exactly one line from stdout.
+    let announce = |announcement: Announcement| {
+        if ui_handoff {
+            println!("{}", announcement.to_line());
+        }
+    };
     let daemon = match Daemon::bind(dirs).await {
         Ok(daemon) => daemon,
         Err(error @ DaemonError::AlreadyRunning(_)) => {
             eprintln!("{error}");
+            announce(Announcement::AlreadyRunning);
             return Ok(ExitCode::from(EXIT_ALREADY_RUNNING));
         }
-        Err(error) => return Err(error.into()),
+        Err(error) => {
+            announce(Announcement::Failed {
+                message: error.to_string(),
+            });
+            return Err(error.into());
+        }
+    };
+    let daemon = if ui_handoff {
+        let token = match UiToken::generate() {
+            Ok(token) => token,
+            Err(error) => {
+                let message = format!("no secure random numbers available: {error}");
+                announce(Announcement::Failed {
+                    message: message.clone(),
+                });
+                anyhow::bail!(message);
+            }
+        };
+        let daemon = daemon.with_ui_token(token.clone());
+        announce(Announcement::Ready {
+            pid: std::process::id(),
+            build_id: BUILD_ID.to_owned(),
+            ui_token: token,
+        });
+        daemon
+    } else {
+        daemon
     };
     eprintln!(
         "Regards daemon {VERSION} serving {} on {}",
@@ -97,6 +195,34 @@ async fn daemon_run(dirs: DataDirs) -> anyhow::Result<ExitCode> {
             let _ = tokio::signal::ctrl_c().await;
         })
         .await;
+    Ok(ExitCode::SUCCESS)
+}
+
+async fn daemon_start(dirs: DataDirs, as_json: bool) -> anyhow::Result<ExitCode> {
+    let program = std::env::current_exe()?;
+    let launcher = Launcher::new(dirs.clone(), program);
+    let mut connected = launcher.connect_or_start(ClientKind::Cli, None, false).await?;
+    let health = connected.client.health().await?;
+    let started = connected.launched.is_some();
+    if as_json {
+        println!(
+            "{}",
+            json!({
+                "started": started,
+                "replaced": connected.replaced,
+                "pid": health.pid,
+                "endpoint": launcher.endpoint().to_string(),
+            })
+        );
+    } else if started {
+        println!(
+            "Started the Regards daemon (pid {}). Its log is {}.",
+            health.pid,
+            dirs.daemon_log().display()
+        );
+    } else {
+        println!("The Regards daemon is already running (pid {}).", health.pid);
+    }
     Ok(ExitCode::SUCCESS)
 }
 
@@ -145,11 +271,28 @@ async fn daemon_status(dirs: &DataDirs, as_json: bool) -> anyhow::Result<ExitCod
     Ok(ExitCode::SUCCESS)
 }
 
+/// Until the daemon let go of its data directory, the last thing it does
+/// before it exits (at most 15 s): an installer replaces its files next.
+async fn wait_until_stopped(dirs: &DataDirs) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while std::time::Instant::now() < deadline {
+        let free = match std::fs::File::options().read(true).write(true).open(dirs.lock_file()) {
+            Ok(file) => file.try_lock().is_ok(),
+            Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+        };
+        if free {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
 async fn daemon_stop(dirs: &DataDirs, as_json: bool) -> anyhow::Result<ExitCode> {
     let endpoint = Endpoint::for_dirs(dirs);
     let stopped = match Client::connect(&endpoint, ClientKind::Cli).await {
         Ok(mut client) => {
             client.shutdown().await?;
+            wait_until_stopped(dirs).await;
             true
         }
         Err(ClientError::NotRunning { .. }) => false,
@@ -163,13 +306,4 @@ async fn daemon_stop(dirs: &DataDirs, as_json: bool) -> anyhow::Result<ExitCode>
         println!("The Regards daemon was not running.");
     }
     Ok(ExitCode::SUCCESS)
-}
-
-fn init_logging() {
-    let filter = tracing_subscriber::EnvFilter::try_from_env("REGARDS_LOG")
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_writer(std::io::stderr)
-        .init();
 }

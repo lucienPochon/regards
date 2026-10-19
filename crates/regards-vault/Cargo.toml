@@ -1,0 +1,27 @@
+[package]
+name = "regards-vault"
+description = "Regards secrets in the OS credential store: Credential Manager, Keychain, Secret Service (ADR-0013)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+keyring-core.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+regards-core.workspace = true
+
+# The platform stores, as recommended by keyring-rs for applications.
+[target.'cfg(windows)'.dependencies]
+windows-native-keyring-store = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
+
+[lints]
+workspace = true

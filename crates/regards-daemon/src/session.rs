@@ -1,31 +1,96 @@
 //! One client connection: handshake, then request dispatch.
 
-use crate::State;
+use crate::{
+    State, access, accounts, actions, audit, compose, discover, draft_sync, holds, identities, mail, notices, oauth,
+    prefetch, smart, templates,
+};
+use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_ipc::framing::{self, FrameError};
 use regards_ipc::protocol::{
-    HealthResult, HelloParams, HelloResult, PROTOCOL_VERSIONS, Principal, Request, Response, RpcError, codes, methods,
-    negotiate,
+    AccountRef, AsideParams, ChangesNotification, ClientKind, DraftCreateParams, DraftListParams, DraftRef,
+    DraftReplyParams, DraftSendParams, DraftSetFromParams, DraftUpdateParams, HealthResult, HelloParams, HelloResult,
+    HoldRef, JSONRPC, MessageHtmlParams, MessageIds, MessageListParams, MessageRef, MoveParams, Notification,
+    PROTOCOL_VERSIONS, PinParams, Principal, RemindParams, Request, Response, RpcError, SearchParams,
+    SenderBlockParams, SenderSetParams, SetFlagsParams, SnoozeParams, ViewParams, codes, methods, negotiate,
+    notifications,
 };
 use regards_ipc::transport::Stream;
+use regards_store::holds::Reason;
 use serde_json::{Value, json};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tokio::sync::watch;
 
+/// The most messages an agent may change in one request; more is a bulk
+/// change, which waits for the person (ADR-0012 §3).
+const MAX_AGENT_CHANGES: usize = 50;
 /// A client must say `hello` within this time or the connection is closed.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 struct Session {
     state: Arc<State>,
     principal: Option<Principal>,
+    client: Option<ClientKind>,
+    /// An agent's connection, as its activity names it (ADR-0012 §4).
+    agent_session: Option<String>,
+    /// The account the current request was checked against, and its level.
+    checked: Mutex<Option<(String, Access)>>,
+    /// For an agent's change: how what it changes stood before.
+    before: Mutex<Option<Value>>,
+    /// Asked to stop the daemon: done once the reply is sent.
+    stop_after_reply: bool,
+    /// What an agent may still ask (ADR-0012 §5).
+    limits: crate::limits::Limits,
+    /// Set by `changes.subscribe`: changes to forward as notifications.
+    feed: Option<watch::Receiver<ChangesNotification>>,
+}
+
+/// What woke the session up.
+enum Next {
+    Request(Option<Result<Value, FrameError>>),
+    Change,
+    FeedClosed,
 }
 
 pub(crate) async fn run(stream: Stream, state: Arc<State>) -> Result<(), FrameError> {
     let mut framed = framing::framed(stream);
-    let mut session = Session { state, principal: None };
+    let mut session = Session {
+        state,
+        principal: None,
+        client: None,
+        agent_session: None,
+        checked: Mutex::new(None),
+        before: Mutex::new(None),
+        stop_after_reply: false,
+        limits: crate::limits::Limits::new(),
+        feed: None,
+    };
 
     loop {
-        let incoming = if session.principal.is_none() {
+        let incoming = if let Some(feed) = session.feed.as_mut() {
+            let next = tokio::select! {
+                incoming = framing::recv::<_, Value>(&mut framed) => Next::Request(incoming),
+                changed = feed.changed() => if changed.is_ok() { Next::Change } else { Next::FeedClosed },
+            };
+            match next {
+                Next::Request(incoming) => incoming,
+                Next::Change => {
+                    let change = *feed.borrow_and_update();
+                    let notification = Notification {
+                        jsonrpc: JSONRPC.to_owned(),
+                        method: notifications::CHANGES.to_owned(),
+                        params: to_value(change),
+                    };
+                    framing::send(&mut framed, &notification).await?;
+                    continue;
+                }
+                Next::FeedClosed => {
+                    session.feed = None;
+                    continue;
+                }
+            }
+        } else if session.principal.is_none() {
             match tokio::time::timeout(HANDSHAKE_TIMEOUT, framing::recv::<_, Value>(&mut framed)).await {
                 Ok(incoming) => incoming,
                 Err(_) => {
@@ -44,11 +109,14 @@ pub(crate) async fn run(stream: Stream, state: Arc<State>) -> Result<(), FrameEr
                 RpcError::new(codes::PARSE_ERROR, format!("invalid JSON: {error}")),
             ),
             Some(Err(error)) => return Err(error),
-            Some(Ok(value)) => session.handle(value),
+            Some(Ok(value)) => session.handle(value).await,
         };
 
         framing::send(&mut framed, &response).await?;
 
+        if session.stop_after_reply {
+            let _ = session.state.stop.send(true);
+        }
         if session.state.stop.borrow().to_owned() {
             return Ok(());
         }
@@ -56,7 +124,7 @@ pub(crate) async fn run(stream: Stream, state: Arc<State>) -> Result<(), FrameEr
 }
 
 impl Session {
-    fn handle(&mut self, value: Value) -> Response {
+    async fn handle(&mut self, value: Value) -> Response {
         let id = value.get("id").and_then(Value::as_u64);
         let request: Request = match serde_json::from_value(value) {
             Ok(request) => request,
@@ -73,13 +141,53 @@ impl Session {
                 RpcError::new(codes::INVALID_REQUEST, "jsonrpc must be \"2.0\""),
             );
         }
-        match self.dispatch(&request) {
+        let started = Instant::now();
+        let outcome = match self.agent_session {
+            Some(_) => match self.limits.take(&request.method) {
+                Ok(()) => self.dispatch(&request).await,
+                Err(refused) => Err(refused),
+            },
+            None => self.dispatch(&request).await,
+        };
+        // Everything an agent asks, but the handshake, is kept (ADR-0012 §4).
+        if let (Some(session), Some(client)) = (&self.agent_session, self.client)
+            && request.method != methods::HELLO
+        {
+            let checked = self
+                .checked
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take();
+            let before = self
+                .before
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take();
+            // What reverses it, when it changed something that can be undone.
+            let undo_id = outcome
+                .as_ref()
+                .ok()
+                .and_then(|result| result.get("undo")?.get("id")?.as_i64());
+            let answered = audit::Answered {
+                session,
+                client,
+                method: &request.method,
+                params: &request.params,
+                checked,
+                error: outcome.as_ref().err(),
+                duration: started.elapsed(),
+                before,
+                undo_id,
+            };
+            audit::record(&self.state, answered).await;
+        }
+        match outcome {
             Ok(result) => Response::success(request.id, result),
             Err(error) => Response::failure(Some(request.id), error),
         }
     }
 
-    fn dispatch(&mut self, request: &Request) -> Result<Value, RpcError> {
+    async fn dispatch(&mut self, request: &Request) -> Result<Value, RpcError> {
         if request.method == methods::HELLO {
             return self.hello(&request.params);
         }
@@ -96,15 +204,535 @@ impl Session {
                 build_id: BUILD_ID.to_owned(),
                 pid: std::process::id(),
                 uptime_secs: self.state.started.elapsed().as_secs(),
+                revision: self.state.store.revision().await.map_err(internal)?,
             })),
             methods::DAEMON_SHUTDOWN => {
                 tracing::info!("shutdown requested by a client");
-                let _ = self.state.stop.send(true);
+                // Once the reply is out: the daemon may be gone right after.
+                self.stop_after_reply = true;
                 Ok(json!({ "stopping": true }))
+            }
+            methods::ACCOUNT_LIST => accounts::list(&self.state, !self.is_ui()).await,
+            methods::ACCOUNT_SET_AGENT_ACCESS => {
+                self.require_ui()?;
+                accounts::set_agent_access(&self.state, params(request)?).await
+            }
+            methods::ACCOUNT_SET_AGENT_SEND => {
+                self.require_ui()?;
+                accounts::set_agent_send(&self.state, params(request)?).await
+            }
+            methods::AGENT_ACTIVITY => {
+                self.require_ui()?;
+                audit::activity(&self.state, params(request)?).await
+            }
+            methods::HOLD_LIST => {
+                self.require_ui()?;
+                holds::list(&self.state, params(request)?).await
+            }
+            methods::HOLD_GET => {
+                let params: HoldRef = params(request)?;
+                let scope = self.scope(Access::Read, None).await?;
+                holds::get(&self.state, params, scope).await
+            }
+            methods::HOLD_APPROVE => {
+                self.require_ui()?;
+                holds::approve(&self.state, params(request)?).await
+            }
+            methods::HOLD_REJECT => {
+                self.require_ui()?;
+                holds::reject(&self.state, params(request)?).await
+            }
+            methods::ACCOUNT_ADD => {
+                self.require_ui()?;
+                accounts::add(&self.state, params(request)?).await
+            }
+            methods::ACCOUNT_REMOVE => {
+                self.require_ui()?;
+                accounts::remove(&self.state, params(request)?).await
+            }
+            methods::ACCOUNT_UPDATE => {
+                self.require_ui()?;
+                accounts::update(&self.state, params(request)?).await
+            }
+            methods::ACCOUNT_SET_AUTO_COPY => {
+                self.require_ui()?;
+                accounts::set_auto_copy(&self.state, params(request)?).await
+            }
+            methods::ACCOUNT_DISCOVER => {
+                self.require_ui()?;
+                discover::discover(&self.state, params(request)?).await
+            }
+            methods::ACCOUNT_OAUTH_PROVIDERS => {
+                self.require_ui()?;
+                Ok(oauth::providers(&self.state))
+            }
+            methods::ACCOUNT_OAUTH_START => {
+                self.require_ui()?;
+                oauth::start(&self.state, params(request)?).await
+            }
+            methods::ACCOUNT_OAUTH_FINISH => {
+                self.require_ui()?;
+                oauth::finish(&self.state, params(request)?).await
+            }
+            methods::ACCOUNT_OAUTH_CANCEL => {
+                self.require_ui()?;
+                Ok(oauth::cancel(&self.state, params(request)?))
+            }
+            methods::ACCOUNT_SYNC => {
+                self.require_ui()?;
+                accounts::sync_now(&self.state, params(request)?).await
+            }
+            methods::MAILBOX_LIST => {
+                let params: AccountRef = params(request)?;
+                self.allow_account(Access::Read, &params.account_id).await?;
+                accounts::mailboxes(&self.state, params).await
+            }
+            methods::MESSAGE_LIST => {
+                let params: MessageListParams = params(request)?;
+                self.allow_mailbox(Access::Read, params.mailbox_id).await?;
+                mail::list(&self.state, params).await
+            }
+            methods::SEARCH => {
+                let params: SearchParams = params(request)?;
+                let scope = self.search_scope(params.account_id.as_deref()).await?;
+                mail::search(&self.state, params, scope).await
+            }
+            methods::SEARCH_SERVER => {
+                let params: SearchParams = params(request)?;
+                let scope = self.search_scope(params.account_id.as_deref()).await?;
+                mail::search_server(&self.state, params, scope).await
+            }
+            methods::MESSAGE_GET => {
+                let params: MessageRef = params(request)?;
+                self.allow_message(Access::Read, params.id).await?;
+                mail::get(&self.state, params).await
+            }
+            methods::MESSAGE_HTML => {
+                let params: MessageHtmlParams = params(request)?;
+                self.allow_message(Access::Read, params.id).await?;
+                mail::html(&self.state, params).await
+            }
+            methods::MESSAGE_DELETE => {
+                let params: MessageIds = params(request)?;
+                if self.is_ui() {
+                    return actions::delete_forever(&self.state, params).await;
+                }
+                // Deleting for good always waits for the person, if it can be done.
+                let account = self.allow_targets(Access::Triage, &params.ids).await?;
+                access::deletable(&self.state, &params.ids).await?;
+                Err(self
+                    .hold_change(request, account, Reason::Delete, params.ids.len())
+                    .await)
+            }
+            methods::DRAFT_CREATE => {
+                let params: DraftCreateParams = params(request)?;
+                self.allow_account(Access::Triage, &params.account_id).await?;
+                compose::create(&self.state, params).await
+            }
+            methods::DRAFT_REPLY => {
+                let params: DraftReplyParams = params(request)?;
+                self.allow_message(Access::Triage, params.message_id).await?;
+                compose::reply(&self.state, params).await
+            }
+            methods::DRAFT_FORWARD => {
+                let params: MessageRef = params(request)?;
+                self.allow_message(Access::Triage, params.id).await?;
+                compose::forward(&self.state, params).await
+            }
+            methods::DRAFT_GET => {
+                let params: DraftRef = params(request)?;
+                self.allow_draft(Access::Triage, params.id).await?;
+                compose::get(&self.state, params).await
+            }
+            methods::DRAFT_LIST => {
+                let params: DraftListParams = params(request)?;
+                let scope = self.scope(Access::Triage, params.account_id.as_deref()).await?;
+                compose::list(&self.state, params, scope).await
+            }
+            methods::DRAFT_UPDATE => {
+                let params: DraftUpdateParams = params(request)?;
+                self.allow_draft(Access::Triage, params.id).await?;
+                compose::update(&self.state, params).await
+            }
+            methods::DRAFT_DELETE => {
+                let params: DraftRef = params(request)?;
+                self.allow_draft(Access::Triage, params.id).await?;
+                compose::delete(&self.state, params).await
+            }
+            methods::DRAFT_ATTACH_FILE => {
+                self.require_ui()?;
+                compose::attach_file(&self.state, params(request)?).await
+            }
+            methods::DRAFT_DETACH => {
+                self.require_ui()?;
+                compose::detach(&self.state, params(request)?).await
+            }
+            methods::DRAFT_ELSEWHERE => {
+                self.require_ui()?;
+                draft_sync::elsewhere(&self.state, params(request)?).await
+            }
+            methods::DRAFT_ADOPT => {
+                self.require_ui()?;
+                draft_sync::adopt(&self.state, params(request)?).await
+            }
+            methods::TEMPLATE_LIST => {
+                self.require_ui()?;
+                templates::list(&self.state).await
+            }
+            methods::TEMPLATE_SAVE => {
+                self.require_ui()?;
+                templates::save(&self.state, params(request)?).await
+            }
+            methods::TEMPLATE_REMOVE => {
+                self.require_ui()?;
+                templates::remove(&self.state, params(request)?).await
+            }
+            methods::IDENTITY_LIST => {
+                self.require_ui()?;
+                identities::list(&self.state, params(request)?).await
+            }
+            methods::IDENTITY_SAVE => {
+                self.require_ui()?;
+                identities::save(&self.state, params(request)?).await
+            }
+            methods::IDENTITY_REMOVE => {
+                self.require_ui()?;
+                identities::remove(&self.state, params(request)?).await
+            }
+            methods::IDENTITY_MAKE_DEFAULT => {
+                self.require_ui()?;
+                identities::make_default(&self.state, params(request)?).await
+            }
+            methods::DRAFT_ATTACH_IMAGE => {
+                self.require_ui()?;
+                compose::attach_image(&self.state, params(request)?).await
+            }
+            methods::DRAFT_IMAGES => {
+                self.require_ui()?;
+                compose::images(&self.state, params(request)?).await
+            }
+            methods::DRAFT_SET_FROM => {
+                let params: DraftSetFromParams = params(request)?;
+                self.allow_draft(Access::Triage, params.id).await?;
+                compose::set_from(&self.state, params).await
+            }
+            methods::DRAFT_SEND => {
+                let params: DraftSendParams = params(request)?;
+                if self.is_ui() {
+                    return compose::send(&self.state, params).await;
+                }
+                // An agent's send waits for the person (ADR-0012 §3), unless its
+                // account lets it go after an undo window.
+                self.allow_draft(Access::Send, params.id).await?;
+                if let Some(window) = compose::agent_send_window(&self.state, params.id).await? {
+                    return compose::send_for_agent(&self.state, params, window).await;
+                }
+                Err(holds::hold_send(&self.state, self.asker(request), &params).await)
+            }
+            methods::OUTBOX_LIST => {
+                self.require_ui()?;
+                compose::outbox_list(&self.state).await
+            }
+            methods::OUTBOX_UNDO => {
+                self.require_ui()?;
+                compose::undo(&self.state, params(request)?).await
+            }
+            methods::NOTICE_LIST => {
+                self.require_ui()?;
+                notices::list(&self.state).await
+            }
+            methods::NOTICE_SHOWN => {
+                self.require_ui()?;
+                notices::shown(&self.state, params(request)?).await
+            }
+            methods::READING_SETTINGS => {
+                self.require_ui()?;
+                mail::reading_settings(&self.state).await
+            }
+            methods::READING_SET_SETTINGS => {
+                self.require_ui()?;
+                mail::set_reading_settings(&self.state, params(request)?).await
+            }
+            methods::PREFETCH_GET => {
+                self.require_ui()?;
+                prefetch::get(&self.state).await
+            }
+            methods::PREFETCH_SET => {
+                self.require_ui()?;
+                prefetch::set(&self.state, params(request)?).await
+            }
+            methods::MAIL_ARRIVED => {
+                self.require_ui()?;
+                notices::arrived(&self.state).await
+            }
+            methods::MAIL_ARRIVED_SHOWN => {
+                self.require_ui()?;
+                notices::arrived_shown(&self.state, params(request)?).await
+            }
+            methods::OUTBOX_RESCHEDULE => {
+                self.require_ui()?;
+                compose::reschedule(&self.state, params(request)?).await
+            }
+            methods::OUTBOX_SEND_AGAIN => {
+                self.require_ui()?;
+                compose::send_again(&self.state, params(request)?).await
+            }
+            methods::OUTBOX_DISMISS => {
+                self.require_ui()?;
+                compose::dismiss(&self.state, params(request)?).await
+            }
+            methods::MESSAGE_PIN => {
+                let params: PinParams = params(request)?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
+                actions::pin(&self.state, params).await
+            }
+            methods::MESSAGE_SET_ASIDE => {
+                let params: AsideParams = params(request)?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
+                actions::set_aside(&self.state, params).await
+            }
+            methods::SMART_OVERVIEW => {
+                let params: AccountRef = params(request)?;
+                self.allow_account(Access::Read, &params.account_id).await?;
+                smart::overview(&self.state, params).await
+            }
+            methods::MESSAGE_EXPLAIN => {
+                let params: MessageRef = params(request)?;
+                self.allow_message(Access::Read, params.id).await?;
+                smart::explain(&self.state, params).await
+            }
+            methods::SENDER_SET_IMAGES => {
+                self.require_ui()?;
+                mail::set_sender_images(&self.state, params(request)?).await
+            }
+            methods::SENDER_IMAGES => {
+                self.require_ui()?;
+                mail::sender_images_list(&self.state, params(request)?).await
+            }
+            methods::SENDER_BLOCK => {
+                let params: SenderBlockParams = params(request)?;
+                self.allow_sender(&params.account_id, &params.address).await?;
+                actions::block(&self.state, params).await
+            }
+            methods::SMART_SCREENING => {
+                self.require_ui()?;
+                smart::screening(&self.state).await
+            }
+            methods::SMART_SET_SCREENING => {
+                self.require_ui()?;
+                smart::set_screening(&self.state, params(request)?).await
+            }
+            methods::SENDER_SET => {
+                let params: SenderSetParams = params(request)?;
+                self.allow_sender(&params.account_id, &params.address).await?;
+                smart::set_sender(&self.state, params).await
+            }
+            methods::MESSAGE_REMIND => {
+                let params: RemindParams = params(request)?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
+                actions::remind(&self.state, params).await
+            }
+            methods::MESSAGE_SNOOZE => {
+                let params: SnoozeParams = params(request)?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
+                actions::snooze(&self.state, params).await
+            }
+            methods::MESSAGE_VIEW => {
+                let params: ViewParams = params(request)?;
+                self.allow_account(Access::Read, &params.account_id).await?;
+                mail::view(&self.state, params).await
+            }
+            methods::THREAD_GET => {
+                let params: MessageRef = params(request)?;
+                self.allow_message(Access::Read, params.id).await?;
+                mail::thread(&self.state, params).await
+            }
+            methods::MESSAGE_SET_FLAGS => {
+                let params: SetFlagsParams = params(request)?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
+                actions::set_flags(&self.state, params).await
+            }
+            methods::MESSAGE_MOVE => {
+                let params: MoveParams = params(request)?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
+                self.allow_mailbox(Access::Triage, params.mailbox_id).await?;
+                actions::move_to(&self.state, params).await
+            }
+            methods::MESSAGE_ARCHIVE => {
+                let params: MessageIds = params(request)?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
+                actions::archive(&self.state, params).await
+            }
+            methods::MESSAGE_TRASH => {
+                let params: MessageIds = params(request)?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
+                actions::trash(&self.state, params).await
+            }
+            methods::UNDO_APPLY => {
+                self.require_ui()?;
+                actions::apply_undo(&self.state, params(request)?).await
+            }
+            methods::CHANGES_SUBSCRIBE => {
+                self.require_ui()?;
+                let mut feed = self.state.feed.subscribe();
+                let current = *feed.borrow_and_update();
+                self.feed = Some(feed);
+                Ok(to_value(current))
             }
             other => Err(RpcError::new(
                 codes::METHOD_NOT_FOUND,
                 format!("unknown method \"{other}\""),
+            )),
+        }
+    }
+
+    fn is_ui(&self) -> bool {
+        self.principal == Some(Principal::Ui)
+    }
+
+    /// The app may; an agent, if the account allows it `needed` (ADR-0012).
+    async fn allow_account(&self, needed: Access, account_id: &str) -> Result<(), RpcError> {
+        if self.is_ui() {
+            return Ok(());
+        }
+        let (email, current) = access::current(&self.state, account_id).await?;
+        *self.checked.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some((account_id.to_owned(), current));
+        access::permit(needed, account_id, &email, current)
+    }
+
+    /// [`allow_account`](Self::allow_account) for something of the account
+    /// (`what`: "message", "mailbox", "draft"). In an account closed to
+    /// agents it is not there for them: they cannot tell it from nothing.
+    async fn allow_within(&self, needed: Access, account_id: &str, what: &str) -> Result<(), RpcError> {
+        let (_, current) = access::current(&self.state, account_id).await?;
+        if current == Access::Off {
+            *self.checked.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                Some((account_id.to_owned(), current));
+            return Err(RpcError::new(codes::NOT_FOUND, format!("no such {what}")));
+        }
+        self.allow_account(needed, account_id).await
+    }
+
+    async fn allow_mailbox(&self, needed: Access, mailbox_id: i64) -> Result<(), RpcError> {
+        if self.is_ui() {
+            return Ok(());
+        }
+        let account = access::account_of_mailbox(&self.state, mailbox_id).await?;
+        self.allow_within(needed, &account, "mailbox").await
+    }
+
+    async fn allow_message(&self, needed: Access, message_id: i64) -> Result<(), RpcError> {
+        if self.is_ui() {
+            return Ok(());
+        }
+        let account = access::account_of_message(&self.state, message_id).await?;
+        self.allow_within(needed, &account, "message").await
+    }
+
+    /// The accounts a search may look in: for the app, those asked for; for
+    /// an agent, those of them open to it.
+    async fn search_scope(&self, account_id: Option<&str>) -> Result<Option<Vec<String>>, RpcError> {
+        self.scope(Access::Read, account_id).await
+    }
+
+    /// The accounts a request about many may cover: for the app, those asked
+    /// for (`None`: all); for an agent, those of them that allow `needed`.
+    async fn scope(&self, needed: Access, account_id: Option<&str>) -> Result<Option<Vec<String>>, RpcError> {
+        if self.is_ui() {
+            return Ok(None);
+        }
+        match account_id {
+            Some(account) => {
+                self.allow_account(needed, account).await?;
+                Ok(Some(vec![account.to_owned()]))
+            }
+            None => access::open_to_agents(&self.state, needed).await.map(Some),
+        }
+    }
+
+    /// An agent may change these messages: each one's account allows
+    /// `needed`, and they are not too many at once (ADR-0012 §3).
+    /// More than that is a bulk change, which waits for the person.
+    async fn allow_change(&self, needed: Access, ids: &[i64], request: &Request) -> Result<(), RpcError> {
+        if self.is_ui() {
+            return Ok(());
+        }
+        let account = self.allow_targets(needed, ids).await?;
+        if ids.len() > MAX_AGENT_CHANGES {
+            return Err(self.hold_change(request, account, Reason::Bulk, ids.len()).await);
+        }
+        Ok(())
+    }
+
+    /// Each message's account allows an agent `needed`; the first account.
+    async fn allow_targets(&self, needed: Access, ids: &[i64]) -> Result<String, RpcError> {
+        if ids.is_empty() {
+            return Err(RpcError::new(codes::INVALID_PARAMS, "give at least one message id"));
+        }
+        let (accounts, before) = access::messages_before(&self.state, ids).await?;
+        self.note_before(before);
+        for account in &accounts {
+            self.allow_within(needed, account, "message").await?;
+        }
+        Ok(accounts.into_iter().next().expect("one account per message"))
+    }
+
+    /// Hold an agent's change to messages for the person (ADR-0012 §3).
+    async fn hold_change(&self, request: &Request, account_id: String, reason: Reason, count: usize) -> RpcError {
+        let description = holds::describe(&request.method, count);
+        let about = holds::About {
+            account_id,
+            reason,
+            description: description.clone(),
+            draft: None,
+            people: Vec::new(),
+            subject: description,
+        };
+        holds::hold(&self.state, self.asker(request), about).await
+    }
+
+    /// The agent request at hand, as a hold keeps it.
+    fn asker<'a>(&'a self, request: &'a Request) -> holds::Asker<'a> {
+        holds::Asker {
+            session: self.agent_session.as_deref().unwrap_or_default(),
+            client: self.client.map_or("agent", audit::client_name),
+            method: &request.method,
+            params: &request.params,
+        }
+    }
+
+    /// An agent may touch a draft if its account allows `needed`.
+    async fn allow_draft(&self, needed: Access, draft_id: i64) -> Result<(), RpcError> {
+        if self.is_ui() {
+            return Ok(());
+        }
+        let (account, before) = access::draft_before(&self.state, draft_id).await?;
+        self.note_before(before);
+        self.allow_within(needed, &account, "draft").await
+    }
+
+    /// An agent may sort a sender if the account allows triage.
+    async fn allow_sender(&self, account_id: &str, address: &str) -> Result<(), RpcError> {
+        if self.is_ui() {
+            return Ok(());
+        }
+        self.allow_account(Access::Triage, account_id).await?;
+        let before = access::sender_before(&self.state, account_id, address).await?;
+        self.note_before(before);
+        Ok(())
+    }
+
+    fn note_before(&self, before: Value) {
+        *self.before.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(before);
+    }
+
+    /// Accounts, credentials and access levels may only be changed from the desktop UI (ADR-0006).
+    fn require_ui(&self) -> Result<(), RpcError> {
+        match self.principal {
+            Some(Principal::Ui) => Ok(()),
+            _ => Err(RpcError::new(
+                codes::FORBIDDEN,
+                "only the Regards app can do this; agents and the CLI cannot",
             )),
         }
     }
@@ -130,10 +758,25 @@ impl Session {
             tracing::info!(client_build = %params.build_id, "client from a different build connected");
         }
 
-        // Every connection is an agent until the desktop bridge presents its
-        // per-launch secret (ADR-0006); no method requires the UI principal yet.
-        let principal = Principal::Agent;
+        // Only the desktop bridge holds the per-launch secret (ADR-0006). A wrong
+        // token is refused instead of downgraded, so a stale desktop notices
+        // that the daemon was replaced.
+        let principal = match (&params.ui_token, &self.state.ui_token) {
+            (None, _) => Principal::Agent,
+            (Some(offered), Some(expected)) if expected.matches(offered) => Principal::Ui,
+            (Some(_), _) => {
+                tracing::warn!(client_kind = ?params.client_kind, "rejected a connection with an unknown desktop token");
+                return Err(RpcError::new(
+                    codes::FORBIDDEN,
+                    "the desktop access token was not accepted",
+                ));
+            }
+        };
         self.principal = Some(principal);
+        self.client = Some(params.client_kind);
+        if principal == Principal::Agent {
+            self.agent_session = Some(regards_store::accounts::new_id());
+        }
         tracing::debug!(client_kind = ?params.client_kind, ?principal, "handshake completed");
 
         Ok(to_value(HelloResult {
@@ -147,4 +790,16 @@ impl Session {
 
 fn to_value<T: serde::Serialize>(value: T) -> Value {
     serde_json::to_value(value).expect("protocol types always serialize")
+}
+
+/// An internal failure, reported without details that could leak data.
+pub(crate) fn internal(error: impl std::fmt::Display) -> RpcError {
+    tracing::error!(%error, "request failed");
+    RpcError::new(codes::INTERNAL_ERROR, "internal error; see the daemon log")
+}
+
+/// Decode a request's parameters.
+fn params<T: serde::de::DeserializeOwned>(request: &Request) -> Result<T, RpcError> {
+    serde_json::from_value(request.params.clone())
+        .map_err(|error| RpcError::new(codes::INVALID_PARAMS, format!("invalid parameters: {error}")))
 }

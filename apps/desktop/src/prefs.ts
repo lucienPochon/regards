@@ -1,0 +1,133 @@
+import { useSyncExternalStore } from "react";
+import type { PresetPrefs } from "./snooze";
+
+/**
+ * How the person likes the app to behave, kept on this computer
+ * (localStorage). Each default is how Regards behaved before the setting
+ * existed, so nothing changes until the person changes it.
+ */
+export interface Prefs {
+  /** After archiving or deleting the open message: the next one, the previous one, or the list. */
+  afterMove: "next" | "previous" | "list";
+  /** Archiving a pinned message: keep it pinned, or unpin it. */
+  pinnedArchive: "keep" | "unpin";
+  /** How long a sent message waits in the Outbox, to be called back (the daemon allows up to 30 s). */
+  undoSeconds: number;
+  /** In a conversation, show the older messages folded to one line. */
+  collapseOlder: boolean;
+  /** Load images from the web in every message, without asking each time. */
+  remoteImages: boolean;
+  /** Rows of the list when it fills the window. */
+  density: "comfortable" | "compact";
+  /** Where people's pictures show. */
+  avatars: "everywhere" | "reader" | "list" | "nowhere";
+  /** Lines of the message's start under each row, beside the reader. */
+  previewLines: 0 | 1 | 2;
+  /** Each account in its own colour, around pictures and in the sidebar. */
+  colourCoding: boolean;
+  accountColours: Record<string, string>;
+  /** A name for an account, shown in the app instead of its address. */
+  accountTitles: Record<string, string>;
+  /** Accounts whose mail stays out of the unified inbox (their own inbox still has it). */
+  hiddenAccounts: string[];
+  /** Messages the Priority card shows before "View all"; 0 for all. */
+  priorityRows: number;
+  /** Where the groups (Notifications, Newsletters, Pinned) sit: with today, or at their newest message's day. */
+  groupsPosition: "today" | "chronological";
+  /** Each group as one row, or its mail shown with everyone else's. */
+  grouped: { notifications: boolean; newsletters: boolean; pinned: boolean };
+  /** The account a new message is from, unless one is open or chosen; null: the one in view. */
+  defaultFrom: string | null;
+  /** The whole window's size, for reading comfort. */
+  zoom: number;
+  /** The unread counts beside the folders. */
+  sidebarCounts: boolean;
+  /** The quick choices of each time picker: shown or not, and at what time. */
+  snoozePresets: PresetPrefs;
+  sendPresets: PresetPrefs;
+  reminderPresets: PresetPrefs;
+}
+
+export const DEFAULT_PREFS: Prefs = {
+  afterMove: "next",
+  pinnedArchive: "keep",
+  undoSeconds: 10,
+  collapseOlder: true,
+  remoteImages: false,
+  density: "comfortable",
+  avatars: "everywhere",
+  previewLines: 1,
+  colourCoding: false,
+  accountColours: {},
+  accountTitles: {},
+  hiddenAccounts: [],
+  priorityRows: 3,
+  groupsPosition: "today",
+  grouped: { notifications: true, newsletters: true, pinned: true },
+  defaultFrom: null,
+  zoom: 1,
+  sidebarCounts: true,
+  snoozePresets: {},
+  sendPresets: {},
+  reminderPresets: {},
+};
+
+/** The colours an account can take, readable on both themes. */
+export const ACCOUNT_COLOURS = ["#1d7a61", "#3b7dd8", "#8b5cc8", "#c8507a", "#d4891f", "#2a9d9a", "#66717f", "#b5562f"];
+
+const KEY = "regards.prefs";
+
+function load(): Prefs {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(KEY) ?? "null") as Partial<Prefs> | null;
+    return {
+      ...DEFAULT_PREFS,
+      ...(saved ?? {}),
+      grouped: { ...DEFAULT_PREFS.grouped, ...(saved?.grouped ?? {}) },
+    };
+  } catch {
+    return DEFAULT_PREFS;
+  }
+}
+
+let current: Prefs = load();
+const listeners = new Set<() => void>();
+
+/** The preferences now, outside React (when an action runs). */
+export const getPrefs = (): Prefs => current;
+
+/** Change some preferences: kept, and every screen that reads them updates. */
+export function setPrefs(change: Partial<Prefs>) {
+  current = { ...current, ...change };
+  try {
+    window.localStorage.setItem(KEY, JSON.stringify(current));
+  } catch {
+    // Not kept for next time; it still applies now.
+  }
+  for (const listener of listeners) listener();
+}
+
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+};
+
+/** The preferences, kept current. */
+export function usePrefs(): Prefs {
+  return useSyncExternalStore(subscribe, getPrefs);
+}
+
+/** An account's name in the app: the one the person gave it, or its address. */
+export const accountLabel = (prefs: Prefs, account: { id: string; email: string }) =>
+  prefs.accountTitles[account.id]?.trim() || account.email;
+
+/** A colour for an account nobody has chosen one for: the same one every time. */
+const fallbackColour = (accountId: string) => {
+  let hash = 0;
+  for (const char of accountId) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return ACCOUNT_COLOURS[hash % ACCOUNT_COLOURS.length];
+};
+
+/** An account's colour when accounts are colour-coded; null otherwise. */
+export const accountColour = (prefs: Prefs, accountId: string) =>
+  prefs.colourCoding ? (prefs.accountColours[accountId] ?? fallbackColour(accountId)) : null;

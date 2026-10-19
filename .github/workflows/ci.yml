@@ -43,6 +43,40 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+  live-imap:
+    name: Live IMAP (Dovecot)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # Dovecot 2.4.5, as tested in docs/research/07-imap-library-spike.md.
+      DOVECOT_IMAGE: dovecot/dovecot@sha256:43c14def08a57f25107593cbcf64a0a6fbae84a7b9de7aa038513c9b21e91914
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Throwaway CA and Dovecot
+        run: |
+          mkdir -p "$RUNNER_TEMP/tls" && cd "$RUNNER_TEMP/tls"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=Regards Test CA" -keyout ca.key -out ca.pem
+          openssl req -newkey rsa:2048 -nodes -subj "/CN=localhost" -keyout server.key -out server.csr
+          printf "subjectAltName=DNS:localhost,IP:127.0.0.1\n" > leaf.ext
+          openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 2 -extfile leaf.ext -out server.pem
+          chmod 644 server.key
+          docker run -d --name dovecot -e USER_PASSWORD=pass -p 127.0.0.1:31993:31993 \
+            -v "$PWD/server.pem:/etc/dovecot/ssl/tls.crt:ro" -v "$PWD/server.key:/etc/dovecot/ssl/tls.key:ro" \
+            "$DOVECOT_IMAGE"
+          for i in $(seq 30); do
+            if openssl s_client -connect 127.0.0.1:31993 -CAfile ca.pem -verify_return_error </dev/null 2>/dev/null | grep -q "OK"; then exit 0; fi
+            sleep 1
+          done
+          docker logs dovecot
+          exit 1
+      - name: Live tests
+        env:
+          REGARDS_TEST_IMAP: localhost:31993
+          REGARDS_TEST_IMAP_CA: ${{ runner.temp }}/tls/ca.pem
+        run: cargo test -p regards-imap -p regards-daemon -- --ignored live_
+
   frontend:
     name: Desktop frontend
     runs-on: ubuntu-24.04
@@ -60,6 +94,8 @@ jobs:
       - run: npm ci
       - name: Type-check and build
         run: npm run build
+      - name: Unit tests
+        run: npm test
 
   deny:
     name: Licences and advisories

@@ -33,12 +33,36 @@ Loopback TCP is reachable by every local user and, through DNS-rebinding mistake
    - The schema is generated from Rust types, so the TypeScript and CLI JSON contracts never drift.
 3. **Principals.** Every connection is labelled by its principal:
    - `ui`: the desktop bridge only. It holds a per-launch secret passed from the daemon to the desktop process through an inherited handle or stdin, never written to disk when the desktop starts the daemon.
+     - **Implementation (Phase 0):**
+       - **Handoff:** the daemon generates 256 random bits and prints them once on its stdout pipe, in the same line that signals it is ready. The desktop presents them as `ui_token` in `hello`.
+       - **Mismatch:** a wrong token is refused (`FORBIDDEN`), not downgraded to `agent`, so a desktop notices that its daemon was replaced.
+       - **Limit:** a same-user process that restarts the daemon itself can obtain a token. That is within the "does not protect against" limit below.
    - `agent`: all CLI and MCP connections, which are subject to per-account access levels (ADR-0012).
    - **Changing access levels, accounts or credentials is allowed only for the `ui` principal.**
+     - **Implementation (Phase 1):** `account.add`, `account.remove` and the OAuth sign-in methods (`account.oauth_start`, `account.oauth_finish`, `account.oauth_cancel`, `account.oauth_providers`; ADR-0018) refuse every other principal with `FORBIDDEN`.
+     - **Listing accounts:** `account.list` is `ui`-only too, until agent access levels exist (ADR-0012).
 4. **Tauri hardening:**
    - The WebView gets a **narrow, explicit command set**: no generic passthrough to the daemon, no shutdown or settings-of-agents from JS without a UI gesture.
    - Minimal Tauri capabilities; strict CSP.
    - The email HTML reader runs in a sandboxed iframe without `allow-scripts`, with its own CSP and remote content blocked until the user opts in.
+     - **Implementation (Phase 1), three layers:**
+       1. **Sanitising in the daemon (`ammonia`):**
+          - **Removed:** scripts, event handlers, forms, frames and objects; links other than `http(s)` and `mailto`; and `data:` anywhere except images.
+          - **Inline images:** `cid:` images become `data:` URIs, within a size limit.
+          - **Remote images:** removed and counted unless allowed.
+          - **Hostile nesting:** sanitising costs grow with the square of the nesting depth. 20,000 nested elements took 0.7 s, and a 1 MB message could take minutes. Above 15,000 start tags (worst case about 0.4 s), the frame shows the message's text with a note instead.
+       2. **Its own origin:** the desktop serves the result through the `regards-mail` scheme, to the main window only. The response CSP is `default-src 'none'; style-src 'unsafe-inline'; img-src data:` (plus `https:`/`http:` once remote images are allowed), with `frame-src` limited to the link opener below and `form-action 'none'; base-uri 'none'`.
+       3. **The frame:** an `<iframe sandbox="">`, so no scripts, no same-origin access, no popups and no navigation. The app CSP allows framing only `regards-mail`.
+     - **Links (Phase 1):** web links open in the default browser.
+       - **Rewriting:** for the reading frame, the daemon rewrites each `http(s)` link to the desktop's own `regards-mail` opener, `/open?t=<token>&url=<URL>`.
+       - **Opening:** the links target a hidden frame inside the message document (`<base target>`; the message's own `<base>`, targets and frames are removed). A click loads the opener there, so the message stays in view. The desktop then checks the token, accepts only `http`/`https` URLs, opens them in the browser and answers 204.
+       - **The token:** it is random, new at each launch, and appears only in rewritten links. An image or other resource in a message cannot trigger the opener; only a click on one of its links can.
+       - **Logging:** URLs are not logged.
+       - **Not yet:** `mailto:` links wait for the composer.
+   - **Attaching files (Phase 2):**
+     - **Picking:** the system file dialog is opened from Rust (`tauri-plugin-dialog`'s Rust API). The WebView is granted none of the plugin's commands and never sees a path.
+     - **Reading:** the bridge hands the chosen paths to the daemon's `draft.attach_file`, which reads each file once into `blobs/` (at most 25 MB per message).
+     - **Agents:** that method is `ui` only and must stay so. An agent able to name a path could make the daemon read and send any local file.
 5. **Deep links:** a custom URL scheme (`regards://thread/<id>`, `…/draft/<id>`) is registered by the desktop app. Handlers only navigate; they never perform actions.
 
 ## Threat model and limits

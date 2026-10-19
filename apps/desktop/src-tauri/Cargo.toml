@@ -17,8 +17,25 @@ tauri-build = { version = "2.7", features = [] }
 [dependencies]
 regards-core.workspace = true
 regards-ipc.workspace = true
+regards-net.workspace = true
 serde.workspace = true
-tauri = { version = "2.12", features = [] }
+serde_json.workspace = true
+tauri = { version = "2.12", features = ["tray-icon"] }
+# With deep-link: a regards:// link opened while the app runs reaches it.
+tauri-plugin-single-instance = { version = "2.5", features = ["deep-link"] }
+# regards:// links (ADR-0012 §5): they open a message, draft or hold, never act.
+# 2.6.1 is the newest older than two weeks.
+tauri-plugin-deep-link = "=2.6.1"
+# The file picker, used from Rust only: the WebView is granted none of its commands.
+tauri-plugin-dialog = "2.8"
+# Start at login for background mode (ADR-0017 §1), used from Rust only.
+tauri-plugin-autostart = "2.7"
+# Notifications (ADR-0011), used from Rust only. 2.5.1 is the newest 2.x older
+# than two weeks; later ones wait.
+tauri-plugin-notification = "~2.5.1"
+getrandom.workspace = true
+open = "5.4"
+tokio.workspace = true
 
 [lints]
 workspace = true

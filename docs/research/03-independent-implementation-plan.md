@@ -139,19 +139,83 @@ flowchart LR
 - **Microsoft:** OAuth 2.0 + PKCE (loopback redirect), XOAUTH2 for IMAP/SMTP.
 - **Google:** OAuth once Google approves the desktop client (the verification process **starts in Phase 0**); until then, guided app-password setup.
 - **Everyone else** (Infomaniak, iCloud, Yahoo, Fastmail, GMX, hosting providers, own servers): an app or mailbox password in the OS keychain. Autoconfig through an ISPDB-style database, DNS SRV, then manual entry, with app-password guidance.
+- **As built (2026-10-19), finding the servers** (`account.discover`, `regards_core::autoconfig`):
+  1. **Known providers:** Gmail, Outlook.com and Hotmail, iCloud, Yahoo, AOL, Fastmail, Infomaniak, GMX, WEB.DE and Bluewin. These come with what to say about the password: an app password, or Microsoft's sign-in only.
+  2. **DNS** (`hickory-resolver`, the system's DNS servers):
+     - MX records name a provider hosting the domain: Microsoft 365, Google Workspace, iCloud, Fastmail, Yahoo or Infomaniak. OAuth is then offered, not required.
+     - Otherwise, the SRV records of RFC 6186 and RFC 8314.
+  3. **The usual names:** `imap.` and `mail.` on 993; `smtp.` and `mail.` on 587, then 465. They are probed at once. A server is offered only if it greets with a certificate valid for its name; nothing signs in.
+
+  It takes 12 s at most. A real run found microsoft.com behind Microsoft 365 by its MX, and mailbox.org by its usual names (`tests/accounts.rs`, ignored by default). No ISPDB or other third party is asked.
 - **Accepted when:** setup succeeds against Microsoft 365, Outlook.com, Gmail (both paths), Infomaniak, iCloud and a self-hosted Dovecot, and no secret is ever written outside the keychain.
+
+- **In the app:**
+  - The add-account form (first run and Settings) offers "Sign in with Microsoft" and "Sign in with Google" above the password form, when this version has the provider's client id. The provider of the address being typed is offered first.
+  - While the person signs in in the browser, the app says so, shows the page's address in case no window opened, and can cancel. Leaving the screen gives the sign-in up.
+  - An account whose sign-in expired says so in Settings › Accounts, with "Sign in again". The main window shows a pill that leads there.
 
 ### 5.2 IMAP engine (P0, 1.0, ADR-0009)
 
 - Async IMAP on rustls, one connection actor per account (an IDLE connection plus a command connection).
+- **Library:** `imap-next` + `imap-codec` behind our own `regards-imap` crate, following the rules from the [spike](07-imap-library-spike.md) §7.
+- **Built so far (Phase 1):**
+  - **Mailboxes:** mailbox list with roles (SPECIAL-USE, then common names in five languages).
+  - **First sync of a mailbox:** headers of the newest 2,000 messages. Older ones are then fetched in the background, newest first, 500 at a time, until every folder is complete; a batch is only stored under the UIDVALIDITY it was fetched with.
+  - **Later syncs:**
+    - **New messages:** by UID.
+    - **Flag changes and deletions with QRESYNC:** one `SELECT (QRESYNC …)` reports changed flags and vanished UIDs since the last sync, so there is no extra FETCH and no full `UID SEARCH`.
+    - **Without QRESYNC:** flags by `CHANGEDSINCE` with CONDSTORE, otherwise by re-reading the stored range; deletions only from a completed `UID SEARCH`.
+    - **UIDVALIDITY changes:** rebuild the mailbox.
+  - **Header parsing:** headers are fetched as literals and parsed with `mail-parser` (encoded words, legacy charsets).
+  - **Tests:** CI runs these flows against Dovecot.
+  - **Push:** one IDLE connection per account on the inbox, with a catch-up sync before each IDLE, re-IDLE every 25 minutes, and reconnect with backoff (reset once a connection worked). Servers without IDLE are polled every 5 minutes. Measured against Dovecot: about 0.6 s from delivery to the store.
+  - **Offline:** a fault-injection proxy test cuts the line. Actions taken offline show at once, and when push reconnects the waiting actions go out at once (about 5 s after the line returns, against 9 s or more on the retry schedule).
+  - **Scale:** a 100k-message fixture (`cargo test -p regards-store --release --test scale -- --ignored --nocapture`). Storing it: 2.7 s, at most 80 ms per batch of 2,000. Afterwards, any page of the list: about 0.3 ms (12 ms cold); a conversation or a message row: under 0.2 ms; a 50-message action: 0.2 ms; reopening the store: 7 ms cold.
+  - **Connections:** addresses are tried "Happy Eyeballs" style (RFC 8305), so a broken IPv6 route costs 250 ms, not seconds.
+  - **Live updates in the UI:** a change feed (ADR-0007) notifies subscribed clients of every committed change and sync-status change. The app refreshes on those events and no longer polls.
+  - **Conversations:** References threading across folders (ADR-0009 §5). The reading pane lists the other messages of the conversation, wherever they are, and opens them.
+  - **Reading:** the source is downloaded once (`BODY.PEEK[]`, so it stays unread) and kept in `blobs/`. HTML is sanitised and shown in a sandboxed frame, with remote images blocked until allowed. Web links open in the default browser (ADR-0006 §4).
+  - **Actions:** read/unread, flag, archive, delete (to Trash), move, and delete for good (from Trash or Junk) go through the operation queue. They show at once, reach the server in the background, are retried while offline, and moves can be undone.
+  - **Keyboard:** Gmail-style shortcuts (`j`/`k`, `e`, `#`, `s`, `Shift+U`/`Shift+I`, `z` to undo, `Esc`), with `?` for the list. Customisable sets come with settings.
+- **Still to come in Phase 1:**
+  - **Sign-in:** OAuth (XOAUTH2) for Microsoft, and Google behind a flag until approved; this needs the app registrations (Phase 0 paperwork).
+  - **Live tests on real providers:** Microsoft 365, Outlook.com, Gmail, Infomaniak and iCloud.
 - **Capability-aware:** incremental flag sync with CONDSTORE/QRESYNC; efficient UID-range sync plus periodic flag resync without them (Infomaniak advertises neither before login; recheck after login). MOVE, or UIDPLUS COPY + `\Deleted` + UID EXPUNGE.
 - Gmail X-GM-EXT-1 labels and thread IDs when present.
 - **Accepted when:** the fault-injection suite passes with no panics on malformed input, and IDLE delivers new mail in under 5 s.
+  - **Status:** IDLE delivers in about 0.6 s against Dovecot. A hostile fake server answers every kind of command with 16 kinds of bad replies (noise, a 4 GB literal that never comes, truncation, an endless line, BYE, wrong tags, junk numbers and names), and each call ends in a result or an error within seconds, never a panic or a hang. 3,000 mangled messages and degenerate inputs go through every message parser without a crash. The offline proxy test covers lost connections. Real-provider runs are still to do.
 
 ### 5.3 Inbox and navigation (P0, 1.0)
 
 - **Scope:** unified and per-account inboxes, system mailboxes, folders/labels, Outbox, Snoozed, Set aside, Recently seen; split layouts; keyboard-first navigation; context menus.
 - **Accepted when:** 10k-thread lists scroll at 60 fps, every action is keyboard-reachable, and the layout persists per window.
+- **Built so far:**
+  - **Window:**
+    - The sidebar is kept open beside the mail, or folded to a dark rail of icons that opens over it (`/`).
+    - Split view puts the list and the open message side by side (the default); a message can also open in place of the list, with a way back.
+    - On Windows the app draws its own title band, with an app menu (⌄), minimise, maximise and close; macOS keeps its traffic lights over the sidebar.
+    - The layout and the theme (light, dark or as the system) are remembered.
+  - **Sidebar:**
+    - Inbox (with its unread count, and per account under a chevron when there are several), then Pinned, Drafts, Sent, Trash and the Outbox (with its count).
+    - Under Folders: Archive, the folders added with a star, and More. More opens a panel of every folder: Snoozed, Reminders, Set aside, Junk and anything taken out of the sidebar, then each account's folders. The star adds one to the sidebar; Ctrl+click adds several.
+    - Folders opened from the panel are listed under Recents (with Clear). Right-clicking a folder removes it from the sidebar, or pins a recent one.
+    - Messages can be dragged onto a folder: Archive, Trash, Junk, a folder of their account, Pinned, Set aside, Snoozed or Reminders.
+  - **The list:**
+    - Grouped by day (Today, Yesterday, This week, Last week, then by month).
+    - Beside the reader, three lines per message: who and when; the subject, the conversation's size and a paperclip; the start of the text. Hovering shows Done, read/unread and delete in the margin. The open message is tinted across the row.
+    - Alone, one line per message, with the actions in place of the date on hover.
+    - Set-aside mail waits in a bubble at the bottom left.
+    - Several can be selected (Ctrl/⌘-click, Shift-click, `x`, Ctrl/⌘+A, or the check when the list is alone). A bar at the top then acts on all of them.
+    - Single-key shortcuts act on the selection, else the message under the pointer, else the highlighted one.
+    - Search (Ctrl/⌘+F, the magnifier, or the palette) takes the header's place and searches all mail (§5.10).
+  - **Reading:** a toolbar with Back | Done, then delete, flag, read/unread, pin, set aside, snooze and ⋯; the subject below it; the conversation as cards, oldest first, the open message expanded. Reply and forward sit at the bottom of each card, and after archiving or deleting the next message opens.
+  - **Writing:** a new message takes the whole pane, with a large subject field. A reply opens in a panel over the conversation, which can be made full size.
+  - **The command palette** (Ctrl/⌘+K, right-click on a message, and every ⋯): the actions on that message, conversation or selection, with their keys, then going to any folder and the app's commands. Moving, snoozing, reminders and sending later open as pages of it.
+  - **Actions** come from one list, which feeds the toolbar, the hover buttons, the selection bar, the palette and the shortcuts.
+  - **Still to come:**
+    - one row per conversation
+    - a virtualised list for 10k rows
+    - reordering the sidebar by dragging
 
 ### 5.4 Smart Inbox (P1, 1.0)
 
@@ -164,12 +228,57 @@ flowchart LR
   5. optional local ML later
 - **New-sender screening:** *off* / *section* / *hold until accepted*; accept or block a sender or domain.
 - **Accepted when:** every placement answers "why is this here?", corrections persist, and nothing leaves the device.
+- **Built so far (Phase 4):**
+  - **The rules** (`regards_core::smart::classify`) run in order, and the first that applies wins:
+    1. the section the person chose for the sender
+    2. priority sender
+    3. from one of the account's own addresses (People)
+    4. delivery report, sent automatically, or no-reply address (Notifications)
+    5. mailing list or bulk (Newsletters)
+    6. sent through a bulk-mail service (Notifications)
+    7. someone the account has written to (People)
+    8. anyone else (New senders)
+  - **One function gives the section and the reason**, so "why is this here?" (`message.explain`) cannot disagree with the placement.
+  - **Header traits:** the sync also fetches `List-Id`, `List-Unsubscribe`, `List-Post`, `Precedence`, `Auto-Submitted`, `X-Auto-Response-Suppress`, `X-Autoreply`, `Content-Type` and `Feedback-ID`. From them each message gets traits as bit flags. A twelve-case corpus test covers newsletters, receipts, code-review notifications, bounces, auto-replies and people.
+  - **State (migration 0017):**
+    - every message's `section`, kept current
+    - a `senders` table per account: the person's choice, priority, and when the account first wrote to them
+  - **The relationship graph:** a message from one of the account's addresses marks its recipients as written to, and their New senders mail moves to People. The migration seeds this from mail already stored.
+  - **Mail stored before** is sorted at start from what is known. The backfill then reads the inbox's headers again, newest first.
+  - **API:**
+    - `message.list` takes a `section`; its page walks `messages_by_section`
+    - `smart.overview` gives counts and unread per section
+    - `sender.set` records a correction, and the sender's mail, old and new, follows it
+  - **Domains:** a correction can name a whole domain (`@shop.example`); a choice for an address wins over its domain's.
+  - **Screening** (`smart.screening`, migration 0019):
+    - **off:** New senders fold into People
+    - **section:** the default
+    - **hold:** the inbox leaves New senders out until accepted (a `people` choice); their section is the screener
+  - **Blocking** (`sender.block`, an address or a domain):
+    - the sender's inbox mail moves to Junk on the server, through the queue
+    - what they send later goes there as it arrives
+    - undo brings the mail back and unblocks
+  - **App API:** `smart.ts`, with `reasonText` for the "why is this here?" sentences.
+  - **In the app:**
+    - The inbox's title chooses its view: **Smart** (the default) or **By date**, shown as two pictures. With several accounts it also chooses all of them or one; the Smart Inbox then covers that account only.
+    - **Smart**, top to bottom:
+      - new senders, as a card whose rows have Accept and Block (or, when held, one line that leads to them)
+      - a warm Priority card with its newest three and "View all"
+      - People by day, with one row each for Notifications, Newsletters and Pinned in the first day: an icon, a count, and the senders as chips
+    - Each group opens as its own list, with a way back (Esc).
+    - **The sender card** opens from a message's face, or from the palette. It shows where their mail goes (automatically, or always People, Notifications or Newsletters), a Priority switch, the "why is this here?" sentence, Write to them, copy the address, and Block or Unblock.
+    - **Settings › Smart Inbox** holds the view, and new senders: with everyone, in a card, or held back.
+    - **Still to come:**
+      - bulk actions on a card
+      - choosing which groups are bundled
+      - the card view (unread mail as stacked cards)
 
 ### 5.5 Done / Pin / Set aside / Seen (P1, 1.0)
 
 - **Done** = archive.
 - **Pin**, **Set aside** and **Seen** are local overlays.
 - Everything is undoable and agent-callable, with identical semantics in the UI, CLI and MCP.
+- **Built so far (Phase 3):** Pin and Set aside are kept on the device, keyed by account and Message-ID, so they follow a message across folders, moves and resyncs (migration 0012). The inbox leaves out what is set aside or snoozed; other folders show everything. The Pinned, Set aside and Snoozed views list one entry per message. Marking is undoable like moves (`message.pin`, `message.set_aside`, `message.view`). Measured on the 100k fixture: an inbox page with 100 messages set aside takes 0.3 ms. Done is archive. The buttons come with the new app shell.
 
 ### 5.6 Snooze and reminders (P1, 1.0, ADR-0011)
 
@@ -177,10 +286,31 @@ flowchart LR
 - **Reminders:** "if no reply by …", cancelled by any reply from another participant.
 - **Executed on the device only**, in every release: nobody looks at the inbox while the computer is off.
 - **Accepted when:** these work across restarts, DST, time-zone changes and sleep/resume.
+- **Built so far (Phase 3):**
+  - **Snooze:** until a time or "someday" (`message.snooze`, undoable). Snoozed messages leave the inbox and are listed in the Snoozed view.
+  - **The scheduler** (one daemon task) never sleeps more than 30 s before reading the wall clock again, so sleep, clock and time-zone changes delay a wake-up by seconds. Overdue snoozes wake at startup.
+  - **Waking** marks every copy unread, here and on the server, so it is back as new.
+  - **Replies:** new mail from someone else in the conversation ends a snooze. "New" means stored by an incremental sync, never compared across the server's and the device's clocks; first syncs and backfill don't count.
+  - **Presets** (later today, this evening, tomorrow, this weekend, next week, someday) are built from local dates and hours, so they keep wall-clock times across DST. Unit-tested (Vitest) in a fixed zone with an October change.
+  - **Back on top:**
+    - A woken snooze records `surfaced_at` (migration 0014), and the inbox lists it by that time, so it is on top, not back at its old date.
+    - Summaries carry `listed_at`, and the inbox cursor pages by it.
+    - The inbox query gains a third half that walks `marks_surfaced`. It takes 0.74 ms per page at 100k messages with 100 messages come back (`tests/scale.rs`).
+  - **Reminders:**
+    - `message.remind` (undoable) takes a time, or none. They can also be set when sending: `draft.send` takes `remind_at`, keyed by the new Message-ID; undo send drops it.
+    - **When the time comes:** if someone else has written in the conversation since the message, the reminder just goes. That check compares two server arrival times, never the device's clock.
+    - **Otherwise** the message is "reminded": shown on top of the inbox from wherever it is filed (Sent, usually), with a Reminders view for those still waiting.
+    - **A reply** arriving by incremental sync also ends a waiting or come-due reminder, as with snooze.
+    - **Done:** archiving a reminder shown outside the inbox ends it, and the message stays filed. Any move clears the "came back" marks, undoably.
+  - **Notifications:**
+    - **What is recorded:** the daemon records notices (migration 0015) when a snooze ends, a reminder comes due, or a send is held, failed or uncertain. Each carries who and the subject, never the text, and they are kept a week.
+    - **What the desktop does:** it lists unshown notices (`notice.list`) after changes and at start, shows them as OS notifications (`tauri-plugin-notification`), and marks them shown (`notice.shown`).
+    - **How many:** up to three, one each; more become one summary, which covers ADR-0011's summary after downtime.
+    - **When not shown:** while the window has the focus, or when turned off in the tray ("Show notifications"). Either way they are marked shown.
 
 ### 5.7 Send later, undo send and executors (P1)
 
-- **Undo send (1.0):** every send passes through the outbox with `undo_until = now + delay` (default 10 s, configurable 0–30 s).
+- **Undo send (1.0):** every send passes through the outbox with `undo_until = now + delay` (default 10 s, configurable 0–60 s).
 - **Freezing and at-most-once (1.0):** MIME bytes are frozen and hashed at queue time, and exactly one executor claims the job. A timeout becomes `uncertain`, with no blind retries, and is reconciled with the Sent folder.
 - **No internet (1.0):** the Outbox holds messages and sends them when the connection returns.
 - **Executors:**
@@ -196,6 +326,26 @@ flowchart LR
 - **Accepted when:**
   - **1.0:** sends are on time while the computer is on, and catch-up is correct after sleep or shutdown, with no duplicates under fault injection.
   - **1.1:** a scheduled email is delivered on time **with the laptop asleep** for Microsoft, Gmail, Infomaniak, iCloud and self-hosted Dovecot.
+- **Implementation (Phase 3, device executor):**
+  - **Schema (migration 0013):**
+    - The outbox gains `send_at` and `executor` (`device` in 1.0).
+    - It gains a `held` state.
+    - The CHECK constraints already allow the 1.1 executor names and `handed_off`, so 1.1 needs no table rebuild.
+  - **Sending later:**
+    - `draft.send` takes `send_at`: a future time, at most five years ahead.
+    - The bytes are frozen with `Date` set to that time, so the message does not arrive looking old.
+    - The device runner claims only `device` entries, once both the undo window and `send_at` are past.
+    - It naps at most 30 s, so it notices sleep and clock changes.
+  - **Catch-up:** a scheduled entry found more than the grace (1 h, `Daemon::with_late_send_grace`) past its time becomes `held`, never sent unasked. A message sent "now" is never late, however long it waited offline.
+  - **The person's choices:**
+    - `outbox.reschedule` moves a queued or held entry to a new time or to now. It re-freezes the bytes from the frozen draft, re-dated, with the same Message-ID.
+    - `outbox.undo` takes it back to its draft.
+    - "Send again" after a failure clears `send_at`.
+  - **UI:** the Outbox says "Sends Mon 19 Oct, 09:00. This computer must be on then." and, for held entries, offers **Send now** and **Edit**.
+  - **Tests:** `tests/send_later.rs` runs against fake IMAP and SMTP, in CI. It covers:
+    - not before its time, and dated for then
+    - move, send now and take back
+    - a restart after downtime, where the entry well past its time is held and the one a little late goes
 
 ### 5.8 Send Service and Pro (P1, 1.1, ADR-0018/0019)
 
@@ -220,26 +370,177 @@ flowchart LR
 - **Saving:** local revisioned autosave plus throttled IMAP draft sync.
 - **Sources:** reply, reply-all, forward, send again, `mailto:`, templates with placeholders, and Markdown input for the CLI and agents.
 - **Send validation:** recipients, subject (or confirmation), attachments ready, no unresolved placeholders.
+- **Built so far (Phase 2):**
+  - **Sending:** the SMTP submission client (`regards-smtp`, at-most-once).
+  - **Drafts:** stored in the daemon. A new message, reply and reply all (Reply-To honoured, my own addresses left out) and forward start addressed and quoted. A reply's References are kept to 20 (the root and the latest).
+  - **Outbox:** frozen MIME, undo send (10 s by default, 0–30 s), retry with backoff, `failed` and `uncertain` states, the Sent copy, and `\Answered` on the original (ADR-0010 §3–4).
+  - **The composer in the app:** new message, reply, reply all and forward; Cc/Bcc; autosave; a list of drafts; undo send; the Outbox with its actions.
+  - **Attachments:** picked with the system dialog and read by the daemon (ADR-0006 §4), at most 25 MB per message, frozen into the MIME at send. A forward carries the original's files (not its inline images).
+  - **Formatting:** a Tiptap (ProseMirror) editor with bold, italic, underline, strikethrough, links, lists and quotes. The daemon sanitises the HTML (an allowlist of formatting tags; web and mail links only) and derives the text part from it, so a message goes as `multipart/alternative`. The editor loads on demand, and ProseMirror's styles ship as a file because the app's CSP allows no injected styles.
+  - **Identities and signatures:**
+    - **What they are:** an account sends as its own address (the default at first) or an alias. Each has a name and a plain-text signature, in migration 0016 and `identity.*`.
+    - **New drafts:** a new message, reply or forward starts with the identity's signature, above any quote.
+    - **Replies:** a reply goes out from the address it was written to, and none of the account's addresses is answered.
+    - **Changing From** in the composer swaps the signature: the daemon swaps it in plain text (`draft.set_from`), the app in the editor's HTML.
+    - **What changes on the wire:** the envelope, From and the Message-ID's domain follow the identity.
+  - **Templates:**
+    - **Storage:** text to start a message with, by name, for every account (migration 0020, `template.*`). Formatting is sanitised like an outgoing message's.
+    - **In the composer:** a template goes where one writes, above the signature and any quote, and fills an empty subject.
+      - The templates button, or Ctrl/⌘+Shift+T, opens them as a palette page, filtered by typing their name.
+      - The same page keeps what has been written as a new template, named after its subject, formatting included.
+    - **Settings › Templates:** an editor (`TemplatesEditor`) for them. It sits beside Inbox, as in the reference app's settings groups.
+  - **IMAP draft sync:**
+    - **Upload:** a draft left alone 5 s is appended to the server's Drafts folder (`\Draft \Seen`, with its Bcc), and its previous copy is deleted. Every copy carries one Message-ID (migration 0021).
+    - **Deletion:** a trigger queues the copy whenever the draft goes (sent, discarded, account removed).
+    - **Reconciliation:**
+      - A copy gone from the server takes an unchanged draft with it (sent elsewhere); a changed draft is uploaded again.
+      - Stray copies from a crash are deleted.
+    - **Drafts from webmail or another device** are listed (`draft.elsewhere`) and picked up (`draft.adopt`).
+    - **Servers without UIDPLUS:** drafts stay on the device.
+- **Dropping files onto the composer** (2026-10-19): the system's drop reaches the app's Rust side with the paths, which stay there. The UI learns names and sizes, and attaches a drop to the open draft by its id (`draft_attach_dropped`), as the file picker does: the WebView never handles a path (ADR-0006 §4). Files that cannot be attached (a folder, over 25 MB) are named, with why.
+- **Dropping files on the window** with no message open starts a new message with them, from the account shown. While files are dragged over the window, a dashed overlay says so. Files that could not be attached are named.
+- **Images in the text** (2026-10-19): pasted, or dropped on the text. Each is a draft attachment with a Content-ID (migration 0027), PNG, JPEG, GIF or WebP, at most 5 MB, 10 MB in all.
+  - The draft's HTML refers to it as `<img src="cid:…">`. The editor shows it from its bytes, and the two are turned into each other on opening and saving.
+  - Sent, it goes with the HTML as `multipart/related`. The outgoing sanitiser keeps only `cid:` images, never images from the web.
+  - An image taken out of the text is not sent, and leaves the draft once it has been there a minute: a save begun before it was put in does not have it yet.
+- **Still to come in Phase 2:** checking the HTML in major clients (the acceptance test).
 
 ### 5.10 Search (P0 keyword, P2 semantic, 1.0)
 
 - Gmail-style query language over SQLite FTS5 with BM25.
 - Optional on-device embeddings, opt-in.
+- **Keyword search, as built (2026-10-19):**
+  - **The language** (`regards_core::search`):
+    - Words match the subject, the people and the text; the last one also as the start of a word (from two letters), so results come while typing.
+    - `"a phrase"` matches as written, `-word` leaves out.
+    - `from:` `to:` `subject:` look in one place; `has:attachment`; `is:unread` `is:read` `is:flagged`; `before:` / `after:` `YYYY-MM-DD`.
+    - `in:<folder or role>`; Trash and Junk are left out unless named, or with `in:anywhere`.
+    - Accents need not be typed. What is typed never reaches FTS5's own syntax: every word is quoted.
+  - **The index** (`search.db`, ADR-0008): a row per stored message, with its subject, sender, recipients and text. The text is the whole of it once the message was downloaded (on opening), its preview before. Full texts are kept by Message-ID, so a message moved to another folder is still found by them.
+  - **Kept current:** triggers on the writer queue every change to `messages`. The daemon indexes the queue 300 ms later, in batches of 500, with writes that wake no client. Another index version is rebuilt the same way, newest first.
+  - **Results:** one copy of each message (its inbox copy first), newest first, paged like a folder. On the first page of words that match at most 2,000 messages: the 3 best by BM25 (the subject weighs most, then sender, recipients, text).
+  - **Two plans:** words with few matches are read through the index. Common words, and filters alone, walk all mail newest first through `messages_by_time` (migration 0022) until a page is full; that index holds the filtered columns, so the walk reads only the index.
+  - **Measured** at 100k messages (`tests/scale.rs`, release build, development machine):
+    - Every query took 0.3–22 ms: a rare word 3 ms, a word in 88% of mail 22 ms, the whole walk (nothing passes the filters) 15 ms. The target is 150 ms p95.
+    - Indexing 100k took 11.7 s in the background, each batch under 0.45 s.
+  - **Interfaces:** `search.query` (`ui` only until agent access levels), bridged as `search_messages`, and `search.ts` in the app.
+  - **In the app:**
+    - Ctrl/⌘+F, the list's magnifier, or "Search mail" in the palette turns the list's header into a search field. With several accounts, the field also chooses all of them or one.
+    - **Before typing:** tips to click into the field (from:, to:, subject:, in:, has:attachment, is:unread, after:, phrases and -word), and recent searches, each removable.
+    - **Results** come as typing pauses (200 ms), through the same list as a folder, so rows, keys, selection and actions all work.
+      - Above them: how many, and, while changes are still being indexed, that recent mail may be missing, with "Search again".
+      - When there are more than a few, the best three come first as "Top results".
+    - **Remembering:** Enter remembers the search and goes to the first result. Opening a result remembers it too.
+    - **The sender card** has "Search mail from them".
+    - **"Did you mean …?"**: when a search finds nothing and the daemon has a mended search that finds something, "Nothing found" offers it as a link that runs it. It is never run unasked.
+    - **Search on the server**, offered beside the count and when nothing is found here, asks `search.server` for the same words and scope.
+      - Its matches join the results, once each.
+      - Then a line says how many it added, how many are on the server but not on this device yet, and which accounts could not be reached.
+      - Older matches come with "More from the server", on demand, since each page asks the servers again.
+  - **On the servers** (`search.server`, for a "Search on the server" action):
+    - The same words and filters go to each account's server as IMAP `UID SEARCH` (`TEXT`, `FROM`, `TO` or `CC`, `SUBJECT`, `NOT`, flags, `BEFORE` / `SINCE`; `CHARSET UTF-8` when needed). This finds the text of mail not opened here.
+    - It searches the folders the search would, but only All Mail when the account has one and no folder is named.
+    - Matches stored here are listed like the search's results. Matches not fetched yet are counted (`not_here`), not fetched: storing an old message early would make older mail's background fetch skip what lies between.
+  - **Did you mean** (`search::suggest`, `SearchResult.suggestion`):
+    - **When:** a search that finds nothing comes back with the same search, its unknown words replaced by the nearest known ones.
+    - **Nearest:** a letter wrong, missing, extra, or two swapped; up to two such edits from five letters on. It starts with the same letter, and the word in the most messages wins.
+    - **Left as typed:** phrases, words with digits, words shorter than three letters, and words left out (`-word`).
+    - **Never a leak:** it is offered only if it finds something in the same accounts and folders, so an agent learns nothing of mail closed to it.
+    - **The word list:** the index's own (`fts5vocab`), so nothing more is stored and nothing is rebuilt.
+    - **Speed:** 9 ms at 100k messages (`tests/scale.rs`).
 
 ### 5.11 Agent gateway: CLI + MCP (P1, 1.0, ADR-0012)
 
 - **Access levels** per account: Off (default) · Read · Triage · Send, enforced in the daemon.
+  - **As built (2026-10-19), Read:**
+    - Each account has `agent_access` (migration 0023), Off by default. Only the app sets it (`account.set_agent_access`).
+    - The daemon checks it for every agent request, by the account the request names, or the mailbox's or the message's account.
+    - Agents list only accounts open to them, and their searches, local or on the server, look only there.
+    - A refusal names the setting (`data.setting = "agent_access"`, with the level needed and the current one). An account closed to agents is not named in it.
+    - Read opens accounts, folders, message lists, the Pinned / Set aside / Snoozed / Reminders views, messages and conversations, Smart Inbox counts and explanations, and search. Reading never marks mail read.
+    - Send opens sending, always held for the person (see Holds).
+  - **As built (2026-10-19), Triage:**
+    - Triage opens organising: flags, archive, trash, move (to a folder of a triage account), pin, set aside, snooze, reminders, and sorting or blocking senders.
+    - It also opens drafts: new, reply, forward, read, change, delete, From, and the list (only accounts that allow triage).
+    - Never at Triage: sending, deleting for good, attaching files from disk, undo, settings and sync.
+    - At most 50 messages per request; more is a bulk change, which needs the person.
+    - In an account closed to agents, its messages, folders and drafts are not there for them: `NOT_FOUND`, as for what does not exist. A refusal that names the setting is only for accounts they can see.
+  - **In the app (Settings › Agents):**
+    - Each account has a dropdown of the four levels, and the chosen one is explained under the address.
+    - Choosing Send asks first.
+    - **In the Outbox**, a message an agent asked to send says so, and while it waits out its delay it counts down ("Goes in 25 s unless you call it back") with **Call it back**, which takes it back to Drafts.
+    - **At Send**, "Sends" chooses how an agent's sends go: "Ask me each time" (the default), or "Send after 10 s to 10 min unless I call it back" (`setAgentSend`). Choosing a delay asks first and says that at most 20 an hour go so.
+    - **Waiting for you**, at the top of the page: what agents asked for that needs the person, which is every send, more than 50 messages at once, and deleting for good.
+      - A send shows its draft (From, To, Cc, Bcc, subject, text, files) before Send or Reject.
+      - Once decided, the card says how it went, with "Undo send" while the send can be taken back, or Undo for a change.
+      - While anything waits, the main window shows "An agent is waiting for you", which opens the page.
+    - The page sits at the top of the settings, under the person's card, where the reference app keeps its AI agents.
+    - **Activity:** what agents did, newest first, grouped by session (the command line, or an assistant through MCP).
+      - Each request is in plain words ("Read a message", "Searched “invoice”"), with "Refused" and its reason when it was not allowed.
+      - A request over an agent's pace reads "Too fast", or "Too many waiting" when 20 already wait for the person, and its session counts it as slowed down rather than refused.
+      - Its parameters can be opened under it.
+      - Filters: everything or refused only, and with several accounts, one of them.
+      - It looks for new entries every 5 s while shown, and on focus. Older entries page with "Show older".
+      - What an agent changed shows how it was ("Was: “Book club”, in Inbox, unread").
+      - Undo appears while the daemon says the change can be undone: ten minutes, once. Flag changes included.
+  - **Links** (`regards://`, in agents' results) open in the app, and only ever open a view, never act:
+    - a message opens in its folder
+    - a draft opens in the composer
+    - a hold opens Settings › Agents with its card in view, or how it was decided, or that it is gone
 - **Holds** for send-tier and bulk or destructive intents.
+  - **As built (2026-10-19):**
+    - Held (migration 0026): an agent's every send (Send access), changing more than 50 messages at once, and deleting for good. Deleting for good is from Trash or Junk only, refused at once otherwise.
+    - The agent gets `HELD` with the hold's id, and follows it with `hold.get`. The person is told (a notice, “An agent is waiting for you”) and approves or rejects it in the app (`hold.list`, `hold.approve`, `hold.reject`); only the app decides.
+    - Approving runs the request as the agent made it. A send goes only if its draft is still as it was when held; otherwise the hold fails and nothing is sent.
+    - Undecided holds expire after a day. The activity entry follows the decision: held, then approved or rejected.
+    - **Send with an undo window instead** (migration 0028, `account.set_agent_send`):
+      - **The setting:** per account, 10 s to 10 min. An agent's send then waits in the Outbox for that long, whatever undo it asked for.
+      - **Telling the person:** a notice, “An agent is sending a message”, links to its Outbox entry. Only the person can call it back.
+      - **A cap:** at most 20 an hour per account go so; past that, sends are held again.
+      - **The default:** off, so each send waits for approval.
+    - Not yet: deciding from the CLI. The CLI is an agent, so it cannot approve.
 - **Audit log** with before-state and undo.
+  - **As built (2026-10-19):**
+    - Every agent request but the handshake is recorded once answered (migration 0024): when, the connection and what it came through (CLI, MCP), the method and its parameters, the account it named and what that account allowed then, the decision (allowed or denied), any error, and how long it took.
+    - Secrets (keys naming a password, secret or token) are taken out of the parameters, and long ones are cut at 4 KB.
+    - Records are quiet writes, so an agent's requests do not make clients refetch. The app lists them (`agent.activity`, newest first, by account), and they are kept 90 days.
+    - For a change, its activity keeps how what it changed stood before: the messages (folder, flags, marks), the draft, or the sender. It also keeps the undo entry that reverses it (migration 0025). The app's Undo uses it while it lasts: ten minutes, once.
+    - Flag changes have undo entries too: undo sets back only the flags still as the change left them, so the person's own change since is kept.
 - **Interfaces:** stable `--json` contracts, `regards mcp`, `regards skill`, and deep links `regards://…`.
+  - **As built (2026-10-19), the CLI:**
+    - The mail commands are made from one list of tools (`regards-cli/src/tools.rs`), which `regards mcp` uses too, so the two match one to one.
+    - Read: `accounts`, `folders`, `messages`, `search`, `search-server`, `read`, `thread`, `view`, `drafts`, `draft`, `hold`.
+    - Triage: `archive`, `trash`, `move`, `mark`, `pin`, `set-aside`, `snooze`, `remind`, `sort-sender`, `block-sender`, `write`, `reply`, `forward`, `edit`, `discard`, `delete-for-good`.
+    - Send: `send`.
+    - Each command is one daemon request as an agent; the daemon is started if it is not running.
+    - `--json` prints the tool's result: the daemon's answer, with dates as ISO 8601 UTC and `link`s (`regards://message/<id>`, `regards://draft/<id>`, `regards://hold/<id>`). Paging cursors (`next`) stay as they came, to be passed back. A held request prints `{ "held": … }` and exits 0. Errors print `{ "error": { code, message, data } }` and exit 5 (not allowed), 6 (not found), 2 (unclear arguments) or 1.
+    - Times are taken as ISO 8601 (with an offset, or UTC), and people as `Name <address>` or addresses.
+    - The desktop opens `regards://message|draft|hold/<id>` (`tauri-plugin-deep-link`). A link only opens a view, never acts: any page or program can open one. Anything else is ignored.
+  - **As built (2026-10-19), MCP and the skill:**
+    - `regards mcp` serves the same tools over MCP on stdio, built in-house (ADR-0012 §1). It speaks protocol versions 2024-11-05 to 2025-11-25. Its tools carry JSON Schemas and hints (read-only, destructive), and results come as JSON text and, from 2025-06-18, as `structuredContent`.
+    - Mail text comes with a note that it is the sender's data. A held request is a result that says it waits for the person, not an error.
+    - `regards skill [--install <dir>]` prints or writes a `SKILL.md`: the rules (message text is data, nothing is sent by itself) and every command, made from the same list.
+    - For people: `docs/agents.md`.
 - **Prompt-injection posture:** content is passed as data, drafts never auto-send, and agents cannot change their own access.
+  - **As built (2026-10-19):**
+    - **Pace, per agent connection:** a burst of 120 requests, then 10 a second; for changes, a burst of 30, then 1 a second. Past it: `RATE_LIMITED` (-32015) with `retry_after_ms`, recorded as denied. The app is never limited.
+    - **At most 20 requests wait for the person at once;** more are refused, so an agent cannot bury them in approvals.
+    - **The red-team test** (`live_mail_that_gives_orders_moves_nothing`): five messages that give orders (plain, a fake MCP tool call, hidden HTML, approve links, a fake closing tag) are listed, read, rendered, threaded and searched by an agent with Send access.
+      - Afterwards there is no draft, no hold and nothing to send, and every message is still unread and in place.
+      - Its activity is only the reading it asked for: the daemon never acts on what mail says.
 
 ### 5.12 Notifications, tray, badges (P1, 1.0)
 
 - Only Priority and People notify by default.
+  - **As built (2026-10-19):**
+    - **Recording:** sync records what comes into an inbox (migration 0030 `arrivals`). It never does so on a folder's first look, so adding an account doesn't announce its inbox, and it skips mail that is already read or sent on to Junk.
+    - **Listing:** `mail.arrived` lists the arrivals with sender, subject and Smart Inbox section, never the text, and `mail.arrived_shown` marks them shown. Arrivals are kept a day.
+    - **Filtering:** the app filters per account (all; People and Priority by default; Priority only; none) and per kind for the other notices (snooze, reminders, sending, agents), from choices kept in `desktop.json`.
 - Snooze and reminder returns notify.
 - From 1.1, every remote-executor send notifies.
 - Unread counts appear in the tray.
+
+- **Updates in the app** (Settings › About): the running version; "Check for updates automatically" (on or off); Check now, with when it last checked; and, when a newer version is found, "Regards X is available" with Download. Checking stays off until the person is asked, once, in the main window after the first account ("Check for updates once a day? Regards asks GitHub for the latest version, and GitHub sees this computer's address."). A newer version found by the daily check shows as a pill in the main window that opens Settings › About.
 
 ## 6. Roadmap
 
@@ -249,7 +550,7 @@ The sizes are relative, not time estimates. Each phase ends with a usable build.
 
 | Phase | Theme | Main deliverables | Exit criteria | Size |
 | --- | --- | --- | --- | --- |
-| 0 | Foundation | Workspace from scratch:<br>• CI on Windows/macOS/Linux with `cargo-deny`<br>• daemon skeleton with lock and build handshake<br>• pipe/socket JSON-RPC with principals<br>• typed errors, generated TS types<br>• keychain vault<br>• mail fixtures (Dovecot/Postfix)<br>• signing set-up (SignPath for Windows, free; Apple Developer ID optional, $99/year, when funded)<br>• logging without third-party telemetry<br><br>Accounts and paperwork:<br>• **Microsoft app registration** + publisher verification<br>• **start Google OAuth verification for the desktop client** (domain, privacy statement, demo video)<br>• ask Google to confirm in writing that CASA does not apply to a local-only client<br><br>Spikes:<br>• IMAP crate<br>• migrations library<br>• Infomaniak post-login capabilities | Green CI on all three OSes; a hello-world build runs natively on each (signed on Windows); spikes concluded with ADR updates | M |
+| 0 | Foundation | Workspace from scratch:<br>• CI on Windows/macOS/Linux with `cargo-deny`<br>• daemon skeleton with lock and build handshake<br>• pipe/socket JSON-RPC with principals<br>• typed errors, generated TS types<br>• keychain vault<br>• mail fixtures (Dovecot/Postfix)<br>• signing set-up (SignPath for Windows, free; Apple Developer ID optional, $99/year, when funded)<br>• logging without third-party telemetry<br><br>Accounts and paperwork:<br>• **Microsoft app registration** + publisher verification<br>• **start Google OAuth verification for the desktop client** (domain, privacy statement, demo video)<br>• ask Google to confirm in writing that CASA does not apply to a local-only client<br><br>Spikes:<br>• IMAP crate (done: imap-next, see [07](07-imap-library-spike.md))<br>• migrations library (done: rusqlite_migration, ADR-0008)<br>• Infomaniak post-login capabilities | Green CI on all three OSes; a hello-world build runs natively on each (signed on Windows); spikes concluded with ADR updates | M |
 | 1 | Sync reliability | Capability-aware async IMAP engine (5.2), OAuth XOAUTH2 (Microsoft; Google behind a flag until approved), normalised schema and migrations, References threading, operation queue, intent engine, change feed | Airplane-mode test passes; IDLE under 5 s; 100k-message fixture responsive; live tests on Microsoft 365, Outlook.com, Gmail, Infomaniak and iCloud | XL |
 | 2 | Composer | Compose model, rich HTML editor, attachments, identities and signatures, templates, IMAP draft sync, **undo send** | HTML round-trip renders in major clients; undo send is reliable | L |
 | 3 | Inbox workflow + scheduling on the device | Done/Pin/Aside/Seen, snooze, reminders, Outbox + **send later (device executor)**, background mode by default, pluggable executor interface (ready for 1.1) | All workflow intents undoable; DST, sleep and catch-up tests pass | L |

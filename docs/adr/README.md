@@ -16,7 +16,7 @@ Each ADR records one significant decision: its context, the decision itself, the
 | [0006](0006-local-ipc-and-security.md) | Local IPC transport and security boundary | Accepted |
 | [0007](0007-state-model-intents-undo.md) | State model: core-owned state, intents, change feed, undo | Accepted |
 | [0008](0008-storage-and-search.md) | Storage and search: SQLite with migrations, FTS5 first | Accepted |
-| [0009](0009-mail-protocol-stack.md) | Mail protocol stack and provider abstraction | Accepted (crate choice pending spike; order amended by 0018) |
+| [0009](0009-mail-protocol-stack.md) | Mail protocol stack and provider abstraction | Accepted (IMAP: imap-next + imap-codec, per spike 07; order amended by 0018) |
 | [0010](0010-operation-queue-and-send-pipeline.md) | Offline-first operation queue and send pipeline | Accepted |
 | [0011](0011-scheduled-work.md) | Scheduled work: snooze, reminders, send later | Accepted (item 6 superseded by 0017/0018) |
 | [0012](0012-agent-gateway.md) | Agent gateway: CLI + MCP with access levels, holds, audit, undo | Accepted |

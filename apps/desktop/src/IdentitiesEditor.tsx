@@ -1,0 +1,144 @@
+import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type Identity, listIdentities, makeDefaultIdentity, removeIdentity, saveIdentity } from "./identities";
+import { Icon } from "./icons";
+
+/**
+ * An account's addresses and signatures (plan §5.9): the names and addresses
+ * it sends as, each with a plain-text signature. New messages go out from
+ * the default; a reply from the address it was written to.
+ */
+export function IdentitiesEditor({ accountId }: { accountId: string }) {
+  const [identities, setIdentities] = useState<Identity[] | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const reload = useCallback(() => {
+    listIdentities(accountId).then(setIdentities, (failure: unknown) => setError(String(failure)));
+  }, [accountId]);
+  useEffect(reload, [reload]);
+
+  if (identities === null) return error ? <p className="error small">{error}</p> : null;
+  return (
+    <div className="account-form">
+      {error && <p className="error small">{error}</p>}
+      {identities.map((identity) => (
+        <IdentityForm key={identity.id} accountId={accountId} identity={identity} onDone={reload} onError={setError} />
+      ))}
+      {adding ? (
+        <IdentityForm
+          accountId={accountId}
+          identity={null}
+          onDone={() => {
+            setAdding(false);
+            reload();
+          }}
+          onCancel={() => setAdding(false)}
+          onError={setError}
+        />
+      ) : (
+        <div>
+          <button type="button" className="btn small" onClick={() => setAdding(true)}>
+            <Icon name="plus" size={15} />
+            Add an address
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IdentityForm({
+  accountId,
+  identity,
+  onDone,
+  onCancel,
+  onError,
+}: {
+  accountId: string;
+  /** None: a new address. */
+  identity: Identity | null;
+  onDone: () => void;
+  onCancel?: () => void;
+  onError: (error: string | null) => void;
+}) {
+  const [name, setName] = useState(identity?.name ?? "");
+  const [email, setEmail] = useState(identity?.email ?? "");
+  const [signature, setSignature] = useState(identity?.signature ?? "");
+  const [busy, setBusy] = useState(false);
+  const changed =
+    identity === null || name !== identity.name || email !== identity.email || signature !== identity.signature;
+
+  const run = async (action: () => Promise<unknown>) => {
+    setBusy(true);
+    onError(null);
+    try {
+      await action();
+      onDone();
+    } catch (failure) {
+      onError(String(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const save = (event: FormEvent) => {
+    event.preventDefault();
+    void run(() => saveIdentity({ id: identity?.id ?? null, account_id: accountId, name, email, signature }));
+  };
+
+  return (
+    <form onSubmit={save}>
+      <fieldset>
+        <legend>
+          {identity ? identity.email : "A new address"}
+          {identity?.is_default && " · default"}
+        </legend>
+        <div className="form-row grow">
+          <label>
+            Name
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ada Lovelace" />
+          </label>
+          <label>
+            Address
+            <input
+              className="input"
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="ada@example.org"
+            />
+          </label>
+        </div>
+        <label className="grow">
+          Signature
+          <textarea
+            className="input"
+            rows={3}
+            value={signature}
+            onChange={(e) => setSignature(e.target.value)}
+            placeholder="Added below what you write, above a quote"
+          />
+        </label>
+        <div className="dialog-actions">
+          {onCancel && (
+            <button type="button" className="btn small" onClick={onCancel} disabled={busy}>
+              Cancel
+            </button>
+          )}
+          {identity && !identity.is_default && (
+            <>
+              <button type="button" className="btn small" onClick={() => void run(() => makeDefaultIdentity(identity.id))} disabled={busy}>
+                Make default
+              </button>
+              <button type="button" className="btn small danger" onClick={() => void run(() => removeIdentity(identity.id))} disabled={busy}>
+                Remove
+              </button>
+            </>
+          )}
+          <button type="submit" className="btn small primary" disabled={busy || !changed}>
+            {identity ? "Save" : "Add"}
+          </button>
+        </div>
+      </fieldset>
+    </form>
+  );
+}

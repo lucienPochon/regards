@@ -1,7 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window: Tauri core defaults only. Regards' own commands are defined in src/main.rs.",
+  "description": "Main window: Tauri core defaults, and moving, minimising, maximising and closing the window from the app's own caption buttons (the window has no system title bar on Windows). Regards' own commands are defined in src/main.rs.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close"
+  ]
 }

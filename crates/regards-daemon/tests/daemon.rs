@@ -4,7 +4,7 @@ use futures_util::SinkExt;
 use regards_core::paths::DataDirs;
 use regards_daemon::{Daemon, DaemonError};
 use regards_ipc::protocol::{ClientKind, Principal, Request, ServerMessage, codes, methods};
-use regards_ipc::{Client, Endpoint, framing, transport};
+use regards_ipc::{Client, Endpoint, UiToken, framing, transport};
 use serde_json::{Value, json};
 use std::time::Duration;
 use tokio::task::JoinHandle;
@@ -115,5 +115,42 @@ async fn unknown_methods_and_malformed_json_get_errors() {
     let reply: ServerMessage = framing::recv(&mut framed).await.unwrap().unwrap();
     assert_eq!(error_code(reply), codes::PARSE_ERROR);
 
+    handle.abort();
+}
+
+#[tokio::test]
+async fn only_the_handed_off_token_gives_the_ui_principal() {
+    let temp = tempfile::tempdir().unwrap();
+    let token = UiToken::generate().unwrap();
+    let daemon = Daemon::bind(DataDirs::at(temp.path()))
+        .await
+        .unwrap()
+        .with_ui_token(token.clone());
+    let endpoint = daemon.endpoint().clone();
+    let handle = tokio::spawn(daemon.serve(std::future::pending()));
+
+    let desktop = Client::connect_with(&endpoint, ClientKind::Desktop, Some(&token))
+        .await
+        .unwrap();
+    assert_eq!(desktop.principal(), Principal::Ui);
+
+    // No token: an agent, whatever the client says it is.
+    let unauthenticated = Client::connect(&endpoint, ClientKind::Desktop).await.unwrap();
+    assert_eq!(unauthenticated.principal(), Principal::Agent);
+
+    let wrong = Client::connect_with(&endpoint, ClientKind::Desktop, Some(&UiToken::generate().unwrap())).await;
+    assert!(
+        matches!(wrong, Err(regards_ipc::ClientError::Rpc(ref e)) if e.code == codes::FORBIDDEN),
+        "a wrong token must be refused, not downgraded"
+    );
+    handle.abort();
+}
+
+#[tokio::test]
+async fn a_daemon_without_a_token_refuses_every_token() {
+    let temp = tempfile::tempdir().unwrap();
+    let (endpoint, handle) = start(DataDirs::at(temp.path())).await;
+    let result = Client::connect_with(&endpoint, ClientKind::Desktop, Some(&UiToken::generate().unwrap())).await;
+    assert!(matches!(result, Err(regards_ipc::ClientError::Rpc(ref e)) if e.code == codes::FORBIDDEN));
     handle.abort();
 }

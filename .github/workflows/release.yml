@@ -1,0 +1,121 @@
+name: Release
+
+# Builds the installers for a version tag (v0.1.0 …) on Windows, macOS and
+# Linux, each with the `regards` program inside (apps/desktop/scripts/sidecar.mjs),
+# and puts them on a draft GitHub release. Nothing is published: the owner
+# reads the draft and publishes it.
+#
+# Not signed yet: Windows signing (SignPath) and macOS notarisation come with
+# their accounts (plan, Phase 0 paperwork). Until then Windows SmartScreen
+# and macOS Gatekeeper warn on first start.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The version tag to build, for example v0.1.0 (it must exist)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  draft:
+    name: Draft release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: The tag is the app's version
+        run: |
+          version="$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")"
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::tag $TAG but tauri.conf.json says $version"
+            exit 1
+          fi
+      - name: Draft, if there is none yet
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --draft --verify-tag --title "Regards ${TAG#v}" --generate-notes
+
+  bundle:
+    name: Bundle (${{ matrix.name }})
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: macOS Apple silicon
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: macOS Intel
+            os: macos-latest
+            target: x86_64-apple-darwin
+          # The oldest supported Ubuntu, so the packages run on more systems.
+          - name: Linux x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - name: Linux system libraries for Tauri (WebKitGTK)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Install
+        working-directory: apps/desktop
+        run: npm ci
+      - name: Build the bundles, with the sidecar
+        working-directory: apps/desktop
+        shell: bash
+        run: npm run release -- --target ${{ matrix.target }}
+      - name: Upload to the draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bundle="target/${{ matrix.target }}/release/bundle"
+          shopt -s nullglob
+          files=("$bundle"/nsis/*.exe "$bundle"/msi/*.msi "$bundle"/dmg/*.dmg \
+                 "$bundle"/deb/*.deb "$bundle"/rpm/*.rpm "$bundle"/appimage/*.AppImage)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::no bundles in $bundle"
+            exit 1
+          fi
+          gh release upload "$TAG" "${files[@]}" --clobber

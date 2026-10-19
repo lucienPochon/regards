@@ -8,10 +8,19 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "vitest run",
+    "release": "tauri build --config src-tauri/tauri.release.json"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",
+    "@tiptap/core": "3.31.4",
+    "@tiptap/extension-image": "3.31.4",
+    "@tiptap/pm": "3.31.4",
+    "@tiptap/react": "3.31.4",
+    "@tiptap/starter-kit": "3.31.4",
+    "prosemirror-gapcursor": "1.4.1",
+    "prosemirror-view": "1.42.6",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
@@ -21,6 +30,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "typescript": "~5.9.3",
-    "vite": "^8.3.4"
+    "vite": "^8.3.4",
+    "vitest": "5.0.3"
   }
 }

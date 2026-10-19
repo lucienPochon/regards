@@ -38,6 +38,12 @@
 
 - Product decisions rely on opt-in feedback, user interviews and public issue trackers rather than behavioural analytics.
 - A privacy review is part of the release checklist; the network calls a build makes are listed in documentation and verified in CI with an egress allow-list test.
+  - **As built (2026-10-19):** `crates/regards-net/tests/egress.rs` checks, over the shipped source (tests and comments aside), three things:
+    - every web address written in the code is on its allow-list, with the reason for each;
+    - only `regards-net` opens connections;
+    - `docs/privacy.md` names the outside destinations.
+
+    A new destination fails CI until it is added to both.
 
 ## References
 
