@@ -743,10 +743,7 @@ async fn message_get(bridge: State<'_, Bridge>, id: i64) -> Result<MessageDetail
 
 /// A message as it came, headers and all: its first megabyte at most.
 #[tauri::command]
-async fn message_source(
-    bridge: State<'_, Bridge>,
-    id: i64,
-) -> Result<regards_ipc::protocol::MessageSource, String> {
+async fn message_source(bridge: State<'_, Bridge>, id: i64) -> Result<regards_ipc::protocol::MessageSource, String> {
     let mut client = bridge.connect().await?.client;
     client
         .call(methods::MESSAGE_SOURCE, MessageRef { id })
