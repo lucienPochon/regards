@@ -15,6 +15,10 @@
 pub struct Query {
     /// The FTS5 expression for the words, if there are any.
     pub text: Option<String>,
+    /// With no words wanted, only some left out (`-newsletter`): what to leave out.
+    pub excluded: Option<String>,
+    /// The words and phrases as typed, for searching a server.
+    pub terms: Vec<Term>,
     pub has_attachment: bool,
     /// `Some(true)`: only unread; `Some(false)`: only read.
     pub unread: Option<bool>,
@@ -33,6 +37,15 @@ impl Query {
     }
 }
 
+/// A word or phrase of a search, as typed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Term {
+    pub text: String,
+    /// Where to look; anywhere when `None`.
+    pub field: Option<Field>,
+    pub negated: bool,
+}
+
 pub fn parse(input: &str) -> Query {
     let mut query = Query::default();
     let mut parts: Vec<String> = Vec::new();
@@ -46,12 +59,25 @@ pub fn parse(input: &str) -> Query {
                 let words: Vec<String> = text.split_whitespace().map(str::to_owned).collect();
                 if !words.is_empty() {
                     parts.push(term(field, &format!("\"{}\"", escape(&words.join(" "))), negated));
+                    query.terms.push(Term {
+                        text: words.join(" "),
+                        field,
+                        negated,
+                    });
                 }
             }
             Token::Word { text, negated, field } => {
                 if field.is_none() && !negated && apply(&mut query, &text) {
                     continue;
                 }
+                if pieces(&text).is_empty() {
+                    continue;
+                }
+                query.terms.push(Term {
+                    text: text.clone(),
+                    field,
+                    negated,
+                });
                 // The last word as typed so far: also as the start of a longer
                 // one, from two letters (one would match nearly everything).
                 let typing = last_word == Some(index) || field.is_some();
@@ -66,11 +92,14 @@ pub fn parse(input: &str) -> Query {
             }
         }
     }
-    // FTS5 cannot start with NOT: exclusions go after the words, and a query
-    // of only exclusions matches nothing.
+    // FTS5 cannot start with NOT: exclusions go after the words. With only
+    // exclusions, what matches any of them is left out of everything.
     let (excluded, wanted): (Vec<String>, Vec<String>) = parts.into_iter().partition(|part| part.starts_with("NOT "));
     if !wanted.is_empty() {
         query.text = Some(wanted.into_iter().chain(excluded).collect::<Vec<_>>().join(" "));
+    } else if !excluded.is_empty() {
+        let any: Vec<&str> = excluded.iter().map(|part| &part["NOT ".len()..]).collect();
+        query.excluded = Some(any.join(" OR "));
     }
     query
 }
@@ -100,9 +129,11 @@ fn apply(query: &mut Query, text: &str) -> bool {
     true
 }
 
+/// Where `from:` `to:` `subject:` look.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Field {
+pub enum Field {
     Sender,
+    /// To or Cc.
     Recipients,
     Subject,
 }
@@ -255,7 +286,13 @@ mod tests {
             "one letter is not a prefix"
         );
         assert_eq!(text("ada@example.org"), Some(r#""ada"* "example"* "org"*"#.into()));
-        assert_eq!(text("-only"), None, "exclusions alone match nothing");
+        assert_eq!(text("-only"), None);
+        assert_eq!(
+            parse("-only -from:shop").excluded,
+            Some(r#""only" OR sender : "shop"*"#.into()),
+            "left out"
+        );
+        assert_eq!(parse("plan -only").excluded, None, "left out of the words");
         assert_eq!(text("   "), None);
     }
 
@@ -284,6 +321,26 @@ mod tests {
         assert_eq!(text("before:soon"), Some(r#""before"* "soon"*"#.into()));
         assert!(parse("is:read").unread == Some(false) && parse("is:read").text.is_none());
         assert!(Query::default().is_empty() && !parse("x").is_empty());
+    }
+
+    #[test]
+    fn terms_are_kept_as_typed_for_a_server() {
+        let query = parse(r#"ada@example.org "seed order" -from:shop subject:Plan is:unread"#);
+        let term = |text: &str, field, negated| Term {
+            text: text.into(),
+            field,
+            negated,
+        };
+        assert_eq!(
+            query.terms,
+            [
+                term("ada@example.org", None, false),
+                term("seed order", None, false),
+                term("shop", Some(Field::Sender), true),
+                term("Plan", Some(Field::Subject), false),
+            ]
+        );
+        assert!(parse("*** \"\"").terms.is_empty(), "nothing to search for");
     }
 
     #[test]
