@@ -104,6 +104,7 @@ export const SHORTCUTS: { keys: string; action: string }[] = [
   { keys: "c", action: "New message" },
   { keys: "r / a / f", action: "Reply, reply all, forward" },
   { keys: `${MOD_KEY}+Enter`, action: "Send, in the composer" },
+  { keys: `${MOD_KEY}+Shift+T`, action: "Insert a template, in the composer" },
   { keys: `${MOD_KEY}+,`, action: "Settings" },
   { keys: "?", action: "Show or hide these shortcuts" },
 ];

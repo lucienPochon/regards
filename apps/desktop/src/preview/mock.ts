@@ -7,6 +7,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import type { MessageSummary, Person } from "../accounts";
 import type { Draft, OutboxEntry } from "../compose";
 import type { Identity } from "../identities";
+import type { Template } from "../templates";
 import { type Explanation, type Policy, type Screening, SECTIONS, type Section } from "../smart";
 import { type FixtureAccount, type FixtureMessage, ME, PERSONAL, WORK, fixtureMessages } from "./fixtures";
 
@@ -30,6 +31,25 @@ const parked = (m: FixtureMessage) => m.aside === true || (m.snoozed_until ?? 0)
 const inboxPlace = (m: FixtureMessage) =>
   m.surfaced_at && (m.reminded || m.surfaced_at > m.received_at) ? m.surfaced_at : m.received_at;
 let nextId = 10_000;
+// Two sample templates; the daemon keeps them by name.
+const templates: Template[] = [
+  {
+    id: 1,
+    name: "Out of office",
+    subject: "Away until Monday",
+    body: "Thanks for your message. I'm away until Monday and will reply then.",
+    html: null,
+    updated_at: started,
+  },
+  {
+    id: 2,
+    name: "Thanks, will read",
+    subject: "",
+    body: "Thank you, I'll read it this week and come back to you.",
+    html: null,
+    updated_at: started,
+  },
+];
 let background = true;
 let notifications = true;
 
@@ -654,6 +674,32 @@ function handle(cmd: string, args: Args): unknown {
       const undo = undos.get(result.undo.id);
       if (undo) undo.also = () => void (before ? choices.set(key, before) : choices.delete(key));
       return result;
+    }
+    case "template_list":
+      return { templates: [...templates].sort((a, b) => a.name.localeCompare(b.name)) };
+    case "template_save": {
+      const given = args.template as { id?: number; name: string; subject: string; body: string; html?: string };
+      const name = given.name.trim();
+      if (!name) throw new Error("give the template a name");
+      // As the daemon does: with formatting, the text is derived from it.
+      const body = given.html ? given.html.replace(/<\/p>/g, "\n").replace(/<[^>]*>/g, "").trim() : given.body;
+      const saved: Template = {
+        id: given.id ?? nextId++,
+        name,
+        subject: given.subject,
+        body,
+        html: given.html ?? null,
+        updated_at: Date.now(),
+      };
+      const index = templates.findIndex((t) => t.id === saved.id);
+      if (index === -1) templates.push(saved);
+      else templates[index] = saved;
+      return saved;
+    }
+    case "template_remove": {
+      const index = templates.findIndex((t) => t.id === args.id);
+      if (index !== -1) templates.splice(index, 1);
+      return null;
     }
     case "smart_screening":
       return { mode: screeningMode };

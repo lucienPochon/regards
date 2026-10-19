@@ -8,18 +8,22 @@ import type { ConfirmRequest } from "./Confirm";
 import { Icon, type IconName } from "./icons";
 import type { Layout } from "./layout";
 import { type Screening, setScreening } from "./smart";
+import { TemplatesEditor } from "./TemplatesEditor";
 import type { AccountMail, MailState, ServiceCheck } from "./mail";
-import { SHORTCUTS, useShortcuts } from "./shortcuts";
+import { MOD_KEY, SHORTCUTS, useShortcuts } from "./shortcuts";
 import { type Theme, applyTheme, savedTheme } from "./theme";
 
-export type SettingsTab = "general" | "accounts" | "inbox" | "appearance" | "shortcuts" | "about";
+export type SettingsTab = "general" | "accounts" | "inbox" | "templates" | "appearance" | "shortcuts" | "about";
 
 /** Grouped as in the nav; each item has its own colour. Accounts is the person's card above them. */
 const GROUPS: { id: SettingsTab; label: string; icon: IconName; tone: string }[][] = [
   [
     { id: "general", label: "General", icon: "settings", tone: "tone-slate" },
-    { id: "inbox", label: "Smart Inbox", icon: "inbox", tone: "tone-blue" },
     { id: "appearance", label: "Appearance", icon: "sun", tone: "tone-violet" },
+  ],
+  [
+    { id: "inbox", label: "Inbox", icon: "inbox", tone: "tone-blue" },
+    { id: "templates", label: "Templates", icon: "text", tone: "tone-rose" },
   ],
   [{ id: "shortcuts", label: "Shortcuts", icon: "keyboard", tone: "tone-amber" }],
   [{ id: "about", label: "About", icon: "info", tone: "tone-green" }],
@@ -103,6 +107,7 @@ export function Settings({
           {tab === "inbox" && (
             <InboxTab layout={layout} onLayout={onLayout} screening={screening} onScreening={onScreening} />
           )}
+          {tab === "templates" && <TemplatesTab />}
           {tab === "appearance" && <AppearanceTab layout={layout} onLayout={onLayout} />}
           {tab === "shortcuts" && <ShortcutsTab />}
           {tab === "about" && <AboutTab service={service} onRecheck={onRecheck} />}
@@ -341,7 +346,7 @@ function InboxTab({
   };
   return (
     <>
-      <h3>Smart Inbox</h3>
+      <h3>Inbox</h3>
       <Option
         icon="bolt"
         label="Inbox view"
@@ -378,6 +383,20 @@ function InboxTab({
         Sorting happens on this computer, from the headers and who you have written to. Nothing is sent anywhere. Open a
         sender from a message to choose where their mail goes, or to see why a message is where it is.
       </p>
+    </>
+  );
+}
+
+/** Text to start a message with: written here, or kept from the composer. */
+function TemplatesTab() {
+  return (
+    <>
+      <h3>Templates</h3>
+      <p className="muted settings-lead">
+        Start a message from one with the templates button in the composer, or {MOD_KEY}+Shift+T. The same list also keeps
+        what you have written as a new template.
+      </p>
+      <TemplatesEditor />
     </>
   );
 }

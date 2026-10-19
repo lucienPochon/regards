@@ -44,6 +44,7 @@ import { ReadingPane } from "./ReadingPane";
 import { SendToast } from "./SendToast";
 import { Settings, type SettingsTab } from "./Settings";
 import { ShortcutHelp } from "./ShortcutHelp";
+import { type Template, listTemplates, saveTemplate } from "./templates";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { type DragPayload, Sidebar } from "./Sidebar";
 import { useSidebarPrefs } from "./sidebar-prefs";
@@ -157,6 +158,8 @@ export function App() {
   const [queued, setQueued] = useState<Queued | null>(null);
   const [undo, setUndo] = useState<UndoInfo | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Something done that has no undo, said briefly.
+  const [said, setSaid] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
   const [settings, setSettings] = useState<SettingsTab | null>(null);
   const [menu, setMenu] = useState<MenuRequest | null>(null);
@@ -225,6 +228,11 @@ export function App() {
     const timer = window.setTimeout(() => setNotice(null), NOTICE_MS);
     return () => window.clearTimeout(timer);
   }, [notice]);
+  useEffect(() => {
+    if (!said) return;
+    const timer = window.setTimeout(() => setSaid(null), NOTICE_MS / 2);
+    return () => window.clearTimeout(timer);
+  }, [said]);
 
   const failed = useCallback((error: unknown) => setNotice(String(error)), []);
   /** Replies and forwards open in a panel over the conversation; new messages take the whole pane. */
@@ -330,6 +338,65 @@ export function App() {
         typeof time === "number" ? time : null,
       ),
     [pickTime],
+  );
+  /**
+   * A palette page of templates to start from, by name, and a way to keep
+   * what is written as one (named after its subject; renamed in Settings).
+   */
+  const pickTemplate = useCallback(
+    (_anchor: Anchor, written: { subject: string; html: string }) =>
+      listTemplates().then(
+        (templates) =>
+          new Promise<Template | null>((resolve) => {
+            const hasText = written.html.replace(/<[^>]*>/g, "").trim() !== "";
+            const name = written.subject.trim() || "Untitled";
+            const keep: MenuEntry[] = hasText
+              ? [
+                  {
+                    label: "Save this message as a template",
+                    icon: "plus",
+                    detail: name,
+                    onSelect: () => {
+                      resolve(null);
+                      saveTemplate({ id: null, name, subject: written.subject, body: "", html: written.html }).then(
+                        (saved) => setSaid(`Saved as the template “${saved.name}”`),
+                        failed,
+                      );
+                    },
+                  },
+                ]
+              : [];
+            setMenu({
+              anchor: { x: 0, y: 0 },
+              variant: "palette",
+              title: "Templates",
+              label: "Insert a template",
+              filter: "Type a template's name",
+              entries: [
+                ...templates.map(
+                  (template): MenuEntry => ({
+                    label: template.name,
+                    icon: "text",
+                    detail: template.subject || undefined,
+                    onSelect: () => resolve(template),
+                  }),
+                ),
+                ...(templates.length > 0 ? ["separator" as const] : []),
+                ...keep,
+                {
+                  label: templates.length > 0 ? "Edit templates…" : "Write a template…",
+                  icon: "settings",
+                  onSelect: () => {
+                    resolve(null);
+                    setSettings("templates");
+                  },
+                },
+              ],
+              onDismiss: () => resolve(null),
+            });
+          }),
+      ),
+    [failed],
   );
   const pickSendTime = useCallback(
     () => pickTime("Send at", "Schedule", sendPresets()).then((time) => (typeof time === "number" ? time : null)),
@@ -934,6 +1001,7 @@ export function App() {
             }}
             pickSendTime={pickSendTime}
             pickReminder={pickReminder}
+            pickTemplate={pickTemplate}
           />
         )}
         <div className="dock">
@@ -944,6 +1012,12 @@ export function App() {
               <button type="button" onClick={() => setNotice(null)}>
                 Dismiss
               </button>
+            </div>
+          )}
+          {said && (
+            <div className="toast" role="status">
+              <Icon name="check" size={16} />
+              <span>{said}</span>
             </div>
           )}
           {undo && <UndoToast undo={undo} onDone={closeUndo} />}

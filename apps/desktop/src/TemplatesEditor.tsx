@@ -86,7 +86,7 @@ function TemplateForm({
   };
 
   return (
-    <form onSubmit={save}>
+    <form className="template-form" onSubmit={save}>
       <fieldset>
         <legend>{template ? template.name : "A new template"}</legend>
         <div className="form-row grow">

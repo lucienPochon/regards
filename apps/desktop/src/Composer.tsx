@@ -64,8 +64,11 @@ export function Composer({
   pickSendTime: (anchor: Anchor) => Promise<number | null>;
   /** Ask when to be reminded if nobody replies: Unix ms, or null if cancelled. */
   pickReminder: (anchor: Anchor) => Promise<number | null>;
-  /** Ask which template to start from (none: no templates button). */
-  pickTemplate?: (anchor: Anchor) => Promise<Template | null>;
+  /**
+   * Ask which template to start from (none: no templates button). What is
+   * written so far comes along, so it can be kept as a template.
+   */
+  pickTemplate?: (anchor: Anchor, written: { subject: string; html: string }) => Promise<Template | null>;
 }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [fields, setFields] = useState<Fields | null>(null);
@@ -175,7 +178,15 @@ export function Composer({
     onClose();
   }, [flush, onClose]);
 
-  useShortcuts({ Escape: () => void close() }, { modal: true });
+  useShortcuts(
+    {
+      Escape: () => void close(),
+      "Mod+Shift+T": () => {
+        if (!locked) void insertTemplate({ x: 0, y: 0 });
+      },
+    },
+    { modal: true },
+  );
 
   const change = (name: keyof Fields) => (event: { target: { value: string } }) => {
     setError(null);
@@ -223,9 +234,9 @@ export function Composer({
   };
 
   /** A template's text where one writes, and its subject if there is none yet. */
-  const insertTemplate = async (button: HTMLElement) => {
+  const insertTemplate = async (anchor: Anchor) => {
     if (!pickTemplate || !fields) return;
-    const template = await pickTemplate(anchorOf(button, "end"));
+    const template = await pickTemplate(anchor, { subject: fields.subject, html: fields.html });
     if (!template) return;
     setFields((current) =>
       current
@@ -320,9 +331,9 @@ export function Composer({
         <button
           type="button"
           className="icon-btn"
-          title="Insert a template"
+          title={`Insert a template (${MOD_KEY}+Shift+T)`}
           aria-label="Insert a template"
-          onClick={(event) => void insertTemplate(event.currentTarget)}
+          onClick={(event) => void insertTemplate(anchorOf(event.currentTarget, "end"))}
           disabled={locked}
         >
           <Icon name="text" />

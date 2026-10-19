@@ -2376,6 +2376,7 @@ button.list-title:hover {
 
 /* ---------- Bottom left: toasts and the set-aside bubble ---------- */
 
+/* Toasts. While a message is written across the pane, they sit above its format bar. */
 .dock {
   position: absolute;
   bottom: 16px;
@@ -2386,6 +2387,10 @@ button.list-title:hover {
   align-items: flex-start;
   gap: 8px;
   pointer-events: none;
+}
+
+.content:has(> .composer.full) .dock {
+  bottom: 64px;
 }
 
 .dock > * {
@@ -3040,6 +3045,12 @@ button.sender-row:hover:not(:disabled) {
   box-shadow: 0 0 0 2px var(--pill-strong);
 }
 
+.settings-lead {
+  margin: -4px 0 16px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .settings-note {
   margin-top: 16px;
   font-size: 12.5px;
@@ -3208,6 +3219,7 @@ button.sender-row:hover:not(:disabled) {
 .tone-blue { color: #3b7dd8; }
 .tone-violet { color: #8b5cc8; }
 .tone-amber { color: #d4891f; }
+.tone-rose { color: #c8507a; }
 .tone-green { color: var(--accent); }
 
 .settings-pane {
@@ -3437,6 +3449,15 @@ button.sender-row:hover:not(:disabled) {
 
 .account-form .dialog-actions {
   margin-top: 0;
+}
+
+/* A template: its name and subject side by side, its text across the whole width under them. */
+.template-form fieldset {
+  display: grid;
+}
+
+.template-form textarea {
+  resize: vertical;
 }
 
 /* Welcome */
