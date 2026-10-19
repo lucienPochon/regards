@@ -11,10 +11,13 @@ export function OutboxList({
   entries,
   onEdit,
   onFailed,
+  onSignIn,
 }: {
   entries: OutboxEntry[];
   onEdit: (draftId: number) => void;
   onFailed: (error: unknown) => void;
+  /** Where to sign an account in again (Settings › Accounts). */
+  onSignIn?: () => void;
 }) {
   if (entries.length === 0) {
     return (
@@ -67,6 +70,11 @@ export function OutboxList({
                           Edit
                         </button>
                       )}
+                      {signedOut(entry) && onSignIn && (
+                        <button type="button" className="btn small primary" onClick={onSignIn}>
+                          Sign in again
+                        </button>
+                      )}
                       {entry.state === "failed" && (
                         <button type="button" className="btn small" onClick={() => act(() => dismissOutbox(entry.id))}>
                           Discard
@@ -99,6 +107,11 @@ function scheduled(entry: OutboxEntry): boolean {
   return entry.state === "queued" && entry.attempts === 0 && entry.send_at !== null && entry.send_at > Date.now();
 }
 
+/** Waiting for its account to be signed in again (Microsoft or Google): it goes as soon as it is. */
+function signedOut(entry: OutboxEntry): boolean {
+  return entry.state === "queued" && /sign in again/i.test(entry.last_error ?? "");
+}
+
 function describe(entry: OutboxEntry): string {
   switch (entry.state) {
     case "sending":
@@ -113,7 +126,13 @@ function describe(entry: OutboxEntry): string {
       // From 1.1: a remote executor holds it.
       return `Sends ${fullDate(entry.send_at ?? entry.next_attempt_at)}, even with this computer off.`;
     case "queued":
-      if (scheduled(entry)) return `Sends ${fullDate(entry.send_at!)}. This computer must be on then.`;
+      if (signedOut(entry)) return "Waits for you to sign in again to its account, then goes at once.";
+      if (scheduled(entry)) {
+        // Sent from this computer (every send in 1.0), it must be on then (ADR-0019).
+        return entry.needs_this_computer === false
+          ? `Sends ${fullDate(entry.send_at!)}.`
+          : `Sends ${fullDate(entry.send_at!)}. This computer must be on then.`;
+      }
       if (entry.attempts === 0) return "Sending soon…";
       return `Not sent yet, trying again at ${new Date(entry.next_attempt_at).toLocaleTimeString()}${
         entry.last_error ? `: ${entry.last_error}` : ""

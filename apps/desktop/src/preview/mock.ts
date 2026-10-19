@@ -38,6 +38,24 @@ let nextId = 10_000;
 let oauthEmail: string | null = null;
 if (params.get("signin") === "1" && accounts[0]) {
   accounts[0].account = { ...accounts[0].account, sign_in: "microsoft", needs_sign_in: true };
+  // A message sent meanwhile waits in the Outbox for the sign-in.
+  window.setTimeout(() => {
+    outbox.push({
+      id: 900,
+      account_id: accounts[0].account.id,
+      draft_id: null,
+      subject: "Re: Garden plot schedule",
+      recipients: [{ name: "Lena Okafor", address: "lena.okafor@example.net" }],
+      state: "queued",
+      undo_until: Date.now() - 60_000,
+      send_at: null,
+      next_attempt_at: Date.now() + 60_000,
+      attempts: 1,
+      last_error: "Microsoft needs you to sign in again",
+      executor: "device",
+      needs_this_computer: true,
+    });
+  });
 }
 // Two sample templates; the daemon keeps them by name.
 const templates: Template[] = [
