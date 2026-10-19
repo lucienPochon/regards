@@ -48,13 +48,19 @@ export function SendToast({
   useShortcuts(left > 0 && !error ? { z: undo, "Mod+z": undo } : {});
 
   return (
-    <div className="toast" role="status">
+    <div className="toast">
       <Icon name={scheduled ? "sendLater" : "send"} size={16} />
       {error ? (
-        <span>{error}</span>
+        <span role="alert">{error}</span>
       ) : left > 0 ? (
         <>
-          <span>{scheduled ? `Scheduled for ${laterDate(queued.send_at as number)}` : `Sending in ${left} s`}</span>
+          {/* Said once; the ticking seconds would be read out every second. */}
+          <span className="sr-only">
+            {scheduled ? `Scheduled for ${laterDate(queued.send_at as number)}.` : "Sending. Undo is still possible."}
+          </span>
+          <span aria-hidden="true">
+            {scheduled ? `Scheduled for ${laterDate(queued.send_at as number)}` : `Sending in ${left} s`}
+          </span>
           <button type="button" onClick={undo}>
             Undo
           </button>

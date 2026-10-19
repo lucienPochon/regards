@@ -96,7 +96,7 @@ export function AboutUpdates() {
                   : null}
         </span>
       </div>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
       {available && (
         <p className="update-available">
           <Icon name="check" size={15} />
@@ -126,7 +126,7 @@ export function AskUpdates({ onAnswer }: { onAnswer: (on: boolean) => void }) {
       .finally(() => setBusy(false));
   };
   return (
-    <div className="toast ask-updates" role="dialog" aria-label="Check for updates">
+    <div className="toast ask-updates" role="region" aria-label="Check for updates">
       <Icon name="refresh" size={16} />
       <span>
         <strong>Check for updates once a day?</strong>

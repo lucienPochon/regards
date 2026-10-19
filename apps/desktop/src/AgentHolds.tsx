@@ -154,7 +154,7 @@ function HoldCard({
         (draft === null ? (
           <p className="muted hold-why">Loading the message…</p>
         ) : draft === "gone" ? (
-          <p className="error hold-why">The draft is gone: approving won&apos;t send anything.</p>
+          <p className="error hold-why" role="alert">The draft is gone: approving won&apos;t send anything.</p>
         ) : (
           <div className="hold-draft">
             <dl>
@@ -191,7 +191,7 @@ function HoldCard({
             )}
           </div>
         ))}
-      {problem && <p className="error hold-why">{problem}</p>}
+      {problem && <p className="error hold-why" role="alert">{problem}</p>}
       <div className="hold-buttons">
         <button type="button" className="btn small" onClick={decide(rejectHold)} disabled={busy}>
           Reject
@@ -266,7 +266,7 @@ function Outcome({ hold, focused = false, onDismiss }: { hold: Hold; focused?: b
         <span className="hold-what">
           <strong>{hold.description}</strong>
           <span className={hold.status === "failed" ? "error" : "muted"}>{undone ?? said}</span>
-          {problem && <span className="error">{problem}</span>}
+          {problem && <span className="error" role="alert">{problem}</span>}
         </span>
         {!undone && hold.status === "approved" && (sendUndo !== null || changeUndo !== null) && (
           <button type="button" className="activity-undo" onClick={undo}>
