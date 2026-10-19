@@ -20,6 +20,8 @@ const accounts: FixtureAccount[] = accountCount === 0 ? [] : accountCount >= 2 ?
 const started = Date.now();
 let messages: FixtureMessage[] = fixtureMessages(started, accounts);
 const drafts: Draft[] = [];
+/** Images in drafts' text, by Content-ID. */
+const draftImages = new Map<string, { mime: string; data: string }>();
 const outbox: OutboxEntry[] = [];
 const undos = new Map<
   number,
@@ -565,6 +567,28 @@ function handle(cmd: string, args: Args): unknown {
       // `?link=message:3`, `draft:…` or `hold:2`: what Regards was started with.
       const [kind, id] = (params.get("link") ?? "").split(":");
       return kind && id ? { kind, id: Number(id) } : null;
+    }
+    case "draft_attach_image": {
+      // An image in the text: kept with the draft under a Content-ID, its bytes as base64.
+      const draft = draftById(args.draftId as number);
+      const contentId = `img${nextId++}@preview`;
+      const data = String(args.data ?? "");
+      draftImages.set(contentId, { mime: String(args.mime), data });
+      draft.attachments = [
+        ...draft.attachments,
+        { id: nextId++, name: String(args.name), mime: String(args.mime), size: Math.floor((data.length * 3) / 4), content_id: contentId },
+      ];
+      changed();
+      return { content_id: contentId, draft };
+    }
+    case "draft_images": {
+      const draft = draftById(args.draftId as number);
+      return {
+        images: draft.attachments.flatMap((file) => {
+          const image = file.content_id ? draftImages.get(file.content_id) : undefined;
+          return image && file.content_id ? [{ content_id: file.content_id, ...image }] : [];
+        }),
+      };
     }
     case "draft_attach_dropped": {
       // As the desktop does with the paths it keeps: here, by the sample drop's name.
