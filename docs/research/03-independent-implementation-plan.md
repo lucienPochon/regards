@@ -203,7 +203,6 @@ flowchart LR
     - one row per conversation
     - a virtualised list for 10k rows
     - reordering the sidebar by dragging
-    - the Smart Inbox's sections in the list (§5.4)
 
 ### 5.4 Smart Inbox (P1, 1.0)
 
@@ -216,7 +215,7 @@ flowchart LR
   5. optional local ML later
 - **New-sender screening:** *off* / *section* / *hold until accepted*; accept or block a sender or domain.
 - **Accepted when:** every placement answers "why is this here?", corrections persist, and nothing leaves the device.
-- **Built so far (Phase 4, classifier and API; the sections' UI is still to come):**
+- **Built so far (Phase 4):**
   - **The rules** (`regards_core::smart::classify`) run in order, and the first that applies wins:
     1. the section the person chose for the sender
     2. priority sender
@@ -247,6 +246,19 @@ flowchart LR
     - what they send later goes there as it arrives
     - undo brings the mail back and unblocks
   - **App API:** `smart.ts`, with `reasonText` for the "why is this here?" sentences.
+  - **In the app:**
+    - The inbox's title chooses its view: **Smart** (the default) or **By date**, shown as two pictures. With several accounts it also chooses all of them or one; the Smart Inbox then covers that account only.
+    - **Smart**, top to bottom:
+      - new senders, as a card whose rows have Accept and Block (or, when held, one line that leads to them)
+      - a warm Priority card with its newest three and "View all"
+      - People by day, with one row each for Notifications, Newsletters and Pinned in the first day: an icon, a count, and the senders as chips
+    - Each group opens as its own list, with a way back (Esc).
+    - **The sender card** opens from a message's face, or from the palette. It shows where their mail goes (automatically, or always People, Notifications or Newsletters), a Priority switch, the "why is this here?" sentence, Write to them, copy the address, and Block or Unblock.
+    - **Settings › Smart Inbox** holds the view, and new senders: with everyone, in a card, or held back.
+    - **Still to come:**
+      - bulk actions on a card
+      - choosing which groups are bundled
+      - the card view (unread mail as stacked cards)
 
 ### 5.5 Done / Pin / Set aside / Seen (P1, 1.0)
 

@@ -8,12 +8,14 @@ export interface Layout {
   locked: boolean;
   /** The message list's width in split view, in pixels. */
   listWidth: number;
+  /** The inbox by Smart Inbox section ("smart"), or simply newest first ("date"). */
+  inboxView: "smart" | "date";
 }
 
 const KEY = "regards.layout";
 export const LIST_MIN = 320;
 export const LIST_MAX = 640;
-const DEFAULT: Layout = { mode: "split", locked: true, listWidth: 460 };
+const DEFAULT: Layout = { mode: "split", locked: true, listWidth: 460, inboxView: "smart" };
 
 export const clampList = (width: number) => Math.round(Math.min(LIST_MAX, Math.max(LIST_MIN, width)));
 
@@ -24,6 +26,7 @@ function load(): Layout {
       mode: saved?.mode === "single" ? "single" : "split",
       locked: saved?.locked !== false,
       listWidth: typeof saved?.listWidth === "number" ? clampList(saved.listWidth) : DEFAULT.listWidth,
+      inboxView: saved?.inboxView === "date" ? "date" : "smart",
     };
   } catch {
     return DEFAULT;

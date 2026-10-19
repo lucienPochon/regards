@@ -1,17 +1,20 @@
 import type { MailboxSummary, MessageView, Role } from "./accounts";
 import type { IconName } from "./icons";
+import type { Section } from "./smart";
 
 /**
  * What the message column shows. A `role` view is that folder in every
  * account at once (all inboxes, all sent mail …); a `mailbox` view is one
  * folder of one account. Drafts and the Outbox are kept by the daemon, not on
  * the server. A `marked` view is what is pinned, snoozed or set aside, kept on
- * this device, across accounts.
+ * this device, across accounts. A `section` view is one Smart Inbox section
+ * (Priority, Newsletters …) of every inbox, or of the one it was opened from.
  */
 export type View =
   | { kind: "role"; role: Role }
   | { kind: "mailbox"; mailboxId: number; accountId: string }
   | { kind: "marked"; mark: MessageView }
+  | { kind: "section"; section: Section; inbox?: { mailboxId: number; accountId: string } }
   | { kind: "drafts" }
   | { kind: "outbox" };
 
@@ -73,6 +76,8 @@ export function viewKey(view: View): string {
       return `mailbox:${view.mailboxId}`;
     case "marked":
       return `marked:${view.mark}`;
+    case "section":
+      return `section:${view.section}${view.inbox ? `:${view.inbox.mailboxId}` : ""}`;
     default:
       return view.kind;
   }

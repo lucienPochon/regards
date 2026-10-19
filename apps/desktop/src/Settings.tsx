@@ -7,16 +7,18 @@ import { Avatar } from "./Avatar";
 import type { ConfirmRequest } from "./Confirm";
 import { Icon, type IconName } from "./icons";
 import type { Layout } from "./layout";
+import { type Screening, setScreening } from "./smart";
 import type { AccountMail, MailState, ServiceCheck } from "./mail";
 import { SHORTCUTS, useShortcuts } from "./shortcuts";
 import { type Theme, applyTheme, savedTheme } from "./theme";
 
-export type SettingsTab = "general" | "accounts" | "appearance" | "shortcuts" | "about";
+export type SettingsTab = "general" | "accounts" | "inbox" | "appearance" | "shortcuts" | "about";
 
 /** Grouped as in the nav; each item has its own colour. Accounts is the person's card above them. */
 const GROUPS: { id: SettingsTab; label: string; icon: IconName; tone: string }[][] = [
   [
     { id: "general", label: "General", icon: "settings", tone: "tone-slate" },
+    { id: "inbox", label: "Smart Inbox", icon: "inbox", tone: "tone-blue" },
     { id: "appearance", label: "Appearance", icon: "sun", tone: "tone-violet" },
   ],
   [{ id: "shortcuts", label: "Shortcuts", icon: "keyboard", tone: "tone-amber" }],
@@ -31,6 +33,8 @@ export function Settings({
   onRecheck,
   layout,
   onLayout,
+  screening,
+  onScreening,
   confirm,
   onClose,
 }: {
@@ -41,6 +45,8 @@ export function Settings({
   onRecheck: () => void;
   layout: Layout;
   onLayout: (change: Partial<Layout>) => void;
+  screening: Screening;
+  onScreening: (mode: Screening) => void;
   confirm: (request: ConfirmRequest) => Promise<boolean>;
   onClose: () => void;
 }) {
@@ -94,6 +100,9 @@ export function Settings({
           </button>
           {tab === "general" && <GeneralTab />}
           {tab === "accounts" && <AccountsTab mail={mail} confirm={confirm} />}
+          {tab === "inbox" && (
+            <InboxTab layout={layout} onLayout={onLayout} screening={screening} onScreening={onScreening} />
+          )}
           {tab === "appearance" && <AppearanceTab layout={layout} onLayout={onLayout} />}
           {tab === "shortcuts" && <ShortcutsTab />}
           {tab === "about" && <AboutTab service={service} onRecheck={onRecheck} />}
@@ -302,6 +311,73 @@ function AccountRow({ entry, confirm }: { entry: AccountMail; confirm: (request:
         <IdentitiesEditor accountId={account.id} />
       </li>
     )}
+    </>
+  );
+}
+
+/** How the inbox is sorted, and what happens to mail from people it doesn't know yet. */
+function InboxTab({
+  layout,
+  onLayout,
+  screening,
+  onScreening,
+}: {
+  layout: Layout;
+  onLayout: (change: Partial<Layout>) => void;
+  screening: Screening;
+  onScreening: (mode: Screening) => void;
+}) {
+  const [problem, setProblem] = useState<string | null>(null);
+  const screen = (mode: Screening) => {
+    const before = screening;
+    onScreening(mode);
+    setScreening(mode).then(
+      () => setProblem(null),
+      (error) => {
+        onScreening(before);
+        setProblem(String(error));
+      },
+    );
+  };
+  return (
+    <>
+      <h3>Smart Inbox</h3>
+      <Option
+        icon="bolt"
+        label="Inbox view"
+        description="Smart puts priority mail first and groups notifications and newsletters; By date shows everything together."
+      >
+        <Choice
+          label="Inbox view"
+          value={layout.inboxView}
+          options={[
+            { id: "smart", label: "Smart" },
+            { id: "date", label: "By date" },
+          ]}
+          onChange={(inboxView) => onLayout({ inboxView })}
+        />
+      </Option>
+      <Option
+        icon="people"
+        label="New senders"
+        description="Mail from someone you haven't written to: with everyone else, in a card at the top to accept or block, or held back until you accept them."
+      >
+        <Choice
+          label="New senders"
+          value={screening}
+          options={[
+            { id: "off", label: "With everyone" },
+            { id: "section", label: "In a card" },
+            { id: "hold", label: "Held back" },
+          ]}
+          onChange={screen}
+        />
+      </Option>
+      {problem && <p className="error">{problem}</p>}
+      <p className="muted settings-note">
+        Sorting happens on this computer, from the headers and who you have written to. Nothing is sent anywhere. Open a
+        sender from a message to choose where their mail goes, or to see why a message is where it is.
+      </p>
     </>
   );
 }

@@ -1,4 +1,5 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import type { Section } from "./smart";
 
 export type ConnectionSecurity = "tls" | "starttls";
 
@@ -126,6 +127,8 @@ export interface MessageSummary {
   has_attachments?: boolean;
   /** How many messages its conversation has, when the daemon says. */
   thread_size?: number;
+  /** Its Smart Inbox section, once sorted (inbox mail). */
+  section?: Section | null;
 }
 
 export interface MessageListResult {

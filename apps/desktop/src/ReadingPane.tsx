@@ -16,7 +16,7 @@ import { useChanges } from "./changes";
 import { fileKind, fileSize, fullDate, peopleFull, personName } from "./format";
 import { Icon } from "./icons";
 import type { ListItem } from "./mail";
-import { type MenuEntry, anchorOf } from "./Menu";
+import { type Anchor, type MenuEntry, anchorOf } from "./Menu";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 
 type Load = { state: "loading" } | { state: "ready"; detail: MessageDetail } | { state: "failed"; message: string };
@@ -25,6 +25,9 @@ const disposable = (role: Role | null | undefined) => role === "trash" || role =
 
 /** The command palette for these actions, with any extra entries (a message's own view options). */
 export type Palette = (actions: Action[], title: string, extra?: MenuEntry[]) => void;
+
+/** The sender card for one of the thread's messages. */
+export type SenderOpener = (anchor: Anchor, messageId: number, person: Person) => void;
 
 /** One message with its body, kept current (the body is cached, so refreshing is cheap). */
 function useDetail(id: number, enabled: boolean): Load {
@@ -67,6 +70,7 @@ export function ReadingPane({
   mode,
   actionsFor,
   onPalette,
+  onSender,
   onClose,
   onStep,
 }: {
@@ -77,6 +81,7 @@ export function ReadingPane({
   mode: "single" | "split";
   actionsFor: (target: Target) => Action[];
   onPalette: Palette;
+  onSender?: SenderOpener;
   onClose: () => void;
   /** The next (1) or previous (-1) message of the list, when the list is not beside it. */
   onStep?: (by: number) => void;
@@ -220,6 +225,7 @@ export function ReadingPane({
                   onToggle={entries.length > 1 ? () => toggle(entry.message.id) : null}
                   actionsFor={actionsFor}
                   onPalette={onPalette}
+                  onSender={onSender}
                 />
               );
             })}
@@ -240,6 +246,7 @@ function ThreadMessage({
   onToggle,
   actionsFor,
   onPalette,
+  onSender,
 }: {
   ref?: Ref<HTMLLIElement>;
   entry: ThreadEntry;
@@ -253,6 +260,7 @@ function ThreadMessage({
   onToggle: (() => void) | null;
   actionsFor: (target: Target) => Action[];
   onPalette: Palette;
+  onSender?: SenderOpener;
 }) {
   const own = useDetail(entry.message.id, given === null && expanded);
   const load = given ?? own;
@@ -300,6 +308,14 @@ function ThreadMessage({
       extra.push({ label: "Load remote images", icon: "image", onSelect: () => setAllowRemote(true) });
     }
     extra.push({ label: details ? "Hide details" : "Show details", icon: "info", onSelect: () => setDetails(!details) });
+    const from = message.from;
+    if (onSender && from) {
+      extra.push({
+        label: "The sender, and why this is here…",
+        icon: "people",
+        onSelect: () => onSender({ x: window.innerWidth / 2 - 160, y: window.innerHeight / 4 }, message.id, from),
+      });
+    }
     onPalette(actions, message.subject || "(no subject)", extra);
   };
   const to = ready?.to ?? [];
@@ -310,7 +326,19 @@ function ThreadMessage({
   return (
     <li className="mail-card" ref={ref}>
       <div className="mail-head">
-        <Avatar person={message.from} size="sm" />
+        {onSender && message.from ? (
+          <button
+            type="button"
+            className="mail-avatar"
+            title="About the sender"
+            aria-label={`About ${personName(message.from)}`}
+            onClick={(event) => message.from && onSender(anchorOf(event.currentTarget), message.id, message.from)}
+          >
+            <Avatar person={message.from} size="sm" />
+          </button>
+        ) : (
+          <Avatar person={message.from} size="sm" />
+        )}
         <button
           type="button"
           className="mail-who"

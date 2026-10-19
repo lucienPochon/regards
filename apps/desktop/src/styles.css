@@ -9,6 +9,12 @@
   --pill-strong: #d8ece4;
   --warm: #d7812a;
   --warm-soft: #fcefe1;
+  --warm-line: rgb(215 129 42 / 0.22);
+  --warm-hover: rgb(215 129 42 / 0.08);
+  --blue: #3b7dd8;
+  --blue-soft: #e6eefa;
+  --violet: #8b5cc8;
+  --violet-soft: #f0e8f9;
 
   --bg: #ffffff;
   --bg-elev: #ffffff;
@@ -66,6 +72,12 @@
     --pill-strong: #24372f;
     --warm: #eb9a48;
     --warm-soft: #3a2a1a;
+    --warm-line: rgb(235 154 72 / 0.25);
+    --warm-hover: rgb(235 154 72 / 0.1);
+    --blue: #7eaaf0;
+    --blue-soft: #1c2738;
+    --violet: #b694e0;
+    --violet-soft: #2a2236;
     --bg: #181a19;
     --bg-elev: #1f2221;
     --hover: #222625;
@@ -102,6 +114,12 @@
   --pill-strong: #24372f;
   --warm: #eb9a48;
   --warm-soft: #3a2a1a;
+  --warm-line: rgb(235 154 72 / 0.25);
+  --warm-hover: rgb(235 154 72 / 0.1);
+  --blue: #7eaaf0;
+  --blue-soft: #1c2738;
+  --violet: #b694e0;
+  --violet-soft: #2a2236;
   --bg: #181a19;
   --bg-elev: #1f2221;
   --hover: #222625;
@@ -2443,6 +2461,589 @@ button.list-title:hover {
 
 .faces .avatar + .avatar {
   margin-left: -6px;
+}
+
+/* ---------- Smart Inbox ---------- */
+
+/* Priority: one warm card around its rows. New senders: the same, in grey. */
+.smart-card {
+  margin: 4px 14px 6px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--warm-soft);
+}
+
+.rows.wide .smart-card {
+  margin: 4px 0 6px;
+}
+
+.smart-card.new {
+  border: 1px solid var(--border);
+  background: var(--notice);
+}
+
+.smart-card-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 16px;
+  padding: 11px 1px 8px;
+  border-bottom: 1px solid var(--warm-line);
+  color: var(--warm);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.smart-card.new .smart-card-head {
+  border-bottom-color: var(--border);
+  color: var(--text-2);
+}
+
+.smart-card-count {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+.rows .smart-card.priority .row:not(.open):hover,
+.rows .smart-card.priority .row.cursor:not(.open) {
+  background: var(--warm-hover);
+}
+
+.rows .smart-card.new .row:not(.open):hover,
+.rows .smart-card.new .row.cursor:not(.open) {
+  background: var(--hover);
+}
+
+/* A few faces, and the way to the whole group. */
+.smart-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 17px 11px 32px;
+  color: var(--warm);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.smart-card-foot:hover {
+  text-decoration: underline;
+}
+
+.smart-card .faces .avatar {
+  box-shadow: 0 0 0 2px var(--warm-soft);
+}
+
+.smart-card.new .smart-card-foot {
+  color: var(--accent);
+}
+
+.smart-card.new .faces .avatar {
+  box-shadow: 0 0 0 2px var(--notice);
+}
+
+/* New senders held before the inbox: one line that leads to them. */
+.screen-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: calc(100% - 28px);
+  margin: 4px 14px 6px;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--notice);
+  color: var(--text);
+  text-align: left;
+}
+
+.rows.wide .screen-banner {
+  width: 100%;
+  margin: 4px 0 6px;
+}
+
+.screen-banner:hover {
+  background: var(--hover);
+}
+
+.screen-banner .muted {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screen-banner > .icon {
+  color: var(--muted);
+}
+
+/* Accept or block, under a new sender's row (beside it when the list is alone). */
+.screen-actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 21px 10px 65px;
+}
+
+.rows.tall .row:has(> .screen-actions) .row-main {
+  min-height: 0;
+  padding-bottom: 5px;
+}
+
+.rows.wide .row:has(> .screen-actions) {
+  display: flex;
+  align-items: center;
+}
+
+.rows.wide .row > .screen-actions {
+  flex: none;
+  padding: 0 12px 0 0;
+}
+
+.screen-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 25px;
+  padding: 0 11px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.screen-btn.accept {
+  background: var(--pill-strong);
+  color: var(--accent);
+}
+
+.screen-btn.accept:hover {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.screen-btn.block {
+  background: var(--chip);
+  color: var(--text-2);
+}
+
+.screen-btn.block:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* A group's icon in a soft circle, in place of an avatar. */
+.smart-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+}
+
+.smart-icon.notifications {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.smart-icon.newsletters {
+  background: var(--violet-soft);
+  color: var(--violet);
+}
+
+.smart-icon.pinned {
+  background: var(--warm-soft);
+  color: var(--warm);
+}
+
+.smart-icon.new {
+  background: var(--pill-strong);
+  color: var(--accent);
+}
+
+/* A group's row: its name and count, then who is in it, then a chevron. */
+.bundle-count {
+  margin-left: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.row.bundle .subject.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+  max-height: 42px;
+  white-space: normal;
+}
+
+.rows.wide .row.bundle .subject.chips {
+  flex-wrap: nowrap;
+  max-height: none;
+}
+
+.sender-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-2);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.sender-chip .bundle-count {
+  margin-left: 0;
+}
+
+.row.bundle .date {
+  display: inline-flex;
+}
+
+.rows.tall .row.bundle .row-main {
+  min-height: 62px;
+}
+
+.list-back {
+  margin-left: -14px;
+}
+
+/* The sender card: who they are, where their mail goes, why this is here. */
+.sender-card {
+  position: fixed;
+  width: 300px;
+  padding: 14px 6px 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-lg);
+  animation: fade 0.08s ease-out;
+}
+
+.sender-card.measuring,
+.view-chooser.measuring {
+  top: 0;
+  left: 0;
+  visibility: hidden;
+}
+
+.sender-head {
+  display: flex;
+  gap: 12px;
+  padding: 0 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sender-who {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.sender-who strong {
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sender-address {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  color: var(--accent);
+  font-size: 12.5px;
+  word-break: break-all;
+}
+
+.sender-address .icon-btn {
+  flex: none;
+  color: var(--muted);
+}
+
+.sender-section {
+  justify-self: start;
+  height: 24px;
+  margin-top: 2px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--chip);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.sender-rows {
+  display: grid;
+  padding-top: 5px;
+}
+
+.sender-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  color: var(--text);
+  font-size: 13.5px;
+  text-align: left;
+}
+
+.sender-row > .icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.sender-row > span:not(.toggle) {
+  flex: 1;
+  min-width: 0;
+}
+
+button.sender-row:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.sender-row.why {
+  align-items: flex-start;
+}
+
+.sender-row.why > .icon {
+  margin-top: 1px;
+}
+
+.sender-row.why > span {
+  display: grid;
+  gap: 2px;
+}
+
+.sender-row.why strong {
+  font-weight: 500;
+}
+
+.sender-row.why .muted {
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.sender-row.danger,
+.sender-row.danger > .icon {
+  color: var(--danger);
+}
+
+/* A small on/off switch. */
+.toggle {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--border-strong);
+  transition: background 0.12s;
+}
+
+.toggle::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+  content: "";
+  transition: transform 0.12s;
+}
+
+.toggle.on {
+  background: var(--accent);
+}
+
+.toggle.on::after {
+  transform: translateX(12px);
+}
+
+/* Under the inbox's title: how it looks, as pictures. */
+.view-chooser {
+  position: fixed;
+  width: min(560px, calc(100vw - 16px));
+  padding: 16px 18px 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-lg);
+  animation: fade 0.08s ease-out;
+}
+
+.chooser-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  font-size: 15px;
+}
+
+.chooser-head .icon-btn {
+  margin-right: -6px;
+  color: var(--muted);
+}
+
+.chooser-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.chooser-tile {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  padding: 0;
+  text-align: left;
+}
+
+.chooser-tile strong {
+  margin-top: 7px;
+  font-size: 13.5px;
+}
+
+.chooser-tile .muted {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.chooser-picture {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 150px;
+  padding: 14px;
+  overflow: hidden;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: var(--reader-bg);
+}
+
+.chooser-tile:hover .chooser-picture {
+  border-color: var(--border-strong);
+}
+
+.chooser-tile.chosen .chooser-picture {
+  border-color: var(--accent);
+}
+
+.pic-card {
+  display: grid;
+  gap: 7px;
+  padding: 11px 10px;
+  border-radius: 8px;
+  background: var(--warm-soft);
+}
+
+.pic-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+.pic-dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+.pic-line {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-strong);
+}
+
+.pic-line.short {
+  flex: none;
+  width: 55%;
+}
+
+.pic-card .pic-line {
+  background: var(--warm-line);
+}
+
+.pic-chips {
+  flex: 1;
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(
+    90deg,
+    var(--blue-soft) 0 30%,
+    transparent 30% 35%,
+    var(--violet-soft) 35% 64%,
+    transparent 64% 69%,
+    var(--chip) 69%
+  );
+}
+
+.chooser-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.chooser-accounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.chooser-accounts .chip {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+
+.chooser-accounts .chip:hover {
+  background: var(--hover);
+}
+
+.chip.chosen,
+.chooser-accounts .chip.chosen:hover {
+  background: var(--pill-strong);
+  color: var(--accent);
+}
+
+/* In a message card, the sender's face opens their card. */
+.mail-avatar {
+  display: grid;
+  flex: none;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.mail-avatar:hover {
+  box-shadow: 0 0 0 2px var(--pill-strong);
+}
+
+.settings-note {
+  margin-top: 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
 /* ---------- Overlays ---------- */

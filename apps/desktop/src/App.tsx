@@ -3,6 +3,7 @@ import { type CSSProperties, type KeyboardEvent, type PointerEvent, useCallback,
 import {
   type MarkResult,
   type MoveResult,
+  type Person,
   type UndoInfo,
   archiveMessages,
   moveMessages,
@@ -15,14 +16,29 @@ import {
 import { type Action, type ActionHost, type Target, choose, messageActions } from "./actions";
 import { Avatar } from "./Avatar";
 import { Composer } from "./Composer";
-import { type Draft, type Queued, newDraft } from "./compose";
+import { type Draft, type Queued, newDraft, saveDraft } from "./compose";
 import { Confirm, type ConfirmRequest } from "./Confirm";
 import { DraftsList } from "./DraftsList";
 import { Icon, type IconName } from "./icons";
 import { LIST_MAX, LIST_MIN, clampList, useLayout } from "./layout";
-import { type ListItem, sourcesFor, useDrafts, useFeed, useMail, useMarked, useOutbox, useService } from "./mail";
+import {
+  type ListItem,
+  sectionSources,
+  sourcesFor,
+  useDrafts,
+  useFeed,
+  useFirstPage,
+  useMail,
+  useMarked,
+  useOutbox,
+  useService,
+  useSmartOverview,
+} from "./mail";
 import { type Anchor, Menu, type MenuEntry, type MenuRequest } from "./Menu";
-import { ListHeader, MessageList } from "./MessageList";
+import { type Bundle, ListHeader, MessageList, type Screener } from "./MessageList";
+import { SenderCard, type SenderRequest } from "./SenderCard";
+import { SECTION_LABELS, type Screening, type Section, blockSender, screening, setSender } from "./smart";
+import { ViewChooser } from "./ViewChooser";
 import { OutboxList } from "./OutboxList";
 import { ReadingPane } from "./ReadingPane";
 import { SendToast } from "./SendToast";
@@ -55,6 +71,10 @@ import { Welcome } from "./Welcome";
 const NOTICE_MS = 8000;
 
 const trashLike = (item: ListItem) => item.role === "trash" || item.role === "junk";
+
+/** Where a part of the Smart Inbox leads back to: the inbox it was opened from. */
+const inboxOf = (view: Extract<View, { kind: "section" }>): View =>
+  view.inbox ? { kind: "mailbox", ...view.inbox } : INBOX;
 
 /** What a set of listed messages have in common, for the actions on them. */
 function targetOf(items: ListItem[]): Target {
@@ -146,11 +166,45 @@ export function App() {
   const closeUndo = useCallback(() => setUndo(null), []);
   const closeQueued = useCallback(() => setQueued(null), []);
 
+  const [chooser, setChooser] = useState<Anchor | null>(null);
+  const [sender, setSenderCard] = useState<SenderRequest | null>(null);
+  const [screen, setScreen] = useState<Screening>("off");
+  useEffect(() => {
+    screening().then(setScreen, () => {});
+  }, []);
+
   const accounts = useMemo(() => (mail.state === "ready" ? mail.accounts : []), [mail]);
   const ownAddresses = useMemo(() => new Set(accounts.map((entry) => entry.account.email.toLowerCase())), [accounts]);
-  const sources = useMemo(() => sourcesFor(accounts, view), [accounts, view]);
-  const feed = useFeed(sources);
   const inInbox = view.kind === "role" && view.role === "inbox";
+  // The Smart Inbox: every inbox, or one account's when its inbox is open.
+  const accountInbox =
+    view.kind === "mailbox"
+      ? accounts.find(
+          (entry) =>
+            entry.account.id === view.accountId && entry.mailboxes.some((m) => m.id === view.mailboxId && m.role === "inbox"),
+        )
+      : undefined;
+  const smartScope = useMemo(
+    () => (layout.inboxView !== "smart" ? null : inInbox ? accounts : accountInbox ? [accountInbox] : null),
+    [layout.inboxView, inInbox, accounts, accountInbox],
+  );
+  const smartOn = smartScope !== null;
+  const sources = useMemo(
+    () => (smartScope ? sectionSources(smartScope, "people") : sourcesFor(accounts, view)),
+    [smartScope, accounts, view],
+  );
+  const feed = useFeed(sources);
+  const scope = useMemo(() => smartScope ?? [], [smartScope]);
+  const overview = useSmartOverview(scope, smartOn);
+  const priorityItems = useFirstPage(useMemo(() => sectionSources(scope, "priority"), [scope]), 3, smartOn);
+  const newSenderItems = useFirstPage(
+    useMemo(() => sectionSources(scope, "new_senders"), [scope]),
+    3,
+    smartOn && screen === "section",
+  );
+  const notificationItems = useFirstPage(useMemo(() => sectionSources(scope, "notifications"), [scope]), 30, smartOn);
+  const newsletterItems = useFirstPage(useMemo(() => sectionSources(scope, "newsletters"), [scope]), 30, smartOn);
+  const pinnedItems = useMarked(scope, "pinned", smartOn);
   const aside = useMarked(accounts, "aside", inInbox);
   const items = useRef(feed.items);
   items.current = feed.items;
@@ -302,6 +356,29 @@ export function App() {
   const writeNew = () => {
     if (composeFrom) startDraft(newDraft(composeFrom), "full");
   };
+  /** A new message to someone, from the account they wrote to (the sender card's Write to them). */
+  const writeTo = (person: Person, accountId: string) =>
+    startDraft(
+      newDraft(accountId).then((draft) =>
+        saveDraft({ id: draft.id, to: [person], cc: [], bcc: [], subject: "", body: "", html: null }),
+      ),
+      "full",
+    );
+  /** The sender card for a message: who sent it, where their mail goes, why it is here. */
+  const aboutSender = (about: { id: number; accountId: string; from: Person | null }, anchor?: Anchor) => {
+    if (!about.from) return;
+    setSenderCard({
+      anchor: anchor ?? { x: window.innerWidth / 2 - 160, y: window.innerHeight / 4 },
+      messageId: about.id,
+      accountId: about.accountId,
+      person: about.from,
+    });
+  };
+  const senderEntry = (about: ListItem): MenuEntry => ({
+    label: "The sender, and why this is here…",
+    icon: "info",
+    onSelect: () => aboutSender(about),
+  });
 
   // The folders being shown, synced now.
   const viewAccounts = [...new Set(sources.map((source) => source.accountId))];
@@ -535,6 +612,8 @@ export function App() {
             onRecheck={recheck}
             layout={layout}
             onLayout={setLayout}
+            screening={screen}
+            onScreening={setScreen}
             confirm={confirm}
             onClose={() => setSettings(null)}
           />
@@ -560,6 +639,8 @@ export function App() {
   const title =
     view.kind === "role"
       ? ROLE_LABELS[view.role]
+      : view.kind === "section"
+        ? SECTION_LABELS[view.section]
       : view.kind === "marked"
         ? MARKED_LABELS[view.mark]
         : view.kind === "mailbox"
@@ -570,16 +651,24 @@ export function App() {
             ? "Drafts"
             : "Outbox";
   const subtitle =
-    view.kind === "mailbox"
-      ? viewAccount?.account.email
-      : view.kind === "drafts"
-        ? `${drafts.length} ${drafts.length === 1 ? "draft" : "drafts"}`
-        : view.kind === "outbox"
-          ? `${outbox.length} waiting`
-          : "By date";
+    view.kind === "section"
+      ? `Inbox${view.inbox ? ` · ${accounts.find((entry) => entry.account.id === view.inbox?.accountId)?.account.email ?? ""}` : ""}`
+      : view.kind === "mailbox"
+        ? `${viewAccount?.account.email ?? ""}${accountInbox ? (smartOn ? " · Smart" : " · By date") : ""}`
+        : view.kind === "drafts"
+          ? `${drafts.length} ${drafts.length === 1 ? "draft" : "drafts"}`
+          : view.kind === "outbox"
+            ? `${outbox.length} waiting`
+            : smartOn
+              ? "Smart"
+              : "By date";
   const empty =
     view.kind === "role" && view.role === "inbox"
       ? { title: "You're all caught up", body: "New mail shows here as it arrives." }
+      : view.kind === "section"
+        ? view.section === "new_senders"
+          ? { title: "No new senders", body: "Mail from people you haven't written to yet waits here to be accepted or blocked." }
+          : { title: `Nothing in ${SECTION_LABELS[view.section]}`, body: "This part of the inbox is empty." }
       : view.kind === "marked"
         ? {
             pinned: { title: "Nothing pinned", body: "Pin a message (p) to keep it in reach here." },
@@ -595,10 +684,13 @@ export function App() {
     ? (accounts.find((entry) => entry.account.id === openItem.accountId)?.mailboxes ?? []).filter((m) => m.selectable)
     : [];
 
-  // With several accounts, the title chooses between all of them and one.
+  // The inbox's title chooses how it looks (and with several accounts, which);
+  // other folders' titles choose between all accounts and one.
   const role = view.kind === "role" ? view.role : (viewMailbox?.role ?? null);
   const onTitle =
-    accounts.length > 1 && role
+    role === "inbox"
+      ? (anchor: Anchor) => setChooser(anchor)
+      : accounts.length > 1 && role
       ? (anchor: Anchor) =>
           setMenu({
             anchor,
@@ -622,6 +714,68 @@ export function App() {
           })
       : undefined;
 
+  // The Smart Inbox around the People list.
+  const openSection = (section: Section) => () =>
+    changeView({ kind: "section", section, inbox: view.kind === "mailbox" && accountInbox ? { mailboxId: view.mailboxId, accountId: view.accountId } : undefined });
+  const smart = smartOn
+    ? {
+        priority: {
+          items: priorityItems,
+          total: overview.priority?.total ?? priorityItems.length,
+          onAll: openSection("priority"),
+        },
+        newSenders:
+          screen === "off"
+            ? null
+            : {
+                items: newSenderItems,
+                total: overview.new_senders?.total ?? newSenderItems.length,
+                held: screen === "hold",
+                onAll: openSection("new_senders"),
+              },
+        bundles: [
+          {
+            key: "notifications",
+            label: "Notifications",
+            icon: "bell",
+            count: overview.notifications?.total ?? 0,
+            unread: (overview.notifications?.unread ?? 0) > 0,
+            messages: notificationItems,
+            onOpen: openSection("notifications"),
+          },
+          {
+            key: "newsletters",
+            label: "Newsletters",
+            icon: "newspaper",
+            count: overview.newsletters?.total ?? 0,
+            unread: (overview.newsletters?.unread ?? 0) > 0,
+            messages: newsletterItems,
+            onOpen: openSection("newsletters"),
+          },
+          {
+            key: "pinned",
+            label: "Pinned",
+            icon: "pin",
+            count: pinnedItems.length,
+            unread: pinnedItems.some((message) => !message.seen),
+            messages: pinnedItems,
+            onOpen: () => changeView({ kind: "marked", mark: "pinned" }),
+          },
+        ] satisfies Bundle[],
+      }
+    : null;
+  // A new sender: accepted into People, or blocked (their mail goes to Junk, undoably).
+  const screener: Screener = {
+    accept: (item) => {
+      const address = item.from?.address;
+      if (address) setSender(item.accountId, address, { policy: "people", priority: false }).catch(failed);
+    },
+    block: (item) => {
+      const address = item.from?.address;
+      if (address) blockSender(item.accountId, address).then((result) => moved([item.id], result), failed);
+    },
+  };
+
   const listPane =
     view.kind === "drafts" ? (
       <section className="list-pane" aria-label="Drafts">
@@ -643,6 +797,7 @@ export function App() {
         title={title}
         subtitle={subtitle}
         onTitle={onTitle}
+        onBack={view.kind === "section" ? () => changeView(inboxOf(view)) : undefined}
         onCompose={writeNew}
         canCompose={composeFrom !== null}
         feed={feed}
@@ -652,10 +807,13 @@ export function App() {
         onOpen={setOpen}
         onPick={setPicked}
         actionsFor={actionsForItems}
-        onPalette={(actions, paletteTitle) => palette(actions, paletteTitle)}
+        onPalette={(actions, paletteTitle, about) => palette(actions, paletteTitle, about ? [senderEntry(about)] : [])}
         empty={empty}
         onSplit={layout.mode === "single" ? () => setLayout({ mode: "split" }) : undefined}
         own={ownAddresses}
+        smart={smart}
+        screener={screener}
+        screenAll={view.kind === "section" && view.section === "new_senders"}
       />
     );
 
@@ -667,6 +825,9 @@ export function App() {
       mode={layout.mode}
       actionsFor={actionsFor}
       onPalette={palette}
+      onSender={(anchor, messageId, person) =>
+        aboutSender({ id: messageId, accountId: openItem.accountId, from: person }, anchor)
+      }
       onClose={() => setOpen(null)}
       onStep={layout.mode === "single" ? step : undefined}
     />
@@ -727,7 +888,8 @@ export function App() {
   const sidebarProps = {
     mail,
     outbox,
-    view,
+    // A part of the inbox (Notifications, say) is still the inbox there.
+    view: view.kind === "section" ? inboxOf(view) : view,
     onView: changeView,
     onSettings: () => {
       setOverlay(false);
@@ -840,6 +1002,8 @@ export function App() {
           onRecheck={recheck}
           layout={layout}
           onLayout={setLayout}
+          screening={screen}
+          onScreening={setScreen}
           confirm={confirm}
           onClose={() => setSettings(null)}
         />
@@ -854,6 +1018,46 @@ export function App() {
         />
       )}
       {menu && <Menu request={menu} onClose={() => setMenu(null)} />}
+      {chooser && (
+        <ViewChooser
+          anchor={chooser}
+          current={layout.inboxView}
+          onChoose={(inboxView) => setLayout({ inboxView })}
+          accounts={
+            accounts.length > 1
+              ? [
+                  { label: "All accounts", active: inInbox, onSelect: () => changeView(INBOX) },
+                  ...accounts.flatMap((entry) => {
+                    const inbox = entry.mailboxes.find((m) => m.role === "inbox" && m.selectable);
+                    return inbox
+                      ? [
+                          {
+                            label: entry.account.email,
+                            active: view.kind === "mailbox" && view.mailboxId === inbox.id,
+                            onSelect: () => changeView({ kind: "mailbox", mailboxId: inbox.id, accountId: entry.account.id }),
+                          },
+                        ]
+                      : [];
+                  }),
+                ]
+              : []
+          }
+          onSettings={() => setSettings("inbox")}
+          onClose={() => setChooser(null)}
+        />
+      )}
+      {sender && (
+        <SenderCard
+          request={sender}
+          onClose={() => setSenderCard(null)}
+          onWrite={(person) => {
+            setSenderCard(null);
+            writeTo(person, sender.accountId);
+          }}
+          onBlocked={(result) => moved(result.moved > 0 ? [sender.messageId] : [], result)}
+          onFailed={failed}
+        />
+      )}
       {picking && (
         <TimePicker
           title={picking.title}

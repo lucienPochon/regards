@@ -7,6 +7,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import type { MessageSummary, Person } from "../accounts";
 import type { Draft, OutboxEntry } from "../compose";
 import type { Identity } from "../identities";
+import { type Explanation, type Policy, type Screening, SECTIONS, type Section } from "../smart";
 import { type FixtureAccount, type FixtureMessage, ME, PERSONAL, WORK, fixtureMessages } from "./fixtures";
 
 type Args = Record<string, unknown>;
@@ -20,7 +21,7 @@ const drafts: Draft[] = [];
 const outbox: OutboxEntry[] = [];
 const undos = new Map<
   number,
-  { description: string; restore: Map<number, number>; marks?: Map<number, Marks> }
+  { description: string; restore: Map<number, number>; marks?: Map<number, Marks>; also?: () => void }
 >();
 const SOMEDAY = 32_503_680_000_000;
 type Marks = Pick<FixtureMessage, "pinned" | "aside" | "snoozed_until" | "remind_at" | "reminded" | "surfaced_at">;
@@ -31,6 +32,59 @@ const inboxPlace = (m: FixtureMessage) =>
 let nextId = 10_000;
 let background = true;
 let notifications = true;
+
+// The Smart Inbox, sorted roughly as the daemon's rules do. New senders get
+// their own card unless `?screen=off|hold` says otherwise.
+let screeningMode = (params.get("screen") ?? "section") as Screening;
+type Choice = { policy: Policy | null; priority: boolean; blocked: boolean };
+const choices = new Map<string, Choice>();
+const choiceKey = (accountId: string, address: string) => `${accountId} ${address.toLowerCase()}`;
+// People the sample accounts have written to, besides what is in Sent.
+const KNOWN = new Set([
+  "marco@example.com",
+  "hannah.weiss@example.org",
+  "yuki@example.net",
+  "ola@residents.example",
+  "grace.liu@example.com",
+  "omar.haddad@example.com",
+  "ines.moreau@example.com",
+]);
+for (const account of accounts) {
+  for (const address of ["lena.okafor@example.net", "marco@example.com", "grace.liu@example.com"]) {
+    choices.set(choiceKey(account.account.id, address), { policy: null, priority: true, blocked: false });
+  }
+}
+
+function explanationOf(message: FixtureMessage): Explanation {
+  const account = accountOfMailbox(message.mailboxId);
+  const accountId = account?.account.id ?? "";
+  const address = (message.from.address ?? "").toLowerCase();
+  const choice = choices.get(choiceKey(accountId, address)) ?? choices.get(choiceKey(accountId, `@${address.split("@")[1]}`));
+  const sent = account?.mailboxes.find((m) => m.role === "sent")?.id;
+  const written =
+    KNOWN.has(address) ||
+    messages.some((m) => m.mailboxId === sent && [...m.to, ...m.cc].some((p) => p.address?.toLowerCase() === address));
+  const sender = {
+    address,
+    policy: choice?.policy ?? null,
+    priority: choice?.priority ?? false,
+    written_to: written,
+    blocked: choice?.blocked ?? false,
+  };
+  const local = address.split("@")[0];
+  const placed = (section: Section, reason: Explanation["reason"]): Explanation => ({ section, reason, sender });
+  if (address === account?.account.email.toLowerCase()) return placed("people", "from_you");
+  if (sender.priority) return placed("priority", "priority_sender");
+  if (sender.policy) return placed(sender.policy, "your_choice");
+  if (/^no-?reply$/.test(local)) return placed("notifications", "no_reply_address");
+  if (/^(updates|tickets|bookings|win|alerts)$/.test(local)) return placed("notifications", "sent_automatically");
+  if (/^(hello|info|news)$/.test(local)) return placed("newsletters", "mailing_list");
+  if (written) return placed("people", "you_wrote_to_them");
+  return placed("new_senders", "new_sender");
+}
+/** What a section's list shows: without screening, new senders are with People. */
+const shownIn = (asked: Section, section: Section) =>
+  section === asked || (asked === "people" && section === "new_senders" && screeningMode === "off");
 
 /** Like the daemon's runner: it goes once undo is over and its time has come, into Sent. */
 function sendWhenDue(entry: OutboxEntry) {
@@ -174,6 +228,7 @@ function summary(message: FixtureMessage, listedAt = message.received_at): Messa
     preview: message.text.replace(/\s+/g, " ").trim().slice(0, 140) || null,
     has_attachments: message.attachments.length > 0,
     thread_size: messages.filter((m) => m.thread === message.thread).length,
+    section: mailboxOf(message.mailboxId)?.role === "inbox" ? explanationOf(message).section : null,
   };
 }
 
@@ -292,12 +347,20 @@ function handle(cmd: string, args: Args): unknown {
       const account = accountOfMailbox(args.mailboxId as number);
       // The inbox also shows reminders that came due, from wherever they are filed.
       const place = (m: FixtureMessage) => (inbox ? inboxPlace(m) : m.received_at);
+      const section = inbox ? ((args.section as Section | null) ?? null) : null;
       const all = messages
         .filter((m) =>
           inbox
             ? !parked(m) && (m.mailboxId === args.mailboxId || (m.reminded === true && account?.mailboxes.some((b) => b.id === m.mailboxId)))
             : m.mailboxId === args.mailboxId,
         )
+        .filter((m) => {
+          if (!inbox) return true;
+          const placed = explanationOf(m).section;
+          // Held new senders stay out of the inbox until accepted.
+          if (section === null) return !(screeningMode === "hold" && placed === "new_senders");
+          return shownIn(section, placed);
+        })
         .sort((a, b) => place(b) - place(a) || b.id - a.id)
         .filter((m) => !before || place(m) < before.received_at || (place(m) === before.received_at && m.id < before.id));
       const page = all.slice(0, limit);
@@ -410,6 +473,7 @@ function handle(cmd: string, args: Args): unknown {
         const message = messages.find((m) => m.id === id);
         if (message) message.mailboxId = mailboxId;
       }
+      undo.also?.();
       changed();
       return { undone: undo.restore.size + (undo.marks?.size ?? 0) };
     }
@@ -546,6 +610,57 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return { draft_id: entry.draft_id };
     }
+    case "smart_overview": {
+      const owner = accounts.find((a) => a.account.id === args.accountId);
+      const inbox = owner?.mailboxes.find((m) => m.role === "inbox")?.id;
+      const listed = messages.filter((m) => m.mailboxId === inbox && !parked(m));
+      const sections = SECTIONS.filter((section) => section !== "new_senders" || screeningMode !== "off")
+        .map((section) => {
+          const inSection = listed.filter((m) => shownIn(section, explanationOf(m).section));
+          return { section, total: inSection.length, unread: inSection.filter((m) => !m.seen).length };
+        })
+        .filter((count) => count.total > 0);
+      return { sections };
+    }
+    case "message_explain":
+      return explanationOf(byId(args.id as number));
+    case "sender_set": {
+      const { account_id, address, policy, priority } = args.sender as {
+        account_id: string;
+        address: string;
+        policy: Policy | null;
+        priority: boolean;
+      };
+      const key = choiceKey(account_id, address);
+      choices.set(key, { policy, priority, blocked: choices.get(key)?.blocked ?? false });
+      changed();
+      return { changed: messages.filter((m) => m.from.address?.toLowerCase() === address.toLowerCase()).length };
+    }
+    case "sender_block": {
+      const { account_id, address, blocked } = args.sender as { account_id: string; address: string; blocked: boolean };
+      const key = choiceKey(account_id, address);
+      const before = choices.get(key);
+      choices.set(key, { policy: before?.policy ?? null, priority: before?.priority ?? false, blocked });
+      if (!blocked) {
+        changed();
+        return { moved: 0, undo: null };
+      }
+      const owner = accounts.find((a) => a.account.id === account_id);
+      const inbox = owner?.mailboxes.find((m) => m.role === "inbox")?.id;
+      const theirs = messages
+        .filter((m) => m.mailboxId === inbox && m.from.address?.toLowerCase() === address.toLowerCase())
+        .map((m) => m.id);
+      const result = moveTo(theirs, (m) => roleBox(m, "junk"), "Blocked the sender and moved");
+      const undo = undos.get(result.undo.id);
+      if (undo) undo.also = () => void (before ? choices.set(key, before) : choices.delete(key));
+      return result;
+    }
+    case "smart_screening":
+      return { mode: screeningMode };
+    case "smart_set_screening":
+      screeningMode = args.mode as Screening;
+      changed();
+      return { mode: screeningMode };
     case "outbox_send_again":
     case "outbox_dismiss": {
       const index = outbox.findIndex((e) => e.id === args.id);

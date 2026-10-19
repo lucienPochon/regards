@@ -16,6 +16,7 @@ import {
 import { useChanges } from "./changes";
 import { type Draft, type OutboxEntry, listDrafts, listOutbox } from "./compose";
 import { type DaemonStatus, fetchDaemonStatus } from "./daemon";
+import { type Section, type SectionCount, smartOverview } from "./smart";
 import type { View } from "./views";
 
 export interface AccountMail {
@@ -74,6 +75,10 @@ export interface Source {
  * account, or every account's pinned, snoozed or set-aside messages.
  */
 export function sourcesFor(accounts: AccountMail[], view: View): Source[] {
+  if (view.kind === "section") {
+    const { inbox } = view;
+    return sectionSources(inbox ? accounts.filter((entry) => entry.account.id === inbox.accountId) : accounts, view.section);
+  }
   const sources: Source[] = [];
   for (const { account, mailboxes } of accounts) {
     if (view.kind === "marked") {
@@ -104,6 +109,87 @@ export function sourcesFor(accounts: AccountMail[], view: View): Source[] {
     }
   }
   return sources;
+}
+
+/** One Smart Inbox section of every account's inbox. */
+export function sectionSources(accounts: AccountMail[], section: Section): Source[] {
+  return accounts.flatMap(({ account, mailboxes }) =>
+    mailboxes
+      .filter((mailbox) => mailbox.role === "inbox" && mailbox.selectable)
+      .map(
+        (mailbox): Source => ({
+          key: `section:${section}:${mailbox.id}`,
+          accountId: account.id,
+          mailboxId: mailbox.id,
+          role: "inbox",
+          fetch: (before, limit) => listMessages(mailbox.id, before, limit, section),
+        }),
+      ),
+  );
+}
+
+/**
+ * The newest few of some sources, merged: enough for a card or a group row
+ * to show who and how many. Kept current.
+ */
+export function useFirstPage(sources: Source[], limit: number, enabled: boolean): ListItem[] {
+  const [items, setItems] = useState<ListItem[]>([]);
+  const key = enabled ? sources.map((source) => source.key).join(",") : "";
+  const wanted = useRef(sources);
+  wanted.current = sources;
+  const generation = useRef(0);
+  const refresh = useCallback(() => {
+    const run = ++generation.current;
+    if (!key) {
+      setItems([]);
+      return;
+    }
+    Promise.all(
+      wanted.current.map((source) =>
+        source.fetch(null, limit).then(
+          (page) =>
+            page.messages.map(
+              (message): ListItem => ({
+                ...message,
+                mailboxId: source.mailboxId ?? message.mailbox_id,
+                accountId: source.accountId,
+                role: source.role,
+              }),
+            ),
+          () => [] as ListItem[],
+        ),
+      ),
+    ).then((pages) => run === generation.current && setItems(pages.flat().sort(newer).slice(0, limit)));
+  }, [key, limit]);
+  useEffect(refresh, [refresh]);
+  useChanges(refresh);
+  return items;
+}
+
+/** Every inbox's Smart Inbox sections, counted together: section → total and unread. */
+export function useSmartOverview(accounts: AccountMail[], enabled: boolean): Partial<Record<Section, SectionCount>> {
+  const [counts, setCounts] = useState<Partial<Record<Section, SectionCount>>>({});
+  const ids = enabled ? accounts.map((entry) => entry.account.id).join(",") : "";
+  const generation = useRef(0);
+  const refresh = useCallback(() => {
+    const run = ++generation.current;
+    if (!ids) {
+      setCounts({});
+      return;
+    }
+    Promise.all(ids.split(",").map((id) => smartOverview(id).catch(() => [] as SectionCount[]))).then((all) => {
+      if (run !== generation.current) return;
+      const sum: Partial<Record<Section, SectionCount>> = {};
+      for (const count of all.flat()) {
+        const now = sum[count.section] ?? { section: count.section, total: 0, unread: 0 };
+        sum[count.section] = { ...now, total: now.total + count.total, unread: now.unread + count.unread };
+      }
+      setCounts(sum);
+    });
+  }, [ids]);
+  useEffect(refresh, [refresh]);
+  useChanges(refresh);
+  return counts;
 }
 
 /** A message in a list, with the folder it was listed from. */
