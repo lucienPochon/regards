@@ -54,6 +54,7 @@ if (params.get("signin") === "1" && accounts[0]) {
       last_error: "Microsoft needs you to sign in again",
       executor: "device",
       needs_this_computer: true,
+      waiting_for_sign_in: true,
     });
   });
 }

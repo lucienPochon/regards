@@ -109,7 +109,7 @@ function scheduled(entry: OutboxEntry): boolean {
 
 /** Waiting for its account to be signed in again (Microsoft or Google): it goes as soon as it is. */
 function signedOut(entry: OutboxEntry): boolean {
-  return entry.state === "queued" && /sign in again/i.test(entry.last_error ?? "");
+  return entry.state === "queued" && entry.waiting_for_sign_in === true;
 }
 
 function describe(entry: OutboxEntry): string {
