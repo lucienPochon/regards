@@ -182,7 +182,7 @@ function searchSamples(query: string, accountId: string | null, server = false) 
   return { found, top };
 }
 
-/** Two sample agent sessions: the command line two hours ago, an assistant just now (one request refused). */
+/** Sample agent sessions: the command line two hours ago, an assistant just now (one request refused), and a script during it. */
 function agentActivity(): AgentActivity[] {
   const account = accounts[0]?.account.id ?? null;
   const at = (minutesAgo: number) => started - minutesAgo * 60_000;
@@ -208,7 +208,10 @@ function agentActivity(): AgentActivity[] {
     error: denied ? "Agents may only read sam@example.org. Allow more in Settings › Agents." : null,
     duration_ms: 3 + (id % 7),
   });
+  // A script on the command line ran while the assistant was connected: their requests interleave.
   return [
+    entry(14, 0.5, "mcp-1", "mcp", "message.get", { id: 105 }),
+    entry(13, 1, "cli-2", "cli", "search.query", { query: "is:unread" }),
     entry(12, 2, "mcp-1", "mcp", "draft.create", { account_id: account }, true),
     entry(11, 3, "mcp-1", "mcp", "message.get", { id: 101 }),
     entry(10, 3, "mcp-1", "mcp", "search.query", { query: "garden rota" }),

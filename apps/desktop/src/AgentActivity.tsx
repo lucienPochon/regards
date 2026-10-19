@@ -62,15 +62,20 @@ function describe(entry: Entry): string {
 
 const time = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-/** Requests made together (one agent connection, one after another) under one heading. */
+/**
+ * Requests made through one agent connection under one heading, the
+ * sessions ordered by their newest request. Two agents at once interleave
+ * in the log, so a session is gathered from everything loaded, not from
+ * runs of neighbours.
+ */
 function bySession(entries: Entry[]): { session: string; client: string; entries: Entry[] }[] {
-  const groups: { session: string; client: string; entries: Entry[] }[] = [];
+  const groups = new Map<string, { session: string; client: string; entries: Entry[] }>();
   for (const entry of entries) {
-    const last = groups[groups.length - 1];
-    if (last && last.session === entry.session) last.entries.push(entry);
-    else groups.push({ session: entry.session, client: entry.client, entries: [entry] });
+    const group = groups.get(entry.session);
+    if (group) group.entries.push(entry);
+    else groups.set(entry.session, { session: entry.session, client: entry.client, entries: [entry] });
   }
-  return groups;
+  return [...groups.values()];
 }
 
 /**
@@ -198,7 +203,7 @@ export function AgentActivity({ accounts }: { accounts: { id: string; email: str
         <ol className="activity-sessions">
           {bySession(shown).map((group) => (
             <Session
-              key={`${group.session}:${group.entries[group.entries.length - 1].id}`}
+              key={group.session}
               client={group.client}
               entries={group.entries}
               emailOf={accounts.length > 1 ? emailOf : () => null}
