@@ -27,12 +27,12 @@ use regards_ipc::protocol::{
     DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult,
     DraftSetFromParams, DraftUpdateParams, DraftView, ExplainResult, HoldListParams, HoldListResult, HoldRef, HoldView,
     IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView, MailboxListResult, MarkResult, MessageCursor,
-    MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult,
-    OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams,
-    Screening, ScreeningParams, SearchParams, SearchResult, Section, SenderBlockParams, SenderSetParams,
-    SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SmartOverviewResult,
-    SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView,
-    UndoParams, UndoResult, View, ViewParams, methods,
+    MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult, OauthFlowRef,
+    OauthProvidersResult, OauthStartParams, OauthStartResult, OutboxListResult, OutboxRef, OutboxRescheduleParams,
+    OutboxUndoResult, PinParams, Principal, RemindParams, Screening, ScreeningParams, SearchParams, SearchResult,
+    Section, SenderBlockParams, SenderSetParams, SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams,
+    SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams,
+    TemplateView, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -295,6 +295,71 @@ async fn account_remove(bridge: State<'_, Bridge>, id: String) -> Result<(), Str
     let mut client = bridge.connect().await?.client;
     let _: Value = client
         .call(methods::ACCOUNT_REMOVE, AccountRemoveParams { id })
+        .await
+        .map_err(describe)?;
+    Ok(())
+}
+
+/// The providers this version can sign in with (ADR-0018); others use a password.
+#[tauri::command]
+async fn account_oauth_providers(bridge: State<'_, Bridge>) -> Result<OauthProvidersResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::ACCOUNT_OAUTH_PROVIDERS, Value::Null)
+        .await
+        .map_err(describe)
+}
+
+/// Begin signing in with a provider and open its page in the system browser
+/// (RFC 8252: never in the app's own WebView). The URL comes back too, for
+/// when no browser opened.
+#[tauri::command]
+async fn account_oauth_start(
+    bridge: State<'_, Bridge>,
+    provider: regards_ipc::protocol::Provider,
+    email: Option<String>,
+) -> Result<OauthStartResult, String> {
+    let mut client = bridge.connect().await?.client;
+    let started: OauthStartResult = client
+        .call(methods::ACCOUNT_OAUTH_START, OauthStartParams { provider, email })
+        .await
+        .map_err(describe)?;
+    let opened = if started.url.starts_with("https://") {
+        open::that_detached(&started.url).map_err(|error| format!("could not open the browser: {error}"))
+    } else {
+        Err("the sign-in page is not a secure web address".to_owned())
+    };
+    if let Err(error) = opened {
+        let _: Result<Value, _> = client
+            .call(
+                methods::ACCOUNT_OAUTH_CANCEL,
+                OauthFlowRef {
+                    flow_id: started.flow_id,
+                },
+            )
+            .await;
+        return Err(error);
+    }
+    Ok(started)
+}
+
+/// Wait for the browser to come back, then add the account (or renew its
+/// sign-in). Resolves once done; the UI shows that it waits for the browser.
+#[tauri::command]
+async fn account_oauth_finish(bridge: State<'_, Bridge>, flow_id: String) -> Result<AccountSummary, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::ACCOUNT_OAUTH_FINISH, OauthFlowRef { flow_id })
+        .await
+        .map_err(describe)
+}
+
+/// Give up a sign-in; a pending `account_oauth_finish` then fails.
+#[tauri::command]
+async fn account_oauth_cancel(bridge: State<'_, Bridge>, flow_id: String) -> Result<(), String> {
+    let mut client = bridge.connect().await?.client;
+    let _: Value = client
+        .call(methods::ACCOUNT_OAUTH_CANCEL, OauthFlowRef { flow_id })
         .await
         .map_err(describe)?;
     Ok(())
@@ -1043,6 +1108,10 @@ fn main() {
             notifications_set,
             account_list,
             account_add,
+            account_oauth_providers,
+            account_oauth_start,
+            account_oauth_finish,
+            account_oauth_cancel,
             account_remove,
             account_set_agent_access,
             agent_activity,
