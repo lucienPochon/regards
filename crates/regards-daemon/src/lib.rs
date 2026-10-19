@@ -20,6 +20,7 @@ mod sender;
 mod session;
 mod smart;
 mod sync;
+mod templates;
 
 use regards_core::paths::DataDirs;
 use regards_imap::TlsOptions;

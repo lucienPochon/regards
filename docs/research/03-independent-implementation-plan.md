@@ -370,7 +370,11 @@ flowchart LR
     - **Replies:** a reply goes out from the address it was written to, and none of the account's addresses is answered.
     - **Changing From** in the composer swaps the signature: the daemon swaps it in plain text (`draft.set_from`), the app in the editor's HTML.
     - **What changes on the wire:** the envelope, From and the Message-ID's domain follow the identity.
-- **Still to come in Phase 2:** checking the HTML in major clients (the acceptance test), inline images, templates, IMAP draft sync, and dropping files onto the composer.
+  - **Templates:**
+    - **Storage:** text to start a message with, by name, for every account (migration 0020, `template.*`). Formatting is sanitised like an outgoing message's.
+    - **In the composer:** a template goes where one writes, above the signature and any quote, and fills an empty subject.
+    - **Settings:** an editor (`TemplatesEditor`) for them.
+- **Still to come in Phase 2:** checking the HTML in major clients (the acceptance test), inline images, IMAP draft sync, and dropping files onto the composer.
 
 ### 5.10 Search (P0 keyword, P2 semantic, 1.0)
 
