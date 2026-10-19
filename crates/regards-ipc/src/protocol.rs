@@ -169,6 +169,10 @@ pub mod methods {
     pub const NOTICE_LIST: &str = "notice.list";
     /// The notices up to an id have been shown (or seen in the app).
     pub const NOTICE_SHOWN: &str = "notice.shown";
+    /// Whether recent inbox mail is downloaded ahead (off by default). `ui` only.
+    pub const PREFETCH_GET: &str = "prefetch.get";
+    /// Download recent inbox mail ahead, or not; on starts at once. `ui` only.
+    pub const PREFETCH_SET: &str = "prefetch.set";
     /// New mail not told of yet (plan §5.12): what came into an inbox since
     /// sync last looked, still unread, oldest first. `ui` only.
     pub const MAIL_ARRIVED: &str = "mail.arrived";
@@ -1585,6 +1589,15 @@ pub struct NoticeView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NoticeListResult {
     pub notices: Vec<NoticeView>,
+}
+
+/// Parameters of [`methods::PREFETCH_SET`], and the result of both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrefetchParams {
+    /// The inboxes' messages of the last 30 days (up to 25 MB each) are
+    /// downloaded ahead: they open at once, offline too, and their whole
+    /// text is searchable.
+    pub on: bool,
 }
 
 /// One new message to tell of: who, the subject and its Smart Inbox

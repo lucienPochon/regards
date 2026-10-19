@@ -755,6 +755,10 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return owner.account;
     }
+    case "prefetch_get":
+      return false;
+    case "prefetch_set":
+      return null;
     case "mail_app_status":
       // `?platform=macos`: Mail's settings choose the mail app; Regards cannot.
       return { registered: mailApp, can_register: params.get("platform") !== "macos" };

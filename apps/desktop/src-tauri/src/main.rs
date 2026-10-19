@@ -354,6 +354,27 @@ async fn account_set_auto_copy(
         .map_err(describe)
 }
 
+/// Whether recent inbox mail is downloaded ahead (off by default).
+#[tauri::command]
+async fn prefetch_get(bridge: State<'_, Bridge>) -> Result<bool, String> {
+    let mut client = bridge.connect().await?.client;
+    let got: regards_ipc::protocol::PrefetchParams = client
+        .call(methods::PREFETCH_GET, Value::Null)
+        .await
+        .map_err(describe)?;
+    Ok(got.on)
+}
+
+#[tauri::command]
+async fn prefetch_set(bridge: State<'_, Bridge>, on: bool) -> Result<(), String> {
+    let mut client = bridge.connect().await?.client;
+    let _: Value = client
+        .call(methods::PREFETCH_SET, regards_ipc::protocol::PrefetchParams { on })
+        .await
+        .map_err(describe)?;
+    Ok(())
+}
+
 /// Rename an account; its sending name follows if it was the same.
 #[tauri::command]
 async fn account_update(bridge: State<'_, Bridge>, id: String, display_name: String) -> Result<AccountSummary, String> {
@@ -1233,6 +1254,8 @@ fn main() {
             system::open_system_settings,
             system::open_url,
             account_update,
+            prefetch_get,
+            prefetch_set,
             account_set_auto_copy,
             links::mail_app_status,
             links::make_mail_app,

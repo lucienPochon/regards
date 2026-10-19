@@ -2,7 +2,7 @@
 
 use crate::{
     State, access, accounts, actions, audit, compose, discover, draft_sync, holds, identities, mail, notices, oauth,
-    smart, templates,
+    prefetch, smart, templates,
 };
 use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
@@ -444,6 +444,14 @@ impl Session {
             methods::NOTICE_SHOWN => {
                 self.require_ui()?;
                 notices::shown(&self.state, params(request)?).await
+            }
+            methods::PREFETCH_GET => {
+                self.require_ui()?;
+                prefetch::get(&self.state).await
+            }
+            methods::PREFETCH_SET => {
+                self.require_ui()?;
+                prefetch::set(&self.state, params(request)?).await
             }
             methods::MAIL_ARRIVED => {
                 self.require_ui()?;

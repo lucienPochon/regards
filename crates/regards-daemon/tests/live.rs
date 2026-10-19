@@ -20,9 +20,9 @@ use regards_ipc::protocol::{
     UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::protocol::{
-    ArrivalView, ArrivedResult, ExplainResult, HoldListParams, HoldListResult, NoticeShownParams, Policy, Reason,
-    Screening, ScreeningParams, Section, SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams,
-    SenderSetResult, SmartOverviewResult,
+    ArrivalView, ArrivedResult, ExplainResult, HoldListParams, HoldListResult, NoticeShownParams, Policy,
+    PrefetchParams, Reason, Screening, ScreeningParams, Section, SenderBlockParams, SenderImagesParams,
+    SenderImagesResult, SenderSetParams, SenderSetResult, SmartOverviewResult,
 };
 use regards_ipc::{Client, Endpoint, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -3160,5 +3160,38 @@ async fn live_new_mail_is_told_of_but_not_an_inbox_seen_for_the_first_time() {
         .unwrap();
     assert!(new_mail(&mut desktop).await.is_empty());
     seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_recent_inbox_mail_is_downloaded_ahead_once_turned_on() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    // The word lies past the preview: only the whole text has it.
+    let long = format!(
+        "From: Ada <ada@example.test>\r\nTo: Bob <bob@example.test>\r\nSubject: Long\r\nDate: {}\r\n\r\n{}\r\nquetzalcoatl\r\n",
+        "Mon, 19 Oct 2026 08:00:00 +0000",
+        "Filler words keep this line going. ".repeat(40)
+    );
+    seed.append(b"INBOX", &[], long.as_bytes()).await.unwrap();
+    seed.logout().await;
+    let (_temp, mut desktop, _account, inbox, handle) = daemon_with_account(&live).await;
+    while messages(&mut desktop, inbox).await.messages.is_empty() {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let settled = |found: &SearchResult| found.indexing == 0;
+    let before = search_until(&mut desktop, "quetzalcoatl", settled).await;
+    assert!(before.messages.is_empty(), "not downloaded yet");
+
+    let on: Value = desktop
+        .call(methods::PREFETCH_SET, PrefetchParams { on: true })
+        .await
+        .unwrap();
+    assert_eq!(on["on"], true);
+    let found = search_until(&mut desktop, "quetzalcoatl", |found| found.messages.len() == 1).await;
+    assert_eq!(found_subjects(&found), ["Long"]);
     handle.abort();
 }

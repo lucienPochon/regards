@@ -88,6 +88,14 @@ export function setAutoCopy(accountId: string, autoCopy: AutoCopy | null): Promi
   return invoke<void>("account_set_auto_copy", { accountId, autoCopy });
 }
 
+/**
+ * Download recent inbox mail ahead (off by default): the inboxes' messages
+ * of the last 30 days, up to 25 MB each, so they open at once, offline too,
+ * and their whole text is searchable. It costs data and disk space.
+ */
+export const prefetchOn = () => invoke<boolean>("prefetch_get");
+export const setPrefetch = (on: boolean) => invoke<void>("prefetch_set", { on });
+
 export function removeAccount(id: string): Promise<void> {
   return invoke<void>("account_remove", { id });
 }
