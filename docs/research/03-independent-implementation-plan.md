@@ -459,6 +459,7 @@ flowchart LR
     - Secrets (keys naming a password, secret or token) are taken out of the parameters, and long ones are cut at 4 KB.
     - Records are quiet writes, so an agent's requests do not make clients refetch. The app lists them (`agent.activity`, newest first, by account), and they are kept 90 days.
     - For a change, its activity keeps how what it changed stood before: the messages (folder, flags, marks), the draft, or the sender. It also keeps the undo entry that reverses it (migration 0025). The app's Undo uses it while it lasts: ten minutes, once.
+    - Flag changes have undo entries too: undo sets back only the flags still as the change left them, so the person's own change since is kept.
 - **Interfaces:** stable `--json` contracts, `regards mcp`, `regards skill`, and deep links `regards://…`.
 - **Prompt-injection posture:** content is passed as data, drafts never auto-send, and agents cannot change their own access.
 

@@ -689,10 +689,14 @@ pub struct SetFlagsParams {
 }
 
 /// Result of [`methods::MESSAGE_SET_FLAGS`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SetFlagsResult {
     /// Messages whose flags actually changed.
     pub changed: usize,
+    /// Set when something changed. Undo sets back only the flags still as
+    /// this left them.
+    #[serde(default)]
+    pub undo: Option<UndoInfo>,
 }
 
 /// One message of a conversation, and where it is.

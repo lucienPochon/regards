@@ -2634,17 +2634,16 @@ async fn live_agents_organise_mail_and_the_app_undoes_it() {
         )
         .await
         .unwrap();
-    let _: SetFlagsResult = agent
-        .call(
-            methods::MESSAGE_SET_FLAGS,
-            SetFlagsParams {
-                ids: vec![id("Invoice")],
-                seen: None,
-                flagged: Some(true),
-            },
-        )
+    let flag = |ids: Vec<i64>, flagged: bool| SetFlagsParams {
+        ids,
+        seen: None,
+        flagged: Some(flagged),
+    };
+    let marked: SetFlagsResult = agent
+        .call(methods::MESSAGE_SET_FLAGS, flag(vec![id("Invoice")], true))
         .await
         .unwrap();
+    assert_eq!(marked.undo.as_ref().unwrap().description, "Flagged 1 message");
     assert_eq!(subjects(messages(&mut desktop, inbox).await), ["Invoice"]);
 
     // The app sees what it did, how things stood, and undoes the archiving.
@@ -2661,10 +2660,48 @@ async fn live_agents_organise_mail_and_the_app_undoes_it() {
     assert_eq!(pin.before.as_ref().unwrap()[0]["pinned"], false);
     let flagged = entry(methods::MESSAGE_SET_FLAGS);
     assert_eq!(flagged.before.as_ref().unwrap()[0]["flagged"], false);
-    assert_eq!(
-        flagged.undo_id, None,
-        "flags have no undo entry; the before-state says what to set back"
-    );
+    assert_eq!((flagged.undo_id, flagged.undoable), (marked.undo.map(|u| u.id), true));
+    // The person unflags it themselves: undoing the agent then leaves it as they set it.
+    let invoice = |page: MessageListResult| page.messages.into_iter().find(|m| m.subject == "Invoice").unwrap();
+    let _: SetFlagsResult = desktop
+        .call(methods::MESSAGE_SET_FLAGS, flag(vec![id("Invoice")], false))
+        .await
+        .unwrap();
+    let undone: UndoResult = desktop
+        .call(
+            methods::UNDO_APPLY,
+            UndoParams {
+                id: flagged.undo_id.unwrap(),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(undone.undone, 0, "changed since: theirs, not the agent's");
+    assert!(!invoice(messages(&mut desktop, inbox).await).flagged);
+    // Still as the agent left it: set back.
+    let read: SetFlagsResult = agent
+        .call(
+            methods::MESSAGE_SET_FLAGS,
+            SetFlagsParams {
+                ids: vec![id("Invoice")],
+                seen: Some(true),
+                flagged: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(invoice(messages(&mut desktop, inbox).await).seen);
+    let undone: UndoResult = desktop
+        .call(
+            methods::UNDO_APPLY,
+            UndoParams {
+                id: read.undo.unwrap().id,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(undone.undone, 1);
+    assert!(!invoice(messages(&mut desktop, inbox).await).seen);
     let _: UndoResult = desktop
         .call(
             methods::UNDO_APPLY,
