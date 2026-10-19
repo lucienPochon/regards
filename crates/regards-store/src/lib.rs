@@ -14,6 +14,7 @@
 //! The daemon is the only process that opens the database (ADR-0005).
 
 pub mod accounts;
+pub mod arrivals;
 pub mod audit;
 pub mod blobs;
 pub mod draft_sync;

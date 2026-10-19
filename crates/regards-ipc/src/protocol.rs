@@ -163,6 +163,11 @@ pub mod methods {
     pub const NOTICE_LIST: &str = "notice.list";
     /// The notices up to an id have been shown (or seen in the app).
     pub const NOTICE_SHOWN: &str = "notice.shown";
+    /// New mail not told of yet (plan §5.12): what came into an inbox since
+    /// sync last looked, still unread, oldest first. `ui` only.
+    pub const MAIL_ARRIVED: &str = "mail.arrived";
+    /// New mail up to an id was looked at (told of, or let through by nothing). `ui` only.
+    pub const MAIL_ARRIVED_SHOWN: &str = "mail.arrived_shown";
     /// What agents may do with an account: off, read, triage or send
     /// (ADR-0012). `ui` only: agents cannot change their own access.
     pub const ACCOUNT_SET_AGENT_ACCESS: &str = "account.set_agent_access";
@@ -1554,6 +1559,29 @@ pub struct NoticeView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NoticeListResult {
     pub notices: Vec<NoticeView>,
+}
+
+/// One new message to tell of: who, the subject and its Smart Inbox
+/// section, so the app can tell of only what the person chose (People and
+/// Priority, say). Never its text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArrivalView {
+    /// For [`methods::MAIL_ARRIVED_SHOWN`].
+    pub id: i64,
+    pub message_id: i64,
+    pub account_id: String,
+    pub from: Option<Person>,
+    pub subject: String,
+    /// `None` until sorted.
+    pub section: Option<Section>,
+    /// Unix ms.
+    pub received_at: i64,
+}
+
+/// The result of [`methods::MAIL_ARRIVED`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArrivedResult {
+    pub arrivals: Vec<ArrivalView>,
 }
 
 /// Parameters of [`methods::NOTICE_SHOWN`].

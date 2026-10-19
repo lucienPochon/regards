@@ -1162,6 +1162,8 @@ fn main() {
             account_list,
             account_add,
             account_discover,
+            notify::notification_settings,
+            notify::set_notification_settings,
             updates::update_status,
             updates::update_set_checks,
             updates::update_check,

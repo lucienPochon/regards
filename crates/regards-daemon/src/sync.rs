@@ -12,7 +12,7 @@
 use crate::State;
 use crate::feed::Feed;
 use regards_core::headers;
-use regards_core::mailbox::{Candidate, assign_roles};
+use regards_core::mailbox::{Candidate, Role, assign_roles};
 use regards_imap::{Auth, FlagUpdate, Flags, ImapError, ImapServer, MessageSet, Selected, Session, Since};
 use regards_ipc::protocol::SyncState;
 use regards_store::StoreError;
@@ -447,6 +447,8 @@ pub(crate) async fn sync_mailbox(
         .collect();
     let reset = plan.reset;
     let first_look = reset || stored.uid_validity.is_none();
+    // New mail to tell of: what came into the inbox since the last look.
+    let tell = (!first_look && mailbox.role == Some(Role::Inbox)).then(|| mailbox.account_id.clone());
     let new_uids: Vec<u32> = records.iter().map(|r| r.uid).collect();
     // The newest of what came in get their previews now; the backfill does the rest.
     let mut detail_uids = new_uids.clone();
@@ -468,6 +470,11 @@ pub(crate) async fn sync_mailbox(
             let added = messages::upsert(tx, mailbox_id, &records)?;
             // Mail from blocked senders goes on to Junk.
             let junked = crate::actions::junk_blocked(tx, mailbox_id, &new_uids, now_ms())?;
+            if let Some(account_id) = &tell
+                && added > 0
+            {
+                regards_store::arrivals::add(tx, mailbox_id, account_id, &new_uids, now_ms())?;
+            }
             // New mail (not a first look at the folder) from someone else ends
             // the snooze of its conversation.
             if added > 0 && !first_look {
