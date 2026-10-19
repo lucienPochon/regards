@@ -4,6 +4,7 @@
 //! identity used by the client/daemon handshake (ADR-0005), and the per-user
 //! data locations.
 
+pub mod agents;
 pub mod body;
 pub mod build_info;
 pub mod compose;

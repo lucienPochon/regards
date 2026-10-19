@@ -19,16 +19,16 @@ use regards_core::paths::DataDirs;
 use regards_core::secret::Secret;
 use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, AsideParams, ClientKind, ConnectionSecurity,
-    DeleteResult, DraftAttachFileParams, DraftCreateParams, DraftDetachParams, DraftListParams, DraftListResult,
-    DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
-    ExplainResult, IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView, MailboxListResult, MarkResult,
-    MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult,
-    OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams,
-    Screening, ScreeningParams, SearchParams, SearchResult, Section, SenderBlockParams, SenderSetParams,
-    SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SmartOverviewResult,
-    SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView,
-    UndoParams, UndoResult, View, ViewParams, methods,
+    AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, AgentAccess, AgentAccessParams, AsideParams,
+    ClientKind, ConnectionSecurity, DeleteResult, DraftAttachFileParams, DraftCreateParams, DraftDetachParams,
+    DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams,
+    DraftUpdateParams, DraftView, ExplainResult, IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView,
+    MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult,
+    MessageRef, MoveParams, MoveResult, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult,
+    PinParams, Principal, RemindParams, Screening, ScreeningParams, SearchParams, SearchResult, Section,
+    SenderBlockParams, SenderSetParams, SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams,
+    SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams,
+    TemplateView, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -216,6 +216,23 @@ async fn account_add(bridge: State<'_, Bridge>, input: AccountInput) -> Result<A
     };
     let mut client = bridge.connect().await?.client;
     client.call(methods::ACCOUNT_ADD, params).await.map_err(describe)
+}
+
+/// What agents may do with an account (ADR-0012): off, read, triage or send.
+#[tauri::command]
+async fn account_set_agent_access(
+    bridge: State<'_, Bridge>,
+    account_id: String,
+    access: AgentAccess,
+) -> Result<Value, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::ACCOUNT_SET_AGENT_ACCESS,
+            AgentAccessParams { account_id, access },
+        )
+        .await
+        .map_err(describe)
 }
 
 #[tauri::command]
@@ -917,6 +934,7 @@ fn main() {
             account_list,
             account_add,
             account_remove,
+            account_set_agent_access,
             account_sync,
             mailbox_list,
             message_list,

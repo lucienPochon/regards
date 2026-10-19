@@ -1,11 +1,13 @@
 //! One client connection: handshake, then request dispatch.
 
-use crate::{State, accounts, actions, compose, draft_sync, identities, mail, notices, smart, templates};
+use crate::{State, access, accounts, actions, compose, draft_sync, identities, mail, notices, smart, templates};
+use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_ipc::framing::{self, FrameError};
 use regards_ipc::protocol::{
-    ChangesNotification, HealthResult, HelloParams, HelloResult, JSONRPC, Notification, PROTOCOL_VERSIONS, Principal,
-    Request, Response, RpcError, codes, methods, negotiate, notifications,
+    AccountRef, ChangesNotification, HealthResult, HelloParams, HelloResult, JSONRPC, MessageHtmlParams,
+    MessageListParams, MessageRef, Notification, PROTOCOL_VERSIONS, Principal, Request, Response, RpcError,
+    SearchParams, ViewParams, codes, methods, negotiate, notifications,
 };
 use regards_ipc::transport::Stream;
 use serde_json::{Value, json};
@@ -139,9 +141,10 @@ impl Session {
                 let _ = self.state.stop.send(true);
                 Ok(json!({ "stopping": true }))
             }
-            methods::ACCOUNT_LIST => {
+            methods::ACCOUNT_LIST => accounts::list(&self.state, !self.is_ui()).await,
+            methods::ACCOUNT_SET_AGENT_ACCESS => {
                 self.require_ui()?;
-                accounts::list(&self.state).await
+                accounts::set_agent_access(&self.state, params(request)?).await
             }
             methods::ACCOUNT_ADD => {
                 self.require_ui()?;
@@ -156,28 +159,34 @@ impl Session {
                 accounts::sync_now(&self.state, params(request)?).await
             }
             methods::MAILBOX_LIST => {
-                self.require_ui()?;
-                accounts::mailboxes(&self.state, params(request)?).await
+                let params: AccountRef = params(request)?;
+                self.allow_account(Access::Read, &params.account_id).await?;
+                accounts::mailboxes(&self.state, params).await
             }
             methods::MESSAGE_LIST => {
-                self.require_ui()?;
-                mail::list(&self.state, params(request)?).await
+                let params: MessageListParams = params(request)?;
+                self.allow_mailbox(Access::Read, params.mailbox_id).await?;
+                mail::list(&self.state, params).await
             }
             methods::SEARCH => {
-                self.require_ui()?;
-                mail::search(&self.state, params(request)?).await
+                let params: SearchParams = params(request)?;
+                let scope = self.search_scope(params.account_id.as_deref()).await?;
+                mail::search(&self.state, params, scope).await
             }
             methods::SEARCH_SERVER => {
-                self.require_ui()?;
-                mail::search_server(&self.state, params(request)?).await
+                let params: SearchParams = params(request)?;
+                let scope = self.search_scope(params.account_id.as_deref()).await?;
+                mail::search_server(&self.state, params, scope).await
             }
             methods::MESSAGE_GET => {
-                self.require_ui()?;
-                mail::get(&self.state, params(request)?).await
+                let params: MessageRef = params(request)?;
+                self.allow_message(Access::Read, params.id).await?;
+                mail::get(&self.state, params).await
             }
             methods::MESSAGE_HTML => {
-                self.require_ui()?;
-                mail::html(&self.state, params(request)?).await
+                let params: MessageHtmlParams = params(request)?;
+                self.allow_message(Access::Read, params.id).await?;
+                mail::html(&self.state, params).await
             }
             methods::MESSAGE_DELETE => {
                 self.require_ui()?;
@@ -300,12 +309,14 @@ impl Session {
                 actions::set_aside(&self.state, params(request)?).await
             }
             methods::SMART_OVERVIEW => {
-                self.require_ui()?;
-                smart::overview(&self.state, params(request)?).await
+                let params: AccountRef = params(request)?;
+                self.allow_account(Access::Read, &params.account_id).await?;
+                smart::overview(&self.state, params).await
             }
             methods::MESSAGE_EXPLAIN => {
-                self.require_ui()?;
-                smart::explain(&self.state, params(request)?).await
+                let params: MessageRef = params(request)?;
+                self.allow_message(Access::Read, params.id).await?;
+                smart::explain(&self.state, params).await
             }
             methods::SENDER_BLOCK => {
                 self.require_ui()?;
@@ -332,12 +343,14 @@ impl Session {
                 actions::snooze(&self.state, params(request)?).await
             }
             methods::MESSAGE_VIEW => {
-                self.require_ui()?;
-                mail::view(&self.state, params(request)?).await
+                let params: ViewParams = params(request)?;
+                self.allow_account(Access::Read, &params.account_id).await?;
+                mail::view(&self.state, params).await
             }
             methods::THREAD_GET => {
-                self.require_ui()?;
-                mail::thread(&self.state, params(request)?).await
+                let params: MessageRef = params(request)?;
+                self.allow_message(Access::Read, params.id).await?;
+                mail::thread(&self.state, params).await
             }
             methods::MESSAGE_SET_FLAGS => {
                 self.require_ui()?;
@@ -370,6 +383,49 @@ impl Session {
                 codes::METHOD_NOT_FOUND,
                 format!("unknown method \"{other}\""),
             )),
+        }
+    }
+
+    fn is_ui(&self) -> bool {
+        self.principal == Some(Principal::Ui)
+    }
+
+    /// The app may; an agent, if the account allows it `needed` (ADR-0012).
+    async fn allow_account(&self, needed: Access, account_id: &str) -> Result<(), RpcError> {
+        if self.is_ui() {
+            return Ok(());
+        }
+        access::require(&self.state, needed, account_id).await
+    }
+
+    async fn allow_mailbox(&self, needed: Access, mailbox_id: i64) -> Result<(), RpcError> {
+        if self.is_ui() {
+            return Ok(());
+        }
+        let account = access::account_of_mailbox(&self.state, mailbox_id).await?;
+        access::require(&self.state, needed, &account).await
+    }
+
+    async fn allow_message(&self, needed: Access, message_id: i64) -> Result<(), RpcError> {
+        if self.is_ui() {
+            return Ok(());
+        }
+        let account = access::account_of_message(&self.state, message_id).await?;
+        access::require(&self.state, needed, &account).await
+    }
+
+    /// The accounts a search may look in: for the app, those asked for; for
+    /// an agent, those of them open to it.
+    async fn search_scope(&self, account_id: Option<&str>) -> Result<Option<Vec<String>>, RpcError> {
+        if self.is_ui() {
+            return Ok(None);
+        }
+        match account_id {
+            Some(account) => {
+                access::require(&self.state, Access::Read, account).await?;
+                Ok(Some(vec![account.to_owned()]))
+            }
+            None => access::open_to_agents(&self.state, Access::Read).await.map(Some),
         }
     }
 

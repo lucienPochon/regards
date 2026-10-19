@@ -1,10 +1,13 @@
-//! Account methods. Only the `ui` principal reaches these (ADR-0006).
+//! Account methods. Only the `ui` principal reaches these (ADR-0006), but
+//! for the list and an account's folders, which agents see of the accounts
+//! open to them (ADR-0012).
 
 use crate::{State, sync};
 use regards_imap::{ImapError, ImapServer};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountCheckFailure, AccountRef, AccountRemoveParams, AccountSummary, ConnectionSecurity,
-    MailboxListResult, MailboxSummary, RpcError, ServerSettings, SyncResult, codes,
+    AccountAddParams, AccountCheckFailure, AccountRef, AccountRemoveParams, AccountSummary, AgentAccess,
+    AgentAccessParams, ConnectionSecurity, MailboxListResult, MailboxSummary, RpcError, ServerSettings, SyncResult,
+    codes,
 };
 use regards_store::StoreError;
 use regards_store::accounts::{self, Account, AuthKind, NewAccount, Security, Server};
@@ -13,9 +16,42 @@ use regards_vault::{SecretKey, SecretKind, Vault, VaultError};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-pub(crate) async fn list(state: &State) -> Result<Value, RpcError> {
-    let accounts = state.store.read(accounts::list).await.map_err(store_error)?;
-    Ok(json!(accounts.into_iter().map(summary).collect::<Vec<_>>()))
+/// The accounts; to an agent, only those open to it.
+pub(crate) async fn list(state: &State, agent: bool) -> Result<Value, RpcError> {
+    let (accounts, levels) = state
+        .store
+        .read(|conn| Ok((accounts::list(conn)?, accounts::agent_access(conn)?)))
+        .await
+        .map_err(store_error)?;
+    let levels: std::collections::HashMap<String, AgentAccess> = levels.into_iter().collect();
+    let summaries: Vec<AccountSummary> = accounts
+        .into_iter()
+        .map(|account| {
+            let access = levels.get(&account.id).copied().unwrap_or_default();
+            AccountSummary {
+                agent_access: access,
+                ..summary(account)
+            }
+        })
+        .filter(|account| !agent || account.agent_access >= AgentAccess::Read)
+        .collect();
+    Ok(json!(summaries))
+}
+
+/// What agents may do with an account (ADR-0012). Only the app gets here.
+pub(crate) async fn set_agent_access(state: &State, params: AgentAccessParams) -> Result<Value, RpcError> {
+    let (id, access) = (params.account_id, params.access);
+    let found = state
+        .store
+        .write(move |tx| accounts::set_agent_access(tx, &id, access))
+        .await
+        .map_err(store_error)?
+        .value;
+    if !found {
+        return Err(RpcError::new(codes::NOT_FOUND, "no such account"));
+    }
+    tracing::info!(access = access.as_str(), "agent access changed");
+    Ok(json!({ "agent_access": access }))
 }
 
 pub(crate) async fn add(state: &Arc<State>, params: AccountAddParams) -> Result<Value, RpcError> {
@@ -183,6 +219,7 @@ fn summary(account: Account) -> AccountSummary {
         smtp: settings(account.smtp),
         imap_capabilities: account.imap_capabilities,
         created_at: account.created_at,
+        agent_access: AgentAccess::Off,
     }
 }
 

@@ -426,6 +426,13 @@ flowchart LR
 ### 5.11 Agent gateway: CLI + MCP (P1, 1.0, ADR-0012)
 
 - **Access levels** per account: Off (default) · Read · Triage · Send, enforced in the daemon.
+  - **As built (2026-10-19), Read:**
+    - Each account has `agent_access` (migration 0023), Off by default. Only the app sets it (`account.set_agent_access`).
+    - The daemon checks it for every agent request, by the account the request names, or the mailbox's or the message's account.
+    - Agents list only accounts open to them, and their searches, local or on the server, look only there.
+    - A refusal names the setting (`data.setting = "agent_access"`, with the level needed and the current one). An account closed to agents is not named in it.
+    - Read opens accounts, folders, message lists, the Pinned / Set aside / Snoozed / Reminders views, messages and conversations, Smart Inbox counts and explanations, and search. Reading never marks mail read.
+    - Triage and Send come with the audit log and holds; until then, everything else stays with the app.
 - **Holds** for send-tier and bulk or destructive intents.
 - **Audit log** with before-state and undo.
 - **Interfaces:** stable `--json` contracts, `regards mcp`, `regards skill`, and deep links `regards://…`.

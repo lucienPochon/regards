@@ -1,6 +1,7 @@
 //! JSON-RPC 2.0 messages and the typed Regards methods.
 
 use crate::token::UiToken;
+pub use regards_core::agents::Access as AgentAccess;
 use regards_core::body::Attachment;
 use regards_core::headers::Person;
 use regards_core::mailbox::Role;
@@ -137,12 +138,15 @@ pub mod methods {
     pub const NOTICE_LIST: &str = "notice.list";
     /// The notices up to an id have been shown (or seen in the app).
     pub const NOTICE_SHOWN: &str = "notice.shown";
+    /// What agents may do with an account: off, read, triage or send
+    /// (ADR-0012). `ui` only: agents cannot change their own access.
+    pub const ACCOUNT_SET_AGENT_ACCESS: &str = "account.set_agent_access";
     /// Search the mail: Gmail-style words and filters (plan §5.10), newest
-    /// first. `ui` only for now.
+    /// first. Agents: the accounts open to them (read).
     pub const SEARCH: &str = "search.query";
     /// [`SEARCH`] on the servers too: for words in messages not opened here
     /// (their text is not indexed on this device). Slower: it asks each
-    /// server. Takes [`SearchParams`](super::SearchParams). `ui` only for now.
+    /// server. Takes [`SearchParams`](super::SearchParams). Agents: as [`SEARCH`].
     pub const SEARCH_SERVER: &str = "search.server";
     /// Dedicate this connection to change notifications (ADR-0007). `ui` only for now.
     pub const CHANGES_SUBSCRIBE: &str = "changes.subscribe";
@@ -371,6 +375,16 @@ pub struct AccountSummary {
     pub imap_capabilities: Vec<String>,
     /// Unix time in milliseconds.
     pub created_at: i64,
+    /// What agents may do with it (ADR-0012); `off` until its owner allows them.
+    #[serde(default)]
+    pub agent_access: AgentAccess,
+}
+
+/// Parameters of [`methods::ACCOUNT_SET_AGENT_ACCESS`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentAccessParams {
+    pub account_id: String,
+    pub access: AgentAccess,
 }
 
 /// Parameters of [`methods::ACCOUNT_REMOVE`].
