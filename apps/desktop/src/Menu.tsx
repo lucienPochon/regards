@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useLayoutEffect, useRef, useState, useId } from "react";
 import { Icon, type IconName } from "./icons";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 
@@ -63,7 +63,11 @@ export function Menu({ request, onClose }: { request: MenuRequest; onClose: () =
   const [active, setActive] = useState(0);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const menu = useRef<HTMLDivElement>(null);
+  const listId = useId();
   const palette = request.variant === "palette";
+  // With a filter field it is a combobox over a list (focus stays in the field, the keys move a
+  // highlight); without one, a menu whose items take focus in turn.
+  const searchable = Boolean(request.filter);
   const dismiss = () => {
     request.onDismiss?.();
     onClose();
@@ -154,7 +158,7 @@ export function Menu({ request, onClose }: { request: MenuRequest; onClose: () =
       <div
         ref={menu}
         className={["menu", palette ? "palette" : "", position ? "" : "measuring"].join(" ")}
-        role="menu"
+        role={searchable ? "dialog" : "menu"}
         aria-label={request.label}
         style={position ?? undefined}
         onMouseDown={(event) => event.stopPropagation()}
@@ -167,21 +171,34 @@ export function Menu({ request, onClose }: { request: MenuRequest; onClose: () =
             value={query}
             placeholder={request.filter}
             aria-label={request.filter}
+            role="combobox"
+            aria-expanded="true"
+            aria-autocomplete="list"
+            aria-controls={listId}
+            aria-activedescendant={highlighted ? `${listId}-${items.indexOf(highlighted)}` : undefined}
             onChange={(event) => {
               setQuery(event.target.value);
               setActive(0);
             }}
           />
         )}
-        <div className="menu-items">
+        <div
+          className="menu-items"
+          id={searchable ? listId : undefined}
+          role={searchable ? "listbox" : undefined}
+          aria-label={searchable ? request.label : undefined}
+        >
           {shown.map((entry, index) =>
             entry === "separator" ? (
-              <hr key={`separator-${index}`} />
+              <hr key={`separator-${index}`} role={searchable ? "none" : "separator"} />
             ) : (
               <button
                 key={`${entry.label}-${index}`}
                 type="button"
-                role="menuitem"
+                role={searchable ? "option" : "menuitem"}
+                id={searchable && items.includes(entry) ? `${listId}-${items.indexOf(entry)}` : undefined}
+                aria-selected={searchable ? entry === highlighted : undefined}
+                tabIndex={searchable ? -1 : undefined}
                 className={[
                   "menu-item",
                   entry.danger ? "danger" : "",
@@ -209,7 +226,11 @@ export function Menu({ request, onClose }: { request: MenuRequest; onClose: () =
               </button>
             ),
           )}
-          {request.filter && query && items.length === 0 && <p className="menu-empty">Nothing matches.</p>}
+          {request.filter && query && items.length === 0 && (
+            <p className="menu-empty" role="status">
+              Nothing matches.
+            </p>
+          )}
         </div>
       </div>
     </div>
