@@ -432,11 +432,17 @@ flowchart LR
     - Agents list only accounts open to them, and their searches, local or on the server, look only there.
     - A refusal names the setting (`data.setting = "agent_access"`, with the level needed and the current one). An account closed to agents is not named in it.
     - Read opens accounts, folders, message lists, the Pinned / Set aside / Snoozed / Reminders views, messages and conversations, Smart Inbox counts and explanations, and search. Reading never marks mail read.
-    - Triage and Send come with the audit log and holds; until then, everything else stays with the app.
+    - Send comes with holds; until then, sending stays with the app.
+  - **As built (2026-10-19), Triage:**
+    - Triage opens organising: flags, archive, trash, move (to a folder of a triage account), pin, set aside, snooze, reminders, and sorting or blocking senders.
+    - It also opens drafts: new, reply, forward, read, change, delete, From, and the list (only accounts that allow triage).
+    - Never at Triage: sending, deleting for good, attaching files from disk, undo, settings and sync.
+    - At most 50 messages per request; more is a bulk change, which needs the person.
+    - In an account closed to agents, its messages, folders and drafts are not there for them: `NOT_FOUND`, as for what does not exist. A refusal that names the setting is only for accounts they can see.
   - **In the app (Settings › Agents):**
     - Each account has a dropdown of the four levels, and the chosen one is explained under the address.
     - Choosing Send asks first.
-    - Triage and Send are marked as coming until they take effect.
+    - Send is marked as coming until it takes effect.
     - The page sits at the top of the settings, under the person's card, where the reference app keeps its AI agents.
     - **Activity:** what agents did, newest first, grouped by session (the command line, or an assistant through MCP).
       - Each request is in plain words ("Read a message", "Searched “invoice”"), with "Refused" and its reason when it was not allowed.
@@ -449,7 +455,7 @@ flowchart LR
     - Every agent request but the handshake is recorded once answered (migration 0024): when, the connection and what it came through (CLI, MCP), the method and its parameters, the account it named and what that account allowed then, the decision (allowed or denied), any error, and how long it took.
     - Secrets (keys naming a password, secret or token) are taken out of the parameters, and long ones are cut at 4 KB.
     - Records are quiet writes, so an agent's requests do not make clients refetch. The app lists them (`agent.activity`, newest first, by account), and they are kept 90 days.
-    - Before-state and undo come with Triage, the first level that changes anything.
+    - For a change, its activity keeps how what it changed stood before: the messages (folder, flags, marks), the draft, or the sender. It also keeps the undo entry that reverses it (migration 0025). The app's Undo uses it while it lasts: ten minutes, once.
 - **Interfaces:** stable `--json` contracts, `regards mcp`, `regards skill`, and deep links `regards://…`.
 - **Prompt-injection posture:** content is passed as data, drafts never auto-send, and agents cannot change their own access.
 

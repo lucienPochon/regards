@@ -186,7 +186,12 @@ pub(crate) async fn get(state: &State, params: DraftRef) -> Result<Value, RpcErr
     view(state, params.id).await
 }
 
-pub(crate) async fn list(state: &State, params: DraftListParams) -> Result<Value, RpcError> {
+/// The drafts of the account asked for, or all; `scope` (an agent's): of these accounts only.
+pub(crate) async fn list(
+    state: &State,
+    params: DraftListParams,
+    scope: Option<Vec<String>>,
+) -> Result<Value, RpcError> {
     let account_id = params.account_id;
     let drafts = state
         .store
@@ -197,6 +202,9 @@ pub(crate) async fn list(state: &State, params: DraftListParams) -> Result<Value
                 .collect();
             let mut drafts = Vec::new();
             for draft in drafts::list(conn, account_id.as_deref())? {
+                if scope.as_ref().is_some_and(|open| !open.contains(&draft.account_id)) {
+                    continue;
+                }
                 let Some(account) = accounts.get(&draft.account_id) else {
                     continue;
                 };

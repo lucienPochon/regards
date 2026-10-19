@@ -2,7 +2,8 @@
 //! that reverses it, for a limited time.
 
 use crate::StoreError;
-use rusqlite::{OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use std::collections::HashSet;
 
 /// Store an inverse; returns the id the client uses to undo.
 pub fn record(
@@ -19,6 +20,15 @@ pub fn record(
         params![now, expires_at, description, inverse],
     )?;
     Ok(tx.last_insert_rowid())
+}
+
+/// Which of `ids` can still be undone at `now`.
+pub fn open(conn: &Connection, ids: &[i64], now: i64) -> Result<HashSet<i64>, StoreError> {
+    let ids = serde_json::to_string(ids).expect("numbers always serialize");
+    let mut statement = conn
+        .prepare_cached("SELECT id FROM undo_log WHERE id IN (SELECT value FROM json_each(?1)) AND expires_at >= ?2")?;
+    let rows = statement.query_map(params![ids, now], |row| row.get(0))?;
+    Ok(rows.collect::<Result<_, _>>()?)
 }
 
 /// Take an inverse to apply it. Each can be used once, and only before it expires.
@@ -49,10 +59,14 @@ mod tests {
             .await
             .unwrap()
             .value;
+        let open_at = |now| store.read(move |conn| open(conn, &[id, 999], now));
+        assert_eq!(open_at(150).await.unwrap(), HashSet::from([id]));
+        assert!(open_at(201).await.unwrap().is_empty(), "expired");
         assert_eq!(
             store.write(move |tx| take(tx, id, 150)).await.unwrap().value.as_deref(),
             Some("{}")
         );
+        assert!(open_at(150).await.unwrap().is_empty(), "used");
         assert_eq!(
             store.write(move |tx| take(tx, id, 150)).await.unwrap().value,
             None,

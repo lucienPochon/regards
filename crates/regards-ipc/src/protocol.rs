@@ -424,6 +424,16 @@ pub struct AgentActivity {
     pub error_code: Option<i32>,
     pub error: Option<String>,
     pub duration_ms: i64,
+    /// For a change it made: how what it changed stood before (messages,
+    /// a draft or a sender), as JSON.
+    #[serde(default)]
+    pub before: Option<Value>,
+    /// What reverses that change ([`methods::UNDO_APPLY`]), and whether it
+    /// still can (undo lasts ten minutes, and once).
+    #[serde(default)]
+    pub undo_id: Option<i64>,
+    #[serde(default)]
+    pub undoable: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

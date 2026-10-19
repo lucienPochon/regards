@@ -32,6 +32,10 @@ pub(crate) struct Answered<'a> {
     pub checked: Option<(String, Access)>,
     pub error: Option<&'a RpcError>,
     pub duration: Duration,
+    /// For a change: how what it changed stood before.
+    pub before: Option<Value>,
+    /// The undo entry that reverses it.
+    pub undo_id: Option<i64>,
 }
 
 pub(crate) async fn record(state: &State, answered: Answered<'_>) {
@@ -50,6 +54,13 @@ pub(crate) async fn record(state: &State, answered: Answered<'_>) {
         },
         error: answered.error.map(|error| (error.code, error.message.clone())),
         duration_ms: answered.duration.as_millis().try_into().unwrap_or(i64::MAX),
+        // Only what came to pass: a refused change changed nothing.
+        before: answered
+            .error
+            .is_none()
+            .then(|| answered.before.map(|before| kept_args(&before)))
+            .flatten(),
+        undo_id: answered.undo_id,
     };
     if let Err(error) = state.store.write_quiet(move |tx| audit::record(tx, &entry)).await {
         tracing::warn!(%error, "an agent request was not recorded");
@@ -104,10 +115,14 @@ pub(crate) async fn activity(state: &State, params: AgentActivityParams) -> Resu
             format!("limit must be 1 to {MAX_PAGE}"),
         ));
     }
-    let (account_id, before) = (params.account_id, params.before);
-    let mut rows = state
+    let (account_id, before, now) = (params.account_id, params.before, crate::compose::now_ms());
+    let (mut rows, open) = state
         .store
-        .read(move |conn| audit::list(conn, account_id.as_deref(), before, limit + 1))
+        .read(move |conn| {
+            let rows = audit::list(conn, account_id.as_deref(), before, limit + 1)?;
+            let undos: Vec<i64> = rows.iter().filter_map(|row| row.entry.undo_id).collect();
+            Ok((rows, regards_store::undo::open(conn, &undos, now)?))
+        })
         .await
         .map_err(crate::session::internal)?;
     let more = rows.len() > limit as usize;
@@ -136,6 +151,9 @@ pub(crate) async fn activity(state: &State, params: AgentActivityParams) -> Resu
                 error_code: entry.error.as_ref().map(|(code, _)| *code),
                 error: entry.error.map(|(_, message)| message),
                 duration_ms: entry.duration_ms,
+                before: entry.before.as_deref().and_then(|text| serde_json::from_str(text).ok()),
+                undoable: entry.undo_id.is_some_and(|id| open.contains(&id)),
+                undo_id: entry.undo_id,
             }
         })
         .collect();
