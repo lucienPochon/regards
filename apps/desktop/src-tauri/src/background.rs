@@ -46,6 +46,8 @@ struct Settings {
     told_update: Option<String>,
     /// Which notifications to show.
     notify: NotifyChoices,
+    /// The service logs in detail (Settings › Support).
+    detailed_logs: bool,
 }
 
 impl Default for Settings {
@@ -58,6 +60,7 @@ impl Default for Settings {
             update_checks: None,
             told_update: None,
             notify: NotifyChoices::default(),
+            detailed_logs: false,
         }
     }
 }
@@ -71,6 +74,7 @@ pub(crate) struct Background {
     update_checks: Mutex<Option<bool>>,
     told_update: Mutex<Option<String>>,
     notify: Mutex<NotifyChoices>,
+    detailed_logs: AtomicBool,
     /// The tray menu's check marks, kept in step with the settings.
     check: Mutex<Option<CheckMenuItem<Wry>>>,
     notify_check: Mutex<Option<CheckMenuItem<Wry>>>,
@@ -94,6 +98,7 @@ impl Background {
             update_checks: Mutex::new(settings.update_checks),
             told_update: Mutex::new(settings.told_update),
             notify: Mutex::new(settings.notify),
+            detailed_logs: AtomicBool::new(settings.detailed_logs),
             check: Mutex::new(None),
             notify_check: Mutex::new(None),
         }
@@ -170,6 +175,20 @@ impl Background {
         Ok(())
     }
 
+    pub(crate) fn detailed_logs(&self) -> bool {
+        self.detailed_logs.load(Ordering::SeqCst)
+    }
+
+    /// Log in detail from the service's next start: saved.
+    pub(crate) fn set_detailed_logs(&self, on: bool) -> Result<(), String> {
+        self.save(Settings {
+            detailed_logs: on,
+            ..self.current()
+        })?;
+        self.detailed_logs.store(on, Ordering::SeqCst);
+        Ok(())
+    }
+
     pub(crate) fn notify_choices(&self) -> NotifyChoices {
         self.notify.lock().expect("never poisoned").clone()
     }
@@ -228,6 +247,7 @@ impl Background {
             update_checks: self.update_checks(),
             told_update: self.told_update(),
             notify: self.notify_choices(),
+            detailed_logs: self.detailed_logs(),
         }
     }
 

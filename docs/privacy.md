@@ -31,6 +31,8 @@ Every connection to a mail server or a sign-in service uses TLS, and the certifi
 - **Passwords and sign-in tokens:** only in your operating system's credential store (Windows Credential Manager, the macOS Keychain, or the Secret Service on Linux). They never go into Regards' database or logs.
 - **Settings and history:** your settings, the Outbox, and a record of what agents asked (kept 90 days), in the same folder.
 - **A log:** Regards' own log, for diagnosing problems. It never contains message content, passwords or tokens. It is kept small: one older copy at most.
+  - **Detailed logging** (Settings › Support) makes it say more about what Regards does, under the same rules.
+  - **Export diagnostics** writes the log, with versions and how many accounts of each kind, to a file you choose. Nothing is sent; you decide whether to share the file.
 
 Regards relies on your operating system's disk encryption to protect these files. To remove everything, remove your accounts in Regards, then delete its data folder.
 
