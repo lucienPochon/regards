@@ -161,6 +161,17 @@ export function swapSignatureHtml(html: string, old: string, next: string): stri
   return quote === -1 ? html + to : html.slice(0, quote) + to + html.slice(quote);
 }
 
+/**
+ * A draft's HTML with a template's text put at the start, where one writes:
+ * in place of the empty paragraph a new message starts with, above the
+ * signature and any quote.
+ */
+export function insertTemplateHtml(html: string, template: { body: string; html: string | null }): string {
+  const insert = template.html ?? textToHtml(template.body);
+  const rest = html.startsWith("<p></p>") ? html.slice("<p></p>".length) : html;
+  return insert + rest;
+}
+
 export function textToHtml(text: string): string {
   const escape = (line: string) =>
     line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

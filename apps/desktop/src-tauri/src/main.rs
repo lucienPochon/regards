@@ -26,8 +26,8 @@ use regards_ipc::protocol::{
     MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult,
     OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams,
     Screening, ScreeningParams, Section, SenderBlockParams, SenderSetParams, SenderSetResult, ServerSettings,
-    SetFlagsParams, SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult, ThreadView, UndoParams, UndoResult,
-    View, ViewParams, methods,
+    SetFlagsParams, SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef,
+    TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -590,6 +590,28 @@ async fn draft_set_from(bridge: State<'_, Bridge>, id: i64, identity_id: i64) ->
         .map_err(describe)
 }
 
+/// Templates: text to start a message with, by name.
+#[tauri::command]
+async fn template_list(bridge: State<'_, Bridge>) -> Result<TemplateListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::TEMPLATE_LIST, Value::Null).await.map_err(describe)
+}
+
+#[tauri::command]
+async fn template_save(bridge: State<'_, Bridge>, template: TemplateSaveParams) -> Result<TemplateView, String> {
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::TEMPLATE_SAVE, template).await.map_err(describe)
+}
+
+#[tauri::command]
+async fn template_remove(bridge: State<'_, Bridge>, id: i64) -> Result<Value, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::TEMPLATE_REMOVE, TemplateRef { id })
+        .await
+        .map_err(describe)
+}
+
 /// An account's identities: the names and addresses it sends as, with signatures.
 #[tauri::command]
 async fn identity_list(bridge: State<'_, Bridge>, account_id: String) -> Result<IdentityListResult, String> {
@@ -859,6 +881,9 @@ fn main() {
             draft_delete,
             draft_set_from,
             identity_list,
+            template_list,
+            template_save,
+            template_remove,
             identity_save,
             identity_remove,
             identity_make_default,

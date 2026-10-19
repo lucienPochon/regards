@@ -1,7 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
-const { swapSignatureHtml, textToHtml } = await import("./compose");
+const { insertTemplateHtml, swapSignatureHtml, textToHtml } = await import("./compose");
+
+describe("templates in a draft", () => {
+  it("go where one writes: above the signature, in place of the empty first line", () => {
+    const signed = textToHtml("\n\nAda");
+    expect(insertTemplateHtml(signed, { body: "Thanks for booking.\nSee you soon.", html: null })).toBe(
+      "<p>Thanks for booking.<br>See you soon.</p><p>Ada</p>",
+    );
+    expect(insertTemplateHtml("<p>Hi</p>", { body: "", html: "<p><b>Formatted</b></p>" })).toBe(
+      "<p><b>Formatted</b></p><p>Hi</p>",
+    );
+  });
+});
 
 describe("signatures in a formatted draft", () => {
   const reply = textToHtml("Yes!\n\nOn 2026-10-18 10:05 UTC, Bob wrote:\n> Plans?");

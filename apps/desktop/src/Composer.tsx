@@ -11,11 +11,13 @@ import {
   parseRecipients,
   saveDraft,
   sendDraft,
+  insertTemplateHtml,
   setDraftFrom,
   swapSignatureHtml,
   textToHtml,
 } from "./compose";
 import { type Identity, listIdentities } from "./identities";
+import type { Template } from "./templates";
 import { fileKind, fileSize, laterDate } from "./format";
 import { Icon } from "./icons";
 import { type Anchor, anchorOf } from "./Menu";
@@ -51,6 +53,7 @@ export function Composer({
   onQueued,
   pickSendTime,
   pickReminder,
+  pickTemplate,
 }: {
   draftId: number;
   mode: "full" | "panel";
@@ -61,6 +64,8 @@ export function Composer({
   pickSendTime: (anchor: Anchor) => Promise<number | null>;
   /** Ask when to be reminded if nobody replies: Unix ms, or null if cancelled. */
   pickReminder: (anchor: Anchor) => Promise<number | null>;
+  /** Ask which template to start from (none: no templates button). */
+  pickTemplate?: (anchor: Anchor) => Promise<Template | null>;
 }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [fields, setFields] = useState<Fields | null>(null);
@@ -217,6 +222,23 @@ export function Composer({
     if (at !== null) await send(at);
   };
 
+  /** A template's text where one writes, and its subject if there is none yet. */
+  const insertTemplate = async (button: HTMLElement) => {
+    if (!pickTemplate || !fields) return;
+    const template = await pickTemplate(anchorOf(button, "end"));
+    if (!template) return;
+    setFields((current) =>
+      current
+        ? {
+            ...current,
+            html: insertTemplateHtml(current.html, template),
+            subject: current.subject.trim() ? current.subject : template.subject,
+          }
+        : current,
+    );
+    setEditorKey((key) => key + 1);
+  };
+
   const remind = async (button: HTMLElement) => {
     if (remindAt !== null) {
       setRemindAt(null);
@@ -288,6 +310,18 @@ export function Composer({
       >
         <Icon name="trash" />
       </button>
+      {pickTemplate && (
+        <button
+          type="button"
+          className="icon-btn"
+          title="Insert a template"
+          aria-label="Insert a template"
+          onClick={(event) => void insertTemplate(event.currentTarget)}
+          disabled={locked}
+        >
+          <Icon name="text" />
+        </button>
+      )}
       <button
         type="button"
         className="icon-btn"

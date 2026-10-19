@@ -22,6 +22,7 @@ pub mod notices;
 pub mod operations;
 pub mod outbox;
 pub mod smart;
+pub mod templates;
 pub mod threads;
 pub mod undo;
 

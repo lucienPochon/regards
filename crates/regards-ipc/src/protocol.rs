@@ -105,6 +105,11 @@ pub mod methods {
     pub const IDENTITY_REMOVE: &str = "identity.remove";
     /// Make an identity its account's default (new messages go out from it).
     pub const IDENTITY_MAKE_DEFAULT: &str = "identity.make_default";
+    /// Templates: text to start a message with, kept on this device. `ui` only.
+    pub const TEMPLATE_LIST: &str = "template.list";
+    /// Add a template (without `id`) or change one.
+    pub const TEMPLATE_SAVE: &str = "template.save";
+    pub const TEMPLATE_REMOVE: &str = "template.remove";
     /// Send a draft from another of its account's identities; the signature
     /// in a plain-text draft is swapped for the new one's.
     pub const DRAFT_SET_FROM: &str = "draft.set_from";
@@ -903,6 +908,48 @@ pub struct IdentitySaveParams {
 /// Names an identity: [`methods::IDENTITY_REMOVE`], [`methods::IDENTITY_MAKE_DEFAULT`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IdentityRef {
+    pub id: i64,
+}
+
+/// A template.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TemplateView {
+    pub id: i64,
+    pub name: String,
+    pub subject: String,
+    /// The text; with `html`, its plain-text version.
+    pub body: String,
+    /// The formatted version, sanitised.
+    #[serde(default)]
+    pub html: Option<String>,
+    pub updated_at: i64,
+}
+
+/// Result of [`methods::TEMPLATE_LIST`]: by name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TemplateListResult {
+    pub templates: Vec<TemplateView>,
+}
+
+/// Parameters of [`methods::TEMPLATE_SAVE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TemplateSaveParams {
+    /// The template to change; none to add one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    pub name: String,
+    #[serde(default)]
+    pub subject: String,
+    /// The text. Ignored when `html` is given: the daemon derives it.
+    #[serde(default)]
+    pub body: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub html: Option<String>,
+}
+
+/// Names a template: [`methods::TEMPLATE_REMOVE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TemplateRef {
     pub id: i64,
 }
 
