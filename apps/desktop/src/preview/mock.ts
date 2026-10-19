@@ -634,6 +634,8 @@ const draftById = (id: number) => {
   return draft;
 };
 
+let badgeChoices: { on: boolean; accounts: string[] | null } = { on: true, accounts: null };
+
 let notificationChoices = {
   new_mail: {} as Record<string, string>,
   snooze_ended: true,
@@ -729,6 +731,11 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return owner.account;
     }
+    case "badge_settings":
+      return badgeChoices;
+    case "set_badge_settings":
+      badgeChoices = args.settings as typeof badgeChoices;
+      return null;
     case "support_settings":
       return { detailed_logs: false };
     case "set_detailed_logs":

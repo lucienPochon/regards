@@ -12,6 +12,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod background;
+mod badge;
 mod drops;
 mod links;
 mod mail_frame;
@@ -1065,9 +1066,11 @@ async fn forward_changes(app: AppHandle) {
                 let _ = app.emit("changes", feed.current());
                 // What happened while the app was away is told now.
                 app.state::<notify::Notifier>().poke();
+                app.state::<badge::Badge>().poke();
                 while let Ok(change) = feed.next().await {
                     let _ = app.emit("changes", change);
                     app.state::<notify::Notifier>().poke();
+                    app.state::<badge::Badge>().poke();
                 }
             }
             Err(error) => eprintln!("change feed unavailable: {error}"),
@@ -1172,6 +1175,7 @@ fn main() {
         .manage(links::Pending::default())
         .manage(drops::Drops::default())
         .manage(updates::Updates::default())
+        .manage(badge::Badge::default())
         .manage(background::Background::load(DataDirs::resolve().ok().as_ref()))
         .register_asynchronous_uri_scheme_protocol(mail_frame::SCHEME, mail_frame::handle)
         .setup(|app| {
@@ -1179,6 +1183,7 @@ fn main() {
             tauri::async_runtime::spawn(forward_changes(app.handle().clone()));
             tauri::async_runtime::spawn(notify::run(app.handle().clone()));
             tauri::async_runtime::spawn(updates::run(app.handle().clone()));
+            tauri::async_runtime::spawn(badge::run(app.handle().clone()));
             background::setup(app)?;
             // Installers register the scheme; a development build does it itself.
             #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
@@ -1225,6 +1230,8 @@ fn main() {
             system::open_url,
             account_update,
             account_set_auto_copy,
+            badge::badge_settings,
+            badge::set_badge_settings,
             support::support_settings,
             support::set_detailed_logs,
             support::export_diagnostics,
