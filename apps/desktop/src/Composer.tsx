@@ -541,10 +541,16 @@ export function Composer({
         {mode === "panel" ? <span className="composer-title">{fields?.subject || "New message"}</span> : tools}
       </div>
       {!fields ? (
-        <p className={error ? "composer-note error" : "composer-note muted"}>{error ?? "Opening…"}</p>
+        <p className={error ? "composer-note error" : "composer-note muted"} role={error ? "alert" : "status"}>
+          {error ?? "Opening…"}
+        </p>
       ) : (
         <>
-          {draft?.sending && <p className="composer-note error">This message is being sent. Undo it first to change it.</p>}
+          {draft?.sending && (
+            <p className="composer-note error" role="status">
+              This message is being sent. Undo it first to change it.
+            </p>
+          )}
           <fieldset className="composer-fields" disabled={locked}>
             <input
               className="subject-field"
@@ -553,8 +559,9 @@ export function Composer({
               placeholder="Subject"
               aria-label="Subject"
             />
-            <label className="address-line">
-              <span>To</span>
+            {/* Not a label: a label may hold one control, and this line also has the Cc Bcc button. */}
+            <div className="address-line">
+              <span onClick={() => toField.current?.focus()}>To</span>
               <AddressInput
                 inputRef={toField}
                 label="To"
@@ -568,7 +575,7 @@ export function Composer({
                   Cc Bcc
                 </button>
               )}
-            </label>
+            </div>
             {copies && (
               <>
                 <label className="address-line">
@@ -648,7 +655,11 @@ export function Composer({
               {warnings.map(describeCheck).join(" ")} Press Send again to send it anyway.
             </p>
           )}
-          {error && <p className="composer-note error">{error}</p>}
+          {error && (
+            <p className="composer-note error" role="alert">
+              {error}
+            </p>
+          )}
           {mode === "panel" && tools}
         </>
       )}

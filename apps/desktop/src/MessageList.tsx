@@ -59,7 +59,7 @@ export function ListHeader({
         </button>
       )}
       {onTitle ? (
-        <button type="button" className="list-title" onClick={(event) => onTitle(anchorOf(event.currentTarget))}>
+        <button type="button" className="list-title" aria-haspopup="true" onClick={(event) => onTitle(anchorOf(event.currentTarget))}>
           {heading}
         </button>
       ) : (

@@ -26,7 +26,7 @@ import { Icon, type IconName } from "./icons";
 import type { Layout } from "./layout";
 import { type NewMail, type NotificationSettings, notificationSettings, setNotificationSettings } from "./notifications";
 import type { ServiceCheck } from "./mail";
-import { ACCOUNT_COLOURS, type Prefs, ZOOMS, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
+import { ACCOUNT_COLOURS, COLOUR_NAMES, type Prefs, ZOOMS, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
 import { MOD_KEY } from "./shortcuts";
 import { LinkRow, Option, Select, SubPageHead, Toggle } from "./SettingsControls";
 import { senderImages, setSenderImages } from "./smart";
@@ -469,7 +469,8 @@ function AccountColours({ accounts, onBack }: { accounts: AccountSummary[]; onBa
                     type="button"
                     role="radio"
                     aria-checked={colour === current}
-                    aria-label={colour}
+                    aria-label={COLOUR_NAMES[colour] ?? colour}
+                    title={COLOUR_NAMES[colour]}
                     className={colour === current ? "swatch chosen" : "swatch"}
                     style={{ background: colour }}
                     onClick={() => setPrefs({ accountColours: { ...prefs.accountColours, [account.id]: colour } })}
@@ -941,12 +942,38 @@ export function ComposerPage({ accounts, onAccounts }: { accounts: AccountSummar
             value={prefs.defaultFrom ?? ""}
             options={[
               { id: "", label: "The first account" },
+              { id: "last", label: "The last one used" },
               ...accounts.map((account) => ({ id: account.id, label: accountLabel(prefs, account) })),
             ]}
             onChange={(defaultFrom) => setPrefs({ defaultFrom: defaultFrom || null })}
           />
         </Option>
       )}
+      <Option icon="reply" label="Replies and forwards open" description="Over the conversation, to keep it in view, or full size.">
+        <Select
+          label="Replies and forwards open"
+          value={prefs.replyOpens}
+          options={[
+            { id: "panel", label: "Over the conversation" },
+            { id: "full", label: "Full size" },
+          ]}
+          onChange={(replyOpens) => setPrefs({ replyOpens })}
+        />
+      </Option>
+      <Option
+        icon="check"
+        label="Done after replying"
+        description="Once a reply or forward is sent, its conversation leaves the inbox, with Undo, as when you mark it done."
+      >
+        <Toggle label="Done after replying" on={prefs.doneAfterReply} onChange={(doneAfterReply) => setPrefs({ doneAfterReply })} />
+      </Option>
+      <Option
+        icon="people"
+        label="Suggest people as you type"
+        description="In To, Cc and Bcc: the people you write to first, from your own mail."
+      >
+        <Toggle label="Suggest people as you type" on={prefs.suggestPeople} onChange={(suggestPeople) => setPrefs({ suggestPeople })} />
+      </Option>
       <LinkRow
         icon="user"
         label="Addresses and signatures"

@@ -3,6 +3,7 @@ import { Icon } from "./icons";
 import type { Anchor } from "./Menu";
 import { useShortcuts } from "./shortcuts";
 import { useDialogFocus } from "./dialogFocus";
+import { radioKeys, radioTab } from "./radios";
 
 export type InboxView = "smart" | "date";
 
@@ -75,13 +76,14 @@ export function ViewChooser({
             <Icon name="settings" size={15} />
           </button>
         </div>
-        <div className="chooser-tiles" role="radiogroup" aria-label="Inbox view">
-          {VIEWS.map((view) => (
+        <div className="chooser-tiles" role="radiogroup" aria-label="Inbox view" onKeyDown={(event) => radioKeys(event, false)}>
+          {VIEWS.map((view, index) => (
             <button
               key={view.id}
               type="button"
               role="radio"
               aria-checked={current === view.id}
+              tabIndex={radioTab(current === view.id, index, VIEWS.some((one) => one.id === current))}
               className={current === view.id ? "chooser-tile chosen" : "chooser-tile"}
               onClick={() => {
                 onChoose(view.id);

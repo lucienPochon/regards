@@ -8,6 +8,7 @@ import {
   type UndoInfo,
   archiveMessages,
   getMessage,
+  getThread,
   moveMessages,
   pinMessages,
   remindMessages,
@@ -65,6 +66,7 @@ import { SendToast } from "./SendToast";
 import { Settings, type SettingsTab } from "./Settings";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { type Template, listTemplates, saveTemplate } from "./templates";
+import { type AssistantJob, AssistantDialog, useAssistantOn } from "./AssistantDialog";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { type DragPayload, Sidebar } from "./Sidebar";
 import { useSidebarPrefs } from "./sidebar-prefs";
@@ -185,8 +187,17 @@ export function App() {
   const [view, setView] = useState<View>(INBOX);
   const [open, setOpen] = useState<ListItem | null>(null);
   const [picked, setPicked] = useState<Set<number>>(() => new Set());
-  const [composer, setComposer] = useState<{ id: number; mode: "full" | "panel" } | null>(null);
+  // The draft being written; its account and the message it answers, once known.
+  const [composer, setComposer] = useState<{
+    id: number;
+    mode: "full" | "panel";
+    accountId?: string;
+    replyingTo?: number | null;
+  } | null>(null);
   const [queued, setQueued] = useState<Queued | null>(null);
+  // The assistant: offered once a provider is chosen in Settings; what was asked of it.
+  const assistantOn = useAssistantOn();
+  const [assistantJob, setAssistantJob] = useState<AssistantJob | null>(null);
   const [undo, setUndo] = useState<UndoInfo | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // Something done that has no undo, said briefly.
@@ -394,12 +405,36 @@ export function App() {
   /** Replies and forwards open in a panel over the conversation; new messages take the whole pane. */
   const startDraft = useCallback(
     (start: Promise<Draft>, mode: "full" | "panel") => {
-      start.then((draft) => setComposer({ id: draft.id, mode })).catch(failed);
+      start
+        .then((draft) => setComposer({ id: draft.id, mode, accountId: draft.account_id, replyingTo: draft.replying_to }))
+        .catch(failed);
     },
     [failed],
   );
-  const compose = useCallback((start: Promise<Draft>) => startDraft(start, "panel"), [startDraft]);
-  const editDraft = useCallback((id: number) => setComposer({ id, mode: "full" }), []);
+  // Settings › Composer: replies and forwards open over the conversation, or full size.
+  const compose = useCallback((start: Promise<Draft>) => startDraft(start, getPrefs().replyOpens), [startDraft]);
+  const editDraft = useCallback((id: number) => {
+    setComposer({ id, mode: "full" });
+    getDraft(id).then(
+      (draft) =>
+        setComposer((now) =>
+          now?.id === id ? { ...now, accountId: draft.account_id, replyingTo: draft.replying_to } : now,
+        ),
+      () => {},
+    );
+  }, []);
+  /** A message has gone to the Outbox: remember its account, and with doneAfterReply, file the conversation it answers. */
+  const sentFrom = (sent: { accountId?: string; replyingTo?: number | null } | null) => {
+    if (sent?.accountId) setPrefs({ lastFrom: sent.accountId });
+    if (!sent?.replyingTo || !getPrefs().doneAfterReply) return;
+    getThread(sent.replyingTo)
+      .then(({ messages }) => {
+        const ids = messages.filter((entry) => entry.mailbox_role === "inbox").map((entry) => entry.message.id);
+        if (ids.length === 0) return;
+        return archiveMessages(ids).then((result) => moved(ids, result));
+      })
+      .catch(failed);
+  };
   const confirm = useCallback(
     (request: ConfirmRequest) => new Promise<boolean>((resolve) => setAsking({ request, resolve })),
     [],
@@ -629,7 +664,9 @@ export function App() {
     takeLink().then((link) => link && linkTo.current(link), () => {});
   }, [mailReady]);
 
-  const defaultFrom = accounts.some((entry) => entry.account.id === appPrefs.defaultFrom) ? appPrefs.defaultFrom : null;
+  // "last": the account the last message went from, while it is still here.
+  const wantedFrom = appPrefs.defaultFrom === "last" ? appPrefs.lastFrom : appPrefs.defaultFrom;
+  const defaultFrom = accounts.some((entry) => entry.account.id === wantedFrom) ? wantedFrom : null;
   const composeFrom =
     openItem?.accountId ?? (view.kind === "mailbox" ? view.accountId : (defaultFrom ?? accounts[0]?.account.id)) ?? null;
 
@@ -1223,6 +1260,7 @@ export function App() {
       onSender={(anchor, messageId, person) =>
         aboutSender({ id: messageId, accountId: openItem.accountId, from: person }, anchor)
       }
+      onAssistant={assistantOn ? (messageId, kind) => setAssistantJob({ messageId, kind }) : undefined}
       onClose={() => setOpen(null)}
       onStep={layout.mode === "single" ? step : undefined}
     />
@@ -1343,12 +1381,23 @@ export function App() {
             onMode={(mode) => setComposer({ ...composer, mode })}
             onClose={() => setComposer(null)}
             onQueued={(result) => {
+              sentFrom(composer);
               setComposer(null);
               setQueued(result);
             }}
             pickSendTime={pickSendTime}
             pickReminder={pickReminder}
             pickTemplate={pickTemplate}
+          />
+        )}
+        {assistantJob && (
+          <AssistantDialog
+            job={assistantJob}
+            onClose={() => setAssistantJob(null)}
+            onDraft={(draft) => {
+              startDraft(Promise.resolve(draft), "panel");
+              setSaid("Drafted by the assistant: check it before sending");
+            }}
           />
         )}
         <div className="dock" aria-live="polite">

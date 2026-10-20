@@ -7,6 +7,7 @@ import { leafName } from "./views";
 import { AGENT_ACCESS_LEVELS, AGENT_SEND_WINDOW, type AgentAccess, setAgentAccess, setAgentSend } from "./agents";
 import { AccountForm } from "./AccountForm";
 import { IdentitiesEditor } from "./IdentitiesEditor";
+import { AssistantPage } from "./AssistantSettings";
 import { OauthWaiting, PROVIDERS, useOauth } from "./OauthSignIn";
 import { Avatar } from "./Avatar";
 import type { ConfirmRequest } from "./Confirm";
@@ -16,7 +17,7 @@ import { type Screening, setScreening } from "./smart";
 import { TemplatesEditor } from "./TemplatesEditor";
 import type { AccountMail, MailState, ServiceCheck } from "./mail";
 import { MOD_KEY, SHORTCUTS, useShortcuts } from "./shortcuts";
-import { ACCOUNT_COLOURS, accountColour, setPrefs, usePrefs } from "./prefs";
+import { ACCOUNT_COLOURS, COLOUR_NAMES, accountColour, setPrefs, usePrefs } from "./prefs";
 import { Choice, LinkRow, Option, Toggle } from "./SettingsControls";
 import {
   AccessibilityPage,
@@ -34,6 +35,7 @@ import { useDialogFocus } from "./dialogFocus";
 export type SettingsTab =
   | "accounts"
   | "agents"
+  | "assistant"
   | "general"
   | "appearance"
   | "notifications"
@@ -47,7 +49,10 @@ export type SettingsTab =
 
 /** Grouped as in the nav; each item has its own colour. Accounts is the person's card above them. */
 const GROUPS: { id: SettingsTab; label: string; icon: IconName; tone: string }[][] = [
-  [{ id: "agents", label: "Agents", icon: "agent", tone: "tone-indigo" }],
+  [
+    { id: "agents", label: "Agents", icon: "agent", tone: "tone-indigo" },
+    { id: "assistant", label: "Assistant", icon: "bolt", tone: "tone-violet" },
+  ],
   [
     { id: "general", label: "General", icon: "settings", tone: "tone-slate" },
     { id: "appearance", label: "Appearance", icon: "sun", tone: "tone-violet" },
@@ -147,6 +152,7 @@ export function Settings({
           <button type="button" className="icon-btn settings-close" aria-label="Close" title="Close (Esc)" onClick={onClose}>
             <Icon name="close" />
           </button>
+          {tab === "assistant" && <AssistantPage />}
           {tab === "general" && <GeneralPage accounts={accounts} />}
           {tab === "accounts" && <AccountsTab mail={mail} confirm={confirm} />}
           {tab === "agents" && <AgentsTab mail={mail} confirm={confirm} focusHold={focusHold} />}
@@ -542,7 +548,8 @@ function AccountRow({
                   type="button"
                   role="radio"
                   aria-checked={swatch === colour}
-                  aria-label={swatch}
+                  aria-label={COLOUR_NAMES[swatch] ?? swatch}
+                  title={COLOUR_NAMES[swatch]}
                   className={swatch === colour ? "swatch chosen" : "swatch"}
                   style={{ background: swatch }}
                   onClick={() => setPrefs({ accountColours: { ...prefs.accountColours, [account.id]: swatch } })}

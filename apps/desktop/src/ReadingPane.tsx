@@ -73,6 +73,7 @@ export function ReadingPane({
   actionsFor,
   onPalette,
   onSender,
+  onAssistant,
   onClose,
   onStep,
 }: {
@@ -84,6 +85,8 @@ export function ReadingPane({
   actionsFor: (target: Target) => Action[];
   onPalette: Palette;
   onSender?: SenderOpener;
+  /** Ask the assistant about a message; absent while it is off. */
+  onAssistant?: (messageId: number, kind: "summary" | "reply") => void;
   onClose: () => void;
   /** The next (1) or previous (-1) message of the list, when the list is not beside it. */
   onStep?: (by: number) => void;
@@ -235,6 +238,7 @@ export function ReadingPane({
                   actionsFor={actionsFor}
                   onPalette={onPalette}
                   onSender={onSender}
+                  onAssistant={onAssistant}
                 />
               );
             })}
@@ -256,6 +260,7 @@ function ThreadMessage({
   actionsFor,
   onPalette,
   onSender,
+  onAssistant,
 }: {
   ref?: Ref<HTMLLIElement>;
   entry: ThreadEntry;
@@ -270,6 +275,7 @@ function ThreadMessage({
   actionsFor: (target: Target) => Action[];
   onPalette: Palette;
   onSender?: SenderOpener;
+  onAssistant?: (messageId: number, kind: "summary" | "reply") => void;
 }) {
   const own = useDetail(entry.message.id, given === null && expanded);
   const load = given ?? own;
@@ -319,7 +325,7 @@ function ThreadMessage({
   if (!expanded) {
     return (
       <li className="mail-card collapsed" ref={ref}>
-        <button type="button" className="mail-line" onClick={onToggle ?? undefined}>
+        <button type="button" className="mail-line" aria-expanded={false} onClick={onToggle ?? undefined}>
           <Avatar person={message.from} size="sm" />
           <span className={message.seen ? "who" : "who unread"}>{personName(message.from)}</span>
           {otherFolder && entry.mailbox_name && <span className="chip">{entry.mailbox_name}</span>}
@@ -359,6 +365,12 @@ function ThreadMessage({
     if (ready?.has_html && trusted) {
       extra.push({ label: "Stop loading images from this sender", icon: "shield", onSelect: stopFrom });
     }
+    if (onAssistant) {
+      extra.push(
+        { label: "Summarise with the assistant…", icon: "bolt", onSelect: () => onAssistant(message.id, "summary") },
+        { label: "Draft a reply with the assistant…", icon: "bolt", onSelect: () => onAssistant(message.id, "reply") },
+      );
+    }
     extra.push({ label: details ? "Hide details" : "Show details", icon: "info", onSelect: () => setDetails(!details) });
     const from = message.from;
     if (onSender && from) {
@@ -394,6 +406,7 @@ function ThreadMessage({
         <button
           type="button"
           className="mail-who"
+          aria-expanded={onToggle ? true : details}
           onClick={onToggle ?? (() => setDetails(!details))}
           title={message.from?.address ?? undefined}
         >
@@ -405,7 +418,7 @@ function ThreadMessage({
           )}
         </button>
         <time className="when">{when}</time>
-        <button type="button" className="icon-btn small" title={`More (${MOD_KEY}+K)`} aria-label="More" onClick={more}>
+        <button type="button" className="icon-btn small" title={`More (${MOD_KEY}+K)`} aria-label="More" aria-haspopup="dialog" onClick={more}>
           <Icon name="more" size={15} />
         </button>
       </div>

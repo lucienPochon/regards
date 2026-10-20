@@ -36,8 +36,16 @@ export interface Prefs {
   groupsPosition: "today" | "chronological";
   /** Each group as one row, or its mail shown with everyone else's. */
   grouped: { notifications: boolean; newsletters: boolean; pinned: boolean };
-  /** The account a new message is from, unless one is open or chosen; null: the one in view. */
+  /** The account a new message is from, unless one is open or chosen; null: the one in view; "last": the last used. */
   defaultFrom: string | null;
+  /** The account the last message was sent from, for defaultFrom "last". */
+  lastFrom: string | null;
+  /** Replies and forwards open over the conversation ("panel") or full size. */
+  replyOpens: "panel" | "full";
+  /** Once a reply or forward is sent, the conversation leaves the inbox (Done). */
+  doneAfterReply: boolean;
+  /** People suggested as an address is typed in To, Cc and Bcc. */
+  suggestPeople: boolean;
   /** The whole window's size, for reading comfort. */
   zoom: number;
   /**
@@ -71,6 +79,10 @@ export const DEFAULT_PREFS: Prefs = {
   groupsPosition: "today",
   grouped: { notifications: true, newsletters: true, pinned: true },
   defaultFrom: null,
+  lastFrom: null,
+  replyOpens: "panel",
+  doneAfterReply: false,
+  suggestPeople: true,
   zoom: 1,
   singleKeys: true,
   sidebarCounts: true,
@@ -88,6 +100,18 @@ export function zoomStep(now: number, direction: 1 | -1): number {
   if (index === -1) return direction > 0 ? (ZOOMS.find((zoom) => zoom > now) ?? now) : ([...ZOOMS].reverse().find((zoom) => zoom < now) ?? now);
   return ZOOMS[Math.min(ZOOMS.length - 1, Math.max(0, index + direction))];
 }
+
+/** What each account colour is called, for screen readers and tooltips. */
+export const COLOUR_NAMES: Record<string, string> = {
+  "#1d7a61": "Green",
+  "#3b7dd8": "Blue",
+  "#8b5cc8": "Purple",
+  "#c8507a": "Pink",
+  "#d4891f": "Amber",
+  "#2a9d9a": "Teal",
+  "#66717f": "Slate",
+  "#b5562f": "Rust",
+};
 
 /** The colours an account can take, readable on both themes. */
 export const ACCOUNT_COLOURS = ["#1d7a61", "#3b7dd8", "#8b5cc8", "#c8507a", "#d4891f", "#2a9d9a", "#66717f", "#b5562f"];
