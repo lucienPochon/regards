@@ -1,6 +1,7 @@
 import { type KeyboardEvent, type Ref, useEffect, useId, useState } from "react";
 import type { Person } from "./accounts";
 import { Avatar } from "./Avatar";
+import { usePrefs } from "./prefs";
 import { parseRecipients, suggestPeople } from "./compose";
 import { typing, typingStart, withPicked } from "./recipients";
 
@@ -30,7 +31,9 @@ export function AddressInput({
   const [people, setPeople] = useState<Person[]>([]);
   const [active, setActive] = useState(0);
   const listId = useId();
-  const typed = typing(value);
+  // Settings › Composer › Suggest people: off, the field is a plain one.
+  const suggesting = usePrefs().suggestPeople;
+  const typed = suggesting ? typing(value) : "";
   const before = value.slice(0, typingStart(value));
 
   useEffect(() => {
