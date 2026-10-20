@@ -453,10 +453,7 @@ async fn live_message_bodies_download_once_and_stay_unread() {
     let original: regards_ipc::protocol::MessageSource =
         desktop.call(methods::MESSAGE_SOURCE, MessageRef { id }).await.unwrap();
     assert!(
-        original.text.starts_with(
-            "From: Ada <ada@example.test>
-"
-        ),
+        original.text.starts_with("From: Ada <ada@example.test>\r\n"),
         "{}",
         original.text
     );
