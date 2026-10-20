@@ -66,6 +66,7 @@ import { SendToast } from "./SendToast";
 import { Settings, type SettingsTab } from "./Settings";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { type Template, listTemplates, saveTemplate } from "./templates";
+import { type AssistantJob, AssistantDialog, useAssistantOn } from "./AssistantDialog";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { type DragPayload, Sidebar } from "./Sidebar";
 import { useSidebarPrefs } from "./sidebar-prefs";
@@ -194,6 +195,9 @@ export function App() {
     replyingTo?: number | null;
   } | null>(null);
   const [queued, setQueued] = useState<Queued | null>(null);
+  // The assistant: offered once a provider is chosen in Settings; what was asked of it.
+  const assistantOn = useAssistantOn();
+  const [assistantJob, setAssistantJob] = useState<AssistantJob | null>(null);
   const [undo, setUndo] = useState<UndoInfo | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // Something done that has no undo, said briefly.
@@ -1256,6 +1260,7 @@ export function App() {
       onSender={(anchor, messageId, person) =>
         aboutSender({ id: messageId, accountId: openItem.accountId, from: person }, anchor)
       }
+      onAssistant={assistantOn ? (messageId, kind) => setAssistantJob({ messageId, kind }) : undefined}
       onClose={() => setOpen(null)}
       onStep={layout.mode === "single" ? step : undefined}
     />
@@ -1383,6 +1388,16 @@ export function App() {
             pickSendTime={pickSendTime}
             pickReminder={pickReminder}
             pickTemplate={pickTemplate}
+          />
+        )}
+        {assistantJob && (
+          <AssistantDialog
+            job={assistantJob}
+            onClose={() => setAssistantJob(null)}
+            onDraft={(draft) => {
+              startDraft(Promise.resolve(draft), "panel");
+              setSaid("Drafted by the assistant: check it before sending");
+            }}
           />
         )}
         <div className="dock" aria-live="polite">

@@ -637,12 +637,11 @@ const draftById = (id: number) => {
 let detailedLogs = false;
 let prefetch = false;
 let reading = { clean_links: true };
-let assistant: { kind: string | null; base_url: string | null; model: string | null; has_key: boolean } = {
-  kind: null,
-  base_url: null,
-  model: null,
-  has_key: false,
-};
+let assistant: { kind: string | null; base_url: string | null; model: string | null; has_key: boolean } =
+  // `?assistant=on`: a provider already chosen.
+  params.get("assistant") === "on"
+    ? { kind: "anthropic", base_url: "https://api.anthropic.com", model: "claude-opus-5-5", has_key: true }
+    : { kind: null, base_url: null, model: null, has_key: false };
 let mailApp = params.get("mailapp") === "1";
 
 /** A link as the desktop reads it: `message:5`, `hold:2`, or a mailto: link. */
