@@ -36,8 +36,16 @@ export interface Prefs {
   groupsPosition: "today" | "chronological";
   /** Each group as one row, or its mail shown with everyone else's. */
   grouped: { notifications: boolean; newsletters: boolean; pinned: boolean };
-  /** The account a new message is from, unless one is open or chosen; null: the one in view. */
+  /** The account a new message is from, unless one is open or chosen; null: the one in view; "last": the last used. */
   defaultFrom: string | null;
+  /** The account the last message was sent from, for defaultFrom "last". */
+  lastFrom: string | null;
+  /** Replies and forwards open over the conversation ("panel") or full size. */
+  replyOpens: "panel" | "full";
+  /** Once a reply or forward is sent, the conversation leaves the inbox (Done). */
+  doneAfterReply: boolean;
+  /** People suggested as an address is typed in To, Cc and Bcc. */
+  suggestPeople: boolean;
   /** The whole window's size, for reading comfort. */
   zoom: number;
   /**
@@ -71,6 +79,10 @@ export const DEFAULT_PREFS: Prefs = {
   groupsPosition: "today",
   grouped: { notifications: true, newsletters: true, pinned: true },
   defaultFrom: null,
+  lastFrom: null,
+  replyOpens: "panel",
+  doneAfterReply: false,
+  suggestPeople: true,
   zoom: 1,
   singleKeys: true,
   sidebarCounts: true,

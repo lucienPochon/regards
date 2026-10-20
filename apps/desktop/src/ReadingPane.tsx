@@ -74,6 +74,7 @@ export function ReadingPane({
   actionsFor,
   onPalette,
   onSender,
+  onAssistant,
   onClose,
   onStep,
 }: {
@@ -85,6 +86,8 @@ export function ReadingPane({
   actionsFor: (target: Target) => Action[];
   onPalette: Palette;
   onSender?: SenderOpener;
+  /** Ask the assistant about a message; absent while it is off. */
+  onAssistant?: (messageId: number, kind: "summary" | "reply") => void;
   onClose: () => void;
   /** The next (1) or previous (-1) message of the list, when the list is not beside it. */
   onStep?: (by: number) => void;
@@ -247,6 +250,7 @@ export function ReadingPane({
                   onPalette={onPalette}
                   onSender={onSender}
                   conversation={conversation}
+                  onAssistant={onAssistant}
                 />
               );
             })}
@@ -269,6 +273,7 @@ function ThreadMessage({
   onPalette,
   onSender,
   conversation,
+  onAssistant,
 }: {
   ref?: Ref<HTMLLIElement>;
   entry: ThreadEntry;
@@ -285,6 +290,7 @@ function ThreadMessage({
   onSender?: SenderOpener;
   /** A conversation of several messages: open them all, or fold the older ones. */
   conversation?: { openAll: () => void; foldOlder: () => void };
+  onAssistant?: (messageId: number, kind: "summary" | "reply") => void;
 }) {
   const own = useDetail(entry.message.id, given === null && expanded);
   const load = given ?? own;
@@ -388,6 +394,12 @@ function ThreadMessage({
           onSelect: () => void navigator.clipboard?.writeText(asMarkdown(ready)).catch(() => {}),
         },
         { label: "Print…", icon: "text", onSelect: () => printMessage(ready) },
+      );
+    }
+    if (onAssistant) {
+      extra.push(
+        { label: "Summarise with the assistant…", icon: "bolt", onSelect: () => onAssistant(message.id, "summary") },
+        { label: "Draft a reply with the assistant…", icon: "bolt", onSelect: () => onAssistant(message.id, "reply") },
       );
     }
     extra.push({ label: details ? "Hide details" : "Show details", icon: "info", onSelect: () => setDetails(!details) });
