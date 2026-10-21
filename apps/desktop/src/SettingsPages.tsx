@@ -34,6 +34,7 @@ import { exportDiagnostics, setDetailedLogs, supportSettings } from "./support";
 import { type PresetDef, type PresetPrefs, REMINDER_PRESETS, SEND_PRESETS, SNOOZE_PRESETS } from "./snooze";
 import { type Theme, applyTheme, savedTheme } from "./theme";
 import { AboutUpdates } from "./UpdateCheck";
+import { LicencesPage } from "./LicencesPage";
 
 /** Where the project lives, for help and reports. */
 const PROJECT_URL = "https://github.com/lucienPochon/regards";
@@ -1102,6 +1103,7 @@ function Troubleshooting() {
 }
 
 export function SupportPage({ service, onRecheck }: { service: ServiceCheck; onRecheck: () => void }) {
+  const [licences, setLicences] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const open = (url: string) => {
@@ -1118,6 +1120,7 @@ export function SupportPage({ service, onRecheck }: { service: ServiceCheck; onR
     { label: "Report a problem or ask for a feature", url: `${PROJECT_URL}/issues` },
     { label: "Read the documentation", url: `${PROJECT_URL}#readme` },
   ];
+  if (licences) return <LicencesPage onBack={() => setLicences(false)} />;
   return (
     <>
       <div className="about-head">
@@ -1164,6 +1167,12 @@ export function SupportPage({ service, onRecheck }: { service: ServiceCheck; onR
           </span>
         </div>
       ))}
+      <LinkRow
+        icon="text"
+        label="Open-source licences"
+        detail="Regards' own, and those of the projects it is built on"
+        onOpen={() => setLicences(true)}
+      />
     </>
   );
 }
