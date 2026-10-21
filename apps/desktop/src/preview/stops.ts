@@ -190,6 +190,7 @@ export const TOUR: Group[] = [
       { id: "s-accessibility", label: "Accessibility", note: "Zoom up to 200 % (also Ctrl + / − / 0), and single-key shortcuts on or off.", steps: settings("Accessibility") },
       { id: "s-shortcuts", label: "Shortcuts", note: "Every key.", steps: settings("Shortcuts") },
       { id: "s-support", label: "Support", note: "Updates, the background service, troubleshooting, help.", steps: settings("Support") },
+      { id: "s-download-again", label: "Support › Download an account again", note: "For when an account's mail looks wrong here; asks first, and says what stays.", params: { accounts: "2" }, steps: settings("Support", "text:.settings-pane button=Download again") },
       { id: "s-diagnostics", label: "Support › Save diagnostics", note: "A file to attach to a report: no mail, addresses or passwords.", steps: settings("Support", "text:.settings-pane button=Save diagnostics") },
     ],
   },

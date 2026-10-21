@@ -22,6 +22,8 @@ import {
 } from "./background";
 import { type BadgeSettings, badgeSettings, setBadgeSettings } from "./badge";
 import { type MailAppStatus, mailAppStatus, makeMailApp } from "./links";
+import type { ConfirmRequest } from "./Confirm";
+import { DownloadAgain } from "./DownloadAgain";
 import { Icon, type IconName } from "./icons";
 import type { Layout } from "./layout";
 import { type NewMail, type NotificationSettings, notificationSettings, setNotificationSettings } from "./notifications";
@@ -1029,7 +1031,13 @@ export function AccessibilityPage() {
 
 /** Support: the version and updates, the background service, and where to get help. */
 /** Detailed logs for a problem, and diagnostics saved to a file to attach to a report. */
-function Troubleshooting() {
+function Troubleshooting({
+  accounts,
+  confirm,
+}: {
+  accounts: AccountSummary[];
+  confirm: (request: ConfirmRequest) => Promise<boolean>;
+}) {
   const [detailed, setDetailed] = useState<boolean | null>(null);
   const [changed, setChanged] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1097,11 +1105,22 @@ function Troubleshooting() {
           </button>
         </span>
       </div>
+      <DownloadAgain accounts={accounts} confirm={confirm} />
     </>
   );
 }
 
-export function SupportPage({ service, onRecheck }: { service: ServiceCheck; onRecheck: () => void }) {
+export function SupportPage({
+  service,
+  onRecheck,
+  accounts,
+  confirm,
+}: {
+  service: ServiceCheck;
+  onRecheck: () => void;
+  accounts: AccountSummary[];
+  confirm: (request: ConfirmRequest) => Promise<boolean>;
+}) {
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const open = (url: string) => {
@@ -1136,7 +1155,7 @@ export function SupportPage({ service, onRecheck }: { service: ServiceCheck; onR
         <Icon name="refresh" size={15} />
         Check again
       </button>
-      <Troubleshooting />
+      <Troubleshooting accounts={accounts} confirm={confirm} />
       <h4 className="settings-subhead">Get help</h4>
       {error && <p className="error" role="alert">{error}</p>}
       {links.map((link) => (

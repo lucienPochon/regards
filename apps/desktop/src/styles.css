@@ -320,6 +320,14 @@ button:disabled {
   gap: 12px;
 }
 
+.option-text .download-again {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
 /* Read out, not shown. */
 .sr-only {
   position: absolute;
