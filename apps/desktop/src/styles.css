@@ -192,6 +192,44 @@ button:disabled {
   outline-offset: 2px;
 }
 
+/* Settings › Agents › Connect an agent. */
+.agent-connect {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  margin-top: 8px;
+}
+
+.agent-connect > .settings-subhead,
+.agent-connect > .settings-note {
+  justify-self: stretch;
+}
+
+.agent-connect-where {
+  font-size: 13.5px;
+}
+
+.agent-connect-snippet {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  justify-self: stretch;
+  min-width: 0;
+}
+
+.agent-connect-snippet pre {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--notice);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
 /* The assistant: its dialog and its Settings page. */
 .assistant-dialog {
   display: grid;
