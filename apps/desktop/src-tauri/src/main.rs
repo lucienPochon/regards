@@ -761,6 +761,23 @@ async fn thread_get(bridge: State<'_, Bridge>, id: i64) -> Result<ThreadView, St
         .map_err(describe)
 }
 
+/// Every unread message of a folder (or of one Smart Inbox section) read, with one undo.
+#[tauri::command]
+async fn message_mark_all_read(
+    bridge: State<'_, Bridge>,
+    mailbox_id: i64,
+    section: Option<Section>,
+) -> Result<SetFlagsResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::MESSAGE_MARK_ALL_READ,
+            regards_ipc::protocol::MarkAllReadParams { mailbox_id, section },
+        )
+        .await
+        .map_err(describe)
+}
+
 /// Mark messages read or unread, flagged or not; applied at once, sent to the server in the background.
 #[tauri::command]
 async fn message_set_flags(
@@ -1503,6 +1520,7 @@ fn main() {
             message_get,
             thread_get,
             message_set_flags,
+            message_mark_all_read,
             message_archive,
             message_trash,
             message_delete,

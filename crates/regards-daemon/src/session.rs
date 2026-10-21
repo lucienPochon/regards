@@ -319,6 +319,10 @@ impl Session {
                 self.allow_message(Access::Read, params.id).await?;
                 mail::source(&self.state, params).await
             }
+            methods::MESSAGE_MARK_ALL_READ => {
+                self.require_ui()?;
+                actions::mark_all_read(&self.state, params(request)?).await
+            }
             methods::MESSAGE_HTML => {
                 let params: MessageHtmlParams = params(request)?;
                 self.allow_message(Access::Read, params.id).await?;
