@@ -1395,7 +1395,7 @@ export function App() {
             job={assistantJob}
             onClose={() => setAssistantJob(null)}
             onDraft={(draft) => {
-              startDraft(Promise.resolve(draft), "panel");
+              startDraft(Promise.resolve(draft), getPrefs().replyOpens);
               setSaid("Drafted by the assistant: check it before sending");
             }}
           />
