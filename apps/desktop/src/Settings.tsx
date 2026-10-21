@@ -167,7 +167,7 @@ export function Settings({
           {tab === "composer" && <ComposerPage accounts={accounts} onAccounts={() => onTab("accounts")} />}
           {tab === "accessibility" && <AccessibilityPage />}
           {tab === "shortcuts" && <ShortcutsTab />}
-          {tab === "support" && <SupportPage service={service} onRecheck={onRecheck} />}
+          {tab === "support" && <SupportPage service={service} onRecheck={onRecheck} confirm={confirm} />}
         </div>
       </section>
     </div>

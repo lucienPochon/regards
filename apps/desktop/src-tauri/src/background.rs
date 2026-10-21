@@ -361,7 +361,7 @@ pub(crate) fn show(app: &AppHandle) {
 
 /// Register or remove the login item to match the setting. It is written
 /// again each time, so it follows the app when it moves or updates.
-fn start_at_login(app: &AppHandle, on: bool) {
+pub(crate) fn start_at_login(app: &AppHandle, on: bool) {
     if cfg!(debug_assertions) {
         return;
     }

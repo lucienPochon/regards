@@ -1033,6 +1033,9 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return { agent_send_window: seconds };
     }
+    case "erase_everything":
+      // The real app quits here, and starts as new next time; the preview keeps its sample.
+      return new Promise((resolve) => window.setTimeout(() => resolve(null), 800));
     case "account_sync":
       return new Promise((resolve) => window.setTimeout(() => resolve(null), 900));
     case "mailbox_list": {
@@ -1118,6 +1121,26 @@ function handle(cmd: string, args: Args): unknown {
             mailbox_role: mailboxOf(m.mailboxId)?.role ?? null,
           })),
       };
+    }
+    case "message_mark_all_read": {
+      const section = (args.section as Section | null) ?? null;
+      const unread = messages.filter(
+        (m) =>
+          m.mailboxId === (args.mailboxId as number) &&
+          !m.seen &&
+          (section === null || shownIn(section, explanationOf(m).section)),
+      );
+      for (const message of unread) message.seen = true;
+      changed();
+      if (unread.length === 0) return { changed: 0, undo: null };
+      const id = nextId++;
+      const description = `Marked ${unread.length === 1 ? "1 message" : `${unread.length} messages`} read`;
+      undos.set(id, {
+        description,
+        restore: new Map(),
+        also: () => unread.forEach((message) => (message.seen = false)),
+      });
+      return { changed: unread.length, undo: { id, description } };
     }
     case "message_set_flags": {
       const ids = args.ids as number[];
