@@ -28,6 +28,10 @@ pub mod methods {
     pub const DAEMON_HEALTH: &str = "daemon.health";
     /// Ask the daemon to stop.
     pub const DAEMON_SHUTDOWN: &str = "daemon.shutdown";
+    /// Remove everything Regards keeps on this computer (Support): every
+    /// credential at once, then the daemon stops and its files go once
+    /// nothing holds them ([`DaemonEraseParams`] → [`DaemonErased`]). `ui` only.
+    pub const DAEMON_ERASE: &str = "daemon.erase";
     /// List mail accounts. `ui` only, until agent access levels exist (ADR-0012).
     pub const ACCOUNT_LIST: &str = "account.list";
     /// Verify a password sign-in and add the account. `ui` only (ADR-0006).
@@ -1643,6 +1647,30 @@ pub struct PeopleSuggestParams {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PeopleSuggestResult {
     pub people: Vec<Person>,
+}
+
+/// Parameters of [`methods::DAEMON_ERASE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaemonEraseParams {
+    /// Exactly [`DaemonEraseParams::CONFIRMATION`], so nothing erases by mistake.
+    pub confirm: String,
+}
+
+impl DaemonEraseParams {
+    pub const CONFIRMATION: &str = "erase everything";
+
+    pub fn confirmed() -> Self {
+        Self {
+            confirm: Self::CONFIRMATION.to_owned(),
+        }
+    }
+}
+
+/// The result of [`methods::DAEMON_ERASE`]. The daemon stops right after.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaemonErased {
+    /// Credentials removed from the system's credential store.
+    pub credentials: u32,
 }
 
 /// How messages are shown, kept by the daemon.
