@@ -1021,6 +1021,13 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return { agent_send_window: seconds };
     }
+    case "account_resync": {
+      // The sample mail stays: the preview has no server to fetch it again from.
+      const owner = accounts.find((a) => a.account.id === args.accountId);
+      const ids = new Set(owner?.mailboxes.map((m) => m.id));
+      const dropped = messages.filter((m) => ids.has(m.mailboxId)).length;
+      return new Promise((resolve) => window.setTimeout(() => resolve(dropped), 1200));
+    }
     case "account_sync":
       return new Promise((resolve) => window.setTimeout(() => resolve(null), 900));
     case "mailbox_list": {

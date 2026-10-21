@@ -236,6 +236,17 @@ export function syncAccount(accountId: string): Promise<unknown> {
   return invoke("account_sync", { accountId });
 }
 
+/**
+ * Support › Troubleshooting: drop an account's mail on this device and fetch
+ * it again, newest first, as after adding it. The account and its settings,
+ * drafts, outbox, pins, snoozes and reminders stay; a reply still waiting
+ * goes out, but its original is not marked answered. Resolves with how many
+ * messages were dropped, once the mail starts coming back.
+ */
+export function resyncAccount(accountId: string): Promise<number> {
+  return invoke<number>("account_resync", { accountId });
+}
+
 export interface Person {
   name: string | null;
   address: string | null;

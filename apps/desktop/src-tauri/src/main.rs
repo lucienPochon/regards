@@ -589,6 +589,17 @@ async fn account_sync(bridge: State<'_, Bridge>, account_id: String) -> Result<S
         .map_err(describe)
 }
 
+/// Drop an account's mail on this device and fetch it again; returns how many messages were dropped.
+#[tauri::command]
+async fn account_resync(bridge: State<'_, Bridge>, account_id: String) -> Result<u32, String> {
+    let mut client = bridge.connect().await?.client;
+    let result: regards_ipc::protocol::AccountResyncResult = client
+        .call(methods::ACCOUNT_RESYNC, AccountRef { account_id })
+        .await
+        .map_err(describe)?;
+    Ok(result.dropped)
+}
+
 /// A page of a mailbox's messages, newest first.
 #[tauri::command]
 async fn message_list(
@@ -1420,6 +1431,7 @@ fn main() {
             hold_approve,
             hold_reject,
             account_sync,
+            account_resync,
             mailbox_list,
             message_list,
             search_messages,

@@ -99,6 +99,20 @@ impl Tracker {
         started
     }
 
+    /// Hold off syncing an account, while its mail is dropped; `false` if
+    /// a sync of it is running.
+    pub(crate) fn claim(&self, account_id: &str) -> bool {
+        self.start(account_id)
+    }
+
+    /// Let it sync again, after [`Tracker::claim`].
+    pub(crate) fn release(&self, account_id: &str) {
+        if let Some(state) = self.lock().get_mut(account_id) {
+            state.running = false;
+        }
+        self.feed.bump();
+    }
+
     fn finish(&self, account_id: &str, outcome: &Result<Summary, SyncError>) {
         let mut states = self.lock();
         let state = states.entry(account_id.to_owned()).or_default();

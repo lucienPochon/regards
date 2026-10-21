@@ -5,9 +5,9 @@
 use crate::{State, sync};
 use regards_imap::{ImapError, ImapServer};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountCheckFailure, AccountRef, AccountRemoveParams, AccountSummary, AccountUpdateParams,
-    AgentAccess, AgentAccessParams, AgentSendParams, AutoCopyParams, ConnectionSecurity, MailboxListResult,
-    MailboxSummary, RpcError, ServerSettings, SignIn, SyncResult, codes,
+    AccountAddParams, AccountCheckFailure, AccountRef, AccountRemoveParams, AccountResyncResult, AccountSummary,
+    AccountUpdateParams, AgentAccess, AgentAccessParams, AgentSendParams, AutoCopyParams, ConnectionSecurity,
+    MailboxListResult, MailboxSummary, RpcError, ServerSettings, SignIn, SyncResult, codes,
 };
 use regards_store::StoreError;
 use regards_store::accounts::{self, Account, AuthKind, NewAccount, Security, Server};
@@ -15,6 +15,7 @@ use regards_store::mailboxes;
 use regards_vault::{SecretKey, SecretKind, Vault, VaultError};
 use serde_json::{Value, json};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 /// The accounts; to an agent, only those open to it.
 pub(crate) async fn list(state: &State, agent: bool) -> Result<Value, RpcError> {
@@ -209,6 +210,52 @@ pub(crate) async fn remove(state: &State, params: AccountRemoveParams) -> Result
     state.backfills.stop(&id);
     tracing::info!(account = %id, "account removed");
     Ok(json!({ "removed": true }))
+}
+
+/// How long `account.resync` waits for a sync already running.
+const RESYNC_WAIT: Duration = Duration::from_secs(30);
+
+/// `account.resync`: the account's mail on this device dropped and fetched
+/// again from the server (Support › Troubleshooting). The account and its
+/// settings, drafts, outbox, pins, snoozes and reminders stay.
+pub(crate) async fn resync(state: &Arc<State>, params: AccountRef) -> Result<Value, RpcError> {
+    let id = params.account_id;
+    let known = {
+        let id = id.clone();
+        state
+            .store
+            .read(move |conn| accounts::get(conn, &id))
+            .await
+            .map_err(store_error)?
+    };
+    if known.is_none() {
+        return Err(RpcError::new(codes::NOT_FOUND, "no such account"));
+    }
+    // No sync of it runs while its mail is dropped.
+    let deadline = Instant::now() + RESYNC_WAIT;
+    while !state.sync.claim(&id) {
+        if Instant::now() >= deadline {
+            return Err(RpcError::new(
+                codes::CONFLICT,
+                "the account is syncing; try again in a moment",
+            ));
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    state.watchers.stop(&id);
+    state.backfills.stop(&id);
+    let forgotten = {
+        let id = id.clone();
+        state.store.write(move |tx| accounts::forget_mail(tx, &id)).await
+    };
+    state.sync.release(&id);
+    // Whatever happened, it syncs again (and keeps its push connection).
+    sync::spawn_one(Arc::clone(state), id.clone());
+    let dropped = forgotten.map_err(store_error)?.value;
+    tracing::info!(account = %id, dropped, "account's mail dropped, to be fetched again");
+    Ok(json!(AccountResyncResult {
+        dropped: u32::try_from(dropped).unwrap_or(u32::MAX),
+    }))
 }
 
 /// A validated `account.add` request.

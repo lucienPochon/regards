@@ -690,6 +690,63 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn forgetting_an_accounts_mail_keeps_the_account_and_its_marks() {
+        use crate::marks::{self, Mark};
+        let (_temp, store, mailbox) = store_with_inbox().await;
+        let batch: Vec<NewMessage> = (1..=2)
+            .map(|uid| {
+                let mut new = message(uid, i64::from(uid) * 1000, &format!("m{uid}"));
+                new.headers.message_id = Some(format!("m{uid}@x"));
+                new
+            })
+            .collect();
+        let account = store
+            .write(move |tx| {
+                upsert(tx, mailbox, &batch)?;
+                tx.execute(
+                    "UPDATE mailboxes SET uid_validity = 7, uid_next = 3 WHERE id = ?1",
+                    [mailbox],
+                )?;
+                let account: String =
+                    tx.query_row("SELECT account_id FROM mailboxes WHERE id = ?1", [mailbox], |r| {
+                        r.get(0)
+                    })?;
+                marks::set(tx, &account, "m1@x", Mark::Pinned, Some(10))?;
+                Ok(account)
+            })
+            .await
+            .unwrap()
+            .value;
+        let a = account.clone();
+        let dropped = store
+            .write(move |tx| accounts::forget_mail(tx, &a))
+            .await
+            .unwrap()
+            .value;
+        assert_eq!(dropped, 2);
+        let a = account.clone();
+        let (left, folder, pinned, still) = store
+            .read(move |c| {
+                Ok((
+                    c.query_row("SELECT count(*) FROM messages", [], |r| r.get::<_, i64>(0))?,
+                    mailboxes::get(c, mailbox)?.unwrap(),
+                    marks::get(c, &a, "m1@x")?.pinned_at,
+                    accounts::get(c, &a)?.is_some(),
+                ))
+            })
+            .await
+            .unwrap();
+        assert_eq!(left, 0);
+        assert_eq!(
+            (folder.uid_validity, folder.uid_next),
+            (None, None),
+            "the next sync starts afresh"
+        );
+        assert_eq!(pinned, Some(10), "a pin stays for when the message is back");
+        assert!(still, "the account stays");
+    }
+
     async fn store_with_inbox() -> (tempfile::TempDir, Store, i64) {
         let temp = tempfile::tempdir().unwrap();
         let store = Store::open(&DataDirs::at(temp.path())).await.unwrap();

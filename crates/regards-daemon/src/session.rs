@@ -282,6 +282,10 @@ impl Session {
                 self.require_ui()?;
                 accounts::sync_now(&self.state, params(request)?).await
             }
+            methods::ACCOUNT_RESYNC => {
+                self.require_ui()?;
+                accounts::resync(&self.state, params(request)?).await
+            }
             methods::MAILBOX_LIST => {
                 let params: AccountRef = params(request)?;
                 self.allow_account(Access::Read, &params.account_id).await?;
