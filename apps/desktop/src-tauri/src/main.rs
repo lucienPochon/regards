@@ -266,6 +266,43 @@ async fn account_set_agent_send(
         .map_err(describe)
 }
 
+/// Every agent at once: on or off, and how many are connected.
+#[tauri::command]
+async fn agents_settings(bridge: State<'_, Bridge>) -> Result<regards_ipc::protocol::AgentsSettings, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::AGENTS_SETTINGS, Value::Null)
+        .await
+        .map_err(describe)
+}
+
+/// Turn every agent off (their connections end) or on again; each account keeps its level.
+#[tauri::command]
+async fn agents_set_enabled(
+    bridge: State<'_, Bridge>,
+    enabled: bool,
+) -> Result<regards_ipc::protocol::AgentsSettings, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::AGENTS_SET_ENABLED,
+            regards_ipc::protocol::AgentsEnabledParams { enabled },
+        )
+        .await
+        .map_err(describe)
+}
+
+/// End every agent's connection now; they may connect again.
+#[tauri::command]
+async fn agents_disconnect(bridge: State<'_, Bridge>) -> Result<u32, String> {
+    let mut client = bridge.connect().await?.client;
+    let sent: regards_ipc::protocol::AgentsDisconnected = client
+        .call(methods::AGENTS_DISCONNECT, Value::Null)
+        .await
+        .map_err(describe)?;
+    Ok(sent.disconnected)
+}
+
 /// What agents did, newest first (ADR-0012 §4).
 #[tauri::command]
 async fn agent_activity(
@@ -1501,6 +1538,9 @@ fn main() {
             account_set_agent_access,
             account_set_agent_send,
             agent_activity,
+            agents_settings,
+            agents_set_enabled,
+            agents_disconnect,
             hold_list,
             hold_approve,
             hold_reject,

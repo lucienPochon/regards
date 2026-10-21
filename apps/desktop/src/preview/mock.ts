@@ -637,6 +637,8 @@ const draftById = (id: number) => {
 let detailedLogs = false;
 let prefetch = false;
 let reading = { clean_links: true };
+// Two agents connected in the sample: Claude Code's MCP server and a CLI.
+let agentsGate = { enabled: true, connected: 2 };
 let assistant: { kind: string | null; base_url: string | null; model: string | null; has_key: boolean } =
   // `?assistant=on`: a provider already chosen.
   params.get("assistant") === "on"
@@ -949,6 +951,16 @@ function handle(cmd: string, args: Args): unknown {
       owner.account = { ...owner.account, agent_access: args.access as AgentAccess };
       changed();
       return { agent_access: owner.account.agent_access };
+    }
+    case "agents_settings":
+      return agentsGate;
+    case "agents_set_enabled":
+      agentsGate = { enabled: args.enabled as boolean, connected: args.enabled ? agentsGate.connected : 0 };
+      return agentsGate;
+    case "agents_disconnect": {
+      const sent = agentsGate.connected;
+      agentsGate = { ...agentsGate, connected: 0 };
+      return sent;
     }
     case "agent_activity": {
       const before = (args.before as number | null) ?? null;
