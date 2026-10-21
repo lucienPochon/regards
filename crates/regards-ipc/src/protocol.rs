@@ -210,6 +210,15 @@ pub mod methods {
     /// What agents did, newest first: every request, allowed or refused
     /// (ADR-0012 §4). Kept 90 days. `ui` only.
     pub const AGENT_ACTIVITY: &str = "agent.activity";
+    /// Every agent at once (Settings › Agents): [`AgentsSettings`]. `ui` only,
+    /// like the two below.
+    pub const AGENTS_SETTINGS: &str = "agents.settings";
+    /// Turn every agent off, or on again ([`AgentsEnabledParams`]). Off, the
+    /// CLI and MCP get nothing but `hello`; each account's own level stays
+    /// as it is. Turning off also ends the agents' connections.
+    pub const AGENTS_SET_ENABLED: &str = "agents.set_enabled";
+    /// End every agent's connection now: [`AgentsDisconnected`].
+    pub const AGENTS_DISCONNECT: &str = "agents.disconnect";
     /// What agents asked that waits for the person, newest first. `ui` only.
     pub const HOLD_LIST: &str = "hold.list";
     /// One hold. Agents: holds of the accounts open to them, to follow theirs.
@@ -1643,6 +1652,27 @@ pub struct PeopleSuggestParams {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PeopleSuggestResult {
     pub people: Vec<Person>,
+}
+
+/// The result of [`methods::AGENTS_SETTINGS`] and [`methods::AGENTS_SET_ENABLED`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentsSettings {
+    /// On by default; each account is still closed to agents until opened.
+    pub enabled: bool,
+    /// Agents connected now (the CLI, MCP servers).
+    pub connected: u32,
+}
+
+/// Parameters of [`methods::AGENTS_SET_ENABLED`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentsEnabledParams {
+    pub enabled: bool,
+}
+
+/// The result of [`methods::AGENTS_DISCONNECT`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentsDisconnected {
+    pub disconnected: u32,
 }
 
 /// How messages are shown, kept by the daemon.

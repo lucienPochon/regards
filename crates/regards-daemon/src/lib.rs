@@ -7,6 +7,7 @@
 mod access;
 mod accounts;
 mod actions;
+mod agents;
 mod assistant;
 mod audit;
 mod backfill;
@@ -71,6 +72,8 @@ pub(crate) struct State {
     pub(crate) ui_token: Option<UiToken>,
     /// The mail database.
     pub(crate) store: Store,
+    /// Every agent at once: on or off, and sent away (Settings › Agents).
+    pub(crate) agents: agents::Gate,
     /// The credential store, opened on first use so a missing Secret Service
     /// on Linux does not stop the daemon from starting.
     pub(crate) vault: OnceCell<Result<Vault, String>>,
@@ -266,7 +269,12 @@ impl Daemon {
         } = self;
         let (stop, mut stopped) = watch::channel(false);
         let feed = Arc::new(feed::Feed::new(*store.subscribe().borrow()));
+        let agents_on = store
+            .read(|conn| regards_store::settings::get(conn, agents::KEY))
+            .await
+            .map_or(true, |value| value.as_deref() != Some("off"));
         let state = Arc::new(State {
+            agents: agents::Gate::new(agents_on),
             started: Instant::now(),
             stop,
             ui_token,

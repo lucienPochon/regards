@@ -524,3 +524,72 @@ fn new_draft(account_id: &str, n: u32) -> DraftCreateParams {
         ..DraftCreateParams::default()
     }
 }
+
+#[tokio::test]
+async fn every_agent_can_be_turned_off_at_once_and_sent_away() {
+    use regards_ipc::protocol::{AgentsDisconnected, AgentsEnabledParams, AgentsSettings};
+    let world = World::new(DEFAULT_LATE_SEND_GRACE).await;
+    let Running {
+        endpoint,
+        mut desktop,
+        handle,
+    } = world.start().await;
+    let account = world.add_account(&mut desktop).await;
+    set(&mut desktop, &account.id, AgentAccess::Read).await;
+    let mut agent = Client::connect(&endpoint, ClientKind::Mcp).await.unwrap();
+    assert_eq!(accounts(&mut agent).await.len(), 1);
+    let on: AgentsSettings = desktop.call(methods::AGENTS_SETTINGS, Value::Null).await.unwrap();
+    assert_eq!(
+        on,
+        AgentsSettings {
+            enabled: true,
+            connected: 1
+        }
+    );
+
+    // Only the app may turn them off.
+    let refused = refusal(
+        agent
+            .call::<_, AgentsSettings>(methods::AGENTS_SET_ENABLED, AgentsEnabledParams { enabled: false })
+            .await,
+    );
+    assert_eq!(refused.code, codes::FORBIDDEN);
+
+    // Off: the connected agent is sent away, and a new one gets nothing but hello.
+    let off: AgentsSettings = desktop
+        .call(methods::AGENTS_SET_ENABLED, AgentsEnabledParams { enabled: false })
+        .await
+        .unwrap();
+    assert!(!off.enabled);
+    assert!(
+        matches!(
+            agent.call::<_, Value>(methods::ACCOUNT_LIST, Value::Null).await,
+            Err(ClientError::Closed | ClientError::Io(_) | ClientError::Frame(_))
+        ),
+        "its connection was ended"
+    );
+    let mut again = Client::connect(&endpoint, ClientKind::Cli).await.unwrap();
+    let refused = refusal(again.call::<_, Value>(methods::ACCOUNT_LIST, Value::Null).await);
+    assert_eq!(refused.code, codes::FORBIDDEN);
+    assert!(refused.message.contains("turned off"), "{}", refused.message);
+
+    // On again: the account's own level was kept.
+    let _: AgentsSettings = desktop
+        .call(methods::AGENTS_SET_ENABLED, AgentsEnabledParams { enabled: true })
+        .await
+        .unwrap();
+    assert_eq!(accounts(&mut again).await.len(), 1);
+
+    // Sent away without turning them off: they may come back.
+    let sent: AgentsDisconnected = desktop.call(methods::AGENTS_DISCONNECT, Value::Null).await.unwrap();
+    assert_eq!(sent.disconnected, 1);
+    assert!(
+        again
+            .call::<_, Value>(methods::ACCOUNT_LIST, Value::Null)
+            .await
+            .is_err()
+    );
+    let mut back = Client::connect(&endpoint, ClientKind::Cli).await.unwrap();
+    assert_eq!(accounts(&mut back).await.len(), 1);
+    handle.abort();
+}
