@@ -191,6 +191,7 @@ export const TOUR: Group[] = [
       { id: "s-accessibility", label: "Accessibility", note: "Zoom up to 200 % (also Ctrl + / − / 0), and single-key shortcuts on or off.", steps: settings("Accessibility") },
       { id: "s-shortcuts", label: "Shortcuts", note: "Every key.", steps: settings("Shortcuts") },
       { id: "s-support", label: "Support", note: "Updates, the background service, troubleshooting, help.", steps: settings("Support") },
+      { id: "s-erase", label: "Support › Remove everything from this computer", note: "Asks first, naming what goes; mail on the servers stays.", steps: settings("Support", "text:.settings-pane button=Remove everything") },
       { id: "s-diagnostics", label: "Support › Save diagnostics", note: "A file to attach to a report: no mail, addresses or passwords.", steps: settings("Support", "text:.settings-pane button=Save diagnostics") },
     ],
   },
