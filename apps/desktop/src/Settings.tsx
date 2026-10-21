@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { type AccountSummary, removeAccount, syncAccount, updateAccount } from "./accounts";
 import { AgentActivity } from "./AgentActivity";
 import { AgentConnect } from "./AgentConnect";
+import { AgentsGate } from "./AgentsGate";
 import { AgentHolds } from "./AgentHolds";
 import { leafName } from "./views";
 import { AGENT_ACCESS_LEVELS, AGENT_SEND_WINDOW, type AgentAccess, setAgentAccess, setAgentSend } from "./agents";
@@ -285,6 +286,7 @@ function AgentsTab({
         account decides what they may do. Only this page can change it: an agent can&apos;t give itself more.
       </p>
       {error && <p className="error" role="alert">{error}</p>}
+      <AgentsGate />
       <AgentHolds accounts={accounts.map(({ account }) => ({ id: account.id, email: account.email }))} focus={focusHold} />
       {accounts.length === 0 ? (
         <p className="muted">Add an account first.</p>
