@@ -65,6 +65,10 @@ pub mod methods {
     /// A message as it came, headers and all ("See the original message"):
     /// [`MessageSource`]. Agents: with Read access to its account.
     pub const MESSAGE_SOURCE: &str = "message.source";
+    /// Every unread message of a folder read, or of one Smart Inbox section
+    /// of it, with one undo: [`MarkAllReadParams`] → [`SetFlagsResult`].
+    /// Only what is on this device yet; `ui` only.
+    pub const MESSAGE_MARK_ALL_READ: &str = "message.mark_all_read";
     /// The conversation a message belongs to, across folders. `ui` only for now.
     pub const THREAD_GET: &str = "thread.get";
     /// Mark messages read or unread, flagged or not. Applied at once, sent to the
@@ -1809,6 +1813,15 @@ pub struct MessageSource {
 impl MessageSource {
     /// Bytes of a message's source given at most.
     pub const MAX: usize = 1024 * 1024;
+}
+
+/// Parameters of [`methods::MESSAGE_MARK_ALL_READ`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MarkAllReadParams {
+    pub mailbox_id: i64,
+    /// Only this Smart Inbox section's; the whole folder's when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section: Option<Section>,
 }
 
 /// Result of [`methods::MESSAGE_LIST`].

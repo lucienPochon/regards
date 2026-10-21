@@ -5,8 +5,9 @@
 use crate::State;
 use regards_core::mailbox::Role;
 use regards_ipc::protocol::{
-    AsideParams, DeleteResult, MarkResult, MessageIds, MoveParams, MoveResult, PinParams, RemindParams, RpcError,
-    SenderBlockParams, SetFlagsParams, SetFlagsResult, SnoozeParams, UndoInfo, UndoParams, UndoResult, codes,
+    AsideParams, DeleteResult, MarkAllReadParams, MarkResult, MessageIds, MoveParams, MoveResult, PinParams,
+    RemindParams, RpcError, SenderBlockParams, SetFlagsParams, SetFlagsResult, SnoozeParams, UndoInfo, UndoParams,
+    UndoResult, codes,
 };
 use regards_store::marks::{self, Mark};
 use regards_store::operations::{self, FlagName, NewOperation, OperationKind};
@@ -20,6 +21,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// At most this many messages per action.
 const MAX_MESSAGES: usize = 1000;
+/// UIDs in one server command at most: as ranges, a few kilobytes even when
+/// none are next to each other (Dovecot takes 64 KB lines).
+const MAX_UIDS_PER_COMMAND: usize = 2000;
 
 pub(crate) async fn set_flags(state: &Arc<State>, params: SetFlagsParams) -> Result<Value, RpcError> {
     if params.ids.is_empty() || params.ids.len() > MAX_MESSAGES {
@@ -77,6 +81,47 @@ pub(crate) async fn set_flags(state: &Arc<State>, params: SetFlagsParams) -> Res
     Ok(json!(SetFlagsResult { changed, undo }))
 }
 
+/// `message.mark_all_read`: the folder's unread messages read (those on
+/// this device), with one undo.
+pub(crate) async fn mark_all_read(state: &Arc<State>, params: MarkAllReadParams) -> Result<Value, RpcError> {
+    let now = now_ms();
+    let committed = state
+        .store
+        .write(move |tx| {
+            if mailboxes::get(tx, params.mailbox_id)?.is_none() {
+                return Err(StoreError::Conflict("no such folder".into()));
+            }
+            let wanted: Vec<FlagUndo> = messages::unread_in(tx, params.mailbox_id, params.section)?
+                .into_iter()
+                .map(|id| (id, FlagName::Seen, true))
+                .collect();
+            let (done, accounts) = change_flags(tx, &wanted, now)?;
+            let undo = if done.is_empty() {
+                None
+            } else {
+                let description = describe_flags(&[(FlagName::Seen, true)], done.len());
+                let inverse = serde_json::to_string(&Inverse {
+                    flags: done.clone(),
+                    ..Inverse::default()
+                })
+                .expect("plain data serializes");
+                let id = undo::record(tx, &description, &inverse, now, now + UNDO_FOR_MS)?;
+                Some(UndoInfo { id, description })
+            };
+            Ok((done.len(), undo, accounts))
+        })
+        .await
+        .map_err(|error| match error {
+            StoreError::Conflict(message) => RpcError::new(codes::NOT_FOUND, message),
+            other => crate::session::internal(other),
+        })?;
+    let (changed, undo, accounts) = committed.value;
+    for account in accounts {
+        state.queue.wake(state, &account);
+    }
+    Ok(json!(SetFlagsResult { changed, undo }))
+}
+
 /// A flag set on a message, as undo knows it: the message, the flag, what it was set to.
 type FlagUndo = (i64, FlagName, bool);
 
@@ -115,22 +160,25 @@ fn change_flags(
             .ok_or_else(|| StoreError::Conflict("the folder has not been synced yet".into()))?;
         let uids: Vec<u32> = uids.into_iter().collect();
         operations::apply_locally(tx, mailbox_id, &uids, &[flag], value)?;
-        operations::enqueue(
-            tx,
-            &NewOperation {
-                mailbox_id,
-                uid_validity: uid_validity as u32,
-                kind: if value {
-                    OperationKind::AddFlags
-                } else {
-                    OperationKind::RemoveFlags
+        // A whole folder at once would make a command line longer than servers take.
+        for chunk in uids.chunks(MAX_UIDS_PER_COMMAND) {
+            operations::enqueue(
+                tx,
+                &NewOperation {
+                    mailbox_id,
+                    uid_validity: uid_validity as u32,
+                    kind: if value {
+                        OperationKind::AddFlags
+                    } else {
+                        OperationKind::RemoveFlags
+                    },
+                    uids: chunk.to_vec(),
+                    flags: vec![flag],
+                    target_mailbox_id: None,
                 },
-                uids,
-                flags: vec![flag],
-                target_mailbox_id: None,
-            },
-            now,
-        )?;
+                now,
+            )?;
+        }
         accounts.insert(mailbox.account_id);
     }
     Ok((done, accounts))

@@ -637,6 +637,59 @@ async fn live_flag_actions_apply_at_once_and_reach_the_server() {
     handle.abort();
 }
 
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_a_whole_folder_is_marked_read_at_once_and_can_be_undone() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    for n in 1..=3 {
+        seed.append(b"INBOX", &[], &message(n, &format!("M{n}"), "ada@example.test"))
+            .await
+            .unwrap();
+    }
+    seed.append(b"INBOX", &[SystemFlag::Seen], &message(4, "Read", "ada@example.test"))
+        .await
+        .unwrap();
+    let (_temp, mut desktop, _account, inbox, handle) = daemon_with_account(&live).await;
+
+    let all = regards_ipc::protocol::MarkAllReadParams {
+        mailbox_id: inbox,
+        section: None,
+    };
+    let result: SetFlagsResult = desktop.call(methods::MESSAGE_MARK_ALL_READ, all).await.unwrap();
+    assert_eq!(result.changed, 3, "the one already read is not counted");
+    assert_eq!(result.undo.as_ref().unwrap().description, "Marked 3 messages read");
+    assert!(messages(&mut desktop, inbox).await.messages.iter().all(|m| m.seen));
+    server_flags_become(&mut seed, |flags| {
+        flags.len() == 4 && flags.iter().all(|f| f.flags.seen)
+    })
+    .await;
+
+    // Nothing left to mark: nothing to undo.
+    let again: SetFlagsResult = desktop.call(methods::MESSAGE_MARK_ALL_READ, all).await.unwrap();
+    assert_eq!((again.changed, again.undo), (0, None));
+
+    // Undo makes the three unread again, and only them.
+    let _: Value = desktop
+        .call(
+            methods::UNDO_APPLY,
+            UndoParams {
+                id: result.undo.unwrap().id,
+            },
+        )
+        .await
+        .unwrap();
+    server_flags_become(&mut seed, |flags| flags.iter().filter(|f| f.flags.seen).count() == 1).await;
+    let local = messages(&mut desktop, inbox).await.messages;
+    assert_eq!(local.iter().filter(|m| !m.seen).count(), 3);
+    assert!(local.iter().find(|m| m.subject == "Read").unwrap().seen);
+
+    seed.logout().await;
+    handle.abort();
+}
+
 /// UIDs on the server in `mailbox`.
 async fn server_uids(seed: &mut Session, mailbox: &[u8]) -> Vec<u32> {
     seed.select(mailbox).await.unwrap();
