@@ -1028,6 +1028,9 @@ function handle(cmd: string, args: Args): unknown {
       const dropped = messages.filter((m) => ids.has(m.mailboxId)).length;
       return new Promise((resolve) => window.setTimeout(() => resolve(dropped), 1200));
     }
+    case "erase_everything":
+      // The real app quits here, and starts as new next time; the preview keeps its sample.
+      return new Promise((resolve) => window.setTimeout(() => resolve(null), 800));
     case "account_sync":
       return new Promise((resolve) => window.setTimeout(() => resolve(null), 900));
     case "mailbox_list": {

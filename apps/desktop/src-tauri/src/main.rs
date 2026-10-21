@@ -1261,6 +1261,73 @@ fn explain(error: LaunchError) -> String {
     }
 }
 
+/// "Remove everything from this computer" (Support): every credential, the
+/// mail, the settings and the logs, and the login item; then Regards quits,
+/// and its next start is a first run. What a file still held keeps is
+/// removed by the daemon's next start (it finds the marker it left).
+#[tauri::command]
+async fn erase_everything(app: AppHandle, bridge: State<'_, Bridge>) -> Result<(), String> {
+    let dirs = bridge.launcher.as_ref().map_err(Clone::clone)?.dirs().clone();
+    let mut client = bridge.connect().await?.client;
+    let _: regards_ipc::protocol::DaemonErased = client
+        .call(
+            methods::DAEMON_ERASE,
+            regards_ipc::protocol::DaemonEraseParams::confirmed(),
+        )
+        .await
+        .map_err(describe)?;
+    drop(client);
+    // From here nothing starts the daemon again, nor registers Regards to start at login.
+    bridge.closing.store(true, Ordering::SeqCst);
+    bridge.token.lock().await.take();
+    background::start_at_login(&app, false);
+    // The daemon has let go of its files once its lock is free.
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while !unlocked(&dirs.lock_file()) && std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    // A file the system still holds for a moment is tried again; the marker goes last.
+    for _ in 0..20 {
+        if remove_all_but_marker(&dirs) {
+            let _ = std::fs::remove_file(dirs.erase_marker());
+            let _ = std::fs::remove_dir(dirs.data());
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    app.exit(0);
+    Ok(())
+}
+
+/// No daemon holds the lock (or there is none).
+fn unlocked(lock: &std::path::Path) -> bool {
+    match std::fs::File::options().read(true).write(true).open(lock) {
+        Ok(file) => file.try_lock().is_ok(),
+        Err(_) => true,
+    }
+}
+
+/// Everything in the data directory but the erase marker; whether all went.
+fn remove_all_but_marker(dirs: &DataDirs) -> bool {
+    let Ok(entries) = std::fs::read_dir(dirs.data()) else {
+        return true;
+    };
+    let mut all = true;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path == dirs.erase_marker() {
+            continue;
+        }
+        let removed = if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        all &= removed.is_ok();
+    }
+    all
+}
+
 /// Quit Regards fully, as the tray's Quit does: the app's own daemon stops
 /// with it (`RunEvent::Exit`), and with it scheduled work.
 #[tauri::command]
@@ -1380,6 +1447,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             daemon_status,
             app_quit,
+            erase_everything,
             links::link_take,
             drops::draft_attach_dropped,
             background_get,

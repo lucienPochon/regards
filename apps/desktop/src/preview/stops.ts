@@ -97,6 +97,7 @@ export const TOUR: Group[] = [
         params: { assistant: "on" },
         steps: [...openRow("Garden plot"), "wait:600", "click:.mail-card:not(.collapsed) .icon-btn[aria-label='More']", "wait:400", "text:.menu-item=Draft a reply"],
       },
+      { id: "source", label: "See the original message", note: "The message as it came, headers and all, as plain text.", params: { link: "message:4" }, steps: ["wait:900", "click:.mail-card:not(.collapsed) .icon-btn[aria-label='More']", "wait:400", "text:.menu-item=See the original"] },
       { id: "link", label: "A regards:// link opened", note: "Another app opened a message in Regards.", params: { link: "message:5" } },
       {
         id: "mailto",
