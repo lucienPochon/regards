@@ -47,7 +47,7 @@ fn kind_name(kind: Kind) -> &'static str {
     }
 }
 
-fn key() -> SecretKey {
+pub(crate) fn key() -> SecretKey {
     SecretKey::from_stored(KEY)
 }
 
