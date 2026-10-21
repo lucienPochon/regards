@@ -9,9 +9,10 @@ use regards_core::smart::{Screening, Section};
 use regards_core::{body, html};
 use regards_imap::SearchTerm;
 use regards_ipc::protocol::{
-    AccountRef, MessageCursor, MessageDetail, MessageHtml, MessageHtmlParams, MessageListParams, MessageListResult,
-    MessageRef, MessageSource, MessageSummary, ReadingSettings, RpcError, SearchParams, SearchResult,
-    SenderImagesParams, SenderImagesResult, ServerSearchResult, ThreadEntry, ThreadView, View, ViewParams, codes,
+    AccountRef, ConnectionLogSettings, MessageCursor, MessageDetail, MessageHtml, MessageHtmlParams, MessageListParams,
+    MessageListResult, MessageRef, MessageSource, MessageSummary, ReadingSettings, RpcError, SearchParams,
+    SearchResult, SenderImagesParams, SenderImagesResult, ServerSearchResult, ThreadEntry, ThreadView, View,
+    ViewParams, codes,
 };
 use regards_store::mailboxes::Mailbox;
 use regards_store::marks::{self, Mark, Marks};
@@ -470,6 +471,37 @@ pub(crate) async fn get(state: &State, params: MessageRef) -> Result<Value, RpcE
         attachments: body.attachments,
         message: summary(message, &info),
     }))
+}
+
+/// The daemon's key for the connection log: "on", or off.
+pub(crate) const CONNECTION_LOG: &str = "support.connection_log";
+
+/// The connection log, as the setting says: at start, and when it changes.
+pub(crate) fn apply_connection_log(state: &State, on: bool) {
+    let path = on.then(|| state.dirs.connection_log());
+    if let Err(error) = regards_net::connlog::set(path) {
+        tracing::warn!(%error, "could not open the connection log");
+    }
+}
+
+/// `support.connection_log`.
+pub(crate) fn connection_log(_state: &State) -> Value {
+    json!(ConnectionLogSettings {
+        on: regards_net::connlog::enabled(),
+    })
+}
+
+/// `support.set_connection_log`: at once.
+pub(crate) async fn set_connection_log(state: &State, params: ConnectionLogSettings) -> Result<Value, RpcError> {
+    let value = if params.on { "on" } else { "off" };
+    state
+        .store
+        .write(move |tx| regards_store::settings::set(tx, CONNECTION_LOG, value))
+        .await
+        .map_err(store_error)?;
+    apply_connection_log(state, params.on);
+    tracing::info!(on = params.on, "connection log");
+    Ok(connection_log(state))
 }
 
 /// The daemon's key for [`ReadingSettings::clean_links`].

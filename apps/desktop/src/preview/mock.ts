@@ -635,6 +635,7 @@ const draftById = (id: number) => {
 };
 
 let detailedLogs = false;
+let connectionLog = false;
 let prefetch = false;
 let reading = { clean_links: true };
 let assistant: { kind: string | null; base_url: string | null; model: string | null; has_key: boolean } =
@@ -886,7 +887,10 @@ function handle(cmd: string, args: Args): unknown {
       badgeChoices = args.settings as typeof badgeChoices;
       return null;
     case "support_settings":
-      return { detailed_logs: detailedLogs };
+      return { detailed_logs: detailedLogs, connection_log: connectionLog };
+    case "set_connection_log":
+      connectionLog = args.on as boolean;
+      return null;
     case "set_detailed_logs":
       detailedLogs = args.on as boolean;
       return null;

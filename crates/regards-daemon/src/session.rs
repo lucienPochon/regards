@@ -484,6 +484,14 @@ impl Session {
                 self.require_ui()?;
                 assistant::run(&self.state, params(request)?).await
             }
+            methods::CONNECTION_LOG_GET => {
+                self.require_ui()?;
+                Ok(mail::connection_log(&self.state))
+            }
+            methods::CONNECTION_LOG_SET => {
+                self.require_ui()?;
+                mail::set_connection_log(&self.state, params(request)?).await
+            }
             methods::PREFETCH_GET => {
                 self.require_ui()?;
                 prefetch::get(&self.state).await

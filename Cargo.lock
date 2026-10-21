@@ -3973,6 +3973,7 @@ dependencies = [
  "rcgen",
  "regards-core",
  "regards-net",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tokio-rustls",

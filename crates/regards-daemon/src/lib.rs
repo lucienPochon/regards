@@ -69,6 +69,8 @@ pub(crate) struct State {
     pub(crate) stop: watch::Sender<bool>,
     /// The desktop bridge's per-launch secret, when one was handed off.
     pub(crate) ui_token: Option<UiToken>,
+    /// Where this instance keeps everything.
+    pub(crate) dirs: DataDirs,
     /// The mail database.
     pub(crate) store: Store,
     /// The credential store, opened on first use so a missing Secret Service
@@ -270,6 +272,7 @@ impl Daemon {
             started: Instant::now(),
             stop,
             ui_token,
+            dirs: dirs.clone(),
             store,
             vault: OnceCell::new_with(vault.map(Ok)),
             oauth: oauth::Oauth::new(oauth_apps),
@@ -287,6 +290,14 @@ impl Daemon {
             late_send_grace,
             draft_pace,
         });
+        let logging = state
+            .store
+            .read(|conn| regards_store::settings::get(conn, mail::CONNECTION_LOG))
+            .await
+            .is_ok_and(|value| value.as_deref() == Some("on"));
+        if logging {
+            mail::apply_connection_log(&state, true);
+        }
         state.queue.attach(&state);
         queue::Queue::wake_all(&state);
         let follow = tokio::spawn({

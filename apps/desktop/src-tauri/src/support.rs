@@ -8,7 +8,7 @@ use crate::Bridge;
 use crate::background::Background;
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_core::paths::DataDirs;
-use regards_ipc::protocol::{AccountSummary, SignIn, methods};
+use regards_ipc::protocol::{AccountSummary, ConnectionLogSettings, SignIn, methods};
 use serde::Serialize;
 use serde_json::Value;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -25,6 +25,9 @@ const MAX_LOG: usize = 4 * 1024 * 1024;
 pub(crate) struct SupportSettings {
     /// Takes effect when the service next starts.
     detailed_logs: bool,
+    /// Kept by the service, and at once: commands and replies with the mail
+    /// servers, never mail, passwords, tokens or addresses.
+    connection_log: bool,
 }
 
 fn filter(on: bool) -> Option<String> {
@@ -40,10 +43,37 @@ pub(crate) fn apply(app: &AppHandle) {
 }
 
 #[tauri::command]
-pub(crate) fn support_settings(background: State<'_, Background>) -> SupportSettings {
-    SupportSettings {
+pub(crate) async fn support_settings(
+    background: State<'_, Background>,
+    bridge: State<'_, Bridge>,
+) -> Result<SupportSettings, String> {
+    Ok(SupportSettings {
         detailed_logs: background.detailed_logs(),
-    }
+        connection_log: connection_log(&bridge).await,
+    })
+}
+
+/// Whether the service logs connections; off when it cannot be asked.
+async fn connection_log(bridge: &Bridge) -> bool {
+    let Ok(connected) = bridge.connect().await else {
+        return false;
+    };
+    let mut client = connected.client;
+    client
+        .call::<_, ConnectionLogSettings>(methods::CONNECTION_LOG_GET, Value::Null)
+        .await
+        .is_ok_and(|settings| settings.on)
+}
+
+/// Log connections to mail servers, or stop; at once.
+#[tauri::command]
+pub(crate) async fn set_connection_log(bridge: State<'_, Bridge>, on: bool) -> Result<(), String> {
+    let mut client = bridge.connect().await?.client;
+    let _: ConnectionLogSettings = client
+        .call(methods::CONNECTION_LOG_SET, ConnectionLogSettings { on })
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 /// Saved; the service started next logs in detail (the running one keeps
@@ -100,10 +130,22 @@ async fn report(app: &AppHandle) -> String {
     out.push_str(&service(app).await);
     if let Ok(dirs) = DataDirs::resolve() {
         let log = dirs.daemon_log();
-        for (label, path) in [("older log", log.with_extension("log.1")), ("log", log)] {
+        let connections = dirs.connection_log();
+        if connections.exists() {
+            out.push_str(
+                "The connection log below names your mail servers, as commands and replies; it holds no mail, \
+                 addresses, passwords or tokens.\n",
+            );
+        }
+        for (label, path) in [
+            ("Service older log", log.with_extension("log.1")),
+            ("Service log", log),
+            ("Older connection log", connections.with_extension("log.1")),
+            ("Connection log", connections),
+        ] {
             if let Ok(bytes) = std::fs::read(&path) {
                 let start = bytes.len().saturating_sub(MAX_LOG);
-                out.push_str(&format!("\n--- Service {label} ---\n"));
+                out.push_str(&format!("\n--- {label} ---\n"));
                 out.push_str(&String::from_utf8_lossy(&bytes[start..]));
             }
         }
