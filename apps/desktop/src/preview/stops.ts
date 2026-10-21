@@ -97,6 +97,7 @@ export const TOUR: Group[] = [
         params: { assistant: "on" },
         steps: [...openRow("Garden plot"), "wait:600", "click:.mail-card:not(.collapsed) .icon-btn[aria-label='More']", "wait:400", "text:.menu-item=Draft a reply"],
       },
+      { id: "source", label: "See the original message", note: "The message as it came, headers and all, as plain text.", params: { link: "message:4" }, steps: ["wait:900", "click:.mail-card:not(.collapsed) .icon-btn[aria-label='More']", "wait:400", "text:.menu-item=See the original"] },
       { id: "link", label: "A regards:// link opened", note: "Another app opened a message in Regards.", params: { link: "message:5" } },
       {
         id: "mailto",
@@ -191,6 +192,7 @@ export const TOUR: Group[] = [
       { id: "s-shortcuts", label: "Shortcuts", note: "Every key.", steps: settings("Shortcuts") },
       { id: "s-support", label: "Support", note: "Updates, the background service, troubleshooting, help.", steps: settings("Support") },
       { id: "s-licences", label: "Support › Open-source licences", note: "Regards' own, then those of what it is built on, by licence.", steps: settings("Support", "text:.link-row=Open-source licences", "wait:400", "click:.licence-group summary") },
+      { id: "s-erase", label: "Support › Remove everything from this computer", note: "Asks first, naming what goes; mail on the servers stays.", steps: settings("Support", "text:.settings-pane button=Remove everything") },
       { id: "s-diagnostics", label: "Support › Save diagnostics", note: "A file to attach to a report: no mail, addresses or passwords.", steps: settings("Support", "text:.settings-pane button=Save diagnostics") },
     ],
   },
