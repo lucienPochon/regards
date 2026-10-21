@@ -332,6 +332,21 @@ export function getMessage(id: number): Promise<MessageDetail> {
   return invoke<MessageDetail>("message_get", { id });
 }
 
+/** Mirrors `MessageSource`: a message as it came, headers and all. */
+export interface MessageSource {
+  /** The RFC 5322 text. Show it as text (a <pre>), never as HTML. */
+  text: string;
+  /** Only the first megabyte is in `text`. */
+  truncated: boolean;
+  /** The whole message's size, in bytes. */
+  size: number;
+}
+
+/** "See the original message": downloaded from the server the first time. */
+export function messageSource(id: number): Promise<MessageSource> {
+  return invoke<MessageSource>("message_source", { id });
+}
+
 export interface ThreadEntry {
   message: MessageSummary;
   mailbox_id: number;

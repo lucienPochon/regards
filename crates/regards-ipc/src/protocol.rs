@@ -62,6 +62,9 @@ pub mod methods {
     pub const MESSAGE_GET: &str = "message.get";
     /// The sanitised HTML version of a message (ADR-0006 §4). `ui` only for now.
     pub const MESSAGE_HTML: &str = "message.html";
+    /// A message as it came, headers and all ("See the original message"):
+    /// [`MessageSource`]. Agents: with Read access to its account.
+    pub const MESSAGE_SOURCE: &str = "message.source";
     /// The conversation a message belongs to, across folders. `ui` only for now.
     pub const THREAD_GET: &str = "thread.get";
     /// Mark messages read or unread, flagged or not. Applied at once, sent to the
@@ -1789,6 +1792,23 @@ pub struct MessageHtml {
     /// A complete, sanitised document. Show it only in a sandboxed frame with a strict CSP.
     pub html: String,
     pub blocked_remote: usize,
+}
+
+/// Result of [`methods::MESSAGE_SOURCE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageSource {
+    /// The RFC 5322 text, as plain text: show it as text, never as HTML.
+    /// Bytes that are not UTF-8 show as U+FFFD.
+    pub text: String,
+    /// Only the first [`MessageSource::MAX`] bytes are in `text`.
+    pub truncated: bool,
+    /// The whole message's size, in bytes.
+    pub size: u64,
+}
+
+impl MessageSource {
+    /// Bytes of a message's source given at most.
+    pub const MAX: usize = 1024 * 1024;
 }
 
 /// Result of [`methods::MESSAGE_LIST`].

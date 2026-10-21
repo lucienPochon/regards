@@ -449,6 +449,21 @@ async fn live_message_bodies_download_once_and_stay_unread() {
         .unwrap();
     let again: MessageDetail = desktop.call(methods::MESSAGE_GET, MessageRef { id }).await.unwrap();
     assert_eq!(again.text, detail.text);
+    // "See the original message": as it came, headers and all, from blobs/ too.
+    let original: regards_ipc::protocol::MessageSource =
+        desktop.call(methods::MESSAGE_SOURCE, MessageRef { id }).await.unwrap();
+    assert!(
+        original.text.starts_with("From: Ada <ada@example.test>\r\n"),
+        "{}",
+        original.text
+    );
+    assert!(
+        original
+            .text
+            .contains("Content-Disposition: attachment; filename=\"report.pdf\"")
+    );
+    assert!(!original.truncated);
+    assert_eq!(original.size, original.text.len() as u64);
     assert!(std::fs::read_dir(temp.path().join("blobs")).unwrap().next().is_some());
 
     seed.logout().await;

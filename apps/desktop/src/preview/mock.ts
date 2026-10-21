@@ -1063,6 +1063,22 @@ function handle(cmd: string, args: Args): unknown {
         next: all.length > limit && last ? { received_at: place(last), id: last.id } : null,
       };
     }
+    case "message_source": {
+      const message = byId(args.id as number);
+      const show = (p: Person) => (p.name ? `${p.name} <${p.address}>` : (p.address ?? ""));
+      const text = [
+        `From: ${show(message.from)}`,
+        `To: ${message.to.map(show).join(", ")}`,
+        `Subject: ${message.subject}`,
+        `Date: ${new Date(message.received_at).toUTCString()}`,
+        `Message-ID: <preview-${message.id}@regards.invalid>`,
+        "MIME-Version: 1.0",
+        "Content-Type: text/plain; charset=utf-8",
+        "",
+        message.text,
+      ].join("\r\n");
+      return { text, truncated: false, size: text.length };
+    }
     case "message_get": {
       const message = byId(args.id as number);
       return {
