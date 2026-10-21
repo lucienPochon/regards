@@ -1,7 +1,7 @@
 //! One client connection: handshake, then request dispatch.
 
 use crate::{
-    State, access, accounts, actions, assistant, audit, compose, discover, draft_sync, holds, identities, mail,
+    State, access, accounts, actions, assistant, audit, compose, discover, draft_sync, erase, holds, identities, mail,
     notices, oauth, people, prefetch, smart, templates,
 };
 use regards_core::agents::Access;
@@ -206,6 +206,13 @@ impl Session {
                 uptime_secs: self.state.started.elapsed().as_secs(),
                 revision: self.state.store.revision().await.map_err(internal)?,
             })),
+            methods::DAEMON_ERASE => {
+                self.require_ui()?;
+                let erased = erase::erase(&self.state, params(request)?).await?;
+                // Once the reply is out: its files can go when nothing holds them.
+                self.stop_after_reply = true;
+                Ok(erased)
+            }
             methods::DAEMON_SHUTDOWN => {
                 tracing::info!("shutdown requested by a client");
                 // Once the reply is out: the daemon may be gone right after.

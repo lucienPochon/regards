@@ -14,6 +14,7 @@ mod compose;
 mod details;
 mod discover;
 mod draft_sync;
+mod erase;
 mod feed;
 mod holds;
 mod identities;
@@ -69,6 +70,8 @@ pub(crate) struct State {
     pub(crate) stop: watch::Sender<bool>,
     /// The desktop bridge's per-launch secret, when one was handed off.
     pub(crate) ui_token: Option<UiToken>,
+    /// Where this instance keeps everything.
+    pub(crate) dirs: DataDirs,
     /// The mail database.
     pub(crate) store: Store,
     /// The credential store, opened on first use so a missing Secret Service
@@ -167,6 +170,9 @@ impl Daemon {
             Err(TryLockError::WouldBlock) => return Err(DaemonError::AlreadyRunning(dirs.data().to_path_buf())),
             Err(TryLockError::Error(source)) => return Err(data_error(source)),
         }
+
+        // Asked to remove everything last time: done before anything is opened.
+        erase::finish(&dirs);
 
         // Only the lock holder opens the database, so two daemons never migrate it at once.
         let store = Store::open(&dirs).await?;
@@ -270,6 +276,7 @@ impl Daemon {
             started: Instant::now(),
             stop,
             ui_token,
+            dirs: dirs.clone(),
             store,
             vault: OnceCell::new_with(vault.map(Ok)),
             oauth: oauth::Oauth::new(oauth_apps),

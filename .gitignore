@@ -9,6 +9,8 @@ dist/
 
 # Tauri generated files
 apps/desktop/src-tauri/gen/
+# The licence list, made at release time (apps/desktop/scripts/licences.mjs)
+apps/desktop/public/licences/
 
 # Local environment and logs
 .env

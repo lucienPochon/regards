@@ -2831,6 +2831,26 @@ async fn live_agents_organise_mail_and_the_app_undoes_it() {
     handle.abort();
 }
 
+/// `method` on `ids`, asked again while a message is still on its way: the
+/// server shows a move done a moment before the daemon has recorded it, and
+/// until then the daemon says to try again (as an agent would).
+async fn once_moved(client: &mut Client, method: &str, ids: &[i64]) -> Result<Value, regards_ipc::ClientError> {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let result = client.call::<_, Value>(method, MessageIds { ids: ids.to_vec() }).await;
+        match &result {
+            Err(regards_ipc::ClientError::Rpc(error))
+                if error.code == regards_ipc::protocol::codes::CONFLICT
+                    && error.message.contains("still being moved")
+                    && Instant::now() < deadline =>
+            {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            _ => return result,
+        }
+    }
+}
+
 #[tokio::test]
 #[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
 async fn live_bulk_changes_and_deleting_for_good_wait_for_the_person() {
@@ -2904,24 +2924,16 @@ async fn live_bulk_changes_and_deleting_for_good_wait_for_the_person() {
 
     // Deleting for good: only from Trash or Junk, refused at once otherwise.
     let one = vec![ids[0]];
-    let refused = agent
-        .call::<_, Value>(methods::MESSAGE_DELETE, MessageIds { ids: one.clone() })
-        .await;
+    let refused = once_moved(&mut agent, methods::MESSAGE_DELETE, &one).await;
     assert!(
-        matches!(&refused, Err(regards_ipc::ClientError::Rpc(error)) if error.code == regards_ipc::protocol::codes::CONFLICT),
+        matches!(&refused, Err(regards_ipc::ClientError::Rpc(error))
+            if error.code == regards_ipc::protocol::codes::CONFLICT && !error.message.contains("still being moved")),
         "{refused:?}"
     );
-    let _: MoveResult = agent
-        .call(methods::MESSAGE_TRASH, MessageIds { ids: one.clone() })
-        .await
-        .unwrap();
+    once_moved(&mut agent, methods::MESSAGE_TRASH, &one).await.unwrap();
     server_count_becomes(&mut seed, b"Trash", 1).await;
     // From the Trash it always waits, even for one.
-    let deleting = held(
-        agent
-            .call::<_, Value>(methods::MESSAGE_DELETE, MessageIds { ids: one.clone() })
-            .await,
-    );
+    let deleting = held(once_moved(&mut agent, methods::MESSAGE_DELETE, &one).await);
     let rejected: HoldView = desktop
         .call(methods::HOLD_REJECT, HoldRef { id: deleting })
         .await
@@ -2931,11 +2943,7 @@ async fn live_bulk_changes_and_deleting_for_good_wait_for_the_person() {
         (HoldStatus::Rejected, "Delete 1 message for good")
     );
     server_count_becomes(&mut seed, b"Trash", 1).await;
-    let deleting = held(
-        agent
-            .call::<_, Value>(methods::MESSAGE_DELETE, MessageIds { ids: one })
-            .await,
-    );
+    let deleting = held(once_moved(&mut agent, methods::MESSAGE_DELETE, &one).await);
     let approved: HoldView = desktop
         .call(methods::HOLD_APPROVE, HoldRef { id: deleting })
         .await

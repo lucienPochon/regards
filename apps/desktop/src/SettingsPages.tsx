@@ -34,6 +34,8 @@ import { exportDiagnostics, setDetailedLogs, supportSettings } from "./support";
 import { type PresetDef, type PresetPrefs, REMINDER_PRESETS, SEND_PRESETS, SNOOZE_PRESETS } from "./snooze";
 import { type Theme, applyTheme, savedTheme } from "./theme";
 import { AboutUpdates } from "./UpdateCheck";
+import type { ConfirmRequest } from "./Confirm";
+import { EraseEverything } from "./EraseEverything";
 
 /** Where the project lives, for help and reports. */
 const PROJECT_URL = "https://github.com/lucienPochon/regards";
@@ -1101,7 +1103,15 @@ function Troubleshooting() {
   );
 }
 
-export function SupportPage({ service, onRecheck }: { service: ServiceCheck; onRecheck: () => void }) {
+export function SupportPage({
+  service,
+  onRecheck,
+  confirm,
+}: {
+  service: ServiceCheck;
+  onRecheck: () => void;
+  confirm: (request: ConfirmRequest) => Promise<boolean>;
+}) {
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const open = (url: string) => {
@@ -1164,6 +1174,8 @@ export function SupportPage({ service, onRecheck }: { service: ServiceCheck; onR
           </span>
         </div>
       ))}
+      <h4 className="settings-subhead">This computer</h4>
+      <EraseEverything confirm={confirm} />
     </>
   );
 }

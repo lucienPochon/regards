@@ -1021,6 +1021,9 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return { agent_send_window: seconds };
     }
+    case "erase_everything":
+      // The real app quits here, and starts as new next time; the preview keeps its sample.
+      return new Promise((resolve) => window.setTimeout(() => resolve(null), 800));
     case "account_sync":
       return new Promise((resolve) => window.setTimeout(() => resolve(null), 900));
     case "mailbox_list": {
