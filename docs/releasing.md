@@ -12,7 +12,9 @@ The app starts the daemon from the `regards` next to its own executable (`regard
 - `npm run release` builds with [`tauri.release.json`](../apps/desktop/src-tauri/tauri.release.json) over the usual configuration.
 - [`scripts/sidecar.mjs`](../apps/desktop/scripts/sidecar.mjs) first builds `regards` for the target, and places it where Tauri expects it: `src-tauri/binaries/regards-<target triple>`, which is git-ignored.
 
-Development builds don't need any of this: Cargo builds `regards` into the same folder as the app.
+- [`scripts/licences.mjs`](../apps/desktop/scripts/licences.mjs) writes the third-party licence list that Support › Licences shows. It runs [cargo-about](https://github.com/EmbarkStudios/cargo-about) with the root [`about.toml`](../about.toml), and puts the result in `public/licences/rust.json`, which is git-ignored. A release needs cargo-about (`cargo install cargo-about --version =0.9.2 --locked --features cli`), and the workflow installs it.
+
+Development builds don't need any of this: Cargo builds `regards` into the same folder as the app, and without cargo-about the licence list is empty.
 
 ## Cutting a release
 
