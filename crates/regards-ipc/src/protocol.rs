@@ -892,6 +892,10 @@ pub struct MessageListParams {
     /// In the inbox: only this Smart Inbox section.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub section: Option<Section>,
+    /// In the inbox: only mail read (`true`) or unread (`false`), as the
+    /// card view shows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seen: Option<bool>,
 }
 
 /// Parameters of [`methods::SEARCH`].

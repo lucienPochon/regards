@@ -40,7 +40,7 @@ pub(crate) async fn list(state: &State, params: MessageListParams) -> Result<Val
             format!("limit must be 1 to {MAX_PAGE}"),
         ));
     }
-    let (mailbox_id, section) = (params.mailbox_id, params.section);
+    let (mailbox_id, section, seen) = (params.mailbox_id, params.section, params.seen);
     let before = params.before.map(|c| Cursor {
         received_at: c.received_at,
         id: c.id,
@@ -59,7 +59,11 @@ pub(crate) async fn list(state: &State, params: MessageListParams) -> Result<Val
                 Some((account, now)) => {
                     let screening = regards_store::smart::screening(conn)?;
                     let (only, except) = shown_sections(section, screening);
-                    let sections = messages::Sections { only: &only, except };
+                    let sections = messages::Sections {
+                        only: &only,
+                        except,
+                        seen,
+                    };
                     messages::inbox_page(conn, mailbox_id, limit + 1, before, account, now, &sections)?
                 }
                 None => messages::list(conn, mailbox_id, limit + 1, before)?,

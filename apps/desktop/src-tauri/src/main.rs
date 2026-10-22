@@ -646,6 +646,7 @@ async fn message_list(
     before: Option<MessageCursor>,
     limit: Option<u32>,
     section: Option<Section>,
+    seen: Option<bool>,
 ) -> Result<MessageListResult, String> {
     let mut client = bridge.connect().await?.client;
     client
@@ -656,6 +657,7 @@ async fn message_list(
                 limit,
                 before,
                 section,
+                seen,
             },
         )
         .await

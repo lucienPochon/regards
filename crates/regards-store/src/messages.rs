@@ -400,6 +400,12 @@ fn inbox_sql(sections: &Sections<'_>) -> String {
     if sections.except.is_some() {
         only.push_str(&format!(" AND messages.section IS NOT ?{}", 7 + sections.only.len()));
     }
+    // A literal, so that unread pages can use the `messages_unseen` index.
+    match sections.seen {
+        Some(true) => only.push_str(" AND messages.seen = 1"),
+        Some(false) => only.push_str(" AND messages.seen = 0"),
+        None => {}
+    }
     format!(
         "SELECT * FROM (SELECT {COLUMNS}, received_at AS listed_at FROM messages \
              WHERE mailbox_id = ?1 AND moving_to IS NULL AND deleted = 0 AND (received_at, id) < (?2, ?3) {only} \
@@ -491,11 +497,12 @@ pub fn inbox_page(
 }
 
 /// Which Smart Inbox sections an inbox page shows: those in `only` (all
-/// when empty), less `except`.
+/// when empty), less `except`; and with `seen`, only mail read or unread.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Sections<'a> {
     pub only: &'a [Section],
     pub except: Option<Section>,
+    pub seen: Option<bool>,
 }
 
 /// Where `listed_at` follows [`COLUMNS`] in [`inbox_sql`].
@@ -662,7 +669,8 @@ mod tests {
                     "EXPLAIN QUERY PLAN {}",
                     inbox_sql(&Sections {
                         only: &[Section::People],
-                        except: None
+                        except: None,
+                        seen: None,
                     })
                 ))?;
                 let section: Vec<String> = statement
@@ -849,6 +857,39 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(people, [first]);
+    }
+
+    #[tokio::test]
+    async fn inbox_pages_can_hold_only_read_or_only_unread_mail() {
+        let (_temp, store, mailbox) = store_with_inbox().await;
+        let batch: Vec<NewMessage> = (1..=5)
+            .map(|uid| {
+                let mut new = message(uid, i64::from(uid) * 1000, &format!("m{uid}"));
+                new.flags.seen = uid % 2 == 0;
+                new
+            })
+            .collect();
+        store.write(move |tx| upsert(tx, mailbox, &batch)).await.unwrap();
+        store
+            .write(|tx| Ok(tx.execute("UPDATE messages SET section = 'people'", [])?))
+            .await
+            .unwrap();
+        let page = |seen: Option<bool>, only: &'static [Section]| {
+            store.read(move |c| {
+                let sections = Sections {
+                    only,
+                    except: None,
+                    seen,
+                };
+                let rows = inbox_page(c, mailbox, 50, None, "account", 0, &sections)?;
+                Ok(rows.into_iter().map(|m| m.subject).collect::<Vec<_>>())
+            })
+        };
+        assert_eq!(page(Some(false), &[]).await.unwrap(), ["m5", "m3", "m1"]);
+        assert_eq!(page(Some(true), &[]).await.unwrap(), ["m4", "m2"]);
+        assert_eq!(page(Some(false), &[Section::People]).await.unwrap(), ["m5", "m3", "m1"]);
+        assert!(page(Some(false), &[Section::Newsletters]).await.unwrap().is_empty());
+        assert_eq!(page(None, &[]).await.unwrap().len(), 5);
     }
 
     #[tokio::test]

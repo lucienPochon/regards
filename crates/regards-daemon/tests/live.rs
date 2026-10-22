@@ -114,6 +114,7 @@ async fn messages(desktop: &mut Client, mailbox_id: i64) -> MessageListResult {
                 limit: None,
                 before: None,
                 section: None,
+                seen: None,
             },
         )
         .await
@@ -303,6 +304,7 @@ async fn live_sync_follows_new_flagged_expunged_and_reset_mailboxes() {
                 limit: Some(2),
                 before: None,
                 section: None,
+                seen: None,
             },
         )
         .await
@@ -316,6 +318,7 @@ async fn live_sync_follows_new_flagged_expunged_and_reset_mailboxes() {
                 limit: Some(2),
                 before: first.next,
                 section: None,
+                seen: None,
             },
         )
         .await
@@ -2124,6 +2127,7 @@ async fn live_the_smart_inbox_sorts_by_section_and_follows_corrections() {
                 limit: None,
                 before: None,
                 section: Some(Section::Newsletters),
+                seen: None,
             },
         )
         .await
@@ -2281,6 +2285,7 @@ async fn live_new_senders_can_be_held_accepted_or_blocked() {
         limit: None,
         before: None,
         section: Some(section),
+        seen: None,
     };
 
     // Held: new senders are out of the inbox, in their own section.
@@ -2798,6 +2803,7 @@ async fn live_agents_organise_mail_and_the_app_undoes_it() {
                 limit: None,
                 before: None,
                 section: None,
+                seen: None,
             },
         )
         .await
@@ -3001,6 +3007,7 @@ async fn live_bulk_changes_and_deleting_for_good_wait_for_the_person() {
                 limit: Some(100),
                 before: None,
                 section: None,
+                seen: None,
             },
         )
         .await
@@ -3147,6 +3154,7 @@ async fn live_mail_that_gives_orders_moves_nothing() {
                 limit: None,
                 before: None,
                 section: None,
+                seen: None,
             },
         )
         .await
