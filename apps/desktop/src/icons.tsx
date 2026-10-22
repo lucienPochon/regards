@@ -314,6 +314,8 @@ const PATHS = {
     </>
   ),
   chevronLeft: <path d="M14.5 6.5 9 12l5.5 5.5" />,
+  // A choice that opens a list: up and down.
+  upDown: <path d="M8 9.5 12 5.5l4 4M8 14.5l4 4 4-4" />,
   split: (
     <>
       <rect x="3" y="4.5" width="18" height="15" rx="2.5" />

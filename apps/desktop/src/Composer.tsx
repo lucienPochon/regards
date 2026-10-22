@@ -30,7 +30,7 @@ import { IMAGE_TYPES, attachImage, draftImages, fileBase64, insertImage, toEdito
 import type { Template } from "./templates";
 import { fileKind, fileSize, laterDate } from "./format";
 import { Icon } from "./icons";
-import { type Anchor, anchorOf } from "./Menu";
+import { type Anchor, anchorOf, Menu, type MenuEntry, type MenuRequest } from "./Menu";
 import { getPrefs } from "./prefs";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 
@@ -65,6 +65,7 @@ export function Composer({
   pickSendTime,
   pickReminder,
   pickTemplate,
+  onAddAccount,
 }: {
   draftId: number;
   mode: "full" | "panel";
@@ -80,8 +81,12 @@ export function Composer({
    * written so far comes along, so it can be kept as a template.
    */
   pickTemplate?: (anchor: Anchor, written: { subject: string; html: string }) => Promise<Template | null>;
+  /** From the From menu: go and add another account. */
+  onAddAccount?: () => void;
 }) {
   const [draft, setDraft] = useState<Draft | null>(null);
+  /** The From menu, open. */
+  const [fromMenu, setFromMenu] = useState<MenuRequest | null>(null);
   const [fields, setFields] = useState<Fields | null>(null);
   const [copies, setCopies] = useState(false);
   const [status, setStatus] = useState<string>("");
@@ -177,6 +182,27 @@ export function Composer({
     } catch (failure) {
       setError(String(failure));
     }
+  };
+
+  /** The From menu: the addresses it can go from, the one it does ticked, and adding an account. */
+  const openFrom = (button: HTMLElement) => {
+    if (!draft) return;
+    const current = draft.identity_id ?? identities.find((identity) => identity.is_default)?.id;
+    const addresses: MenuEntry[] = identities.length
+      ? identities.map((identity) => ({
+          label: identity.email,
+          detail: identity.name || undefined,
+          icon: identity.id === current ? "check" : "user",
+          onSelect: () => void changeFrom(identity.id),
+        }))
+      : [{ label: draft.from.address ?? "", detail: draft.from.name ?? undefined, icon: "check", disabled: true, onSelect: () => undefined }];
+    setFromMenu({
+      anchor: anchorOf(button, "end"),
+      label: "Send from",
+      entries: onAddAccount
+        ? [...addresses, "separator", { label: "Add an account…", icon: "plus", onSelect: onAddAccount }]
+        : addresses,
+    });
   };
 
   /** Another signature, or none: it takes the old one's place in the text. */
@@ -444,8 +470,9 @@ export function Composer({
   // Escape closes, even from the text: the editor would otherwise take it (to select the
   // enclosing block). The link field keeps it, to cancel the link.
   const escape = (event: KeyboardEvent) => {
-    // A link being typed, or an open list of people, takes Escape itself.
-    if (event.key !== "Escape" || (event.target as HTMLElement).closest(".link-input, .address-input.suggesting")) return;
+    // A link being typed, an open list of people, or the From menu takes Escape itself.
+    if (event.key !== "Escape" || (event.target as HTMLElement).closest(".link-input, .address-input.suggesting, .menu-layer"))
+      return;
     event.preventDefault();
     event.stopPropagation();
     void close();
@@ -528,27 +555,22 @@ export function Composer({
           ))}
         </select>
       )}
-      {draft && identities.length > 1 ? (
-        <select
-          className="composer-from"
-          aria-label="From"
-          title={formatRecipients([draft.from])}
-          value={draft.identity_id ?? ""}
-          onChange={(event) => void changeFrom(Number(event.target.value))}
+      {draft && (
+        <button
+          type="button"
+          className="composer-from-button"
+          aria-haspopup="menu"
+          aria-label={`From ${formatRecipients([draft.from])}`}
+          title="Send from"
+          onClick={(event) => openFrom(event.currentTarget)}
           disabled={locked}
         >
-          {identities.map((identity) => (
-            <option key={identity.id} value={identity.id}>
-              {identity.name ? `${identity.name} <${identity.email}>` : identity.email}
-            </option>
-          ))}
-        </select>
-      ) : (
-        draft && (
-          <span className="composer-from" title={formatRecipients([draft.from])}>
-            {draft.from.address}
+          <span className="composer-from-text">
+            <span>{draft.from.address}</span>
+            {draft.from.name && <small>{draft.from.name}</small>}
           </span>
-        )
+          <Icon name="upDown" size={14} />
+        </button>
       )}
       <button
         type="button"
@@ -576,21 +598,29 @@ export function Composer({
           Drop to attach
         </div>
       )}
+      {/* The title, then the window's buttons in the top right corner, Close last. */}
       <div className="composer-top">
-        <div className="segmented">
-          <button type="button" title="Close (Esc). The draft is kept." aria-label="Close" onClick={() => void close()}>
-            <Icon name="close" size={16} />
-          </button>
+        <span className="composer-title">{mode === "panel" ? fields?.subject || "New message" : ""}</span>
+        <div className="composer-window">
           <button
             type="button"
-            title={mode === "panel" ? "Bigger" : "Smaller"}
-            aria-label={mode === "panel" ? "Bigger" : "Smaller"}
+            className="icon-btn"
+            title={mode === "panel" ? "Full size" : "Smaller"}
+            aria-label={mode === "panel" ? "Full size" : "Smaller"}
             onClick={() => onMode(mode === "panel" ? "full" : "panel")}
           >
             <Icon name={mode === "panel" ? "expand" : "shrink"} size={15} />
           </button>
+          <button
+            type="button"
+            className="icon-btn"
+            title="Close (Esc). The draft is kept."
+            aria-label="Close"
+            onClick={() => void close()}
+          >
+            <Icon name="close" size={16} />
+          </button>
         </div>
-        {mode === "panel" ? <span className="composer-title">{fields?.subject || "New message"}</span> : tools}
       </div>
       {!fields ? (
         <p className={error ? "composer-note error" : "composer-note muted"} role={error ? "alert" : "status"}>
@@ -718,9 +748,10 @@ export function Composer({
               {error}
             </p>
           )}
-          {mode === "panel" && tools}
+          {tools}
         </>
       )}
+      {fromMenu && <Menu request={fromMenu} onClose={() => setFromMenu(null)} />}
     </section>
   );
 }
