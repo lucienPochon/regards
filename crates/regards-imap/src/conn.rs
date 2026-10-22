@@ -34,6 +34,12 @@ pub(crate) struct Conn {
     /// The connection log: command names and statuses, never data (mail,
     /// folder names, searches) nor what a sign-in sends.
     log: Conversation,
+    /// How many messages the selected mailbox holds, as the server last said.
+    exists: Option<u32>,
+    /// The server reported a change to the selected mailbox in reply to some
+    /// other command, for example mail that came in during a sync. IDLE only
+    /// reports what changes after it starts, so the next IDLE ends at once.
+    changed: bool,
 }
 
 impl Conn {
@@ -70,6 +76,8 @@ impl Conn {
                 client,
                 tags: TagGenerator::new(),
                 log,
+                exists: None,
+                changed: false,
             },
             greeting,
         ))
@@ -148,8 +156,14 @@ impl Conn {
             tag.inner(),
             if name == "LOGIN" { " [redacted]" } else { "" }
         ));
+        // A (re)selected mailbox starts afresh: its reply says what it holds.
+        let selecting = matches!(name, "SELECT" | "EXAMINE");
+        if selecting {
+            self.exists = None;
+            self.changed = false;
+        }
         self.client.enqueue_command(Command { tag: tag.clone(), body });
-        let reply = tokio::time::timeout(COMMAND_TIMEOUT, self.finish(&tag, skip_malformed))
+        let reply = tokio::time::timeout(COMMAND_TIMEOUT, self.finish(&tag, skip_malformed, selecting))
             .await
             .map_err(|_| ImapError::Timeout(name))
             .and_then(|done| done);
@@ -159,7 +173,9 @@ impl Conn {
         reply
     }
 
-    async fn finish(&mut self, tag: &Tag<'static>, skip_malformed: bool) -> Result<Reply, ImapError> {
+    /// `selecting`: the command is SELECT or EXAMINE, whose reply describes
+    /// the mailbox rather than changes to it.
+    async fn finish(&mut self, tag: &Tag<'static>, skip_malformed: bool, selecting: bool) -> Result<Reply, ImapError> {
         let (mut data, mut untagged, mut skipped) = (Vec::new(), Vec::new(), 0);
         // What came, counted by kind: never its content.
         let mut kinds: BTreeMap<&'static str, usize> = BTreeMap::new();
@@ -175,6 +191,7 @@ impl Conn {
             match event {
                 Event::DataReceived { data: item } => {
                     *kinds.entry(data_kind(&item)).or_default() += 1;
+                    self.track(&item, selecting);
                     data.push(item);
                 }
                 Event::StatusReceived {
@@ -217,6 +234,29 @@ impl Conn {
             }
         }
     }
+
+    /// Follow what the server says about the selected mailbox. In reply to
+    /// SELECT or EXAMINE it describes the mailbox; anywhere else it is news.
+    fn track(&mut self, data: &Data<'_>, selecting: bool) {
+        match data {
+            Data::Exists(count) => {
+                // Some servers repeat the count unasked: only a new one is news.
+                if !selecting && self.exists != Some(*count) {
+                    self.changed = true;
+                }
+                self.exists = Some(*count);
+            }
+            Data::Expunge(_) if !selecting => {
+                self.exists = self.exists.map(|count| count.saturating_sub(1));
+                self.changed = true;
+            }
+            Data::Vanished { earlier: false, .. } if !selecting => {
+                self.exists = None;
+                self.changed = true;
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Why an IDLE ended.
@@ -232,23 +272,35 @@ pub enum IdleEnd {
 
 impl Conn {
     /// Wait in IDLE (RFC 2177) until the server reports a change, `max`
-    /// passes, or `stop` completes; then end IDLE cleanly.
+    /// passes, or `stop` completes; then end IDLE cleanly. A change reported
+    /// in reply to an earlier command ends it at once, without idling.
     pub(crate) async fn idle(&mut self, max: Duration, stop: impl Future<Output = ()>) -> Result<IdleEnd, ImapError> {
+        if std::mem::take(&mut self.changed) {
+            self.log.note("changes came in meanwhile: no IDLE");
+            return Ok(IdleEnd::Changed);
+        }
         let tag = self.tags.generate();
         self.log.client(&format!("{} IDLE", tag.inner()));
         self.client.enqueue_command(Command {
             tag: tag.clone(),
             body: CommandBody::Idle,
         });
-        tokio::time::timeout(COMMAND_TIMEOUT, async {
+        let early = tokio::time::timeout(COMMAND_TIMEOUT, async {
+            let mut early = false;
             loop {
                 match self.stream.next(&mut self.client).await.map_err(stream_error)? {
                     Event::IdleAccepted { .. } => {
                         self.log.server("+ idling");
-                        return Ok(());
+                        return Ok(early);
                     }
                     Event::IdleRejected { status, .. } => {
                         return Err(ImapError::Protocol(format!("the server refused IDLE: {status:?}")));
+                    }
+                    // A server may first send what changed since the last command.
+                    Event::DataReceived { data } if is_change(&data) => {
+                        self.log.server(&format!("* {}", data_kind(&data)));
+                        self.track(&data, false);
+                        early = true;
                     }
                     _ => {}
                 }
@@ -260,27 +312,34 @@ impl Conn {
         tokio::pin!(stop);
         let deadline = tokio::time::sleep(max);
         tokio::pin!(deadline);
-        let end = loop {
-            // Dropping an in-flight `next()` is safe: imap-next keeps its state
-            // in `client` (verified in spike 07, "IDLE cancel").
-            tokio::select! {
-                event = self.stream.next(&mut self.client) => match event.map_err(stream_error)? {
-                    Event::DataReceived { data } if is_change(&data) => {
-                        self.log.server(&format!("* {}", data_kind(&data)));
-                        break IdleEnd::Changed;
-                    }
-                    Event::StatusReceived { status: Status::Bye(_) } => {
-                        return Err(ImapError::Protocol("the server ended the connection".into()));
-                    }
-                    _ => {}
-                },
-                () = &mut deadline => break IdleEnd::Timeout,
-                () = &mut stop => break IdleEnd::Stopped,
+        let end = if early {
+            IdleEnd::Changed
+        } else {
+            loop {
+                // Dropping an in-flight `next()` is safe: imap-next keeps its state
+                // in `client` (verified in spike 07, "IDLE cancel").
+                tokio::select! {
+                    event = self.stream.next(&mut self.client) => match event.map_err(stream_error)? {
+                        Event::DataReceived { data } if is_change(&data) => {
+                            self.log.server(&format!("* {}", data_kind(&data)));
+                            self.track(&data, false);
+                            break IdleEnd::Changed;
+                        }
+                        Event::StatusReceived { status: Status::Bye(_) } => {
+                            return Err(ImapError::Protocol("the server ended the connection".into()));
+                        }
+                        _ => {}
+                    },
+                    () = &mut deadline => break IdleEnd::Timeout,
+                    () = &mut stop => break IdleEnd::Stopped,
+                }
             }
         };
+        // What ended this IDLE is reported now; what comes with its end is news.
+        self.changed = false;
         self.log.client("DONE");
         self.client.set_idle_done();
-        let reply = tokio::time::timeout(COMMAND_TIMEOUT, self.finish(&tag, false))
+        let reply = tokio::time::timeout(COMMAND_TIMEOUT, self.finish(&tag, false, false))
             .await
             .map_err(|_| ImapError::Timeout("ending IDLE"))??;
         if reply.done.kind != StatusKind::Ok {
