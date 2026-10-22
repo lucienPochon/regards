@@ -75,6 +75,26 @@ export const isFound = (app: AgentApp, settings: AgentsSettings | null, found: F
 export const isConnected = (app: AgentApp, settings: AgentsSettings | null, found: FoundAgentApp[] | null) =>
   Boolean(found?.some((entry) => entry.id === app.id && entry.set_up)) || connectedNow(app, settings);
 
+/** Mirrors `regards path --json`: whether agents can run `regards` from a terminal. */
+export interface CommandLine {
+  /** `regards` is found on the PATH of new terminals. */
+  on_path: boolean;
+  /** The folder it is in. */
+  folder: string;
+  /** Whether `commandLine("add")` can put it there (Windows); elsewhere the person links it. */
+  can_add: boolean;
+  /** Whether this call changed the Path. */
+  changed: boolean;
+}
+
+/**
+ * Where the `regards` command stands; `add` puts its folder on the user's
+ * Path, `remove` takes it off (Windows). Takes a few seconds when it changes
+ * something: running apps are told. Terminals opened afterwards find it.
+ */
+export const commandLine = (change?: "add" | "remove") =>
+  invoke<CommandLine>("command_line", { change: change ?? null });
+
 /** Open Claude Code or the Claude app with a request ready to send (nothing is sent until the person does). */
 export const openInAgent = (app: "claude-code" | "claude-app", prompt: string) =>
   invoke<void>("open_in_agent", { app, prompt });

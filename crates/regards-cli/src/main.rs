@@ -3,6 +3,7 @@
 mod commands;
 mod logging;
 mod mcp;
+mod on_path;
 mod skill;
 mod tools;
 
@@ -47,6 +48,19 @@ enum Command {
         #[arg(long, value_name = "DIR")]
         install: Option<std::path::PathBuf>,
     },
+    /// Whether this command is on your PATH, for agents; on Windows, put it there or take it off.
+    Path {
+        #[command(subcommand)]
+        change: Option<PathCommand>,
+    },
+}
+
+#[derive(Subcommand)]
+enum PathCommand {
+    /// Put this command's folder on your Path (Windows).
+    Add,
+    /// Take this command's folder off your Path (Windows).
+    Remove,
 }
 
 #[derive(Subcommand)]
@@ -127,6 +141,20 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
                     }
                 }
                 None => print!("{}", skill::text()),
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Path { change } => {
+            let change = change.map(|change| match change {
+                PathCommand::Add => on_path::Change::Add,
+                PathCommand::Remove => on_path::Change::Remove,
+            });
+            let program = std::env::current_exe()?;
+            let status = on_path::run(&program, change)?;
+            if cli.json {
+                println!("{}", status.json());
+            } else {
+                println!("{}", status.text(&program, change));
             }
             Ok(ExitCode::SUCCESS)
         }

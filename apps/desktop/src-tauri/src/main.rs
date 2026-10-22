@@ -14,6 +14,7 @@
 mod agent_apps;
 mod background;
 mod badge;
+mod command_line;
 mod compose_window;
 mod drops;
 mod links;
@@ -1776,6 +1777,7 @@ fn main() {
             system::open_url,
             system::open_in_agent,
             agent_apps::agent_apps_found,
+            command_line::command_line,
             account_update,
             people_suggest,
             people_forget,

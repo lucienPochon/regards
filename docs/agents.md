@@ -35,7 +35,12 @@ Settings › Agents lists every request an agent made, allowed or refused, with 
 
 ## 4. Connect your agent
 
-The `regards` command comes with Regards. Agents use it in either of two ways.
+The `regards` command comes with Regards. For agents to run it from any terminal, it must be on your PATH:
+
+- **Windows:** Regards puts its folder on your Path when you connect an agent. You can also run `regards path add` from that folder; `regards path remove` takes it off, and uninstalling Regards does too. Terminals and apps opened afterwards find it: restart Claude Code, Cursor or your terminal if they were already open.
+- **macOS and Linux:** `regards path` says whether it is found, and otherwise how to link it into a folder on your PATH (for example `sudo ln -sf … /usr/local/bin/regards`).
+
+Agents use it in either of two ways.
 
 **As an MCP server** (`regards mcp`):
 
