@@ -672,6 +672,8 @@ let prefetch = false;
 let reading = { clean_links: true };
 // Two agents connected in the sample: Claude Code's MCP server and a CLI.
 let agentsGate = { enabled: true, connected: 2, apps: ["claude-code"] };
+/** Whether `regards` is on the PATH (`command_line`). */
+let commandOnPath = false;
 let assistant: { kind: string | null; base_url: string | null; model: string | null; has_key: boolean } =
   // `?assistant=on`: a provider already chosen.
   params.get("assistant") === "on"
@@ -1009,6 +1011,11 @@ function handle(cmd: string, args: Args): unknown {
         { id: "claude-code", set_up: true },
         { id: "cursor", set_up: false },
       ];
+    case "command_line": {
+      const changed = args.change === "add" ? !commandOnPath : args.change === "remove" ? commandOnPath : false;
+      if (args.change) commandOnPath = args.change === "add";
+      return { on_path: commandOnPath, folder: "C:\\Users\\you\\AppData\\Local\\Regards", can_add: true, changed };
+    }
     case "agents_set_enabled":
       agentsGate = { enabled: args.enabled as boolean, connected: args.enabled ? agentsGate.connected : 0, apps: args.enabled ? agentsGate.apps : [] };
       return agentsGate;

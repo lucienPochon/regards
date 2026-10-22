@@ -22,6 +22,11 @@ tokio = { workspace = true, features = ["io-std"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+# The user's Path (`regards path`). 0.6.1 is the version Tauri already brings in.
+windows-registry = "=0.6.1"
+windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
+
 [dev-dependencies]
 serde.workspace = true
 tempfile.workspace = true

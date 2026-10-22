@@ -22,4 +22,10 @@ Var RegardsStopExit
 
 !macro NSIS_HOOK_PREUNINSTALL
   !insertmacro REGARDS_STOP_DAEMON
+  ; Taken off the user's Path when Regards goes, not when it is updated.
+  ${If} $UpdateMode <> 1
+  ${AndIf} ${FileExists} "$INSTDIR\regards.exe"
+    nsExec::Exec '"$INSTDIR\regards.exe" path remove'
+    Pop $RegardsStopExit
+  ${EndIf}
 !macroend
