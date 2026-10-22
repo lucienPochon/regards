@@ -12,6 +12,10 @@ pub enum Reason {
     Bulk,
     /// Deleting for good.
     Delete,
+    /// A suggested voice (ADR-0020): only the person changes a voice.
+    Voice,
+    /// A note with a link, an address or bank details in it (ADR-0020).
+    Note,
 }
 
 impl Reason {
@@ -20,6 +24,8 @@ impl Reason {
             Self::Sending => "sending",
             Self::Bulk => "bulk",
             Self::Delete => "delete",
+            Self::Voice => "voice",
+            Self::Note => "note",
         }
     }
 
@@ -27,6 +33,8 @@ impl Reason {
         match text {
             "bulk" => Self::Bulk,
             "delete" => Self::Delete,
+            "voice" => Self::Voice,
+            "note" => Self::Note,
             _ => Self::Sending,
         }
     }
@@ -303,5 +311,17 @@ mod tests {
         );
         assert!(store.read(|conn| list(conn, true, 2_101, 10)).await.unwrap().is_empty());
         assert_eq!(store.read(|conn| list(conn, false, 2_101, 10)).await.unwrap().len(), 2);
+
+        // A suggested voice and a note to look at wait too (ADR-0020).
+        for reason in [Reason::Voice, Reason::Note] {
+            let new = NewHold {
+                reason,
+                draft: None,
+                ..hold(3_000, "Suggest a voice")
+            };
+            let id = store.write(move |tx| add(tx, &new)).await.unwrap().value;
+            let read = store.read(move |conn| get(conn, id, 3_001)).await.unwrap().unwrap();
+            assert_eq!(read.hold.reason, reason);
+        }
     }
 }

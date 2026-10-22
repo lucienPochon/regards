@@ -117,8 +117,8 @@ export const listAgentActivity = (
     limit: options.limit ?? null,
   });
 
-/** Why an agent's request waits for the person. */
-export type HoldReason = "sending" | "bulk" | "delete";
+/** Why an agent's request waits for the person: `voice` is a suggested voice, `note` a note with a link, an address or bank details (ADR-0020). */
+export type HoldReason = "sending" | "bulk" | "delete" | "voice" | "note";
 export type HoldStatus = "pending" | "approved" | "rejected" | "expired" | "failed";
 
 /** What an agent asked that waits (or waited) for the person (ADR-0012 §3). */

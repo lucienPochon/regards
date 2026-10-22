@@ -26,6 +26,7 @@ pub mod mailboxes;
 pub mod marks;
 pub mod messages;
 mod migrate;
+pub mod notes;
 pub mod notices;
 pub mod operations;
 pub mod outbox;

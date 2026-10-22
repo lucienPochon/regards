@@ -1,9 +1,13 @@
 //! Identities (plan §5.9): the names and addresses an account sends as, its
-//! own and its aliases, each with a plain-text signature. Exactly one per
-//! account is the default; it cannot be removed, only replaced as default.
+//! own and its aliases, each with a plain-text signature and a voice
+//! (ADR-0020). Exactly one per account is the default; it cannot be
+//! removed, only replaced as default.
 
 use crate::StoreError;
 use rusqlite::{Connection, ErrorCode, OptionalExtension, Row, Transaction, params};
+
+/// Characters a voice may have at most.
+pub const VOICE_MAX: usize = 2_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identity {
@@ -12,7 +16,18 @@ pub struct Identity {
     pub name: String,
     pub email: String,
     pub signature: String,
+    /// How agents should write as this address; kept while switched off.
+    pub voice: String,
+    pub voice_on: bool,
     pub is_default: bool,
+}
+
+impl Identity {
+    /// The voice agents are given: none while it is off or empty.
+    pub fn active_voice(&self) -> Option<&str> {
+        let voice = self.voice.trim();
+        (self.voice_on && !voice.is_empty()).then_some(voice)
+    }
 }
 
 /// What can be set on an identity.
@@ -23,7 +38,7 @@ pub struct Fields {
     pub signature: String,
 }
 
-const COLUMNS: &str = "id, account_id, name, email, signature, is_default";
+const COLUMNS: &str = "id, account_id, name, email, signature, voice, voice_on, is_default";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<Identity> {
     Ok(Identity {
@@ -32,7 +47,9 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Identity> {
         name: row.get(2)?,
         email: row.get(3)?,
         signature: row.get(4)?,
-        is_default: row.get(5)?,
+        voice: row.get(5)?,
+        voice_on: row.get(6)?,
+        is_default: row.get(7)?,
     })
 }
 
@@ -102,6 +119,21 @@ pub fn update(tx: &Transaction<'_>, id: i64, fields: &Fields) -> Result<bool, St
         params![id, fields.name, fields.email, fields.signature],
     );
     Ok(taken(updated, &fields.email)? == 1)
+}
+
+/// Set an identity's voice, and whether agents get it. `false` if there is
+/// no such identity.
+pub fn set_voice(tx: &Transaction<'_>, id: i64, voice: &str, on: bool) -> Result<bool, StoreError> {
+    let voice = voice.trim();
+    if voice.chars().count() > VOICE_MAX {
+        return Err(StoreError::Conflict(format!(
+            "a voice can have at most {VOICE_MAX} characters"
+        )));
+    }
+    Ok(tx.execute(
+        "UPDATE identities SET voice = ?2, voice_on = ?3 WHERE id = ?1",
+        params![id, voice, on],
+    )? == 1)
 }
 
 fn taken(result: rusqlite::Result<usize>, email: &str) -> Result<usize, StoreError> {
@@ -230,5 +262,39 @@ mod tests {
             [(alias, true), (own_id, false)]
         );
         assert!(store.write(move |tx| remove(tx, own_id)).await.unwrap().value);
+
+        // A voice: off and empty at first; kept while switched off.
+        let found = store.read(move |c| get(c, alias)).await.unwrap().unwrap();
+        assert_eq!(
+            (found.voice.as_str(), found.voice_on, found.active_voice()),
+            ("", false, None)
+        );
+        assert!(
+            store
+                .write(move |tx| set_voice(tx, alias, "  Short and warm.\n", true))
+                .await
+                .unwrap()
+                .value
+        );
+        let found = store.read(move |c| get(c, alias)).await.unwrap().unwrap();
+        assert_eq!(found.active_voice(), Some("Short and warm."));
+        assert!(
+            store
+                .write(move |tx| set_voice(tx, alias, "Short and warm.", false))
+                .await
+                .unwrap()
+                .value
+        );
+        let found = store.read(move |c| get(c, alias)).await.unwrap().unwrap();
+        assert_eq!((found.voice.as_str(), found.active_voice()), ("Short and warm.", None));
+        let long = "a".repeat(VOICE_MAX + 1);
+        assert!(matches!(
+            store.write(move |tx| set_voice(tx, alias, &long, true)).await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(
+            !store.write(|tx| set_voice(tx, 999, "", false)).await.unwrap().value,
+            "no such identity"
+        );
     }
 }
