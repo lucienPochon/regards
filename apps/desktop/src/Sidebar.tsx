@@ -273,7 +273,7 @@ export function Sidebar({
               aria-label="Agents"
               onClick={(event) => onAgents(anchorOf(event.currentTarget))}
             >
-              <Icon name="agent" size={16} />
+              <Icon name="agent" size={19} />
             </button>
           )}
           <button type="button" className="rail-me" title="Settings" aria-label="Settings" onClick={onSettings}>
@@ -383,7 +383,7 @@ export function Sidebar({
       <div className="side-foot">
         {onAgents && appPrefs.agentsButton && (
           <button type="button" className="side-item" onClick={(event) => onAgents(anchorOf(event.currentTarget))}>
-            <Icon name="agent" size={16} />
+            <Icon name="agent" size={19} />
             <span className="label">Agents</span>
           </button>
         )}
