@@ -14,7 +14,12 @@ export interface Layout {
   handle: boolean;
 }
 
-const KEY = "regards.layout";
+export const LAYOUT_KEY = "regards.layout";
+/**
+ * Bumped when what was saved must start over. 2: messages open beside the list
+ * again, whatever was saved before; "in place" is chosen anew in Settings.
+ */
+export const LAYOUT_VERSION = 2;
 export const LIST_MIN = 320;
 export const LIST_MAX = 640;
 const DEFAULT: Layout = { mode: "split", locked: true, listWidth: 460, inboxView: "date", handle: true };
@@ -23,9 +28,9 @@ export const clampList = (width: number) => Math.round(Math.min(LIST_MAX, Math.m
 
 function load(): Layout {
   try {
-    const saved = JSON.parse(window.localStorage.getItem(KEY) ?? "null") as Partial<Layout> | null;
+    const saved = JSON.parse(window.localStorage.getItem(LAYOUT_KEY) ?? "null") as (Partial<Layout> & { version?: number }) | null;
     return {
-      mode: saved?.mode === "single" ? "single" : "split",
+      mode: saved?.version === LAYOUT_VERSION && saved.mode === "single" ? "single" : "split",
       locked: saved?.locked !== false,
       listWidth: typeof saved?.listWidth === "number" ? clampList(saved.listWidth) : DEFAULT.listWidth,
       inboxView:
@@ -43,7 +48,7 @@ export function useLayout(): [Layout, (change: Partial<Layout>) => void] {
   const [layout, setLayout] = useState<Layout>(load);
   useEffect(() => {
     try {
-      window.localStorage.setItem(KEY, JSON.stringify(layout));
+      window.localStorage.setItem(LAYOUT_KEY, JSON.stringify({ ...layout, version: LAYOUT_VERSION }));
     } catch {
       // Not remembered; the layout still applies now.
     }
