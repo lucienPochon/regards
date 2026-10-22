@@ -26,12 +26,6 @@ const SOMEDAY = 32_503_680_000_000;
 /** When the list is this close to its end, the next page is fetched. */
 const PREFETCH_PX = 800;
 
-/**
- * The row gutter's own pictures: Done is a check, as in the reader's Back | Done,
- * and read/unread is the row's dot, filled while unread.
- */
-const GUTTER_ICONS: Record<string, IconName> = { archive: "check", read: "circleFilled", unread: "circle" };
-
 /** The top of a list: its name on two lines (with a menu when it has one), and buttons on the right. */
 export function ListHeader({
   title,
@@ -453,7 +447,7 @@ export function MessageList({
           palette(targetsFor(item));
         }}
       >
-        {/* Done, read/unread and delete in the margin: stacked beside the reader, in a line alone. */}
+        {/* Done, read/unread and delete, stacked in place of the dot. */}
         <span className="row-gutter">
           {isPicked ? (
             <button type="button" className="gutter-check" aria-label="Unselect" aria-pressed onClick={() => toggle(item)}>
@@ -461,7 +455,8 @@ export function MessageList({
             </button>
           ) : (
             choose(actions, "archive", "read", "unread", "delete").map((action) =>
-              button({ ...action, icon: GUTTER_ICONS[action.id] ?? action.icon }, 13, "gutter-btn"),
+              // Done (archive) shows a check here, as in the reader's Back | Done.
+              button(action.id === "archive" ? { ...action, icon: "check" } : action, 13, "gutter-btn"),
             )
           )}
         </span>

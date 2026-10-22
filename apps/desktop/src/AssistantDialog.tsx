@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  type AssistantKind,
   type AssistantPreview,
   type AssistantResult,
   type AssistantTask,
@@ -24,20 +25,20 @@ const CHANGED = "regards-assistant-changed";
 /** Settings changed the assistant: whoever shows its buttons looks again. */
 export const assistantChanged = () => window.dispatchEvent(new Event(CHANGED));
 
-/** Whether a provider is chosen, so the assistant's actions are offered. */
-export function useAssistantOn(): boolean {
-  const [on, setOn] = useState(false);
+/** The provider chosen, so the assistant's actions are offered (and named); null while it is off. */
+export function useAssistantKind(): AssistantKind | null {
+  const [kind, setKind] = useState<AssistantKind | null>(null);
   useEffect(() => {
     const look = () =>
       assistantSettings().then(
-        (settings) => setOn(settings.kind !== null),
-        () => setOn(false),
+        (settings) => setKind(settings.kind),
+        () => setKind(null),
       );
     look();
     window.addEventListener(CHANGED, look);
     return () => window.removeEventListener(CHANGED, look);
   }, []);
-  return on;
+  return kind;
 }
 
 /**

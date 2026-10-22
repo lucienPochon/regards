@@ -2064,22 +2064,21 @@ button.list-title:hover {
   gap: 1px;
 }
 
-/* …and side by side alone, from the list's margin onto the row, so the pointer never leaves the row on the way. */
+/* …and smaller alone, where a row is one line. */
 .rows.wide .row-gutter {
-  left: -40px;
-  flex-direction: row;
-  align-items: center;
+  left: 5px;
   gap: 0;
 }
 
+/* On hover or from the keyboard: a row clicked keeps no actions once the pointer leaves it. */
 .row:hover > .row-gutter,
-.row:focus-within > .row-gutter,
+.row:has(:focus-visible) > .row-gutter,
 .row.picked > .row-gutter {
   display: flex;
 }
 
 .row:hover > .row-gutter + .row-main .dot,
-.row:focus-within > .row-gutter + .row-main .dot,
+.row:has(:focus-visible) > .row-gutter + .row-main .dot,
 .row.picked > .row-gutter + .row-main .dot {
   visibility: hidden;
 }
@@ -2094,7 +2093,12 @@ button.list-title:hover {
 }
 
 .rows.wide .gutter-btn {
-  height: 24px;
+  height: 13px;
+}
+
+.rows.wide .gutter-btn .icon {
+  width: 11px;
+  height: 11px;
 }
 
 .gutter-btn:hover {
@@ -2364,6 +2368,34 @@ button.list-title:hover {
 .reader-tools .icon-btn {
   width: 34px;
   height: 32px;
+}
+
+/* The assistant, at the bar's end, named for its provider. */
+.reader-ask {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 15px;
+  background: var(--bg-elev);
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.reader-ask .icon:first-child {
+  color: var(--warm);
+}
+
+.reader-ask:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.reader-ask:disabled {
+  opacity: 0.4;
 }
 
 .reader-scroll {

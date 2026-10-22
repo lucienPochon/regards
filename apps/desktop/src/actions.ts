@@ -119,8 +119,9 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
     );
   }
   actions.push(
-    { id: "unread", label: "Mark unread", icon: "mail", keys: ["Shift+U"], shown: target.seen, run: () => flags({ seen: false }) },
-    { id: "read", label: "Mark read", icon: "mailOpen", keys: ["Shift+I"], shown: !target.seen, run: () => flags({ seen: true }) },
+    // Drawn as the row's dot: a ring on read mail, filled on unread mail.
+    { id: "unread", label: "Mark unread", icon: "circle", keys: ["Shift+U"], shown: target.seen, run: () => flags({ seen: false }) },
+    { id: "read", label: "Mark read", icon: "circleFilled", keys: ["Shift+I"], shown: !target.seen, run: () => flags({ seen: true }) },
     {
       id: "flag",
       label: target.flagged ? "Unflag" : "Flag",
