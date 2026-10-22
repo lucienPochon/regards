@@ -189,7 +189,7 @@ export function Sidebar({
               })
             }
           >
-            <Icon name={options.chevron && open.has(options.chevron) ? "chevronDown" : "chevronRight"} size={11} />
+            <Icon name={options.chevron && open.has(options.chevron) ? "chevronDown" : "chevronRight"} size={12} />
           </button>
         )}
         <button
@@ -206,7 +206,7 @@ export function Sidebar({
           onContextMenu={(event) => rowMenu(event, options.menu ?? [])}
           {...dragProps(row.view)}
         >
-          <Icon name={row.icon} size={16} />
+          <Icon name={row.icon} size={19} />
           {expanded && <span className="label">{row.label}</span>}
           {expanded && options.count && (
             <span className={options.count.alert ? "count alert" : options.count.unread ? "count unread-count" : "count"}>
@@ -258,7 +258,7 @@ export function Sidebar({
           {top.map((row) => item(row, { menu: hideMenu(row) }))}
           <li className="side-entry">
             <button type="button" className="side-item" title="Show the sidebar (/)" aria-label="Show the sidebar" onClick={onExpand}>
-              <Icon name="menu" size={16} />
+              <Icon name="menu" size={19} />
             </button>
           </li>
         </ul>
@@ -273,11 +273,11 @@ export function Sidebar({
               aria-label="Agents"
               onClick={(event) => onAgents(anchorOf(event.currentTarget))}
             >
-              <Icon name="agent" size={16} />
+              <Icon name="agent" size={19} />
             </button>
           )}
           <button type="button" className="rail-me" title="Settings" aria-label="Settings" onClick={onSettings}>
-            {me ? <Avatar person={{ name: me.display_name, address: me.email }} size="xs" /> : <Icon name="settings" size={16} />}
+            {me ? <Avatar person={{ name: me.display_name, address: me.email }} size="xs" /> : <Icon name="settings" size={19} />}
           </button>
         </div>
       </nav>
@@ -302,7 +302,7 @@ export function Sidebar({
           onClick={onSync}
           disabled={syncing}
         >
-          <Icon name="refresh" size={15} />
+          <Icon name="refresh" size={17} />
           {syncProblem && <span className="side-alert" aria-hidden="true" />}
         </button>
         <span id="sync-problem" className="sr-only" role="status">
@@ -316,7 +316,7 @@ export function Sidebar({
           aria-pressed={locked}
           onClick={onToggleLock}
         >
-          <Icon name={locked ? "sidebarOn" : "sidebar"} size={15} />
+          <Icon name={locked ? "sidebarOn" : "sidebar"} size={17} />
         </button>
       </div>
       <div className="side-scroll">
@@ -349,7 +349,7 @@ export function Sidebar({
               aria-expanded={panel}
               onClick={() => setPanel(!panel)}
             >
-              <Icon name="more" size={16} />
+              <Icon name="more" size={19} />
               <span className="label">More</span>
             </button>
           </li>
@@ -358,7 +358,7 @@ export function Sidebar({
           <section className="side-recents">
             <div className="side-heading with-tools">
               <button type="button" className="side-fold" aria-expanded={recentsOpen} onClick={() => setRecentsOpen(!recentsOpen)}>
-                <Icon name={recentsOpen ? "chevronDown" : "chevronRight"} size={11} />
+                <Icon name={recentsOpen ? "chevronDown" : "chevronRight"} size={12} />
                 Recents
               </button>
               <button type="button" className="side-clear" onClick={changes.clearRecents}>
@@ -383,12 +383,12 @@ export function Sidebar({
       <div className="side-foot">
         {onAgents && appPrefs.agentsButton && (
           <button type="button" className="side-item" onClick={(event) => onAgents(anchorOf(event.currentTarget))}>
-            <Icon name="agent" size={16} />
+            <Icon name="agent" size={19} />
             <span className="label">Agents</span>
           </button>
         )}
         <button type="button" className="side-item" onClick={onSettings}>
-          {me ? <Avatar person={{ name: me.display_name, address: me.email }} size="xs" /> : <Icon name="settings" size={16} />}
+          {me ? <Avatar person={{ name: me.display_name, address: me.email }} size="xs" /> : <Icon name="settings" size={19} />}
           <span className="label">Settings</span>
         </button>
       </div>
@@ -461,7 +461,7 @@ function FolderPanel({
           title={label}
           onClick={(event) => (event.ctrlKey || event.metaKey ? toggle(target) : onOpen(target))}
         >
-          <Icon name={icon} size={15} />
+          <Icon name={icon} size={17} />
           <span className="label">{label}</span>
         </button>
         <button
@@ -472,7 +472,7 @@ function FolderPanel({
           aria-pressed={on}
           onClick={() => toggle(target)}
         >
-          <Icon name={on ? "starFilled" : "star"} size={14} />
+          <Icon name={on ? "starFilled" : "star"} size={15} />
         </button>
       </li>
     );
@@ -507,7 +507,7 @@ function FolderPanel({
                   ) : (
                     <li key={mailbox.id} className="panel-row static">
                       <span className={depth(mailbox) ? `panel-open depth-${Math.min(depth(mailbox), 4)}` : "panel-open"}>
-                        <Icon name="folder" size={15} />
+                        <Icon name="folder" size={17} />
                         <span className="label">{leafName(mailbox)}</span>
                       </span>
                     </li>
