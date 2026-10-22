@@ -706,6 +706,10 @@ pub enum HoldReason {
     Bulk,
     /// Deleting for good.
     Delete,
+    /// A suggested voice: only the person changes a voice (ADR-0020).
+    Voice,
+    /// A note with a link, an address or bank details in it (ADR-0020).
+    Note,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

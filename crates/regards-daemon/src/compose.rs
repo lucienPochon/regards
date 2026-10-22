@@ -991,6 +991,8 @@ pub(crate) fn identity_of(
         name: account.display_name.clone(),
         email: account.email.clone(),
         signature: String::new(),
+        voice: String::new(),
+        voice_on: false,
         is_default: true,
     })
 }

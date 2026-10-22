@@ -328,6 +328,8 @@ fn view(hold: Hold) -> HoldView {
             Reason::Sending => HoldReason::Sending,
             Reason::Bulk => HoldReason::Bulk,
             Reason::Delete => HoldReason::Delete,
+            Reason::Voice => HoldReason::Voice,
+            Reason::Note => HoldReason::Note,
         },
         draft_id: hold.draft.map(|(id, _)| id),
         status: match status {
