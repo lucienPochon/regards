@@ -32,14 +32,15 @@ use regards_ipc::protocol::{
     DraftDetachParams, DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult, DraftRef,
     DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
     ExplainResult, HoldApproveParams, HoldListParams, HoldListResult, HoldRef, HoldView, IdentityListResult,
-    IdentityRef, IdentitySaveParams, IdentitySetVoiceParams, IdentityView, MailboxListResult, MarkResult,
-    MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult,
-    NoteAddParams, NoteAddResult, NoteListParams, NoteListResult, NoteRef, NoteRemoved, NoteSetEnabledParams,
-    NoteSettings, NoteUpdateParams, NoteView, NotesForgotten, OauthFlowRef, OauthProvidersResult, OauthStartParams,
-    OauthStartResult, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal,
-    RemindParams, Screening, ScreeningParams, SearchParams, SearchResult, Section, SenderBlockParams,
-    SenderImagesParams, SenderImagesResult, SenderSetParams, SenderSetResult, ServerSearchResult, ServerSettings,
-    SetFlagsParams, SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef,
+    IdentityRef, IdentitySaveParams, IdentitySetSignatureParams, IdentitySetVoiceParams, IdentityView,
+    MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult,
+    MessageRef, MoveParams, MoveResult, NoteAddParams, NoteAddResult, NoteListParams, NoteListResult, NoteRef,
+    NoteRemoved, NoteSetEnabledParams, NoteSettings, NoteUpdateParams, NoteView, NotesForgotten, OauthFlowRef,
+    OauthProvidersResult, OauthStartParams, OauthStartResult, OutboxListResult, OutboxRef, OutboxRescheduleParams,
+    OutboxUndoResult, PinParams, Principal, RemindParams, Screening, ScreeningParams, SearchParams, SearchResult,
+    Section, SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams, SenderSetResult,
+    ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SignatureListResult, SignatureRef,
+    SignatureSaveParams, SignatureView, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef,
     TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
@@ -1283,6 +1284,48 @@ async fn identity_save(bridge: State<'_, Bridge>, identity: IdentitySaveParams) 
     client.call(methods::IDENTITY_SAVE, identity).await.map_err(describe)
 }
 
+/// Signatures (ADR-0021): a list for every account.
+#[tauri::command]
+async fn signature_list(bridge: State<'_, Bridge>) -> Result<SignatureListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::SIGNATURE_LIST, Value::Null)
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn signature_save(bridge: State<'_, Bridge>, signature: SignatureSaveParams) -> Result<SignatureView, String> {
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::SIGNATURE_SAVE, signature).await.map_err(describe)
+}
+
+#[tauri::command]
+async fn signature_remove(bridge: State<'_, Bridge>, id: i64) -> Result<Value, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::SIGNATURE_REMOVE, SignatureRef { id })
+        .await
+        .map_err(describe)
+}
+
+/// An address's default signature, or none.
+#[tauri::command]
+async fn identity_set_signature(
+    bridge: State<'_, Bridge>,
+    id: i64,
+    signature_id: Option<i64>,
+) -> Result<IdentityView, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::IDENTITY_SET_SIGNATURE,
+            IdentitySetSignatureParams { id, signature_id },
+        )
+        .await
+        .map_err(describe)
+}
+
 /// An address's voice (ADR-0020), and whether agents get it.
 #[tauri::command]
 async fn identity_set_voice(
@@ -1801,6 +1844,10 @@ fn main() {
             identity_remove,
             identity_make_default,
             identity_set_voice,
+            identity_set_signature,
+            signature_list,
+            signature_save,
+            signature_remove,
             note_list,
             note_add,
             note_update,

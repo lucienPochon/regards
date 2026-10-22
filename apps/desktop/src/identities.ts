@@ -6,7 +6,9 @@ export interface Identity {
   account_id: string;
   name: string;
   email: string;
-  /** Plain text, put below what is written and above a quote. */
+  /** The default signature from the list (ADR-0021), if any. */
+  signature_id: number | null;
+  /** Its text, put below what is written and above a quote; empty for none. */
   signature: string;
   /** How agents should write as this address (ADR-0020); kept while off. */
   voice: string;

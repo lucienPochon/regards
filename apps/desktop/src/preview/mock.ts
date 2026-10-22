@@ -8,6 +8,7 @@ import type { MessageSummary, Person } from "../accounts";
 import type { Draft, OutboxEntry } from "../compose";
 import type { Identity } from "../identities";
 import type { Note } from "../notes";
+import type { Signature } from "../signatures";
 import type { Template } from "../templates";
 import type { AgentAccess, AgentActivity, Hold } from "../agents";
 import { type Explanation, type Policy, type Screening, SECTIONS, type Section } from "../smart";
@@ -486,6 +487,7 @@ const identities: Identity[] = accounts.flatMap((owner, index) => [
     account_id: owner.account.id,
     name: owner.account.display_name,
     email: owner.account.email,
+    signature_id: null,
     signature: "",
     voice: index === 0 ? "Warm but direct; short sentences.\nVous with clients, tu with people who already use tu." : "",
     voice_on: index === 0,
@@ -498,6 +500,7 @@ const identities: Identity[] = accounts.flatMap((owner, index) => [
           account_id: owner.account.id,
           name: `${owner.account.display_name} (work)`,
           email: "sam@studio.example",
+          signature_id: 2,
           signature: "Sam Rivera · Studio Kiln",
           voice: "",
           voice_on: false,
@@ -506,6 +509,12 @@ const identities: Identity[] = accounts.flatMap((owner, index) => [
       ]
     : []),
 ]);
+// Signatures (ADR-0021): the work alias uses "Studio".
+const signatures: Signature[] = [
+  { id: 1, name: "Short", body: "Sam", updated_at: Date.now() },
+  { id: 2, name: "Studio", body: "Sam Rivera · Studio Kiln", updated_at: Date.now() },
+];
+
 // Notes about people (ADR-0020): two about the first account's most frequent sender.
 let notesOn = true;
 const notes: Note[] = accounts.length
@@ -1381,7 +1390,7 @@ function handle(cmd: string, args: Args): unknown {
       const saved = args.identity as Omit<Identity, "is_default"> & { id?: number };
       const existing = identities.find((i) => i.id === saved.id);
       if (existing) return Object.assign(existing, { name: saved.name, email: saved.email, signature: saved.signature });
-      const added: Identity = { ...saved, id: nextId++, voice: "", voice_on: false, is_default: false };
+      const added: Identity = { ...saved, id: nextId++, signature_id: null, voice: "", voice_on: false, is_default: false };
       identities.push(added);
       return added;
     }
@@ -1395,6 +1404,35 @@ function handle(cmd: string, args: Args): unknown {
       const chosen = identities.find((i) => i.id === args.id);
       for (const i of identities) if (i.account_id === chosen?.account_id) i.is_default = i === chosen;
       return null;
+    }
+    case "signature_list":
+      return { signatures: [...signatures].sort((a, b) => a.name.localeCompare(b.name)) };
+    case "signature_save": {
+      const asked = args.signature as { id?: number; name: string; body: string };
+      const fields = { name: asked.name.trim(), body: asked.body.trimEnd(), updated_at: Date.now() };
+      if (!fields.name || !fields.body.trim()) throw new Error("a signature needs a name and some text");
+      const existing = signatures.find((s) => s.id === asked.id);
+      if (existing) {
+        Object.assign(existing, fields);
+        for (const i of identities) if (i.signature_id === existing.id) i.signature = existing.body;
+        return existing;
+      }
+      const added: Signature = { id: nextId++, ...fields };
+      signatures.push(added);
+      return added;
+    }
+    case "signature_remove": {
+      const index = signatures.findIndex((s) => s.id === args.id);
+      if (index === -1) throw new Error("no such signature");
+      signatures.splice(index, 1);
+      for (const i of identities) if (i.signature_id === args.id) Object.assign(i, { signature_id: null, signature: "" });
+      return { removed: true };
+    }
+    case "identity_set_signature": {
+      const identity = identities.find((i) => i.id === args.id);
+      if (!identity) throw new Error("no such identity");
+      const chosen = signatures.find((s) => s.id === args.signatureId);
+      return Object.assign(identity, { signature_id: chosen?.id ?? null, signature: chosen?.body ?? "" });
     }
     case "identity_set_voice": {
       const identity = identities.find((i) => i.id === args.id);

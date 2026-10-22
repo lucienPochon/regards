@@ -88,6 +88,7 @@ async fn a_message_goes_out_from_the_identity_chosen_with_its_signature() {
             account_id: account.id.clone(),
             name: "Ada".into(),
             email: "ada@example.test".into(),
+            signature_id: None,
             signature: "Ada\nRegards test\n\n".into(),
         },
     )
@@ -101,6 +102,7 @@ async fn a_message_goes_out_from_the_identity_chosen_with_its_signature() {
             account_id: account.id.clone(),
             name: "Ada at work".into(),
             email: "ada@work.test".into(),
+            signature_id: None,
             signature: "Ada Lovelace\nAnalytical Engines".into(),
         },
     )
@@ -112,6 +114,7 @@ async fn a_message_goes_out_from_the_identity_chosen_with_its_signature() {
         account_id: account.id.clone(),
         name: String::new(),
         email: email.into(),
+        signature_id: None,
         signature: String::new(),
     };
     assert_eq!(
@@ -257,6 +260,7 @@ async fn renaming_an_account_renames_how_it_sends_unless_that_was_chosen() {
             account_id: account.id.clone(),
             name: "Countess of Lovelace".into(),
             email: own.email.clone(),
+            signature_id: None,
             signature: String::new(),
         },
     )

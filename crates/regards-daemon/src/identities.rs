@@ -1,19 +1,28 @@
 //! Identities (plan §5.9): the names and addresses an account sends as, and
-//! their signatures. `ui` only: an agent never picks who mail comes from.
+//! their default signatures (ADR-0021). `ui` only: an agent never picks
+//! who mail comes from.
 
 use crate::State;
 use crate::compose::now_ms;
 use regards_ipc::protocol::{
-    AccountRef, IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView, RpcError, codes,
+    AccountRef, IdentityListResult, IdentityRef, IdentitySaveParams, IdentitySetSignatureParams, IdentityView,
+    RpcError, codes,
 };
 use regards_store::identities::{self, Fields, Identity};
+use regards_store::signatures::{self, BODY_MAX};
 use regards_store::{StoreError, accounts};
 use serde_json::{Value, json};
 
-/// Longer than this is not a name, an address or a signature.
+/// Longer than this is not a name or an address.
 const MAX_NAME: usize = 200;
 const MAX_EMAIL: usize = 320;
-const MAX_SIGNATURE: usize = 10_000;
+
+/// The default signature asked for: chosen from the list, or, as before the
+/// list, given as text (the signature with that text, made if need be).
+enum Asked {
+    Chosen(Option<i64>),
+    Text(String),
+}
 
 pub(crate) async fn list(state: &State, params: AccountRef) -> Result<Value, RpcError> {
     let account_id = params.account_id;
@@ -34,12 +43,16 @@ pub(crate) async fn list(state: &State, params: AccountRef) -> Result<Value, Rpc
 }
 
 pub(crate) async fn save(state: &State, params: IdentitySaveParams) -> Result<Value, RpcError> {
-    let fields = Fields {
+    let mut fields = Fields {
         name: params.name.trim().to_owned(),
         email: params.email.trim().to_owned(),
-        signature: params.signature.trim_end().to_owned(),
+        signature_id: None,
     };
-    check(&fields)?;
+    let asked = match params.signature_id {
+        Some(chosen) => Asked::Chosen(chosen),
+        None => Asked::Text(params.signature.trim_end().to_owned()),
+    };
+    check(&fields, &asked)?;
     let (id, account_id, now) = (params.id, params.account_id, now_ms());
     let saved = state
         .store
@@ -47,6 +60,20 @@ pub(crate) async fn save(state: &State, params: IdentitySaveParams) -> Result<Va
             if accounts::get(tx, &account_id)?.is_none() {
                 return Err(StoreError::Conflict("no such account".into()));
             }
+            fields.signature_id = match asked {
+                Asked::Chosen(chosen) => chosen,
+                Asked::Text(text) if text.trim().is_empty() => None,
+                Asked::Text(text) => Some(match signatures::with_body(tx, &text)? {
+                    Some(found) => found.id,
+                    None => {
+                        let named = signatures::Fields {
+                            name: fields.email.clone(),
+                            body: text,
+                        };
+                        signatures::add(tx, &named, now)?
+                    }
+                }),
+            };
             let id = match id {
                 None => identities::add(tx, &account_id, &fields, now)?,
                 Some(id) => {
@@ -93,7 +120,7 @@ pub(crate) async fn make_default(state: &State, params: IdentityRef) -> Result<V
     Ok(json!({ "default": true }))
 }
 
-fn check(fields: &Fields) -> Result<(), RpcError> {
+fn check(fields: &Fields, asked: &Asked) -> Result<(), RpcError> {
     let invalid = |message: &str| Err(RpcError::new(codes::INVALID_PARAMS, message));
     let email = &fields.email;
     let (local, domain) = email.rsplit_once('@').unwrap_or_default();
@@ -103,10 +130,30 @@ fn check(fields: &Fields) -> Result<(), RpcError> {
     if email.len() > MAX_EMAIL || fields.name.len() > MAX_NAME {
         return invalid("that name or address is too long");
     }
-    if fields.signature.len() > MAX_SIGNATURE {
+    if let Asked::Text(text) = asked
+        && text.chars().count() > BODY_MAX
+    {
         return invalid("the signature is too long");
     }
     Ok(())
+}
+
+/// Set only an identity's default signature, or none.
+pub(crate) async fn set_signature(state: &State, params: IdentitySetSignatureParams) -> Result<Value, RpcError> {
+    let (id, signature_id) = (params.id, params.signature_id);
+    let saved = state
+        .store
+        .write(move |tx| {
+            if !identities::set_signature(tx, id, signature_id)? {
+                return Ok(None);
+            }
+            identities::get(tx, id)
+        })
+        .await
+        .map_err(conflict)?
+        .value
+        .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such identity"))?;
+    Ok(json!(view(saved)))
 }
 
 fn conflict(error: StoreError) -> RpcError {
@@ -122,6 +169,7 @@ pub(crate) fn view(identity: Identity) -> IdentityView {
         account_id: identity.account_id,
         name: identity.name,
         email: identity.email,
+        signature_id: identity.signature_id,
         signature: identity.signature,
         voice: identity.voice,
         voice_on: identity.voice_on,

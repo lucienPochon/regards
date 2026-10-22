@@ -33,6 +33,7 @@ pub mod outbox;
 pub mod people;
 pub mod search;
 pub mod settings;
+pub mod signatures;
 pub mod smart;
 pub mod templates;
 pub mod threads;

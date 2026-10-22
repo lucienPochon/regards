@@ -1,0 +1,40 @@
+import { invoke } from "@tauri-apps/api/core";
+import type { Identity } from "./identities";
+
+/**
+ * Signatures (ADR-0021): a list for every account, each named for the
+ * person; each address uses one as its default, or none. Plain text.
+ */
+export interface Signature {
+  id: number;
+  /** For the person only: "Formal", "Short". */
+  name: string;
+  body: string;
+  updated_at: number;
+}
+
+/** Most characters a signature may have. */
+export const SIGNATURE_MAX = 5000;
+
+/** Every signature, by name. */
+export const listSignatures = () =>
+  invoke<{ signatures: Signature[] }>("signature_list").then((result) => result.signatures);
+
+/** Add one (no `id`) or change one. */
+export const saveSignature = (signature: { id: number | null; name: string; body: string }) =>
+  invoke<Signature>("signature_save", { signature: { ...signature, id: signature.id ?? undefined } });
+
+/** Delete one: the addresses that used it have none from then on. */
+export const removeSignature = (id: number) => invoke("signature_remove", { id });
+
+/** An address's default signature, or none (`null`). */
+export const setDefaultSignature = (identityId: number, signatureId: number | null) =>
+  invoke<Identity>("identity_set_signature", { id: identityId, signatureId });
+
+/** The signature a message's text has, among `signatures`: the one whose text it holds, the longest first. */
+export function signatureIn(text: string, signatures: Signature[]): Signature | null {
+  const found = signatures
+    .filter((signature) => signature.body.trim() && text.includes(signature.body.trimEnd()))
+    .sort((a, b) => b.body.length - a.body.length);
+  return found[0] ?? null;
+}

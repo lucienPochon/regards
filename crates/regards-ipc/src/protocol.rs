@@ -166,6 +166,15 @@ pub mod methods {
     pub const IDENTITY_REMOVE: &str = "identity.remove";
     /// Make an identity its account's default (new messages go out from it).
     pub const IDENTITY_MAKE_DEFAULT: &str = "identity.make_default";
+    /// Set an identity's default signature, or none (ADR-0021). `ui` only.
+    pub const IDENTITY_SET_SIGNATURE: &str = "identity.set_signature";
+    /// Signatures (ADR-0021): a list for every account, each identity using
+    /// one as its default. `ui` only, like the two below.
+    pub const SIGNATURE_LIST: &str = "signature.list";
+    /// Add a signature (without `id`) or change one.
+    pub const SIGNATURE_SAVE: &str = "signature.save";
+    /// Delete a signature; the identities that used it have none from then on.
+    pub const SIGNATURE_REMOVE: &str = "signature.remove";
     /// Set an identity's voice and whether agents get it (ADR-0020). `ui` only:
     /// agents can only suggest one.
     pub const IDENTITY_SET_VOICE: &str = "identity.set_voice";
@@ -1479,7 +1488,10 @@ pub struct IdentityView {
     pub account_id: String,
     pub name: String,
     pub email: String,
-    /// Plain text, put below what is written and above a quote.
+    /// The default signature (ADR-0021), if any.
+    #[serde(default)]
+    pub signature_id: Option<i64>,
+    /// Its text, put below what is written and above a quote; empty for none.
     pub signature: String,
     /// How agents should write as this address (ADR-0020); kept while off.
     #[serde(default)]
@@ -1506,8 +1518,65 @@ pub struct IdentitySaveParams {
     #[serde(default)]
     pub name: String,
     pub email: String,
+    /// The default signature from the list (ADR-0021); `null` for none.
+    /// When absent, `signature` is used instead.
+    #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+    pub signature_id: Option<Option<i64>>,
+    /// The signature as text, as before the list: the one with that text
+    /// becomes the default (made, named after the address, if there is
+    /// none); empty for none. Ignored when `signature_id` is given.
     #[serde(default)]
     pub signature: String,
+}
+
+/// A field that may be absent (`None`), or present and `null` (`Some(None)`).
+fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
+/// Parameters of [`methods::IDENTITY_SET_SIGNATURE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IdentitySetSignatureParams {
+    pub id: i64,
+    /// None for no signature.
+    pub signature_id: Option<i64>,
+}
+
+/// A signature (ADR-0021).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignatureView {
+    pub id: i64,
+    /// For the person only: "Formal", "Short".
+    pub name: String,
+    /// Plain text.
+    pub body: String,
+    pub updated_at: i64,
+}
+
+/// Result of [`methods::SIGNATURE_LIST`]: by name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignatureListResult {
+    pub signatures: Vec<SignatureView>,
+}
+
+/// Parameters of [`methods::SIGNATURE_SAVE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignatureSaveParams {
+    /// The signature to change; none to add one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    pub name: String,
+    pub body: String,
+}
+
+/// Names a signature: [`methods::SIGNATURE_REMOVE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignatureRef {
+    pub id: i64,
 }
 
 /// Names an identity: [`methods::IDENTITY_REMOVE`], [`methods::IDENTITY_MAKE_DEFAULT`].
