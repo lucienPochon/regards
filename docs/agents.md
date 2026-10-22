@@ -9,8 +9,8 @@ In Regards, open **Settings › Agents** and set each account:
 | Level | Agents may |
 | --- | --- |
 | Off (default) | Nothing: they do not see the account |
-| Read | List, search and read mail. Reading never marks it read |
-| Triage | Read, and organise (archive, move, flag, pin, snooze, sort senders) and write drafts |
+| Read | List, search and read mail, your voice and notes about people. Reading never marks it read |
+| Triage | Read, and organise (archive, move, flag, pin, snooze, sort senders), write drafts, keep notes about people and suggest a voice |
 | Send | Triage, and ask to send |
 
 Only you can change these, in the app. Agents cannot change them.
@@ -24,6 +24,8 @@ To stop every agent at once, turn agents off in Settings › Agents. While they 
   - **With an undo window** (Settings › Agents, per account, 10 seconds to 10 minutes): the message waits in the Outbox for that long, and you are told. You can call it back there before it goes; the agent cannot. More than 20 such sends in an hour wait for your approval again.
 - **Changing more than 50 messages at once.**
 - **Deleting for good.**
+- **A suggested voice**: you see it, and approve it, edit it first, or reject it.
+- **A note with a link, an email address or bank details**, with a warning when it comes from a message that person did not send.
 
 You get a notification. A request you do not decide within a day expires.
 
@@ -61,8 +63,19 @@ regards search "invoice from:shop" --json  # every command prints JSON with --js
 
 `regards --help` lists the commands. `regards <command> --help` says what each needs and whether it changes mail.
 
+## 5. Your voice, and notes about people
+
+So that agents write like you, and remember who people are:
+
+- **Your voice** (Settings › Agents › Your voice): for each of your addresses, a few lines on how you write: language, tone, how formal, how you open and close, what never to promise. Switch it on per address. Agents read it before they draft for you; only you can change it.
+  - **To have it learned,** ask your agent: *"Learn how I write from my sent mail at you@example.org and suggest it as my voice in Regards."* It reads your sent messages through Regards, and its suggestion waits for you to approve, edit or reject. Regards itself sends nothing to any AI for this.
+- **Notes about people** (Settings › Agents › Notes about people): short facts, by you or an agent, such as who decides or what someone prefers. You see them on each person's card, where you can add, edit or remove them. Agents get them with the mail they read. Switch them off and nobody gets them; **Forget them all** removes them.
+
+Agents get both with every message, conversation or draft, as `context`, or for one person with `regards memory <address>`.
+
 ## Safety
 
 - Message text reaches agents as data, with a reminder not to follow instructions found in it.
+- Your voice is your guidance; notes about people reach agents as information, never as instructions.
 - Agents cannot read your passwords or change settings.
 - Regards runs on your computer. Agents talk to it there, not through any server of ours.

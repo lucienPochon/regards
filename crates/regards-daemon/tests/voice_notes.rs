@@ -10,12 +10,14 @@ mod fake_smtp;
 #[path = "support/world.rs"]
 mod world;
 
+use regards_core::headers::Person;
 use regards_daemon::DEFAULT_LATE_SEND_GRACE;
 use regards_ipc::protocol::{
-    AccountRef, AgentAccess, AgentAccessParams, ClientKind, HoldApproveParams, HoldListParams, HoldListResult,
-    HoldReason, HoldRef, HoldStatus, HoldView, IdentityListResult, IdentitySetVoiceParams, IdentityView, MemoryParams,
-    MemoryResult, NoteAddParams, NoteAddResult, NoteAuthor, NoteListParams, NoteListResult, NoteRef, NoteRemoved,
-    NoteSetEnabledParams, NoteSettings, NotesForgotten, RpcError, UndoParams, VoiceSuggestParams, codes, methods,
+    AccountRef, AgentAccess, AgentAccessParams, AgentContext, ClientKind, DraftCreateParams, HoldApproveParams,
+    HoldListParams, HoldListResult, HoldReason, HoldRef, HoldStatus, HoldView, IdentityListResult,
+    IdentitySetVoiceParams, IdentityView, MemoryParams, MemoryResult, NoteAddParams, NoteAddResult, NoteAuthor,
+    NoteListParams, NoteListResult, NoteRef, NoteRemoved, NoteSetEnabledParams, NoteSettings, NotesForgotten, RpcError,
+    UndoParams, VoiceSuggestParams, codes, methods,
 };
 use regards_ipc::{Client, ClientError};
 use serde_json::Value;
@@ -392,5 +394,69 @@ async fn agents_keep_notes_risky_ones_wait_and_every_one_can_be_undone() {
     );
     let forgotten: NotesForgotten = desktop.call(methods::NOTE_FORGET_ALL, Value::Null).await.unwrap();
     assert_eq!(forgotten.forgotten, 3);
+    handle.abort();
+}
+
+#[tokio::test]
+async fn an_agents_draft_comes_with_the_voice_and_what_is_known_of_its_people() {
+    let world = World::new(DEFAULT_LATE_SEND_GRACE).await;
+    let Running {
+        endpoint,
+        mut desktop,
+        handle,
+    } = world.start().await;
+    let account = world.add_account(&mut desktop).await;
+    set_access(&mut desktop, &account.id, AgentAccess::Triage).await;
+    let own = own_identity(&mut desktop, &account.id).await;
+    let _: IdentityView = desktop
+        .call(
+            methods::IDENTITY_SET_VOICE,
+            IdentitySetVoiceParams {
+                id: own.id,
+                voice: "Short and warm.".into(),
+                on: true,
+            },
+        )
+        .await
+        .unwrap();
+    let _: NoteAddResult = desktop
+        .call(methods::NOTE_ADD, note(&account.id, "bob@example.test", "Likes lists."))
+        .await
+        .unwrap();
+    let draft = DraftCreateParams {
+        account_id: account.id.clone(),
+        to: vec![
+            Person {
+                name: Some("Bob".into()),
+                address: Some("Bob@Example.test".into()),
+            },
+            // The person's own address is not one of "the people".
+            Person {
+                name: None,
+                address: Some("ada@example.test".into()),
+            },
+        ],
+        subject: "Plans".into(),
+        ..DraftCreateParams::default()
+    };
+
+    let mut agent = Client::connect(&endpoint, ClientKind::Mcp).await.unwrap();
+    let made: Value = agent.call(methods::DRAFT_CREATE, draft.clone()).await.unwrap();
+    let context: AgentContext = serde_json::from_value(made["context"].clone()).unwrap();
+    assert_eq!(context.voice.as_deref(), Some("Short and warm."));
+    assert_eq!(context.people.len(), 1);
+    let bob = &context.people[0];
+    assert_eq!(
+        (bob.address.as_str(), bob.name.as_deref()),
+        ("bob@example.test", Some("Bob"))
+    );
+    assert_eq!(
+        bob.notes.iter().map(|n| n.text.as_str()).collect::<Vec<_>>(),
+        ["Likes lists."]
+    );
+
+    // The app's own results carry none.
+    let mine: Value = desktop.call(methods::DRAFT_CREATE, draft).await.unwrap();
+    assert!(mine.get("context").is_none());
     handle.abort();
 }

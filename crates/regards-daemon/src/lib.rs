@@ -13,6 +13,7 @@ mod attachments;
 mod audit;
 mod backfill;
 mod compose;
+mod context;
 mod details;
 mod discover;
 mod draft_sync;

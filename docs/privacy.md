@@ -31,6 +31,7 @@ Every connection to a mail server, a sign-in service or a hosted AI provider use
 - **Your mail:** messages, folders, drafts, the search index and attachments you downloaded, in Regards' data folder on your computer.
 - **Passwords, sign-in tokens and your AI key:** only in your operating system's credential store (Windows Credential Manager, the macOS Keychain, or the Secret Service on Linux). They never go into Regards' database or logs.
 - **Settings and history:** your settings, the Outbox, and a record of what agents asked (kept 90 days), in the same folder.
+- **Your voices and notes about people** (Settings › Agents), in the same folder: for each of your addresses, how agents should write as it; and short notes about the people you write with, by you or an agent, each saying who wrote it and from which message. Regards never sends them anywhere by itself, and never makes them by running your mail through an AI. **Forget them all** removes every note; removing an account removes its notes.
 - **A log:** Regards' own log, for diagnosing problems. It never contains message content, passwords or tokens. It is kept small: one older copy at most.
   - **Detailed logging** (Settings › Support) makes it say more about what Regards does, under the same rules.
   - **The connection log** (Settings › Support, off until you turn it on) records what Regards and your mail servers say to each other, to diagnose a server that misbehaves. It keeps command names and the servers' replies, and names the servers. It never keeps mail, folder names, searches, passwords, tokens, email addresses or your computer's IP address.
@@ -53,6 +54,7 @@ When connecting to send, Regards doesn't tell the server your computer's name ei
 AI agents connected through the `regards` tool or MCP:
 - **See only accounts you open to them,** in Settings › Agents. Every account is closed to them until you open it.
 - **Talk to Regards on your computer only,** over a local connection. Regards sends nothing to the agent's company.
+- **Get your voice and notes about people** along with the mail they read, for the accounts open to them. That is how they write like you; it also means their provider receives them, as it receives the mail.
 
 What an agent does with what it reads is up to that agent and its provider. Choose agents you trust with that account's mail.
 
