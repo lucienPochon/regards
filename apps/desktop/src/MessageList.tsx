@@ -134,15 +134,12 @@ export interface SmartParts {
 }
 
 /**
- * One card of the card view: a kind of unread mail (or pinned mail), its
- * newest few, and the way to all of it.
+ * One category of the inbox by category: its unread mail (Priority's and
+ * the pinned, read or not), the newest few, and the way to all of it.
  */
 export interface InboxCard {
   key: string;
   label: string;
-  icon: IconName;
-  /** Priority keeps its warm card; new senders their own. */
-  tone: "priority" | "new" | "plain";
   items: ListItem[];
   /** How many there are in all. */
   total: number;
@@ -726,48 +723,35 @@ export function MessageList({
             )}
             {showCards && (
               <>
-                {unreadCards.length === 0 && (
-                  <section className="smart-card plain caught-up" aria-label="Unread">
-                    <span className="zero-mark" aria-hidden="true">
-                      <Icon name="check" size={18} />
-                    </span>
-                    <p>
-                      <strong>You're all caught up.</strong> Nothing unread.
-                    </p>
-                  </section>
-                )}
+                {unreadCards.length === 0 && <p className="category-empty">Nothing unread.</p>}
                 {unreadCards.map((card) => (
-                  <section key={card.key} className={`smart-card ${card.tone}`} aria-label={card.label}>
-                    <div className="smart-card-top">
-                      <h3 className="smart-card-head">
-                        <Icon name={card.icon} size={15} />
-                        {card.label}
-                        <span className="smart-card-count">{card.total}</span>
-                      </h3>
+                  <section key={card.key} className="day" aria-label={card.label}>
+                    <h3 className="day-head category-head">
+                      {card.label}
+                      <span className="category-count">{card.total}</span>
                       {card.onRead && (
                         <button
                           type="button"
-                          className="card-read"
+                          className="category-read"
                           title="Mark all read"
-                          aria-label={`Mark all ${card.label} read`}
+                          aria-label={"Mark all " + card.label + " read"}
                           onClick={card.onRead}
                         >
-                          <Icon name="check" size={14} />
+                          <Icon name="check" size={12} />
                         </button>
                       )}
-                    </div>
+                    </h3>
                     <ul>{card.items.map((item) => row(item, card.screen))}</ul>
-                    {card.total > card.items.length && <CardFoot items={card.items} total={card.total} onClick={card.onAll} />}
+                    {card.total > card.items.length && (
+                      <button type="button" className="category-more" onClick={card.onAll}>
+                        View all {card.total}
+                      </button>
+                    )}
                   </section>
                 ))}
                 {items.length > 0 && (
-                  <section className="smart-card plain" aria-label="Seen">
-                    <div className="smart-card-top">
-                      <h3 className="smart-card-head">
-                        <Icon name="mailOpen" size={15} />
-                        Seen
-                      </h3>
-                    </div>
+                  <section className="day" aria-label="Seen">
+                    <h3 className="day-head">Seen</h3>
                     <ul>{items.map((item) => row(item))}</ul>
                   </section>
                 )}

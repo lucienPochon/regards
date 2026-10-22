@@ -3638,84 +3638,58 @@ button.list-title:hover {
   box-shadow: 0 0 0 2px var(--notice);
 }
 
-/* The card view: a card per kind of unread mail, then the mail read. */
-.smart-card.plain {
-  border: 1px solid var(--border);
-  background: var(--bg-elev);
-}
-
-.smart-card-top {
+/* By category: each category a heading over its rows, as the days are in By date. */
+.category-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 0 16px;
-  border-bottom: 1px solid var(--warm-line);
+  gap: 6px;
+  padding-right: 18px;
 }
 
-.smart-card-top .smart-card-head {
-  flex: 1;
-  margin: 0;
-  border-bottom: 0;
+.category-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
-.smart-card.plain .smart-card-top,
-.smart-card.new .smart-card-top {
-  border-bottom-color: var(--border);
-}
-
-.smart-card.plain .smart-card-head {
-  color: var(--text-2);
-}
-
-.smart-card.plain .smart-card-foot {
-  color: var(--accent);
-}
-
-.smart-card.plain .faces .avatar {
-  box-shadow: 0 0 0 2px var(--bg-elev);
-}
-
-.rows .smart-card.plain .row:not(.open):hover,
-.rows .smart-card.plain .row.cursor:not(.open) {
-  background: var(--hover);
-}
-
-/* The round check: the card's mail read. */
-.card-read {
+/* Mark the category read: a small round check at the heading's end. */
+.category-read {
   display: grid;
-  flex: none;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
   border: 1.5px solid var(--border-strong);
   border-radius: 50%;
-  color: var(--text-2);
+  color: var(--muted);
 }
 
-.card-read:hover {
+.category-read:hover {
   border-color: var(--accent);
   background: var(--accent);
   color: var(--accent-text);
 }
 
-.smart-card.caught-up {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
+.category-more {
+  display: block;
+  padding: 2px 0 8px 33px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
 }
 
-.smart-card.caught-up p {
-  margin: 0;
-  color: var(--text-2);
-  font-size: 13.5px;
+.rows.wide .category-more {
+  padding-left: 32px;
 }
 
-.smart-card.caught-up .zero-mark {
-  width: 30px;
-  height: 30px;
+.category-more:hover {
+  text-decoration: underline;
+}
+
+.category-empty {
   margin: 0;
-  outline: none;
+  padding: 14px 0 4px 33px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 /* New senders held before the inbox: one line that leads to them. */
@@ -4362,14 +4336,17 @@ button.sender-row:hover:not(:disabled) {
   background: var(--warm-line);
 }
 
-.pic-card.plain {
-  padding: 9px 10px;
-  border: 1px solid var(--border);
-  background: var(--bg-elev);
+.pic-group {
+  display: grid;
+  gap: 7px;
 }
 
-.pic-card.plain .pic-line {
-  background: var(--border-strong);
+.pic-head {
+  width: 32%;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--muted);
+  opacity: 0.55;
 }
 
 .pic-chips {

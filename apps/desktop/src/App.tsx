@@ -1232,11 +1232,9 @@ export function App() {
         ).filter((bundle) => appPrefs.grouped[bundle.key as keyof typeof appPrefs.grouped]),
       }
     : null;
-  const cardOf = (section: Section, label: string, icon: InboxCard["icon"], items: ListItem[]): InboxCard => ({
+  const cardOf = (section: Section, label: string, items: ListItem[]): InboxCard => ({
     key: section,
     label,
-    icon,
-    tone: section === "priority" ? "priority" : section === "new_senders" ? "new" : "plain",
     items,
     total: Math.max((section === "priority" ? cardCounts[section]?.total : cardCounts[section]?.unread) ?? 0, items.length),
     onAll: openSection(section),
@@ -1253,16 +1251,14 @@ export function App() {
   });
   const cards: InboxCard[] | null = cardsOn
     ? [
-        ...(screen === "section" ? [cardOf("new_senders", "New senders", "people", cardNewSenders)] : []),
-        cardOf("priority", "Priority", "boltFilled", cardPriority),
-        cardOf("people", "People", "user", cardPeople),
-        cardOf("notifications", "Notifications", "bell", cardNotifications),
-        cardOf("newsletters", "Newsletters", "newspaper", cardNewsletters),
+        ...(screen === "section" ? [cardOf("new_senders", "New senders", cardNewSenders)] : []),
+        cardOf("priority", "Priority", cardPriority),
+        cardOf("people", "People", cardPeople),
+        cardOf("notifications", "Notifications", cardNotifications),
+        cardOf("newsletters", "Newsletters", cardNewsletters),
         {
           key: "pinned",
           label: "Pinned",
-          icon: "pin",
-          tone: "plain",
           items: cardPinnedRows,
           total: Math.max(cardPinned.length, cardPinnedRows.length),
           onAll: () => changeView({ kind: "marked", mark: "pinned" }),

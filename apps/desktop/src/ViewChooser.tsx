@@ -109,19 +109,18 @@ export function ViewChooser({
                     </span>
                   </>
                 ) : view.id === "cards" ? (
-                  <>
-                    <span className="pic-card">
-                      <span className="pic-line" />
-                      <span className="pic-line short" />
+                  // A heading over rows, per category.
+                  [2, 1, 1].map((rows, group) => (
+                    <span key={group} className="pic-group">
+                      <span className="pic-head" />
+                      {Array.from({ length: rows }, (_, index) => (
+                        <span key={index} className="pic-row">
+                          <span className="pic-dot" />
+                          <span className="pic-line" />
+                        </span>
+                      ))}
                     </span>
-                    <span className="pic-card plain">
-                      <span className="pic-line" />
-                      <span className="pic-line short" />
-                    </span>
-                    <span className="pic-card plain">
-                      <span className="pic-line short" />
-                    </span>
-                  </>
+                  ))
                 ) : (
                   Array.from({ length: 5 }, (_, index) => (
                     <span key={index} className="pic-row">
