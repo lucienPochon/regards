@@ -69,7 +69,7 @@ import { Settings, type SettingsTab } from "./Settings";
 import { AgentsMenu } from "./AgentsMenu";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { type Template, listTemplates, saveTemplate } from "./templates";
-import { type AssistantJob, AssistantDialog, useAssistantOn } from "./AssistantDialog";
+import { type AssistantJob, AssistantDialog, useAssistantKind } from "./AssistantDialog";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { type DragPayload, Sidebar } from "./Sidebar";
 import { useSidebarPrefs } from "./sidebar-prefs";
@@ -202,7 +202,7 @@ export function App() {
   } | null>(null);
   const [queued, setQueued] = useState<Queued | null>(null);
   // The assistant: offered once a provider is chosen in Settings; what was asked of it.
-  const assistantOn = useAssistantOn();
+  const assistantKind = useAssistantKind();
   const [assistantJob, setAssistantJob] = useState<AssistantJob | null>(null);
   const [undo, setUndo] = useState<UndoBar | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -1368,7 +1368,22 @@ export function App() {
       onSender={(anchor, messageId, person) =>
         aboutSender({ id: messageId, accountId: openItem.accountId, from: person }, anchor)
       }
-      onAssistant={assistantOn ? (messageId, kind) => setAssistantJob({ messageId, kind }) : undefined}
+      onAssistant={assistantKind ? (messageId, kind) => setAssistantJob({ messageId, kind }) : undefined}
+      assistant={{
+        name: assistantKind === "anthropic" ? "Claude" : "Assistant",
+        onMenu: (anchor) =>
+          setMenu({
+            anchor,
+            label: "Assistant",
+            entries: assistantKind
+              ? [
+                  { label: "Summarise this conversation…", icon: "text", onSelect: () => setAssistantJob({ messageId: openItem.id, kind: "summary" }) },
+                  { label: "Draft a reply…", icon: "reply", onSelect: () => setAssistantJob({ messageId: openItem.id, kind: "reply" }) },
+                ]
+              : // Off until a provider is chosen: the button leads there.
+                [{ label: "Set up the assistant…", icon: "settings", onSelect: () => setSettings("assistant") }],
+          }),
+      }}
       onClose={() => setOpen(null)}
       onStep={layout.mode === "single" ? step : undefined}
     />

@@ -77,6 +77,7 @@ export function ReadingPane({
   onPalette,
   onSender,
   onAssistant,
+  assistant,
   onClose,
   onStep,
 }: {
@@ -90,6 +91,8 @@ export function ReadingPane({
   onSender?: SenderOpener;
   /** Ask the assistant about a message; absent while it is off. */
   onAssistant?: (messageId: number, kind: "summary" | "reply") => void;
+  /** The assistant's button at the bar's end, named for its provider ("Claude"), with its menu. */
+  assistant?: { name: string; onMenu: (anchor: Anchor) => void };
   onClose: () => void;
   /** The next (1) or previous (-1) message of the list, when the list is not beside it. */
   onStep?: (by: number) => void;
@@ -229,6 +232,20 @@ export function ReadingPane({
             <Icon name="more" size={17} />
           </button>
         </div>
+        {assistant && (
+          <button
+            type="button"
+            className="reader-ask"
+            title={`Ask ${assistant.name} about this conversation`}
+            aria-haspopup="true"
+            disabled={load.state !== "ready"}
+            onClick={(event) => assistant.onMenu(anchorOf(event.currentTarget, "end"))}
+          >
+            <Icon name="agent" size={15} />
+            {assistant.name}
+            <Icon name="chevronDown" size={12} />
+          </button>
+        )}
       </header>
       <div className="reader-scroll">
         <h1 className="reader-subject">{subject}</h1>
