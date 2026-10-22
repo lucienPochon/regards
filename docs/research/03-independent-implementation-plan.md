@@ -371,8 +371,9 @@ flowchart LR
 - **Sources:** reply, reply-all, forward, send again, `mailto:`, templates with placeholders, and Markdown input for the CLI and agents.
 - **Recipient suggestions** (as built 2026-10-19, `people.suggest`, migration 0032):
   - **The people table:** per account, whom it writes to (To and Cc of mail from its own addresses) and who writes to it, with the latest name and when last seen. A trigger keeps it current for every stored message, and the migration fills it from stored mail.
-  - **Matching and ranking:** what is typed matches the start of an address or of a word of a name. Writing to someone counts three times receiving from them, and it all fades over about a month.
+  - **Matching and ranking** (reworked 2026-10-22): accents and case aside, each typed word starts a word of the name, a part of the address (`lena.okafor`) or of its domain, in any order. A name or address that starts with what is typed comes first, a match on the domain alone last. Within that, writing to someone counts three times receiving from them, and it all fades over about a month.
   - **Left out:** no-reply, notification and bounce addresses (unless written to), blocked senders, and the account's own addresses.
+  - **Forgotten** (`people.forget`, migration 0035, the app only): someone one asked not to be suggested (a mistyped address, say), until there is new mail with them.
   - **Agents:** they get the same through the `people` tool, for accounts open to them.
 - **Send validation:** recipients, subject (or confirmation), attachments ready, no unresolved placeholders.
   - **As built (2026-10-19), `draft.check`** (`regards_core::compose::send_checks`), for the composer, the CLI and agents alike:

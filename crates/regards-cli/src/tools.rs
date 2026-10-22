@@ -182,8 +182,8 @@ pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "people",
         description: "Whom to write to: the people an account writes with, best first, by the start of \
-                      an address or of a word of a name (empty: those written with most). For \
-                      addressing drafts.",
+                      a word of a name or of a part of an address or its domain, accents aside \
+                      (empty: those written with most). For addressing drafts.",
         access: Access::Read,
         method: "people.suggest",
         params: &[

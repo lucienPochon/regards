@@ -11,8 +11,8 @@ mod world;
 
 use regards_daemon::DEFAULT_LATE_SEND_GRACE;
 use regards_ipc::protocol::{
-    ClientKind, PeopleSuggestParams, PeopleSuggestResult, SearchParams, SearchResult, ServerSearchResult, codes,
-    methods,
+    ClientKind, PeopleForgetParams, PeopleForgetResult, PeopleSuggestParams, PeopleSuggestResult, SearchParams,
+    SearchResult, ServerSearchResult, codes, methods,
 };
 use regards_ipc::{Client, ClientError};
 use world::{Running, World};
@@ -136,6 +136,33 @@ async fn people_to_write_to_are_suggested_within_what_may_be_read() {
         code(
             agent
                 .call::<_, PeopleSuggestResult>(methods::PEOPLE_SUGGEST, closed)
+                .await
+        ),
+        codes::FORBIDDEN
+    );
+
+    // Forgetting someone is for the app alone; an address, or nothing.
+    let forget = |address: &str| PeopleForgetParams {
+        address: address.into(),
+        account_id: None,
+    };
+    let none: PeopleForgetResult = desktop
+        .call(methods::PEOPLE_FORGET, forget("nobody@example.net"))
+        .await
+        .unwrap();
+    assert_eq!(none.forgotten, 0);
+    assert_eq!(
+        code(
+            desktop
+                .call::<_, PeopleForgetResult>(methods::PEOPLE_FORGET, forget("nobody"))
+                .await
+        ),
+        codes::INVALID_PARAMS
+    );
+    assert_eq!(
+        code(
+            agent
+                .call::<_, PeopleForgetResult>(methods::PEOPLE_FORGET, forget("nobody@example.net"))
                 .await
         ),
         codes::FORBIDDEN

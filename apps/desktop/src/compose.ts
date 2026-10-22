@@ -119,6 +119,13 @@ export function describeCheck(check: SendCheck): string {
 export const suggestPeople = (query: string, accountId: string | null = null) =>
   invoke<{ people: Person[] }>("people_suggest", { query, accountId }).then((result) => result.people);
 
+/**
+ * Stop suggesting someone (a mistyped address, say) until there is new mail
+ * with them: by `accountId` only, or every account. How many accounts knew them.
+ */
+export const forgetPerson = (address: string, accountId: string | null = null) =>
+  invoke<{ forgotten: number }>("people_forget", { address, accountId }).then((result) => result.forgotten);
+
 export const newDraft = (accountId: string) => invoke<Draft>("draft_create", { accountId });
 export const replyDraft = (messageId: number, all: boolean) => invoke<Draft>("draft_reply", { messageId, all });
 export const forwardDraft = (messageId: number) => invoke<Draft>("draft_forward", { messageId });

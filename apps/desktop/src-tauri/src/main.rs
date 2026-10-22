@@ -427,6 +427,23 @@ async fn people_suggest(
         .map_err(describe)
 }
 
+/// Stop suggesting someone (a mistyped address, say) until there is new mail with them.
+#[tauri::command]
+async fn people_forget(
+    bridge: State<'_, Bridge>,
+    address: String,
+    account_id: Option<String>,
+) -> Result<regards_ipc::protocol::PeopleForgetResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::PEOPLE_FORGET,
+            regards_ipc::protocol::PeopleForgetParams { address, account_id },
+        )
+        .await
+        .map_err(describe)
+}
+
 /// How messages are shown (links without their tracking parameters …).
 #[tauri::command]
 async fn reading_settings(bridge: State<'_, Bridge>) -> Result<regards_ipc::protocol::ReadingSettings, String> {
@@ -1752,6 +1769,7 @@ fn main() {
             system::open_in_agent,
             account_update,
             people_suggest,
+            people_forget,
             draft_check,
             reading_settings,
             set_reading_settings,

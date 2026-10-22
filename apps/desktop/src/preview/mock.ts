@@ -515,6 +515,9 @@ const signatures: Signature[] = [
   { id: 2, name: "Studio", body: "Sam Rivera · Studio Kiln", updated_at: Date.now() },
 ];
 
+// Addresses forgotten from suggestions (people.forget), lowercase.
+const forgottenPeople = new Set<string>();
+
 // Notes about people (ADR-0020): two about the first account's most frequent sender.
 let notesOn = true;
 const notes: Note[] = accounts.length
@@ -825,20 +828,26 @@ function handle(cmd: string, args: Args): unknown {
           ranked.set(address, entry);
         }
       }
+      // As the daemon matches: accents and case aside, each typed word starting
+      // a word of the name or a part of the address, in any order.
+      const fold = (text: string) => text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+      const words = fold(typed).split(/\s+/).filter(Boolean);
       const people = [...ranked.values()]
-        .filter(
-          ({ person }) =>
-            typed === "" ||
-            (person.address ?? "").toLowerCase().startsWith(typed) ||
-            (person.name ?? "")
-              .toLowerCase()
-              .split(/\s+/)
-              .some((word) => word.startsWith(typed)),
-        )
+        .filter(({ person }) => !forgottenPeople.has((person.address ?? "").toLowerCase()))
+        .filter(({ person }) => {
+          const parts = fold(`${person.name ?? ""} ${person.address ?? ""}`).split(/[^\p{L}\p{N}]+/u);
+          return words.every((word) => parts.some((part) => part.startsWith(word)));
+        })
         .sort((a, b) => b.wrote - a.wrote || b.got - a.got)
         .slice(0, Math.min(Number(args.limit ?? 8), 50))
         .map(({ person }) => person);
       return { people };
+    }
+    case "people_forget": {
+      const address = String(args.address ?? "").trim().toLowerCase();
+      const known = !forgottenPeople.has(address);
+      forgottenPeople.add(address);
+      return { forgotten: known ? 1 : 0 };
     }
     case "reading_settings":
       return reading;
