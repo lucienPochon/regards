@@ -6,6 +6,7 @@ import "./mock";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "../App";
+import { LAYOUT_KEY, LAYOUT_VERSION } from "../layout";
 import { type Theme, applyTheme, savedTheme } from "../theme";
 import { Tour } from "./Tour";
 import "../styles.css";
@@ -17,15 +18,16 @@ applyTheme(theme === "dark" || theme === "light" ? (theme as Theme) : savedTheme
 // them, from the default (split view, sidebar open, the inbox by date).
 if (params.has("layout") || params.has("sidebar") || params.has("view")) {
   window.localStorage.setItem(
-    "regards.layout",
+    LAYOUT_KEY,
     JSON.stringify({
+      version: LAYOUT_VERSION,
       mode: params.get("layout") === "single" ? "single" : "split",
       locked: params.get("sidebar") !== "icons",
       inboxView: params.get("view") ?? undefined,
     }),
   );
 } else if (params.has("fresh")) {
-  window.localStorage.removeItem("regards.layout");
+  window.localStorage.removeItem(LAYOUT_KEY);
 }
 
 const root = document.getElementById("root");
