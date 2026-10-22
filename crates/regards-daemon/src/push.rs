@@ -8,9 +8,11 @@ use regards_core::mailbox::Role;
 use regards_imap::IdleEnd;
 use regards_store::mailboxes;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::watch;
+use tokio::task::JoinHandle;
 
 /// Re-issue IDLE this often; servers may drop idle sessions after 30 minutes (RFC 2177).
 const IDLE_REFRESH: Duration = Duration::from_secs(25 * 60);
@@ -22,39 +24,65 @@ const MAX_BACKOFF: Duration = Duration::from_secs(5 * 60);
 /// The running watchers, by account.
 #[derive(Default)]
 pub(crate) struct Watchers {
-    stops: Mutex<HashMap<String, watch::Sender<bool>>>,
+    running: Mutex<HashMap<String, Watcher>>,
+    /// Tells a watcher from one started after it for the same account.
+    next: AtomicU64,
+}
+
+struct Watcher {
+    id: u64,
+    stop: watch::Sender<bool>,
+    task: JoinHandle<()>,
 }
 
 impl Watchers {
     /// Start watching an account, unless it is watched already.
     pub(crate) fn start(&self, state: &Arc<State>, account_id: &str) {
-        let mut stops = self.lock();
-        if stops.contains_key(account_id) {
+        let mut running = self.lock();
+        if running.contains_key(account_id) {
             return;
         }
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
         let (stop, stopped) = watch::channel(false);
-        stops.insert(account_id.to_owned(), stop);
-        let (state, account_id) = (Arc::clone(state), account_id.to_owned());
-        tokio::spawn(async move {
-            run(&state, &account_id, stopped).await;
-            state.watchers.lock().remove(&account_id);
+        let (state, account) = (Arc::clone(state), account_id.to_owned());
+        let task = tokio::spawn(async move {
+            run(&state, &account, stopped).await;
+            // Unless a new watcher took its place meanwhile.
+            let mut running = state.watchers.lock();
+            if running.get(&account).is_some_and(|watcher| watcher.id == id) {
+                running.remove(&account);
+            }
         });
+        running.insert(account_id.to_owned(), Watcher { id, stop, task });
     }
 
-    pub(crate) fn stop(&self, account_id: &str) {
-        if let Some(stop) = self.lock().remove(account_id) {
-            let _ = stop.send(true);
+    /// Stop watching an account. It may still finish a sync: the task
+    /// returned ends when it has.
+    pub(crate) fn stop(&self, account_id: &str) -> Option<JoinHandle<()>> {
+        let watcher = self.lock().remove(account_id)?;
+        let _ = watcher.stop.send(true);
+        Some(watcher.task)
+    }
+
+    /// [`Watchers::stop`], then wait (`max` at most) for the watcher to
+    /// finish: a sync of its still running would write over what the caller
+    /// does next, such as dropping the account's mail.
+    pub(crate) async fn stop_and_wait(&self, account_id: &str, max: Duration) {
+        if let Some(task) = self.stop(account_id)
+            && tokio::time::timeout(max, task).await.is_err()
+        {
+            tracing::warn!(account = %account_id, "the push connection did not stop in time");
         }
     }
 
     pub(crate) fn stop_all(&self) {
-        for (_, stop) in self.lock().drain() {
-            let _ = stop.send(true);
+        for (_, watcher) in self.lock().drain() {
+            let _ = watcher.stop.send(true);
         }
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, watch::Sender<bool>>> {
-        self.stops.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Watcher>> {
+        self.running.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 
@@ -118,7 +146,7 @@ async fn watch_once(
     sync::sync_mailbox(state, &mut session, &inbox).await?;
     tracing::info!(account = %account_id, "waiting for new mail (IDLE)");
     state.sync.set_push(account_id, true);
-    let outcome = idle_loop(state, account_id, &mut session, &inbox, stopped).await;
+    let outcome = idle_loop(state, account_id, &mut session, inbox.id, stopped).await;
     state.sync.set_push(account_id, false);
     if outcome.is_ok() {
         session.logout().await;
@@ -130,7 +158,7 @@ async fn idle_loop(
     state: &State,
     account_id: &str,
     session: &mut regards_imap::Session,
-    inbox: &mailboxes::Mailbox,
+    inbox_id: i64,
     stopped: &mut watch::Receiver<bool>,
 ) -> Result<(), SyncError> {
     loop {
@@ -139,8 +167,15 @@ async fn idle_loop(
             async move { until_stopped(&mut stopped).await }
         };
         match session.idle(IDLE_REFRESH, stop).await? {
+            IdleEnd::Changed if *stopped.borrow() => return Ok(()),
             IdleEnd::Changed => {
-                let changes = sync::sync_mailbox(state, session, inbox).await?;
+                // From where the last sync left it, not from when push started.
+                let inbox = state
+                    .store
+                    .read(move |conn| mailboxes::get(conn, inbox_id))
+                    .await?
+                    .ok_or(SyncError::NoAccount)?;
+                let changes = sync::sync_mailbox(state, session, &inbox).await?;
                 tracing::debug!(account = %account_id, added = changes.messages_added, "inbox updated by push");
             }
             IdleEnd::Timeout => {}

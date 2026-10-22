@@ -206,7 +206,7 @@ pub(crate) async fn remove(state: &State, params: AccountRemoveParams) -> Result
     }
     state.sync.forget(&id);
     state.oauth.forget(&id);
-    state.watchers.stop(&id);
+    let _ = state.watchers.stop(&id);
     state.backfills.stop(&id);
     tracing::info!(account = %id, "account removed");
     Ok(json!({ "removed": true }))
@@ -242,7 +242,8 @@ pub(crate) async fn resync(state: &Arc<State>, params: AccountRef) -> Result<Val
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
-    state.watchers.stop(&id);
+    // A push sync still running would write back what is dropped here.
+    state.watchers.stop_and_wait(&id, RESYNC_WAIT).await;
     state.backfills.stop(&id);
     let forgotten = {
         let id = id.clone();
