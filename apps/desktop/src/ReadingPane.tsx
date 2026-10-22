@@ -11,9 +11,10 @@ import {
   setFlags,
 } from "./accounts";
 import { type Action, type Target, actionKeys, choose } from "./actions";
+import { AttachmentTiles } from "./AttachmentTiles";
 import { Avatar } from "./Avatar";
 import { useChanges } from "./changes";
-import { fileKind, fileSize, fullDate, peopleFull, personName } from "./format";
+import { fullDate, peopleFull, personName } from "./format";
 import { Icon } from "./icons";
 import type { ListItem } from "./mail";
 import { type Anchor, type MenuEntry, anchorOf } from "./Menu";
@@ -418,8 +419,6 @@ function ThreadMessage({
   };
   const to = ready?.to ?? [];
   const cc = ready?.cc ?? [];
-  const attachments = ready?.attachments.filter((a) => !a.inline) ?? [];
-  const total = attachments.reduce((sum, a) => sum + a.size, 0);
 
   return (
     <li className="mail-card" ref={ref}>
@@ -497,30 +496,7 @@ function ThreadMessage({
             ) : (
               <pre className="text-body">{ready.text.trim() || "(no text)"}</pre>
             )}
-            {attachments.length > 0 && (
-              <div className="attachments">
-                <p className="attachments-head">
-                  <Icon name="paperclip" size={15} />
-                  <strong>
-                    {attachments.length} {attachments.length === 1 ? "attachment" : "attachments"}
-                  </strong>
-                  <span className="muted">{fileSize(total)}</span>
-                </p>
-                <ul className="tiles">
-                  {attachments.map((attachment, index) => (
-                    <li key={`${index}-${attachment.name ?? ""}`} className="tile">
-                      <span className="tile-face">{fileKind(attachment.name, attachment.mime)}</span>
-                      <span className="tile-name" title={attachment.name ?? undefined}>
-                        {attachment.name ?? "(unnamed)"}
-                      </span>
-                      <span className="tile-size">
-                        {fileKind(attachment.name, attachment.mime)} · {fileSize(attachment.size)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            <AttachmentTiles messageId={message.id} attachments={ready.attachments} />
           </>
         )}
       </div>
