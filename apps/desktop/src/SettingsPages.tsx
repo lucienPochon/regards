@@ -32,7 +32,7 @@ import { ACCOUNT_COLOURS, COLOUR_NAMES, type Prefs, ZOOMS, accountColour, accoun
 import { MOD_KEY } from "./shortcuts";
 import { LinkRow, Option, Select, SubPageHead, Toggle } from "./SettingsControls";
 import { senderImages, setSenderImages } from "./smart";
-import { exportDiagnostics, setDetailedLogs, supportSettings } from "./support";
+import { exportDiagnostics, setConnectionLog, setDetailedLogs, supportSettings } from "./support";
 import { type PresetDef, type PresetPrefs, REMINDER_PRESETS, SEND_PRESETS, SNOOZE_PRESETS } from "./snooze";
 import { type Theme, applyTheme, savedTheme } from "./theme";
 import { AboutUpdates } from "./UpdateCheck";
@@ -1041,13 +1041,17 @@ function Troubleshooting({
   confirm: (request: ConfirmRequest) => Promise<boolean>;
 }) {
   const [detailed, setDetailed] = useState<boolean | null>(null);
+  const [connections, setConnections] = useState<boolean | null>(null);
   const [changed, setChanged] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     supportSettings().then(
-      (settings) => setDetailed(settings.detailed_logs),
+      (settings) => {
+        setDetailed(settings.detailed_logs);
+        setConnections(settings.connection_log);
+      },
       (failure: unknown) => setError(String(failure)),
     );
   }, []);
@@ -1083,6 +1087,29 @@ function Troubleshooting({
                   setDetailed(on);
                   setChanged(true);
                 },
+                (failure: unknown) => setError(String(failure)),
+              );
+            }}
+          />
+        )}
+      </Option>
+      <Option
+        icon="refresh"
+        label="Log connections"
+        description={
+          connections
+            ? "Logging now: the commands and replies between Regards and your mail servers, never your mail, addresses or passwords. Saved diagnostics include it, and so name your mail servers."
+            : "The commands and replies between Regards and your mail servers, never your mail, addresses or passwords. Starts and stops at once."
+        }
+      >
+        {connections !== null && (
+          <Toggle
+            label="Log connections"
+            on={connections}
+            onChange={(on) => {
+              setError(null);
+              setConnectionLog(on).then(
+                () => setConnections(on),
                 (failure: unknown) => setError(String(failure)),
               );
             }}
