@@ -67,6 +67,25 @@ pub struct Account {
     pub position: i64,
 }
 
+/// An account's mail on this device, dropped so it can be fetched again:
+/// its messages (and with them new-mail notices), what each folder's sync
+/// knew, and whom it writes with (counted again as mail comes back). The
+/// account, its folders, drafts, outbox, marks and senders stay. Returns
+/// how many messages were dropped.
+pub fn forget_mail(tx: &Transaction<'_>, account_id: &str) -> Result<usize, StoreError> {
+    let dropped = tx.execute(
+        "DELETE FROM messages WHERE mailbox_id IN (SELECT id FROM mailboxes WHERE account_id = ?1)",
+        [account_id],
+    )?;
+    tx.execute(
+        "UPDATE mailboxes SET uid_validity = NULL, uid_next = NULL, highest_modseq = NULL, synced_at = NULL \
+         WHERE account_id = ?1",
+        [account_id],
+    )?;
+    tx.execute("DELETE FROM people WHERE account_id = ?1", [account_id])?;
+    Ok(dropped)
+}
+
 /// A fresh random account ID.
 pub fn new_id() -> String {
     uuid::Uuid::new_v4().to_string()
