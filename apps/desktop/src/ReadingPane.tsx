@@ -28,6 +28,9 @@ type Load = { state: "loading" } | { state: "ready"; detail: MessageDetail } | {
 
 const disposable = (role: Role | null | undefined) => role === "trash" || role === "junk";
 
+/** How tall a message's frame may grow, against pages that grow with it (`100vh`). */
+const MAX_FRAME_HEIGHT = 30_000;
+
 /** The command palette for these actions, with any extra entries (a message's own view options). */
 export type Palette = (actions: Action[], title: string, extra?: MenuEntry[]) => void;
 
@@ -319,6 +322,20 @@ function ThreadMessage({
   const [allowRemote, setAllowRemote] = useState(() => getPrefs().remoteImages);
   const [details, setDetails] = useState(false);
   const [source, setSource] = useState(false);
+  // The HTML frame is as tall as the message: its own script says how tall (mail_frame.rs).
+  const frame = useRef<HTMLIFrameElement>(null);
+  const [frameHeight, setFrameHeight] = useState<number | null>(null);
+  useEffect(() => {
+    const heard = (event: MessageEvent) => {
+      if (!frame.current || event.source !== frame.current.contentWindow) return;
+      const height = (event.data as { regardsMailHeight?: unknown } | null)?.regardsMailHeight;
+      if (typeof height === "number" && Number.isFinite(height)) {
+        setFrameHeight(Math.min(Math.max(Math.ceil(height), 40), MAX_FRAME_HEIGHT));
+      }
+    };
+    window.addEventListener("message", heard);
+    return () => window.removeEventListener("message", heard);
+  }, []);
   const { message } = entry;
   const ready = load.state === "ready" ? load.detail : null;
   const when = fullDate(message.sent_at ?? message.received_at);
@@ -501,12 +518,15 @@ function ThreadMessage({
             )}
             {imagesError && <p className="error" role="alert">{imagesError}</p>}
             {ready.has_html && !showText ? (
-              // No scripts, no same-origin access, no popups or navigation: an empty sandbox.
+              // Only our script, which says how tall the message is (its page's CSP allows no
+              // other); no same-origin access, no forms, popups or navigation.
               <iframe
                 // Loaded again when the sender's images are allowed or blocked.
                 key={String(fromSender)}
+                ref={frame}
                 className="html-body"
-                sandbox=""
+                style={frameHeight === null ? undefined : { height: frameHeight }}
+                sandbox="allow-scripts"
                 referrerPolicy="no-referrer"
                 title="Message content"
                 src={messageHtmlUrl(message.id, allowRemote || fromSender === true)}

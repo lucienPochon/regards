@@ -2,9 +2,11 @@
 //! sandboxed iframe of the reading pane (ADR-0006 §4).
 //!
 //! Layers, from the daemon outwards: `ammonia` sanitising and image blocking
-//! in the daemon; this response's own strict CSP (no scripts at all, images
-//! only from `data:` unless the reader allowed remote ones); and the iframe's
-//! empty `sandbox` attribute in the WebView.
+//! in the daemon; this response's own strict CSP (no scripts but the one we
+//! add, which says how tall the message is; images only from `data:` unless
+//! the reader allowed remote ones); and the iframe's `sandbox` in the
+//! WebView, which allows scripts but no same-origin access, forms, popups or
+//! navigation.
 //!
 //! URLs look like `regards-mail://localhost/message/123?remote=0` (on Windows
 //! the WebView uses `http://regards-mail.localhost/…`).
@@ -70,8 +72,12 @@ pub(crate) fn handle(ctx: UriSchemeContext<'_, Wry>, request: Request<Vec<u8>>, 
                     }
                     Err(error) => Err(error),
                 };
+                let nonce = nonce();
                 responder.respond(match result {
-                    Ok(rendered) => page(rendered.html, &csp(allow_remote, opener.as_deref())),
+                    Ok(rendered) => page(
+                        measured(rendered.html, nonce.as_deref()),
+                        &csp(allow_remote, opener.as_deref(), nonce.as_deref()),
+                    ),
                     Err(error) => text(StatusCode::BAD_GATEWAY, &error),
                 });
             });
@@ -151,15 +157,50 @@ fn percent_decode(text: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// No scripts, no plugins, no forms, no base changes; inline styles allowed;
-/// images and fonts only embedded, unless the reader allowed remote ones. The
-/// only frame is the hidden link frame, and it may load only `opener`.
-fn csp(allow_remote: bool, opener: Option<&str>) -> String {
+/// The one script a message's page runs, ours: it tells the reading pane how
+/// tall the message is, as it loads and whenever that changes, so the frame
+/// is as tall as the message (a horizontal scroll bar included). It can do
+/// nothing else: the frame's origin is its own, not the app's, and it may
+/// fetch nothing (`default-src 'none'`).
+const MEASURE: &str = "(()=>{let last=0;const tell=()=>{const root=document.documentElement;\
+const body=document.body;const bar=innerHeight-root.clientHeight;\
+const height=Math.ceil(Math.max(root.getBoundingClientRect().height,body?body.scrollHeight:0)+bar);\
+if(height!==last){last=height;parent.postMessage({regardsMailHeight:height},'*');}};\
+new ResizeObserver(tell).observe(document.documentElement);\
+if(document.body){new ResizeObserver(tell).observe(document.body);}\
+addEventListener('load',tell);tell();})();";
+
+/// A value used once, for this page's script alone; `None` without
+/// randomness, and then no script runs (the frame keeps a fixed height).
+fn nonce() -> Option<String> {
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes).ok()?;
+    Some(bytes.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// The message's HTML with [`MEASURE`] at the end of its body.
+fn measured(html: String, nonce: Option<&str>) -> String {
+    let Some(nonce) = nonce else {
+        return html;
+    };
+    let script = format!("<script nonce=\"{nonce}\">{MEASURE}</script>");
+    match html.to_ascii_lowercase().rfind("</body>") {
+        Some(at) => format!("{}{script}{}", &html[..at], &html[at..]),
+        None => html + &script,
+    }
+}
+
+/// No scripts but ours (`nonce`), no plugins, no forms, no base changes;
+/// inline styles allowed; images and fonts only embedded, unless the reader
+/// allowed remote ones. The only frame is the hidden link frame, and it may
+/// load only `opener`.
+fn csp(allow_remote: bool, opener: Option<&str>, nonce: Option<&str>) -> String {
     let remote = if allow_remote { " https: http:" } else { "" };
     let frames = opener.map_or("'none'", |opener| opener);
+    let scripts = nonce.map_or_else(|| "'none'".to_owned(), |nonce| format!("'nonce-{nonce}'"));
     format!(
-        "default-src 'none'; style-src 'unsafe-inline'; img-src data:{remote}; font-src data:{remote}; \
-         frame-src {frames}; form-action 'none'; base-uri 'none'"
+        "default-src 'none'; script-src {scripts}; style-src 'unsafe-inline'; img-src data:{remote}; \
+         font-src data:{remote}; frame-src {frames}; form-action 'none'; base-uri 'none'"
     )
 }
 
@@ -286,18 +327,33 @@ mod tests {
     }
 
     #[test]
-    fn the_policy_never_allows_scripts_and_blocks_remote_images_by_default() {
-        let strict = csp(false, None);
+    fn the_policy_allows_only_our_script_and_blocks_remote_images_by_default() {
+        let strict = csp(false, None, Some("abc123"));
         assert!(strict.starts_with("default-src 'none'"));
-        assert!(!strict.contains("script"));
+        let scripts = strict.split(';').find(|rule| rule.trim().starts_with("script-src"));
+        assert_eq!(
+            scripts.map(str::trim),
+            Some("script-src 'nonce-abc123'"),
+            "ours alone: {strict}"
+        );
+        assert!(csp(false, None, None).contains("script-src 'none';"));
         assert!(strict.contains("img-src data:;"));
         assert!(strict.contains("frame-src 'none';"));
-        assert!(csp(true, None).contains("img-src data: https: http:;"));
+        assert!(csp(true, None, None).contains("img-src data: https: http:;"));
         // The link frame may load our opener and nothing else.
-        let framed = csp(false, Some("http://regards-mail.localhost/open"));
+        let framed = csp(false, Some("http://regards-mail.localhost/open"), None);
         assert!(
             framed.contains("frame-src http://regards-mail.localhost/open;"),
             "{framed}"
         );
+    }
+
+    #[test]
+    fn the_measuring_script_goes_at_the_end_of_the_body_with_its_nonce() {
+        let page = measured("<html><body><p>Hi</p></BODY></html>".into(), Some("n1"));
+        assert!(page.starts_with("<html><body><p>Hi</p><script nonce=\"n1\">"), "{page}");
+        assert!(page.ends_with("</script></BODY></html>"), "{page}");
+        assert!(measured("<p>Hi</p>".into(), Some("n1")).ends_with("</script>"));
+        assert_eq!(measured("<p>Hi</p>".into(), None), "<p>Hi</p>", "no nonce, no script");
     }
 }
