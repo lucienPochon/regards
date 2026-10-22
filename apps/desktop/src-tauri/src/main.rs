@@ -1534,6 +1534,7 @@ fn main() {
             badge::set_badge_settings,
             support::support_settings,
             support::set_detailed_logs,
+            support::set_connection_log,
             support::export_diagnostics,
             notify::notification_settings,
             notify::set_notification_settings,

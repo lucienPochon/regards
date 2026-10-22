@@ -80,7 +80,7 @@ pub async fn verify_login(
 /// certificate valid for it (finding an address's servers).
 pub async fn probe(server: &ImapServer, tls: &TlsOptions) -> Result<Vec<String>, ImapError> {
     let stream = tls::connect(&server.host, server.port, tls).await?;
-    let (mut conn, greeting) = Conn::open(Stream::tls(stream.into())).await?;
+    let (mut conn, greeting) = Conn::open(Stream::tls(stream.into()), &server.host).await?;
     if let GreetingKind::Bye = greeting.kind {
         return Err(ImapError::NotImap(clean(greeting.text.as_ref())));
     }
@@ -171,7 +171,7 @@ impl Session {
         tls: &TlsOptions,
     ) -> Result<Self, ImapError> {
         let stream = tls::connect(&server.host, server.port, tls).await?;
-        let (mut conn, greeting) = Conn::open(Stream::tls(stream.into())).await?;
+        let (mut conn, greeting) = Conn::open(Stream::tls(stream.into()), &server.host).await?;
         match greeting.kind {
             GreetingKind::Ok => {}
             GreetingKind::PreAuth => {

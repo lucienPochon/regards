@@ -17,7 +17,9 @@
 
 use regards_core::encoding::base64;
 use regards_core::secret::Secret;
+use regards_net::connlog::Conversation;
 use regards_net::{NetError, TlsOptions};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
@@ -207,18 +209,21 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Send> Wire for T {}
 struct Session {
     stream: BufReader<Box<dyn Wire>>,
     extensions: Vec<String>,
+    /// The connection log: command names and replies only (see [`heard`]).
+    log: Arc<Conversation>,
 }
 
 impl Session {
     async fn open(server: &SmtpServer, tls: &TlsOptions) -> Result<Self, SubmitError> {
+        let log = Arc::new(Conversation::new("smtp", &server.host));
         let mut session = match server.security {
             Security::Tls => {
                 let stream = regards_net::connect_tls(&server.host, server.port, tls).await?;
-                Self::new(Box::new(stream))
+                Self::new(Box::new(stream), log)
             }
             Security::StartTls => {
                 let tcp = regards_net::connect(&server.host, server.port).await?;
-                let mut plain = Plain::new(tcp);
+                let mut plain = Plain::new(tcp, Arc::clone(&log));
                 plain.greeting().await?;
                 let extensions = plain.ehlo().await?;
                 if !has(&extensions, "STARTTLS") {
@@ -228,7 +233,8 @@ impl Session {
                 }
                 let tcp = plain.start_tls().await?;
                 let stream = regards_net::start_tls(tcp, &server.host, server.port, tls).await?;
-                let mut session = Self::new(Box::new(stream));
+                log.note("TLS started");
+                let mut session = Self::new(Box::new(stream), log);
                 session.extensions = session.ehlo().await?;
                 return Ok(session);
             }
@@ -238,15 +244,17 @@ impl Session {
         Ok(session)
     }
 
-    fn new(stream: Box<dyn Wire>) -> Self {
+    fn new(stream: Box<dyn Wire>, log: Arc<Conversation>) -> Self {
         Self {
             stream: BufReader::new(stream),
             extensions: Vec::new(),
+            log,
         }
     }
 
     async fn greeting(&mut self) -> Result<(), SubmitError> {
         let reply = timed(COMMAND_TIMEOUT, "the greeting", read_reply(&mut self.stream)).await?;
+        heard(&self.log, &reply, false);
         if reply.code != 220 {
             return Err(reply.refusal("the server is not accepting mail"));
         }
@@ -266,12 +274,21 @@ impl Session {
             .collect())
     }
 
+    /// `what` names the command for errors and the connection log, which
+    /// never gets `line` (it can hold a password or an address).
     async fn command(&mut self, line: &str, what: &'static str) -> Result<Reply, SubmitError> {
-        timed(COMMAND_TIMEOUT, what, async {
+        let signing_in = what == "AUTH";
+        self.log.client(if signing_in { "AUTH [redacted]" } else { what });
+        let reply = timed(COMMAND_TIMEOUT, what, async {
             write_line(&mut self.stream, line).await?;
             read_reply(&mut self.stream).await
         })
-        .await
+        .await;
+        match &reply {
+            Ok(reply) => heard(&self.log, reply, signing_in),
+            Err(error) => self.log.note(&error.to_string()),
+        }
+        reply
     }
 
     async fn authenticate(&mut self, credentials: &Credentials<'_>) -> Result<(), SubmitError> {
@@ -367,6 +384,7 @@ impl Session {
         if reply.code != 354 {
             return Err(reply.refusal("the server refused the message"));
         }
+        self.log.client(&format!("[the message, {} bytes]", data.len()));
         // Until the final line is written, the server cannot have accepted anything.
         timed(COMMAND_TIMEOUT, "sending the message", async {
             self.stream.write_all(&data).await.map_err(lost)?;
@@ -394,6 +412,7 @@ impl Session {
                 ));
             }
         };
+        heard(&self.log, &reply, false);
         if reply.code == 250 {
             Ok(Submitted { reply: reply.text() })
         } else {
@@ -410,9 +429,12 @@ impl Session {
     }
 
     async fn quit(mut self) {
+        self.log.client("QUIT");
         let _ = tokio::time::timeout(Duration::from_secs(5), async {
             let _ = write_line(&mut self.stream, "QUIT").await;
-            let _ = read_reply(&mut self.stream).await;
+            if let Ok(reply) = read_reply(&mut self.stream).await {
+                heard(&self.log, &reply, false);
+            }
         })
         .await;
     }
@@ -421,17 +443,20 @@ impl Session {
 /// The plain part of a STARTTLS connection.
 struct Plain {
     stream: BufReader<TcpStream>,
+    log: Arc<Conversation>,
 }
 
 impl Plain {
-    fn new(tcp: TcpStream) -> Self {
+    fn new(tcp: TcpStream, log: Arc<Conversation>) -> Self {
         Self {
             stream: BufReader::new(tcp),
+            log,
         }
     }
 
     async fn greeting(&mut self) -> Result<(), SubmitError> {
         let reply = timed(COMMAND_TIMEOUT, "the greeting", read_reply(&mut self.stream)).await?;
+        heard(&self.log, &reply, false);
         if reply.code != 220 {
             return Err(reply.refusal("the server is not accepting mail"));
         }
@@ -439,11 +464,13 @@ impl Plain {
     }
 
     async fn ehlo(&mut self) -> Result<Vec<String>, SubmitError> {
+        self.log.client("EHLO");
         let reply = timed(COMMAND_TIMEOUT, "EHLO", async {
             write_line(&mut self.stream, "EHLO [127.0.0.1]").await?;
             read_reply(&mut self.stream).await
         })
         .await?;
+        heard(&self.log, &reply, false);
         if reply.code != 250 {
             return Err(reply.refusal("the server refused EHLO"));
         }
@@ -456,11 +483,13 @@ impl Plain {
     }
 
     async fn start_tls(mut self) -> Result<TcpStream, SubmitError> {
+        self.log.client("STARTTLS");
         let reply = timed(COMMAND_TIMEOUT, "STARTTLS", async {
             write_line(&mut self.stream, "STARTTLS").await?;
             read_reply(&mut self.stream).await
         })
         .await?;
+        heard(&self.log, &reply, false);
         if reply.code != 220 {
             return Err(reply.refusal("the server refused STARTTLS"));
         }
@@ -472,6 +501,18 @@ impl Plain {
             ));
         }
         Ok(self.stream.into_inner())
+    }
+}
+
+/// A reply, to the connection log: each line with its code. A sign-in's
+/// challenges stay out (they carry what the sign-in sends back).
+fn heard(log: &Conversation, reply: &Reply, signing_in: bool) {
+    if signing_in && reply.code == 334 {
+        log.server("334 [redacted]");
+        return;
+    }
+    for line in &reply.lines {
+        log.server(&format!("{} {line}", reply.code));
     }
 }
 

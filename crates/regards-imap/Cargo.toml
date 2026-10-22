@@ -26,6 +26,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 rcgen.workspace = true
+tempfile.workspace = true
 # The fake TLS servers in tests/support.
 tokio-rustls.workspace = true
 

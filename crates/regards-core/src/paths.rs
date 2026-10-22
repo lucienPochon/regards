@@ -87,6 +87,12 @@ impl DataDirs {
         self.data.join("logs").join("daemon.log")
     }
 
+    /// The connection log, when the person turns it on (Settings › Support):
+    /// commands and replies, never mail, passwords, tokens or addresses.
+    pub fn connection_log(&self) -> PathBuf {
+        self.data.join("logs").join("connections.log")
+    }
+
     /// Short identifier derived from the data directory. It names per-instance
     /// resources such as the Windows named pipe; it is not a secret.
     pub fn scope_id(&self) -> String {

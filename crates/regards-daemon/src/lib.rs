@@ -302,6 +302,14 @@ impl Daemon {
             late_send_grace,
             draft_pace,
         });
+        let logging = state
+            .store
+            .read(|conn| regards_store::settings::get(conn, mail::CONNECTION_LOG))
+            .await
+            .is_ok_and(|value| value.as_deref() == Some("on"));
+        if logging {
+            mail::apply_connection_log(&state, true);
+        }
         state.queue.attach(&state);
         queue::Queue::wake_all(&state);
         let follow = tokio::spawn({

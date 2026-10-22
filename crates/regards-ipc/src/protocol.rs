@@ -196,6 +196,12 @@ pub mod methods {
     pub const READING_SETTINGS: &str = "reading.settings";
     /// Change [`ReadingSettings`]. `ui` only.
     pub const READING_SET_SETTINGS: &str = "reading.set_settings";
+    /// Whether connections to mail servers are logged (Settings › Support):
+    /// [`ConnectionLogSettings`]. `ui` only, like the one below.
+    pub const CONNECTION_LOG_GET: &str = "support.connection_log";
+    /// Log connections, or stop; at once. The log holds commands and replies,
+    /// never mail, passwords, tokens or addresses.
+    pub const CONNECTION_LOG_SET: &str = "support.set_connection_log";
     /// Whether recent inbox mail is downloaded ahead (off by default). `ui` only.
     pub const PREFETCH_GET: &str = "prefetch.get";
     /// Download recent inbox mail ahead, or not; on starts at once. `ui` only.
@@ -1665,6 +1671,13 @@ pub struct PeopleSuggestParams {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PeopleSuggestResult {
     pub people: Vec<Person>,
+}
+
+/// Parameters of [`methods::CONNECTION_LOG_SET`], and the result of both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConnectionLogSettings {
+    /// Off by default.
+    pub on: bool,
 }
 
 /// The result of [`methods::ACCOUNT_RESYNC`]: the mail is coming back, as
