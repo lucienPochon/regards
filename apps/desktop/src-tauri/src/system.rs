@@ -92,9 +92,55 @@ pub(crate) fn open_in_agent(app: AgentApp, prompt: String) -> Result<(), String>
     open::that_detached(&link).map_err(|error| format!("could not open the agent: {error}"))
 }
 
+/// Standard base64, with padding.
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |n, (i, byte)| n | u32::from(*byte) << (16 - 8 * i));
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(char::from(ALPHABET[(n >> (18 - 6 * i) & 63) as usize]));
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+/// The link that offers Regards to Cursor as an MCP server, for the person
+/// to confirm there (cursor.com/docs/context/mcp/install-links): its settings
+/// as in `~/.cursor/mcp.json`, in base64.
+fn cursor_link() -> String {
+    let config = base64(br#"{"command":"regards","args":["mcp"]}"#);
+    format!("cursor://anysphere.cursor-deeplink/mcp/install?name=regards&config={config}")
+}
+
+/// Open Cursor, asking it to add Regards as an MCP server.
+#[tauri::command]
+pub(crate) fn add_to_cursor() -> Result<(), String> {
+    open::that_detached(cursor_link()).map_err(|error| format!("could not open Cursor: {error}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cursor_is_offered_the_mcp_server_in_base64() {
+        assert_eq!(base64(b""), "");
+        assert_eq!(base64(b"f"), "Zg==");
+        assert_eq!(base64(b"fo"), "Zm8=");
+        assert_eq!(base64(b"foo"), "Zm9v");
+        assert_eq!(
+            cursor_link(),
+            "cursor://anysphere.cursor-deeplink/mcp/install?name=regards&config=eyJjb21tYW5kIjoicmVnYXJkcyIsImFyZ3MiOlsibWNwIl19"
+        );
+    }
 
     #[test]
     fn requests_go_to_agents_as_their_documented_links() {

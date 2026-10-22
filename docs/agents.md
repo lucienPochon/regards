@@ -35,9 +35,19 @@ Settings › Agents lists every request an agent made, allowed or refused, with 
 
 ## 4. Connect your agent
 
+The easiest way is in Regards: **Connect** beside an agent in the Agents menu, or **Settings › Agents › Connect an agent…**, opens a dialog with a card per agent and its steps:
+
+- **Claude Code:** a request to send it (the dialog can open Claude Code with it ready). Claude Code runs `regards skill` and installs the skill.
+- **Claude app:** add Regards to its settings file, then restart it.
+- **Cursor:** **Add to Cursor** asks Cursor to add Regards as an MCP server; you confirm there.
+- **Codex:** run `codex mcp add regards -- regards mcp`.
+- **Other agents:** the same request as Claude Code, or `regards mcp` as an MCP server.
+
+The tab **On this computer** lists the agents found here; each says **Active** once Regards is set up in it. The dialog checks again every few seconds, so you see it turn active.
+
 The `regards` command comes with Regards. For agents to run it from any terminal, it must be on your PATH:
 
-- **Windows:** Regards puts its folder on your Path when you connect an agent. You can also run `regards path add` from that folder; `regards path remove` takes it off, and uninstalling Regards does too. Terminals and apps opened afterwards find it: restart Claude Code, Cursor or your terminal if they were already open.
+- **Windows:** the Connect dialog offers to put its folder on your Path when it isn't there yet. You can also run `regards path add` from that folder; `regards path remove` takes it off, and uninstalling Regards does too. Terminals and apps opened afterwards find it: restart Claude Code, Cursor or your terminal if they were already open.
 - **macOS and Linux:** `regards path` says whether it is found, and otherwise how to link it into a folder on your PATH (for example `sudo ln -sf … /usr/local/bin/regards`).
 
 Agents use it in either of two ways.
@@ -84,7 +94,7 @@ The **Agents** button at the foot of the sidebar opens two tabs:
   - **Copy to the clipboard**, for any other agent.
 
   Nothing is sent until you send it in the agent. Regards itself sends nothing to any AI.
-- **Agents:** the agent apps Regards found on this computer, by their settings folders (`~/.claude`, `~/.codex`, `~/.cursor`, the Claude app's). One is marked **Active** once Regards is set up in it (the skill from `regards skill --install` is in its skills folder, or `regards` is one of its MCP servers) or while it is connected; otherwise it has **Connect**, which leads here. Regards only looks: it changes nothing in those folders. When it finds none, it lists them all.
+- **Agents:** the agent apps Regards found on this computer, by their settings folders (`~/.claude`, `~/.codex`, `~/.cursor`, the Claude app's). One is marked **Active** once Regards is set up in it (the skill from `regards skill --install` is in its skills folder, or `regards` is one of its MCP servers) or while it is connected; otherwise it has **Connect**, which opens the Connect dialog on its card (§ 4). Regards only looks: it changes nothing in those folders. When it finds none, it lists them all.
 
 You can hide the button from its menu; Settings › Agents shows it again.
 

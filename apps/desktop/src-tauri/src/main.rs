@@ -1776,6 +1776,7 @@ fn main() {
             system::open_system_settings,
             system::open_url,
             system::open_in_agent,
+            system::add_to_cursor,
             agent_apps::agent_apps_found,
             command_line::command_line,
             account_update,

@@ -11,6 +11,7 @@ import {
   openInAgent,
 } from "./agents";
 import { openUrl } from "./background";
+import { AgentMark, type ConnectId } from "./ConnectDialog";
 import { useDialogFocus } from "./dialogFocus";
 import { Icon } from "./icons";
 import type { Anchor } from "./Menu";
@@ -22,16 +23,6 @@ import { useShortcuts } from "./shortcuts";
 const GUIDE = "https://github.com/lucienPochon/regards/blob/main/docs/agents.md";
 const MARGIN = 8;
 
-/** A small mark for each agent app: its initials, not its logo. */
-function AgentMark({ app }: { app: AgentApp }) {
-  const initials = { "claude-code": "CC", "claude-app": "C", codex: "Cx", cursor: "Cu" }[app.id];
-  return (
-    <span className={`agent-mark ${app.id}`} aria-hidden="true">
-      {initials}
-    </span>
-  );
-}
-
 /**
  * The sidebar's Agents menu: recipes (ready-made requests, handed to an
  * agent with a click or copied) and the agent apps on this computer, the
@@ -41,11 +32,14 @@ function AgentMark({ app }: { app: AgentApp }) {
 export function AgentsMenu({
   anchor,
   onSettings,
+  onConnect,
   onClose,
 }: {
   anchor: Anchor;
-  /** Settings › Agents: connecting an agent, and what each account allows. */
+  /** Settings › Agents: what each account allows. */
   onSettings: () => void;
+  /** The Connect dialog, with this agent's card open. */
+  onConnect: (id: ConnectId) => void;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<"recipes" | "agents">("recipes");
@@ -166,7 +160,7 @@ export function AgentsMenu({
                 {AGENT_APPS.filter((app) => app.opens).map((app) => (
                   <li key={app.id}>
                     <button type="button" className="agents-row" onClick={() => send(app)}>
-                      <AgentMark app={app} />
+                      <AgentMark id={app.id} />
                       <span className="agents-row-label">{app.label}</span>
                       {isConnected(app, settings, found ?? null) && <span className="agents-active">Active</span>}
                     </button>
@@ -202,12 +196,19 @@ export function AgentsMenu({
               <ul className="agents-list">
                 {(found === undefined ? [] : shown).map((app) => (
                   <li key={app.id} className="agents-app">
-                    <AgentMark app={app} />
+                    <AgentMark id={app.id} />
                     <span className="agents-row-label">{app.label}</span>
                     {isConnected(app, settings, found ?? null) ? (
                       <span className="agents-active">Active</span>
                     ) : (
-                      <button type="button" className="pill-btn" onClick={toSettings}>
+                      <button
+                        type="button"
+                        className="pill-btn"
+                        onClick={() => {
+                          onClose();
+                          onConnect(app.id);
+                        }}
+                      >
                         Connect
                       </button>
                     )}

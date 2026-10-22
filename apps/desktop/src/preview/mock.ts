@@ -780,6 +780,7 @@ function handle(cmd: string, args: Args): unknown {
       return null;
     case "open_url":
     case "open_in_agent":
+    case "add_to_cursor":
       return null;
     case "account_set_auto_copy": {
       const owner = accounts.find((a) => a.account.id === args.accountId);
