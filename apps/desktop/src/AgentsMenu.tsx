@@ -1,5 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AGENT_APPS, type AgentApp, type AgentsSettings, agentsSettings, isConnected, openInAgent } from "./agents";
+import {
+  AGENT_APPS,
+  type AgentApp,
+  type AgentsSettings,
+  agentAppsFound,
+  agentsSettings,
+  type FoundAgentApp,
+  isConnected,
+  isFound,
+  openInAgent,
+} from "./agents";
 import { openUrl } from "./background";
 import { useDialogFocus } from "./dialogFocus";
 import { Icon } from "./icons";
@@ -41,6 +51,8 @@ export function AgentsMenu({
   const [tab, setTab] = useState<"recipes" | "agents">("recipes");
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [settings, setSettings] = useState<AgentsSettings | null>(null);
+  // Undefined while looking; null when looking failed.
+  const [found, setFound] = useState<FoundAgentApp[] | null | undefined>(undefined);
   const [said, setSaid] = useState<string | null>(null);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const card = useRef<HTMLDivElement>(null);
@@ -49,7 +61,12 @@ export function AgentsMenu({
 
   useEffect(() => {
     agentsSettings().then(setSettings, () => setSettings(null));
+    agentAppsFound().then(setFound, () => setFound(null));
   }, []);
+
+  // The apps found on this computer; all of them, to connect one, when none is.
+  const here = found ? AGENT_APPS.filter((app) => isFound(app, settings, found)) : [];
+  const shown = here.length > 0 ? here : AGENT_APPS;
 
   // Beside the button it opened from, its foot level with the button's.
   useLayoutEffect(() => {
@@ -151,7 +168,7 @@ export function AgentsMenu({
                     <button type="button" className="agents-row" onClick={() => send(app)}>
                       <AgentMark app={app} />
                       <span className="agents-row-label">{app.label}</span>
-                      {isConnected(app, settings) && <span className="agents-active">Active</span>}
+                      {isConnected(app, settings, found ?? null) && <span className="agents-active">Active</span>}
                     </button>
                   </li>
                 ))}
@@ -174,14 +191,20 @@ export function AgentsMenu({
             <>
               <h4 className="agents-group first">AI agents on this computer</h4>
               <p className="agents-lead">
-                A connected agent reads and acts on your mail through Regards, within what each account allows.
+                {found === undefined
+                  ? "Looking for agents on this computer…"
+                  : here.length > 0
+                    ? "Regards found these agents on this computer. A connected one reads and acts on your mail through Regards, within what each account allows."
+                    : found
+                      ? "Regards didn't find an AI agent on this computer. Connect one to read and act on your mail through Regards, within what each account allows."
+                      : "A connected agent reads and acts on your mail through Regards, within what each account allows."}
               </p>
               <ul className="agents-list">
-                {AGENT_APPS.map((app) => (
+                {(found === undefined ? [] : shown).map((app) => (
                   <li key={app.id} className="agents-app">
                     <AgentMark app={app} />
                     <span className="agents-row-label">{app.label}</span>
-                    {isConnected(app, settings) ? (
+                    {isConnected(app, settings, found ?? null) ? (
                       <span className="agents-active">Active</span>
                     ) : (
                       <button type="button" className="pill-btn" onClick={toSettings}>

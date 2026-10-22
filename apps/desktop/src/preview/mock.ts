@@ -1003,6 +1003,12 @@ function handle(cmd: string, args: Args): unknown {
     }
     case "agents_settings":
       return agentsGate;
+    case "agent_apps_found":
+      // As on a computer with Claude Code (set up) and Cursor (not yet).
+      return [
+        { id: "claude-code", set_up: true },
+        { id: "cursor", set_up: false },
+      ];
     case "agents_set_enabled":
       agentsGate = { enabled: args.enabled as boolean, connected: args.enabled ? agentsGate.connected : 0, apps: args.enabled ? agentsGate.apps : [] };
       return agentsGate;
