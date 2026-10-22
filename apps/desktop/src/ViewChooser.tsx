@@ -5,18 +5,20 @@ import { useShortcuts } from "./shortcuts";
 import { useDialogFocus } from "./dialogFocus";
 import { radioKeys, radioTab } from "./radios";
 
-export type InboxView = "smart" | "date";
+export type InboxView = "smart" | "date" | "cards";
 
 const MARGIN = 8;
 
+// The ids are kept in the saved layout: "smart" is By priority, "cards" By category.
 const VIEWS: { id: InboxView; label: string; caption: string }[] = [
-  { id: "smart", label: "Smart", caption: "Priority first, then people. Notifications and newsletters grouped." },
+  { id: "smart", label: "By priority", caption: "Priority first, then people by date. Notifications and newsletters in one row each." },
+  { id: "cards", label: "By category", caption: "Unread mail in a card per category. What you have seen goes below." },
   { id: "date", label: "By date", caption: "Everything together, newest first." },
 ];
 
 /**
- * Under the inbox's title: how the inbox is shown, as two pictures to choose
- * from, and with several accounts, which of them.
+ * Under the inbox's title: how the inbox is shown, as three pictures to
+ * choose from, and with several accounts, which of them.
  */
 export function ViewChooser({
   anchor,
@@ -106,6 +108,19 @@ export function ViewChooser({
                       <span className="pic-chips" />
                     </span>
                   </>
+                ) : view.id === "cards" ? (
+                  // A heading over rows, per category.
+                  [2, 1, 1].map((rows, group) => (
+                    <span key={group} className="pic-group">
+                      <span className="pic-head" />
+                      {Array.from({ length: rows }, (_, index) => (
+                        <span key={index} className="pic-row">
+                          <span className="pic-dot" />
+                          <span className="pic-line" />
+                        </span>
+                      ))}
+                    </span>
+                  ))
                 ) : (
                   Array.from({ length: 5 }, (_, index) => (
                     <span key={index} className="pic-row">

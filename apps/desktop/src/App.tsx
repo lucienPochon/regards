@@ -40,6 +40,7 @@ import { LIST_MAX, LIST_MIN, clampList, useLayout } from "./layout";
 import {
   type ListItem,
   type MessageFeed,
+  inboxSources,
   newer,
   sectionSources,
   sourcesFor,
@@ -57,7 +58,7 @@ import { type OpenLink, onOpenLink, takeLink } from "./links";
 import { useRecentSearches } from "./recent-searches";
 import { searchServer, searchTerm } from "./search";
 import { type Anchor, Menu, type MenuEntry, type MenuRequest } from "./Menu";
-import { type Bundle, ListHeader, MessageList, type Screener } from "./MessageList";
+import { type Bundle, type InboxCard, ListHeader, MessageList, type Screener } from "./MessageList";
 import { SenderCard, type SenderRequest } from "./SenderCard";
 import { SECTION_LABELS, type Screening, type Section, blockSender, screening, setSender } from "./smart";
 import { ViewChooser } from "./ViewChooser";
@@ -96,6 +97,8 @@ import { Launch } from "./AppMark";
 
 /** How long an error notice stays. */
 const NOTICE_MS = 8000;
+/** Rows a card of the card view shows before "View all". */
+const CARD_ROWS = 5;
 
 const trashLike = (item: ListItem) => item.role === "trash" || item.role === "junk";
 
@@ -290,8 +293,7 @@ export function App() {
     }
     return [];
   };
-  const markAllHere = () => {
-    const targets = readTargets();
+  const markAll = (targets: { mailboxId: number; section: Section | null }[]) => {
     Promise.all(targets.map((target) => markAllRead(target.mailboxId, target.section)))
       .then((results) => {
         const changed = results.reduce((sum, result) => sum + result.changed, 0);
@@ -308,6 +310,7 @@ export function App() {
       })
       .catch(failed);
   };
+  const markAllHere = () => markAll(readTargets());
   // Accounts whose Microsoft or Google sign-in expired: nothing syncs or sends until they sign in again.
   const signedOut = accounts.filter((entry) => entry.account.needs_sign_in);
   const inInbox = view.kind === "role" && view.role === "inbox";
@@ -324,6 +327,12 @@ export function App() {
     [layout.inboxView, inInbox, unified, accountInbox],
   );
   const smartOn = smartScope !== null && search === null;
+  // The inbox as cards: unread mail by kind, then what has been read.
+  const cardScope = useMemo(
+    () => (layout.inboxView !== "cards" ? null : inInbox ? unified : accountInbox ? [accountInbox] : null),
+    [layout.inboxView, inInbox, unified, accountInbox],
+  );
+  const cardsOn = cardScope !== null && search === null;
   const found = useSearch(accounts, search ? searchFor : "", search?.accountId ?? null, searchRound);
   // The Smart Inbox's list: People, and any group the person chose to see ungrouped.
   const ungroupNotifications = !appPrefs.grouped.notifications;
@@ -337,8 +346,10 @@ export function App() {
             ...(ungroupNotifications ? sectionSources(smartScope, "notifications") : []),
             ...(ungroupNewsletters ? sectionSources(smartScope, "newsletters") : []),
           ]
-        : sourcesFor(view.kind === "role" ? unified : accounts, view)),
-    [found.sources, smartScope, accounts, unified, view, ungroupNotifications, ungroupNewsletters],
+        : cardScope
+          ? inboxSources(cardScope, true)
+          : sourcesFor(view.kind === "role" ? unified : accounts, view)),
+    [found.sources, smartScope, cardScope, accounts, unified, view, ungroupNotifications, ungroupNewsletters],
   );
   const listed = useFeed(sources);
   // The last results stay while the next ones come, so typing doesn't flash the list.
@@ -358,6 +369,11 @@ export function App() {
     const extra = serverNow.items.filter((item) => !shown.has(item.id));
     return extra.length === 0 ? local : { ...local, items: [...local.items, ...extra].sort(newer) };
   }, [local, serverNow]);
+  // By category, Priority keeps its mail once read: the Seen card leaves it out.
+  const shownFeed = useMemo(
+    (): MessageFeed => (cardsOn ? { ...feed, items: feed.items.filter((item) => item.section !== "priority") } : feed),
+    [cardsOn, feed],
+  );
   const placeOf = useMemo(() => {
     const places = new Map<number, { accountId: string; role: ListItem["role"] }>();
     for (const entry of accounts) {
@@ -410,6 +426,25 @@ export function App() {
   const notificationItems = useFirstPage(useMemo(() => sectionSources(scope, "notifications"), [scope]), 30, smartOn);
   const newsletterItems = useFirstPage(useMemo(() => sectionSources(scope, "newsletters"), [scope]), 30, smartOn);
   const pinnedItems = useMarked(scope, "pinned", smartOn);
+  // The card view's cards: the newest unread of each kind, and the pinned.
+  const cardList = useMemo(() => cardScope ?? [], [cardScope]);
+  const cardCounts = useSmartOverview(cardList, cardsOn);
+  const cardNewSenders = useFirstPage(
+    useMemo(() => sectionSources(cardList, "new_senders", false), [cardList]),
+    CARD_ROWS,
+    cardsOn && screen === "section",
+  );
+  // Priority keeps its mail once read; the other cards hold only unread mail.
+  const cardPriority = useFirstPage(useMemo(() => sectionSources(cardList, "priority"), [cardList]), CARD_ROWS, cardsOn);
+  const cardPeople = useFirstPage(useMemo(() => sectionSources(cardList, "people", false), [cardList]), CARD_ROWS, cardsOn);
+  const cardNotifications = useFirstPage(useMemo(() => sectionSources(cardList, "notifications", false), [cardList]), CARD_ROWS, cardsOn);
+  const cardNewsletters = useFirstPage(useMemo(() => sectionSources(cardList, "newsletters", false), [cardList]), CARD_ROWS, cardsOn);
+  const cardPinned = useMarked(cardList, "pinned", cardsOn);
+  const cardPinnedRows = useFirstPage(
+    useMemo(() => sourcesFor(cardList, { kind: "marked", mark: "pinned" }), [cardList]),
+    CARD_ROWS,
+    cardsOn,
+  );
   const aside = useMarked(accounts, "aside", inInbox);
   const items = useRef(feed.items);
   items.current = feed.items;
@@ -1080,14 +1115,16 @@ export function App() {
     view.kind === "section"
       ? `Inbox${view.inbox ? ` · ${(() => { const owner = accounts.find((entry) => entry.account.id === view.inbox?.accountId); return owner ? accountLabel(appPrefs, owner.account) : ""; })()}` : ""}`
       : view.kind === "mailbox"
-        ? `${viewAccount ? accountLabel(appPrefs, viewAccount.account) : ""}${accountInbox ? (smartOn ? " · Smart" : " · By date") : ""}`
+        ? `${viewAccount ? accountLabel(appPrefs, viewAccount.account) : ""}${accountInbox ? (smartOn ? " · By priority" : cardsOn ? " · By category" : " · By date") : ""}`
         : view.kind === "drafts"
           ? `${drafts.length} ${drafts.length === 1 ? "draft" : "drafts"}`
           : view.kind === "outbox"
             ? `${outbox.length} waiting`
             : smartOn
-              ? "Smart"
-              : "By date";
+              ? "By priority"
+              : cardsOn
+                ? "By category"
+                : "By date";
   const empty =
     view.kind === "role" && view.role === "inbox"
       ? { title: "You're all caught up", body: "New mail shows here as it arrives." }
@@ -1195,6 +1232,39 @@ export function App() {
         ).filter((bundle) => appPrefs.grouped[bundle.key as keyof typeof appPrefs.grouped]),
       }
     : null;
+  const cardOf = (section: Section, label: string, items: ListItem[]): InboxCard => ({
+    key: section,
+    label,
+    items,
+    total: Math.max((section === "priority" ? cardCounts[section]?.total : cardCounts[section]?.unread) ?? 0, items.length),
+    onAll: openSection(section),
+    onRead:
+      section === "new_senders"
+        ? undefined
+        : () =>
+            markAll(
+              cardList.flatMap((entry) =>
+                entry.mailboxes.filter((m) => m.role === "inbox").map((m) => ({ mailboxId: m.id, section })),
+              ),
+            ),
+    screen: section === "new_senders",
+  });
+  const cards: InboxCard[] | null = cardsOn
+    ? [
+        ...(screen === "section" ? [cardOf("new_senders", "New senders", cardNewSenders)] : []),
+        cardOf("priority", "Priority", cardPriority),
+        cardOf("people", "People", cardPeople),
+        cardOf("notifications", "Notifications", cardNotifications),
+        cardOf("newsletters", "Newsletters", cardNewsletters),
+        {
+          key: "pinned",
+          label: "Pinned",
+          items: cardPinnedRows,
+          total: Math.max(cardPinned.length, cardPinnedRows.length),
+          onAll: () => changeView({ kind: "marked", mark: "pinned" }),
+        },
+      ]
+    : null;
   // A new sender: accepted into People, or blocked (their mail goes to Junk, undoably).
   const screener: Screener = {
     accept: (item) => {
@@ -1232,7 +1302,7 @@ export function App() {
         onCompose={writeNew}
         canCompose={composeFrom !== null}
         onMarkAllRead={readTargets().length > 0 ? markAllHere : undefined}
-        feed={feed}
+        feed={shownFeed}
         mode={layout.mode}
         openId={openItem?.id ?? null}
         picked={picked}
@@ -1247,6 +1317,7 @@ export function App() {
         onSplit={layout.mode === "single" && layout.handle ? () => setLayout({ mode: "split" }) : undefined}
         own={ownAddresses}
         smart={smart}
+        cards={cards}
         search={{
           query: search?.query ?? null,
           onQuery: (query) => {

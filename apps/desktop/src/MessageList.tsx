@@ -133,6 +133,23 @@ export interface SmartParts {
   bundles: Bundle[];
 }
 
+/**
+ * One category of the inbox by category: its unread mail (Priority's and
+ * the pinned, read or not), the newest few, and the way to all of it.
+ */
+export interface InboxCard {
+  key: string;
+  label: string;
+  items: ListItem[];
+  /** How many there are in all. */
+  total: number;
+  onAll: () => void;
+  /** The round check: mark the card's mail read. */
+  onRead?: () => void;
+  /** New senders: Accept and Block on each row. */
+  screen?: boolean;
+}
+
 /** Accepting or blocking a new sender, from their row. */
 export interface Screener {
   accept: (item: ListItem) => void;
@@ -174,6 +191,7 @@ export function MessageList({
   onSplit,
   own,
   smart,
+  cards,
   search,
   screener,
   screenAll = false,
@@ -203,6 +221,8 @@ export function MessageList({
   own: ReadonlySet<string>;
   /** The inbox as the Smart Inbox: cards and groups around the People list. */
   smart?: SmartParts | null;
+  /** The inbox by category: unread mail in a card per category, then the list (`feed`) as the card of mail seen. */
+  cards?: InboxCard[] | null;
   search: SearchControls;
   screener?: Screener;
   /** Every row here is a new sender (the screener's own list): Accept and Block on each. */
@@ -220,12 +240,22 @@ export function MessageList({
 
   // The cards' messages come first, then the list, for the keyboard and for selecting.
   const showSmart = Boolean(smart) && !searching;
+  const showCards = Boolean(cards) && !searching;
+  const unreadCards = useMemo(() => (cards ?? []).filter((card) => card.items.length > 0), [cards]);
   const cardItems = useMemo(
-    () => (smart ? [...(smart.newSenders?.held ? [] : (smart.newSenders?.items ?? [])), ...(smart.priority?.items ?? [])] : []),
-    [smart],
+    () =>
+      cards
+        ? unreadCards.flatMap((card) => card.items)
+        : smart
+          ? [...(smart.newSenders?.held ? [] : (smart.newSenders?.items ?? [])), ...(smart.priority?.items ?? [])]
+          : [],
+    [cards, unreadCards, smart],
   );
   const items = feed.items;
-  const all = useMemo(() => (showSmart ? [...cardItems, ...items] : items), [showSmart, cardItems, items]);
+  const all = useMemo(
+    () => (showSmart || showCards ? [...cardItems, ...items] : items),
+    [showSmart, showCards, cardItems, items],
+  );
 
   // In split view the keyboard follows the open message.
   const focus = mode === "split" ? (openId ?? cursor) : cursor;
@@ -557,7 +587,11 @@ export function MessageList({
   const priority = showSmart ? smart?.priority : null;
   const newSenders = showSmart ? smart?.newSenders : null;
   const nothing =
-    items.length === 0 && bundles.length === 0 && !(priority && priority.items.length > 0) && !(newSenders && newSenders.total > 0);
+    items.length === 0 &&
+    bundles.length === 0 &&
+    !(priority && priority.items.length > 0) &&
+    !(newSenders && newSenders.total > 0) &&
+    !(showCards && unreadCards.length > 0);
 
   return (
     <section className={`list-pane ${mode}`} aria-label={title}>
@@ -687,7 +721,43 @@ export function MessageList({
                 )}
               </section>
             )}
-            {sections.map((section) => (
+            {showCards && (
+              <>
+                {unreadCards.length === 0 && <p className="category-empty">Nothing unread.</p>}
+                {unreadCards.map((card) => (
+                  <section key={card.key} className="day" aria-label={card.label}>
+                    <h3 className="day-head category-head">
+                      {card.label}
+                      <span className="category-count">{card.total}</span>
+                      {card.onRead && (
+                        <button
+                          type="button"
+                          className="category-read"
+                          title="Mark all read"
+                          aria-label={"Mark all " + card.label + " read"}
+                          onClick={card.onRead}
+                        >
+                          <Icon name="check" size={12} />
+                        </button>
+                      )}
+                    </h3>
+                    <ul>{card.items.map((item) => row(item, card.screen))}</ul>
+                    {card.total > card.items.length && (
+                      <button type="button" className="category-more" onClick={card.onAll}>
+                        View all {card.total}
+                      </button>
+                    )}
+                  </section>
+                ))}
+                {items.length > 0 && (
+                  <section className="day" aria-label="Seen">
+                    <h3 className="day-head">Seen</h3>
+                    <ul>{items.map((item) => row(item))}</ul>
+                  </section>
+                )}
+              </>
+            )}
+            {!showCards && sections.map((section) => (
               <section key={section.label} className="day" aria-label={section.label}>
                 <h3 className="day-head">{section.label}</h3>
                 <ul>
