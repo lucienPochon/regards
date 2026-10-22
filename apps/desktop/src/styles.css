@@ -872,9 +872,9 @@ button.link:hover {
 .rail .side-item {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   color: var(--rail-text);
 }
 
@@ -949,8 +949,8 @@ button.link:hover {
   position: relative;
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 26px;
+  width: 32px;
+  height: 30px;
   border-radius: 6px;
   color: var(--rail-dim);
 }
@@ -993,9 +993,9 @@ button.link:hover {
 .expanded .side-item {
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: 14px;
   width: calc(100% - 22px);
-  height: 30px;
+  height: 34px;
   margin: 0 11px;
   padding: 0 10px 0 15px;
   border-radius: 7px;
