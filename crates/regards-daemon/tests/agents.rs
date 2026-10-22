@@ -536,14 +536,18 @@ async fn every_agent_can_be_turned_off_at_once_and_sent_away() {
     } = world.start().await;
     let account = world.add_account(&mut desktop).await;
     set(&mut desktop, &account.id, AgentAccess::Read).await;
-    let mut agent = Client::connect(&endpoint, ClientKind::Mcp).await.unwrap();
+    // The app it runs in is listed while it is connected, each name once.
+    let mut agent = Client::connect_as(&endpoint, ClientKind::Mcp, None, Some(" claude-code "))
+        .await
+        .unwrap();
     assert_eq!(accounts(&mut agent).await.len(), 1);
     let on: AgentsSettings = desktop.call(methods::AGENTS_SETTINGS, Value::Null).await.unwrap();
     assert_eq!(
         on,
         AgentsSettings {
             enabled: true,
-            connected: 1
+            connected: 1,
+            apps: vec!["claude-code".into()],
         }
     );
 

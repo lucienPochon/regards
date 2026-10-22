@@ -6,11 +6,23 @@ import { Choice } from "./SettingsControls";
 /** The agent guide, on the project's site. */
 const GUIDE = "https://github.com/lucienPochon/regards/blob/main/docs/agents.md";
 
-type App = "claude" | "codex" | "cursor" | "skill";
+type App = "claude" | "claude-app" | "codex" | "cursor" | "skill";
 
 /** How each agent app takes Regards: the one thing to run or paste (docs/agents.md § 4). */
 const APPS: { id: App; label: string; where: string; text: string }[] = [
-  { id: "claude", label: "Claude Code", where: "Run in a terminal:", text: "claude mcp add regards -- regards mcp" },
+  {
+    id: "claude",
+    label: "Claude Code",
+    // User scope: Regards in every folder Claude Code is started from.
+    where: "Run in a terminal:",
+    text: "claude mcp add --scope user regards -- regards mcp",
+  },
+  {
+    id: "claude-app",
+    label: "Claude app",
+    where: "In the Claude app, Settings › Developer › Edit Config, add to the file, then restart the app:",
+    text: '{ "mcpServers": { "regards": { "command": "regards", "args": ["mcp"] } } }',
+  },
   {
     id: "codex",
     label: "Codex",

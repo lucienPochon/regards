@@ -8,7 +8,8 @@ use crate::accounts::store_error;
 use regards_ipc::protocol::{AgentsDisconnected, AgentsEnabledParams, AgentsSettings, RpcError, codes};
 use regards_store::settings;
 use serde_json::{Value, json};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use tokio::sync::watch;
 
 /// The daemon's key for the switch: "off", or on.
@@ -18,14 +19,64 @@ pub(crate) struct Gate {
     enabled: AtomicBool,
     /// Moved on to end every agent connection: each one holds a receiver.
     kick: watch::Sender<u64>,
+    /// The apps agents connected now run in, as they name themselves, by connection.
+    apps: Mutex<Vec<(u64, String)>>,
+    next_app: AtomicU64,
 }
+
+/// An agent connection's app, listed while the connection lasts.
+pub(crate) struct AppSeen {
+    state: Arc<State>,
+    id: u64,
+}
+
+impl Drop for AppSeen {
+    fn drop(&mut self) {
+        let mut apps = self.state.agents.apps.lock().unwrap_or_else(PoisonError::into_inner);
+        apps.retain(|(id, _)| *id != self.id);
+    }
+}
+
+/// The longest app name kept.
+const APP_NAME_MAX: usize = 100;
 
 impl Gate {
     pub(crate) fn new(enabled: bool) -> Self {
         Self {
             enabled: AtomicBool::new(enabled),
             kick: watch::Sender::new(0),
+            apps: Mutex::new(Vec::new()),
+            next_app: AtomicU64::new(1),
         }
+    }
+
+    /// An agent connection says which app it runs in; listed until the
+    /// guard is dropped with the connection. Nothing for a blank name.
+    pub(crate) fn seen(state: &Arc<State>, app: &str) -> Option<AppSeen> {
+        let name: String = app.trim().chars().take(APP_NAME_MAX).collect();
+        if name.is_empty() {
+            return None;
+        }
+        let id = state.agents.next_app.fetch_add(1, Ordering::SeqCst);
+        state
+            .agents
+            .apps
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((id, name));
+        Some(AppSeen {
+            state: Arc::clone(state),
+            id,
+        })
+    }
+
+    /// The apps connected now, each once, sorted.
+    fn apps(&self) -> Vec<String> {
+        let apps = self.apps.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut names: Vec<String> = apps.iter().map(|(_, name)| name.clone()).collect();
+        names.sort();
+        names.dedup();
+        names
     }
 
     pub(crate) fn enabled(&self) -> bool {
@@ -59,6 +110,7 @@ fn view(state: &State) -> AgentsSettings {
     AgentsSettings {
         enabled: state.agents.enabled(),
         connected: u32::try_from(state.agents.connected()).unwrap_or(u32::MAX),
+        apps: state.agents.apps(),
     }
 }
 

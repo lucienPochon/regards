@@ -472,6 +472,10 @@ pub struct HelloParams {
     /// `ui` principal; a wrong one is rejected with [`codes::FORBIDDEN`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ui_token: Option<UiToken>,
+    /// For an agent: the app it runs in, as that app names itself to the MCP
+    /// server (`clientInfo.name`), so the person sees which agents are connected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app: Option<String>,
 }
 
 /// Result of [`methods::HELLO`].
@@ -1998,12 +2002,15 @@ pub struct AccountResyncResult {
 }
 
 /// The result of [`methods::AGENTS_SETTINGS`] and [`methods::AGENTS_SET_ENABLED`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentsSettings {
     /// On by default; each account is still closed to agents until opened.
     pub enabled: bool,
     /// Agents connected now (the CLI, MCP servers).
     pub connected: u32,
+    /// The agent apps connected now, as they name themselves (`claude-code`, say), each once.
+    #[serde(default)]
+    pub apps: Vec<String>,
 }
 
 /// Parameters of [`methods::AGENTS_SET_ENABLED`].
