@@ -41,11 +41,9 @@
   --rail-line: rgb(255 255 255 / 0.08);
   --rail-active: #1a7a5c;
 
-  /* The reader's very light grey, a row under the pointer, the command palette. */
+  /* The reader's very light grey, a row under the pointer. */
   --reader-bg: #f4f6f5;
   --row-hover: #f3f4f4;
-  --palette: #173f36;
-  --palette-accent: #5fd0aa;
 
   --flag: #b86e00;
   --danger: #c63a2f;
@@ -97,7 +95,6 @@
     --rail-3: #24282b;
     --reader-bg: #141615;
     --row-hover: #212423;
-    --palette: #12332b;
     --flag: #f2a73a;
     --danger: #f08075;
     --danger-soft: #3a2422;
@@ -140,7 +137,6 @@
   --rail-3: #24282b;
   --reader-bg: #141615;
   --row-hover: #212423;
-  --palette: #12332b;
   --flag: #f2a73a;
   --danger: #f08075;
   --danger-soft: #3a2422;
@@ -3108,9 +3104,9 @@ button.list-title:hover {
   border-bottom: 1px solid var(--border);
 }
 
+/* Typing in it: the line darkens a little, no colour. */
 .address-line:focus-within {
-  border-bottom-color: var(--accent);
-  box-shadow: 0 1px 0 var(--accent);
+  border-bottom-color: var(--border-strong);
 }
 
 .subject-field:focus-visible {
@@ -5711,7 +5707,7 @@ button.sender-row:hover:not(:disabled) {
   color: var(--danger);
 }
 
-/* Menus: small, light and plain. The palette: a dark panel in the upper middle. */
+/* Menus: small, light and plain. The palette: a larger one, in the upper middle. */
 
 .menu-layer {
   position: fixed;
@@ -5868,18 +5864,14 @@ button.sender-row:hover:not(:disabled) {
   max-width: none;
   max-height: min(560px, 72vh);
   padding: 12px 8px 8px;
-  border: 0;
   border-radius: 12px;
-  background: var(--palette);
-  color: #eef3f1;
-  box-shadow: 0 30px 80px rgb(0 0 0 / 0.35);
 }
 
 .palette-title {
   flex: none;
   overflow: hidden;
   padding: 0 16px 6px;
-  color: rgb(255 255 255 / 0.7);
+  color: var(--muted);
   font-size: 12.5px;
   font-weight: 600;
   text-align: center;
@@ -5893,15 +5885,15 @@ button.sender-row:hover:not(:disabled) {
   margin: 0 8px 8px;
   padding: 0 6px;
   border: 0;
-  border-bottom: 2px solid var(--palette-accent);
+  border-bottom: 1px solid var(--border);
   border-radius: 0;
   background: transparent;
-  color: #fff;
+  color: var(--text);
   font-size: 16px;
 }
 
 .palette .menu-filter::placeholder {
-  color: rgb(255 255 255 / 0.45);
+  color: var(--muted);
 }
 
 .palette .menu-filter:focus-visible {
@@ -5911,50 +5903,20 @@ button.sender-row:hover:not(:disabled) {
 .palette .menu-item {
   height: 34px;
   padding: 0 10px;
-  color: #eef3f1;
   font-size: 14px;
 }
 
 .palette .menu-item .icon {
-  color: rgb(255 255 255 / 0.7);
-}
-
-.palette .menu-item:hover,
-.palette .menu-item:focus-visible,
-.palette .menu-item.highlighted {
-  background: rgb(255 255 255 / 0.12);
-}
-
-.palette .menu-item:focus-visible,
-.palette .menu-item.highlighted {
-  outline-color: rgb(255 255 255 / 0.85);
-}
-
-.palette .menu-item.danger,
-.palette .menu-item.danger .icon {
-  color: #ffb4ab;
+  color: var(--muted);
 }
 
 .palette .menu-detail,
 .palette .menu-hint {
   border: 0;
   background: transparent;
-  color: rgb(255 255 255 / 0.55);
+  color: var(--muted);
   font-family: inherit;
   font-size: 12.5px;
-}
-
-.palette .keycaps kbd {
-  background: rgb(255 255 255 / 0.16);
-  color: #fff;
-}
-
-.palette hr {
-  border-top-color: rgb(255 255 255 / 0.12);
-}
-
-.palette .menu-empty {
-  color: rgb(255 255 255 / 0.6);
 }
 
 /* ---------- Motion ---------- */
