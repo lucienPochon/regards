@@ -135,6 +135,11 @@ impl Launcher {
         *self.log.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = filter;
     }
 
+    /// Where the instance it starts keeps everything.
+    pub fn dirs(&self) -> &DataDirs {
+        &self.dirs
+    }
+
     pub fn endpoint(&self) -> &Endpoint {
         &self.endpoint
     }

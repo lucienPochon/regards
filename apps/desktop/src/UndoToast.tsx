@@ -6,7 +6,10 @@ import { useShortcuts } from "./shortcuts";
 /** How long the toast offers undo (ADR-0007: at least 10 seconds). */
 const SHOW_FOR_MS = 10_000;
 
-export function UndoToast({ undo, onDone }: { undo: UndoInfo; onDone: () => void }) {
+/** One change to undo, or several made together (each account's part of one action). */
+export type UndoBar = UndoInfo & { also?: number[] };
+
+export function UndoToast({ undo, onDone }: { undo: UndoBar; onDone: () => void }) {
   const [error, setError] = useState<string | null>(null);
   // Under the pointer or the keyboard, it waits (WCAG 2.2.1); it starts again on leaving.
   const [held, setHeld] = useState(false);
@@ -20,6 +23,7 @@ export function UndoToast({ undo, onDone }: { undo: UndoInfo; onDone: () => void
   const revert = async () => {
     try {
       await applyUndo(undo.id);
+      for (const id of undo.also ?? []) await applyUndo(id);
       onDone();
     } catch (failure) {
       setError(String(failure));

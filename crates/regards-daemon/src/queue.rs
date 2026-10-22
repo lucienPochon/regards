@@ -189,7 +189,7 @@ async fn send(state: &Arc<State>, session: &mut Session, account_id: &str, due: 
             if uid_validity != operation.uid_validity {
                 return Ok(Sent::Void);
             }
-            let uids = operation.uids.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
+            let uids = crate::backfill::uid_set(&operation.uids);
             match (&operation.kind, &target) {
                 (OperationKind::Move, Some(target)) => {
                     let moved = session.move_messages(&uids, &target.remote_name).await?;
