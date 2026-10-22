@@ -690,6 +690,60 @@ async fn live_a_whole_folder_is_marked_read_at_once_and_can_be_undone() {
     handle.abort();
 }
 
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_an_accounts_mail_can_be_fetched_again_and_its_pins_stay() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    for n in 1..=2 {
+        seed.append(b"INBOX", &[], &message(n, &format!("M{n}"), "ada@example.test"))
+            .await
+            .unwrap();
+    }
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
+    let listed = messages(&mut desktop, inbox).await.messages;
+    let pinned = listed.iter().find(|m| m.subject == "M1").unwrap().id;
+    let _: MarkResult = desktop
+        .call(
+            methods::MESSAGE_PIN,
+            PinParams {
+                ids: vec![pinned],
+                pinned: true,
+            },
+        )
+        .await
+        .unwrap();
+
+    let result: regards_ipc::protocol::AccountResyncResult = desktop
+        .call(
+            methods::ACCOUNT_RESYNC,
+            AccountRef {
+                account_id: account.id.clone(),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.dropped, 2);
+
+    // It comes back from the server, with its pin.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let back = loop {
+        let listed = messages(&mut desktop, inbox).await.messages;
+        if listed.len() == 2 {
+            break listed;
+        }
+        assert!(Instant::now() < deadline, "the mail did not come back: {listed:?}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    assert!(back.iter().find(|m| m.subject == "M1").unwrap().pinned);
+    assert!(!back.iter().find(|m| m.subject == "M2").unwrap().pinned);
+
+    seed.logout().await;
+    handle.abort();
+}
+
 /// UIDs on the server in `mailbox`.
 async fn server_uids(seed: &mut Session, mailbox: &[u8]) -> Vec<u32> {
     seed.select(mailbox).await.unwrap();

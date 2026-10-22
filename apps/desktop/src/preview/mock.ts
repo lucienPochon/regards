@@ -1037,6 +1037,13 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return { agent_send_window: seconds };
     }
+    case "account_resync": {
+      // The sample mail stays: the preview has no server to fetch it again from.
+      const owner = accounts.find((a) => a.account.id === args.accountId);
+      const ids = new Set(owner?.mailboxes.map((m) => m.id));
+      const dropped = messages.filter((m) => ids.has(m.mailboxId)).length;
+      return new Promise((resolve) => window.setTimeout(() => resolve(dropped), 1200));
+    }
     case "erase_everything":
       // The real app quits here, and starts as new next time; the preview keeps its sample.
       return new Promise((resolve) => window.setTimeout(() => resolve(null), 800));

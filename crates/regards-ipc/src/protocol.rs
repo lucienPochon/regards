@@ -58,6 +58,11 @@ pub mod methods {
     pub const ACCOUNT_OAUTH_CANCEL: &str = "account.oauth_cancel";
     /// Sync an account now and wait for the result. `ui` only for now.
     pub const ACCOUNT_SYNC: &str = "account.sync";
+    /// Drop an account's mail on this device and fetch it again (Support ›
+    /// Troubleshooting): [`AccountRef`] → [`AccountResyncResult`]. The
+    /// account, its settings, drafts, outbox, pins, snoozes and reminders
+    /// stay. `ui` only.
+    pub const ACCOUNT_RESYNC: &str = "account.resync";
     /// The mailboxes of an account and its sync state. `ui` only for now.
     pub const MAILBOX_LIST: &str = "mailbox.list";
     /// A page of a mailbox's messages, newest first. `ui` only for now.
@@ -1673,6 +1678,14 @@ pub struct PeopleSuggestResult {
 pub struct ConnectionLogSettings {
     /// Off by default.
     pub on: bool,
+}
+
+/// The result of [`methods::ACCOUNT_RESYNC`]: the mail is coming back, as
+/// after adding the account (newest first, older in the background).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountResyncResult {
+    /// Messages dropped from this device.
+    pub dropped: u32,
 }
 
 /// The result of [`methods::AGENTS_SETTINGS`] and [`methods::AGENTS_SET_ENABLED`].
