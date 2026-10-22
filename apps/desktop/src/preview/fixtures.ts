@@ -114,8 +114,8 @@ export const WORK: FixtureAccount = {
   ],
 };
 
-const pdf = (name: string, size: number): Attachment => ({ name, mime: "application/pdf", size, inline: false });
-const jpg = (name: string, size: number): Attachment => ({ name, mime: "image/jpeg", size, inline: false });
+const pdf = (name: string, size: number): Attachment => ({ name, mime: "application/pdf", size, inline: false, risk: "open", preview: null });
+const jpg = (name: string, size: number): Attachment => ({ name, mime: "image/jpeg", size, inline: false, risk: "open", preview: "image" });
 
 const NEWSLETTER = `<!doctype html><html><body style="margin:0;background:#f3efe7;font-family:Georgia,serif;color:#2b2722">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:28px 12px">
@@ -272,9 +272,20 @@ const SPECS: Spec[] = [
     from: ola,
     subject: "Minutes from the residents' meeting",
     text: "Attached are the minutes. The main points: new bike racks, the courtyard lights and the spring clean-up date.",
-    files: [{ name: "Minutes-October.docx", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", size: 48_300, inline: false }],
+    files: [
+      { name: "Minutes-October.docx", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", size: 48_300, inline: false, risk: "open", preview: null },
+      { name: "attendance.csv", mime: "text/csv", size: 1_240, inline: false, risk: "open", preview: "text" },
+      { name: "Budget-2027.xlsm", mime: "application/vnd.ms-excel.sheet.macroEnabled.12", size: 61_800, inline: false, risk: "warn", preview: null },
+    ],
   },
-  { mailbox: 1, ago: 12 * DAY, from: bank, subject: "Security notice: new sign-in", text: "We noticed a new sign-in to online banking from a new device." },
+  {
+    mailbox: 1,
+    ago: 12 * DAY,
+    from: bank,
+    subject: "Security notice: new sign-in",
+    text: "We noticed a new sign-in to online banking from a new device.",
+    files: [{ name: "Security-update.exe", mime: "application/octet-stream", size: 2_048_000, inline: false, risk: "save_only", preview: null }],
+  },
   { mailbox: 1, ago: 14 * DAY, from: marco, subject: "Re: Hiking in the Ticino", text: "The route via the ridge is longer but the views are worth it." },
   { mailbox: 1, ago: 18 * DAY, from: priya, subject: "The recipe you asked for", text: "Here it is. The secret is to toast the spices first." },
 

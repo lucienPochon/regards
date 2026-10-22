@@ -6,6 +6,7 @@
 
 pub mod agents;
 pub mod assistant;
+pub mod attachment;
 pub mod autoconfig;
 pub mod body;
 pub mod build_info;
