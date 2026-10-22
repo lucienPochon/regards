@@ -166,6 +166,30 @@ pub mod methods {
     pub const IDENTITY_REMOVE: &str = "identity.remove";
     /// Make an identity its account's default (new messages go out from it).
     pub const IDENTITY_MAKE_DEFAULT: &str = "identity.make_default";
+    /// Set an identity's voice and whether agents get it (ADR-0020). `ui` only:
+    /// agents can only suggest one.
+    pub const IDENTITY_SET_VOICE: &str = "identity.set_voice";
+    /// An agent suggests a voice for one of the person's addresses; it
+    /// always waits for the person (a `voice` hold). Agents: Triage.
+    pub const VOICE_SUGGEST: &str = "voice.suggest";
+    /// The notes about one person in one account (ADR-0020). Agents: Read.
+    pub const NOTE_LIST: &str = "note.list";
+    /// Keep a note about someone. Agents: Triage; a note with a link, an
+    /// address or bank details waits for the person (a `note` hold).
+    pub const NOTE_ADD: &str = "note.add";
+    /// Change a note's text: it is the person's from then on. `ui` only.
+    pub const NOTE_UPDATE: &str = "note.update";
+    /// Remove a note. Agents: Triage, and only notes an agent wrote.
+    pub const NOTE_REMOVE: &str = "note.remove";
+    /// Whether notes are on, and how many there are: [`NoteSettings`](super::NoteSettings). `ui` only.
+    pub const NOTE_SETTINGS: &str = "note.settings";
+    /// Switch notes on or off; off keeps them, but nobody is shown or given them. `ui` only.
+    pub const NOTE_SET_ENABLED: &str = "note.set_enabled";
+    /// Remove every note, in every account. `ui` only.
+    pub const NOTE_FORGET_ALL: &str = "note.forget_all";
+    /// What helps write to someone: the person's voice, and what the account
+    /// knows of the other person ([`MemoryResult`](super::MemoryResult)). Agents: Read.
+    pub const MEMORY_GET: &str = "memory.get";
     /// Drafts in the server's Drafts folders written elsewhere (another
     /// device, webmail), to pick up. `ui` only.
     pub const DRAFT_ELSEWHERE: &str = "draft.elsewhere";
@@ -666,6 +690,16 @@ pub struct HoldListResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HoldRef {
     pub id: i64,
+}
+
+/// Parameters of [`methods::HOLD_APPROVE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HoldApproveParams {
+    pub id: i64,
+    /// For a suggested voice: the text as the person edited it; what is
+    /// saved is what they approved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
 }
 
 /// What an agent asked that waits (or waited) for the person.
@@ -1443,6 +1477,12 @@ pub struct IdentityView {
     pub email: String,
     /// Plain text, put below what is written and above a quote.
     pub signature: String,
+    /// How agents should write as this address (ADR-0020); kept while off.
+    #[serde(default)]
+    pub voice: String,
+    /// Whether agents are given the voice.
+    #[serde(default)]
+    pub voice_on: bool,
     pub is_default: bool,
 }
 
@@ -1470,6 +1510,173 @@ pub struct IdentitySaveParams {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IdentityRef {
     pub id: i64,
+}
+
+/// Parameters of [`methods::IDENTITY_SET_VOICE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IdentitySetVoiceParams {
+    pub id: i64,
+    /// At most 2,000 characters; kept while `on` is false.
+    #[serde(default)]
+    pub voice: String,
+    pub on: bool,
+}
+
+/// Parameters of [`methods::VOICE_SUGGEST`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VoiceSuggestParams {
+    /// The address the voice is for: one of the person's own.
+    pub address: String,
+    /// Its account, when the address is in more than one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    pub text: String,
+}
+
+/// Who wrote a note.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoteAuthor {
+    Person,
+    Agent,
+}
+
+/// A note about someone an account writes with (ADR-0020).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteView {
+    pub id: i64,
+    pub account_id: String,
+    /// The person it is about, lower case.
+    pub address: String,
+    pub text: String,
+    pub by: NoteAuthor,
+    /// The message it was drawn from, when one was given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_subject: Option<String>,
+    /// Who sent that message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_address: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// Parameters of [`methods::NOTE_LIST`]: one person, in one account.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteListParams {
+    pub account_id: String,
+    pub address: String,
+}
+
+/// Result of [`methods::NOTE_LIST`]: oldest first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteListResult {
+    pub notes: Vec<NoteView>,
+}
+
+/// Parameters of [`methods::NOTE_ADD`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteAddParams {
+    pub account_id: String,
+    /// The person it is about.
+    pub address: String,
+    /// One fact, at most 500 characters.
+    pub text: String,
+    /// The message it was drawn from (an id from `message.list`), of the same account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_message: Option<i64>,
+}
+
+/// Result of [`methods::NOTE_ADD`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteAddResult {
+    pub note: NoteView,
+    /// For an agent's note: how to take it back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undo: Option<UndoInfo>,
+}
+
+/// Parameters of [`methods::NOTE_UPDATE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteUpdateParams {
+    pub id: i64,
+    pub text: String,
+}
+
+/// Names a note: [`methods::NOTE_REMOVE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteRef {
+    pub id: i64,
+}
+
+/// Result of [`methods::NOTE_REMOVE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteRemoved {
+    pub removed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undo: Option<UndoInfo>,
+}
+
+/// Notes in all (Settings › Agents): [`methods::NOTE_SETTINGS`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteSettings {
+    /// Whether notes are kept, shown and given to agents; on by default.
+    pub on: bool,
+    pub notes: u32,
+    /// How many people they are about.
+    pub people: u32,
+}
+
+/// Parameters of [`methods::NOTE_SET_ENABLED`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteSetEnabledParams {
+    pub on: bool,
+}
+
+/// Result of [`methods::NOTE_FORGET_ALL`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NotesForgotten {
+    pub forgotten: u32,
+}
+
+/// Parameters of [`methods::MEMORY_GET`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemoryParams {
+    /// The person.
+    pub address: String,
+    /// The account to look in; otherwise the first open to the asker where
+    /// the person is known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+}
+
+/// What Regards knows that helps write to someone (ADR-0020): the person's
+/// own guidance, and facts about the other person.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemoryResult {
+    pub account_id: String,
+    /// How to write as the account's default address; none while off or empty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice: Option<String>,
+    pub person: PersonMemory,
+}
+
+/// One person, as an agent is told of them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PersonMemory {
+    pub address: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Messages the account wrote to them.
+    pub sent: u32,
+    /// Messages they wrote to the account.
+    pub received: u32,
+    /// When either last wrote (Unix ms).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_at: Option<i64>,
+    /// The latest 20, oldest first; none while notes are switched off.
+    pub notes: Vec<NoteView>,
 }
 
 /// A template.

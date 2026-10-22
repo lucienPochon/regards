@@ -123,6 +123,8 @@ pub(crate) fn view(identity: Identity) -> IdentityView {
         name: identity.name,
         email: identity.email,
         signature: identity.signature,
+        voice: identity.voice,
+        voice_on: identity.voice_on,
         is_default: identity.is_default,
     }
 }

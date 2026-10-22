@@ -8,8 +8,26 @@ export interface Identity {
   email: string;
   /** Plain text, put below what is written and above a quote. */
   signature: string;
+  /** How agents should write as this address (ADR-0020); kept while off. */
+  voice: string;
+  /** Whether agents are given the voice. */
+  voice_on: boolean;
   is_default: boolean;
 }
+
+/** Most characters a voice may have. */
+export const VOICE_MAX = 2000;
+
+/**
+ * Set an address's voice, or switch it on or off (the text is kept). Only
+ * the app can: an agent's suggestion arrives as a `voice` hold instead.
+ */
+export const setVoice = (id: number, voice: string, on: boolean) =>
+  invoke<Identity>("identity_set_voice", { id, voice, on });
+
+/** The one-line request to hand an agent so it learns a voice from the person's sent mail (ADR-0020 §3). */
+export const learnVoicePrompt = (email: string) =>
+  `Learn how I write from my sent mail at ${email} and suggest it as my voice in Regards.`;
 
 /** An account's identities, the default first. */
 export const listIdentities = (accountId: string) =>

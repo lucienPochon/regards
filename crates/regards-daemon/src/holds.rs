@@ -1,7 +1,8 @@
 //! Holds (ADR-0012 §3): what an agent asks that waits for the person.
 //!
 //! - **Held:** an agent's send (Send access), changing more messages at once
-//!   than an agent may, and deleting for good. The agent gets
+//!   than an agent may, deleting for good, a suggested voice, and a note
+//!   with a link, an address or bank details (ADR-0020). The agent gets
 //!   [`codes::HELD`] with the hold's id, and follows it with `hold.get`.
 //! - **The person** is told (a notice), and approves or rejects it in the
 //!   app; only the app decides. Approving runs the request as the agent
@@ -11,8 +12,8 @@
 use crate::{State, actions, compose};
 use regards_core::headers::Person;
 use regards_ipc::protocol::{
-    DraftSendParams, HoldListParams, HoldListResult, HoldReason, HoldRef, HoldStatus, HoldView, RpcError, codes,
-    methods,
+    DraftSendParams, HoldApproveParams, HoldListParams, HoldListResult, HoldReason, HoldRef, HoldStatus, HoldView,
+    RpcError, codes, methods,
 };
 use regards_store::audit::{self, Decision};
 use regards_store::holds::{self, Hold, NewHold, Reason, Status};
@@ -216,9 +217,27 @@ pub(crate) async fn get(state: &State, params: HoldRef, scope: Option<Vec<String
     Ok(json!(view(found)))
 }
 
-/// The person approves: it runs, as the agent asked.
-pub(crate) async fn approve(state: &Arc<State>, params: HoldRef) -> Result<Value, RpcError> {
+/// The person approves: it runs, as the agent asked; a suggested voice as
+/// the person edited it, if they did.
+pub(crate) async fn approve(state: &Arc<State>, params: HoldApproveParams) -> Result<Value, RpcError> {
     let (id, now) = (params.id, compose::now_ms());
+    if let Some(text) = &params.text {
+        let found = state
+            .store
+            .read(move |conn| holds::get(conn, id, now))
+            .await
+            .map_err(crate::session::internal)?;
+        match found {
+            Some(hold) if hold.hold.method == methods::VOICE_SUGGEST => crate::voice::check_edit(text)?,
+            Some(_) => {
+                return Err(RpcError::new(
+                    codes::INVALID_PARAMS,
+                    "only a suggested voice can be changed before it is approved",
+                ));
+            }
+            None => return Err(RpcError::new(codes::NOT_FOUND, "no such hold")),
+        }
+    }
     let decided = state
         .store
         .write(move |tx| {
@@ -234,7 +253,7 @@ pub(crate) async fn approve(state: &Arc<State>, params: HoldRef) -> Result<Value
     let Some(hold) = decided else {
         return Err(not_waiting(state, id).await);
     };
-    let outcome = run(state, &hold).await;
+    let outcome = run(state, &hold, params.text).await;
     if let Err(error) = &outcome {
         tracing::info!(hold = id, error = %error.message, "an approved request could not run");
     }
@@ -280,8 +299,9 @@ async fn not_waiting(state: &State, id: i64) -> RpcError {
     }
 }
 
-/// Run an approved request as the agent made it.
-async fn run(state: &Arc<State>, hold: &Hold) -> Result<Value, RpcError> {
+/// Run an approved request as the agent made it; `text`, a suggested voice
+/// as the person edited it.
+async fn run(state: &Arc<State>, hold: &Hold, text: Option<String>) -> Result<Value, RpcError> {
     let params: Value = serde_json::from_str(&hold.hold.params)
         .map_err(|error| crate::session::internal(StoreError::Corrupt(format!("held request: {error}"))))?;
     fn parse<T: serde::de::DeserializeOwned>(params: Value) -> Result<T, RpcError> {
@@ -301,6 +321,11 @@ async fn run(state: &Arc<State>, hold: &Hold) -> Result<Value, RpcError> {
         methods::MESSAGE_SET_ASIDE => actions::set_aside(state, parse(params)?).await,
         methods::MESSAGE_SNOOZE => actions::snooze(state, parse(params)?).await,
         methods::MESSAGE_REMIND => actions::remind(state, parse(params)?).await,
+        methods::VOICE_SUGGEST => crate::voice::apply(state, parse(params)?, text).await,
+        methods::NOTE_ADD => {
+            let session = Some(hold.hold.session.clone());
+            crate::notes::add(state, parse(params)?, regards_store::notes::Author::Agent, session).await
+        }
         other => Err(RpcError::new(codes::INTERNAL_ERROR, format!("{other} cannot be held"))),
     }
 }

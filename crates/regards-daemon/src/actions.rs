@@ -502,6 +502,33 @@ struct Inverse {
     /// one changed since, by the person or another client, is theirs.
     #[serde(default)]
     flags: Vec<FlagUndo>,
+    /// Notes an agent added, to remove (ADR-0020).
+    #[serde(default)]
+    notes_added: Vec<i64>,
+    /// Notes removed, to put back as they were.
+    #[serde(default)]
+    notes_removed: Vec<crate::notes::Kept>,
+}
+
+/// Keep how to undo notes added or removed, for a while.
+pub(crate) fn record_notes_undo(
+    tx: &rusqlite::Transaction<'_>,
+    description: &str,
+    added: Vec<i64>,
+    removed: Vec<crate::notes::Kept>,
+    now: i64,
+) -> Result<UndoInfo, StoreError> {
+    let inverse = serde_json::to_string(&Inverse {
+        notes_added: added,
+        notes_removed: removed,
+        ..Inverse::default()
+    })
+    .expect("plain data serializes");
+    let id = undo::record(tx, description, &inverse, now, now + UNDO_FOR_MS)?;
+    Ok(UndoInfo {
+        id,
+        description: description.to_owned(),
+    })
 }
 
 pub(crate) async fn move_to(state: &Arc<State>, params: MoveParams) -> Result<Value, RpcError> {
@@ -679,8 +706,15 @@ pub(crate) async fn apply_undo(state: &Arc<State>, params: UndoParams) -> Result
             let (flags, flag_accounts) = change_flags(tx, &back, now)?;
             let mut accounts = accounts;
             accounts.extend(flag_accounts);
+            let mut notes = 0;
+            for id in &inverse.notes_added {
+                notes += usize::from(regards_store::notes::remove(tx, *id)?.is_some());
+            }
+            for kept in inverse.notes_removed {
+                notes += usize::from(regards_store::notes::restore(tx, &kept.into())?);
+            }
             Ok((
-                moved + inverse.marks.len() + inverse.unblock.len() + flags.len(),
+                moved + inverse.marks.len() + inverse.unblock.len() + flags.len() + notes,
                 accounts,
             ))
         })
