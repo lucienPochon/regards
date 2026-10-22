@@ -1,19 +1,19 @@
 //! One client connection: handshake, then request dispatch.
 
 use crate::{
-    State, access, accounts, actions, agents, assistant, audit, compose, discover, draft_sync, erase, holds,
-    identities, mail, notices, oauth, people, prefetch, smart, templates,
+    State, access, accounts, actions, agents, assistant, attachments, audit, compose, discover, draft_sync, erase,
+    holds, identities, mail, notices, oauth, people, prefetch, smart, templates,
 };
 use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_ipc::framing::{self, FrameError};
 use regards_ipc::protocol::{
-    AccountRef, AsideParams, ChangesNotification, ClientKind, DraftCreateParams, DraftListParams, DraftRef,
-    DraftReplyParams, DraftSendParams, DraftSetFromParams, DraftUpdateParams, HealthResult, HelloParams, HelloResult,
-    HoldRef, JSONRPC, MessageHtmlParams, MessageIds, MessageListParams, MessageRef, MoveParams, Notification,
-    PROTOCOL_VERSIONS, PeopleSuggestParams, PinParams, Principal, RemindParams, Request, Response, RpcError,
-    SearchParams, SenderBlockParams, SenderSetParams, SetFlagsParams, SnoozeParams, ViewParams, codes, methods,
-    negotiate, notifications,
+    AccountRef, AsideParams, AttachmentRef, ChangesNotification, ClientKind, DraftCreateParams, DraftListParams,
+    DraftRef, DraftReplyParams, DraftSendParams, DraftSetFromParams, DraftUpdateParams, HealthResult, HelloParams,
+    HelloResult, HoldRef, JSONRPC, MessageHtmlParams, MessageIds, MessageListParams, MessageRef, MoveParams,
+    Notification, PROTOCOL_VERSIONS, PeopleSuggestParams, PinParams, Principal, RemindParams, Request, Response,
+    RpcError, SearchParams, SenderBlockParams, SenderSetParams, SetFlagsParams, SnoozeParams, ViewParams, codes,
+    methods, negotiate, notifications,
 };
 use regards_ipc::transport::Stream;
 use regards_store::holds::Reason;
@@ -360,6 +360,23 @@ impl Session {
                 let params: MessageRef = params(request)?;
                 self.allow_message(Access::Read, params.id).await?;
                 mail::source(&self.state, params).await
+            }
+            methods::ATTACHMENT_PREVIEW => {
+                let params: AttachmentRef = params(request)?;
+                self.allow_message(Access::Read, params.message_id).await?;
+                attachments::preview(&self.state, params).await
+            }
+            methods::ATTACHMENT_SAVE => {
+                self.require_ui()?;
+                attachments::save(&self.state, params(request)?).await
+            }
+            methods::ATTACHMENT_SAVE_ALL => {
+                self.require_ui()?;
+                attachments::save_all(&self.state, params(request)?).await
+            }
+            methods::ATTACHMENT_OPEN => {
+                self.require_ui()?;
+                attachments::open(&self.state, params(request)?).await
             }
             methods::MESSAGE_MARK_ALL_READ => {
                 self.require_ui()?;

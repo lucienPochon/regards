@@ -1089,6 +1089,34 @@ function handle(cmd: string, args: Args): unknown {
         next: all.length > limit && last ? { received_at: place(last), id: last.id } : null,
       };
     }
+    case "attachment_preview": {
+      const file = byId(args.messageId as number).attachments[args.index as number];
+      if (!file?.preview) throw new Error("this file can't be shown here: open it or save it");
+      const name = file.name ?? "attachment";
+      if (file.preview === "text") {
+        const text = name.endsWith(".csv")
+          ? "name,flat,present\nOla,2B,yes\nDaniel,4A,yes\nPriya,1C,no\nMarco,3A,yes\n"
+          : `The preview has no real files: this stands in for ${name}.\n`;
+        return { kind: "text", text, truncated: false };
+      }
+      // A stand-in picture, as an image would come: base64 of its bytes.
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9fc7b8"/><stop offset="1" stop-color="#1d7a61"/></linearGradient></defs><rect width="1200" height="800" fill="url(#g)"/><text x="600" y="420" font-family="sans-serif" font-size="48" fill="#fff" text-anchor="middle">${name.replace(/[<&>]/g, "")}</text></svg>`;
+      const bytes = new TextEncoder().encode(svg);
+      return { kind: "image", mime: "image/svg+xml", data: btoa(String.fromCharCode(...bytes)) };
+    }
+    case "attachment_save":
+      return args.name as string;
+    case "attachment_save_all":
+      return byId(args.messageId as number)
+        .attachments.filter((file) => !file.inline)
+        .map((file) => file.name ?? "attachment");
+    case "attachment_open": {
+      const file = byId(args.messageId as number).attachments[args.index as number];
+      if (file?.risk === "save_only") {
+        throw new Error("this file could run a program, so Regards does not open it: save it, and open it only if you trust it");
+      }
+      return null;
+    }
     case "message_source": {
       const message = byId(args.id as number);
       const show = (p: Person) => (p.name ? `${p.name} <${p.address}>` : (p.address ?? ""));

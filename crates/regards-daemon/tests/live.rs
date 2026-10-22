@@ -2,6 +2,7 @@
 //! Opt-in: `REGARDS_TEST_IMAP=localhost:31993 REGARDS_TEST_IMAP_CA=ca.pem \
 //! cargo test -p regards-daemon --test live -- --ignored`
 
+use regards_core::attachment::{Preview, Risk};
 use regards_core::headers::Person;
 use regards_core::mailbox::Role;
 use regards_core::paths::DataDirs;
@@ -27,6 +28,9 @@ use regards_ipc::protocol::{
 use regards_ipc::protocol::{
     AssistantKind, AssistantParams, AssistantPreview, AssistantResult, AssistantSetSettingsParams, AssistantSettings,
     AssistantTask,
+};
+use regards_ipc::protocol::{
+    AttachmentFiles, AttachmentPreview, AttachmentRef, AttachmentSaveAllParams, AttachmentSaveParams,
 };
 use regards_ipc::{Client, Endpoint, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -3503,6 +3507,144 @@ async fn live_the_assistant_summarises_and_drafts_a_reply_with_the_persons_key()
         "{refused:?}"
     );
     assert!(received.try_recv().is_err());
+
+    seed.logout().await;
+    handle.abort();
+}
+
+/// A 1×1 PNG, base64.
+const DOT_PNG: &str =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+fn with_files() -> Vec<u8> {
+    format!(
+        "From: Ada <ada@example.test>\r\nTo: Bob <bob@example.test>\r\nSubject: Files\r\n\
+         Message-ID: <files@example.test>\r\nDate: Sun, 18 Oct 2026 10:00:00 +0000\r\nMIME-Version: 1.0\r\n\
+         Content-Type: multipart/mixed; boundary=\"b\"\r\n\r\n\
+         --b\r\nContent-Type: text/plain\r\n\r\nSee attached.\r\n\
+         --b\r\nContent-Type: image/png\r\nContent-Disposition: attachment; filename=\"dot.png\"\r\n\
+         Content-Transfer-Encoding: base64\r\n\r\n{DOT_PNG}\r\n\
+         --b\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Disposition: attachment; filename=\"notes.txt\"\r\n\
+         Content-Transfer-Encoding: 8bit\r\n\r\nCaf\u{e9} notes\r\n\
+         --b\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=\"setup.exe\"\r\n\
+         Content-Transfer-Encoding: base64\r\n\r\nTVo=\r\n--b--\r\n"
+    )
+    .into_bytes()
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_attachments_can_be_shown_saved_and_opened() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    seed.append(b"INBOX", &[], &with_files()).await.unwrap();
+    let (temp, mut desktop, _account, inbox, handle) = daemon_with_account(&live).await;
+    let id = messages(&mut desktop, inbox).await.messages[0].id;
+    let detail: MessageDetail = desktop.call(methods::MESSAGE_GET, MessageRef { id }).await.unwrap();
+    let described: Vec<(&str, Risk, Option<Preview>)> = detail
+        .attachments
+        .iter()
+        .map(|a| (a.name.as_deref().unwrap(), a.risk, a.preview))
+        .collect();
+    assert_eq!(
+        described,
+        [
+            ("dot.png", Risk::Open, Some(Preview::Image)),
+            ("notes.txt", Risk::Open, Some(Preview::Text)),
+            ("setup.exe", Risk::SaveOnly, None),
+        ]
+    );
+    let at = |index| AttachmentRef { message_id: id, index };
+    let refused_with = |result: Result<Value, regards_ipc::ClientError>, code: i32| {
+        assert!(
+            matches!(&result, Err(regards_ipc::ClientError::Rpc(error)) if error.code == code),
+            "{result:?}"
+        );
+    };
+
+    // Shown in the app: the image by its own bytes, the text as text.
+    let image: AttachmentPreview = desktop.call(methods::ATTACHMENT_PREVIEW, at(0)).await.unwrap();
+    assert_eq!(
+        image,
+        AttachmentPreview::Image {
+            mime: "image/png".into(),
+            data: DOT_PNG.into(),
+        }
+    );
+    let text: AttachmentPreview = desktop.call(methods::ATTACHMENT_PREVIEW, at(1)).await.unwrap();
+    let AttachmentPreview::Text { text, truncated } = text else {
+        panic!("{text:?}")
+    };
+    assert_eq!(text.trim(), "Caf\u{e9} notes");
+    assert!(!truncated);
+    refused_with(
+        desktop.call(methods::ATTACHMENT_PREVIEW, at(2)).await,
+        regards_ipc::protocol::codes::INVALID_PARAMS,
+    );
+
+    // Saved where the person chose, and marked as from outside.
+    let folder = tempfile::tempdir().unwrap();
+    let chosen = folder.path().join("my notes.txt");
+    let saved: AttachmentFiles = desktop
+        .call(
+            methods::ATTACHMENT_SAVE,
+            AttachmentSaveParams {
+                message_id: id,
+                index: 1,
+                path: chosen.to_string_lossy().into_owned(),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(saved.paths, [chosen.to_string_lossy()]);
+    assert_eq!(std::fs::read_to_string(&chosen).unwrap().trim(), "Caf\u{e9} notes");
+    #[cfg(windows)]
+    {
+        let mut stream = chosen.as_os_str().to_owned();
+        stream.push(":Zone.Identifier");
+        let mark = std::fs::read_to_string(std::path::PathBuf::from(stream)).unwrap();
+        assert!(mark.contains("ZoneId=3"), "{mark:?}");
+    }
+
+    // Save all, twice: nothing is replaced, and the image shown inside stays out.
+    let all = AttachmentSaveAllParams {
+        message_id: id,
+        folder: folder.path().to_string_lossy().into_owned(),
+    };
+    let names = |files: AttachmentFiles| -> Vec<String> {
+        files
+            .paths
+            .iter()
+            .map(|path| {
+                std::path::Path::new(path)
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect()
+    };
+    let first: AttachmentFiles = desktop.call(methods::ATTACHMENT_SAVE_ALL, &all).await.unwrap();
+    let second: AttachmentFiles = desktop.call(methods::ATTACHMENT_SAVE_ALL, &all).await.unwrap();
+    assert_eq!(names(first), ["dot.png", "notes.txt", "setup.exe"]);
+    assert_eq!(names(second), ["dot (2).png", "notes (2).txt", "setup (2).exe"]);
+
+    // Opened: a read-only copy in the data folder, and never a program.
+    let opened: AttachmentFiles = desktop.call(methods::ATTACHMENT_OPEN, at(0)).await.unwrap();
+    let copy = std::path::Path::new(&opened.paths[0]);
+    assert!(copy.starts_with(temp.path().join("opened")), "{copy:?}");
+    assert_eq!(copy.file_name().unwrap(), "dot.png");
+    assert!(std::fs::metadata(copy).unwrap().permissions().readonly());
+    refused_with(
+        desktop.call(methods::ATTACHMENT_OPEN, at(2)).await,
+        regards_ipc::protocol::codes::FORBIDDEN,
+    );
+    refused_with(
+        desktop.call(methods::ATTACHMENT_OPEN, at(9)).await,
+        regards_ipc::protocol::codes::NOT_FOUND,
+    );
 
     seed.logout().await;
     handle.abort();

@@ -9,6 +9,7 @@ mod accounts;
 mod actions;
 mod agents;
 mod assistant;
+mod attachments;
 mod audit;
 mod backfill;
 mod compose;
@@ -325,6 +326,10 @@ impl Daemon {
         let indexing = tokio::spawn(search::run(Arc::clone(&state)));
         let pruning = tokio::spawn(audit::prune(Arc::clone(&state)));
         let prefetching = tokio::spawn(prefetch::run(Arc::clone(&state)));
+        tokio::task::spawn_blocking({
+            let opened = state.dirs.opened();
+            move || attachments::sweep(&opened)
+        });
         tracing::info!(%endpoint, "daemon listening");
 
         tokio::pin!(shutdown);

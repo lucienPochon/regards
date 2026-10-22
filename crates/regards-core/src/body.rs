@@ -2,18 +2,25 @@
 //! the attachments. Parsed with `mail-parser`, which never panics on
 //! malformed input.
 
+use crate::attachment::{self, Preview, Risk};
 use mail_parser::{MessageParser, MimeHeaders};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Attachment {
+    /// The sender's name for it, without folders or direction marks
+    /// ([`attachment::display_name`]).
     pub name: Option<String>,
-    /// For example `application/pdf`.
+    /// For example `application/pdf`, as the sender declared it.
     pub mime: String,
     /// Decoded size in bytes.
     pub size: usize,
     /// Shown inside the message (for example an image the HTML refers to) rather than attached.
     pub inline: bool,
+    /// How risky it is to open.
+    pub risk: Risk,
+    /// What the app can show of it by itself, judged by its bytes.
+    pub preview: Option<Preview>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -33,15 +40,7 @@ pub fn parse(raw: &[u8]) -> Body {
     };
     let text = message.body_text(0).map(|text| text.into_owned()).unwrap_or_default();
     let has_html = message.html_part(0).is_some_and(|part| part.is_text_html());
-    let attachments = message
-        .attachments()
-        .map(|part| Attachment {
-            name: part.attachment_name().map(str::to_owned),
-            mime: mime_of(part),
-            size: part.len(),
-            inline: is_inline(part),
-        })
-        .collect();
+    let attachments = message.attachments().map(describe).collect();
     Body {
         text,
         has_html,
@@ -136,6 +135,33 @@ pub fn files(raw: &[u8]) -> Vec<File> {
         .collect()
 }
 
+/// The attachment at `index` of [`Body::attachments`], with its bytes under
+/// the name to save it as ([`attachment::file_name`]).
+pub fn attachment(raw: &[u8], index: usize) -> Option<(Attachment, File)> {
+    let message = MessageParser::default().parse(raw)?;
+    let part = message.attachments().nth(index)?;
+    let described = describe(part);
+    let file = File {
+        name: attachment::file_name(part.attachment_name(), &described.mime),
+        mime: described.mime.clone(),
+        data: part.contents().to_vec(),
+    };
+    Some((described, file))
+}
+
+fn describe(part: &mail_parser::MessagePart<'_>) -> Attachment {
+    let mime = mime_of(part);
+    let name = part.attachment_name();
+    Attachment {
+        name: name.and_then(attachment::display_name),
+        risk: attachment::risk(name, &mime),
+        preview: attachment::preview(name, &mime, part.contents()),
+        size: part.len(),
+        inline: is_inline(part),
+        mime,
+    }
+}
+
 fn mime_of(part: &mail_parser::MessagePart<'_>) -> String {
     part.content_type()
         .map_or_else(
@@ -195,6 +221,8 @@ mod tests {
                 mime: "application/pdf".into(),
                 size: 9,
                 inline: false,
+                risk: Risk::Open,
+                preview: None,
             }]
         );
         assert_eq!(
@@ -214,6 +242,38 @@ mod tests {
             --r\r\nContent-Type: image/png\r\nContent-ID: <logo@x>\r\nContent-Transfer-Encoding: base64\r\n\r\niVBORw0KGgo=\r\n\
             --r--\r\n";
         assert!(files(raw).is_empty());
+    }
+
+    #[test]
+    fn attachments_come_out_by_their_place_in_the_list() {
+        let raw = b"MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"m\"\r\n\r\n\
+            --m\r\nContent-Type: text/plain\r\n\r\nSee attached.\r\n\
+            --m\r\nContent-Type: image/png\r\nContent-ID: <logo@x>\r\nContent-Transfer-Encoding: base64\r\n\r\niVBORw0KGgoAAAANSUhEUg==\r\n\
+            --m\r\nContent-Type: text/plain; charset=iso-8859-1; name=\"caf\xe9.txt\"\r\n\
+            Content-Disposition: attachment; filename=\"../notes\xe2\x80\xae.txt\"\r\n\r\nCaf\xe9\r\n\
+            --m\r\nContent-Type: application/octet-stream\r\n\
+            Content-Disposition: attachment; filename=\"run.exe\"\r\n\r\nMZ\r\n\
+            --m--\r\n";
+        let body = parse(raw);
+        let shown: Vec<(Option<&str>, bool, Risk, Option<Preview>)> = body
+            .attachments
+            .iter()
+            .map(|a| (a.name.as_deref(), a.inline, a.risk, a.preview))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                (None, true, Risk::Open, Some(Preview::Image)),
+                (Some("notes.txt"), false, Risk::SaveOnly, Some(Preview::Text)),
+                (Some("run.exe"), false, Risk::SaveOnly, None),
+            ]
+        );
+        let (described, file) = attachment(raw, 1).unwrap();
+        assert_eq!(described, body.attachments[1]);
+        assert_eq!(file.name, "notes.txt");
+        assert_eq!(String::from_utf8_lossy(&file.data).trim(), "Caf\u{e9}");
+        assert_eq!(attachment(raw, 0).unwrap().1.name, "attachment.png");
+        assert!(attachment(raw, 3).is_none());
     }
 
     #[test]

@@ -65,6 +65,12 @@ impl DataDirs {
         self.data.join("blobs")
     }
 
+    /// Copies of attachments the person opened, for their programs to read.
+    /// Emptied when the daemon starts.
+    pub fn opened(&self) -> PathBuf {
+        self.data.join("opened")
+    }
+
     /// Copies of `mail.db` taken before each schema migration.
     pub fn backups(&self) -> PathBuf {
         self.data.join("backups")

@@ -313,11 +313,24 @@ export function listMessages(
   return invoke<MessageListResult>("message_list", { mailboxId, before, limit, section });
 }
 
+/**
+ * How an attachment may be opened: "warn" (web pages, SVG, macro-enabled
+ * Office files, archives, no extension) after a confirmation; "save_only"
+ * (programs, scripts, shortcuts, disguised names) not from Regards at all.
+ */
+export type AttachmentRisk = "open" | "warn" | "save_only";
+
 export interface Attachment {
+  /** The sender's name for it, without folders or direction marks. */
   name: string | null;
+  /** As the sender declared it: not to be trusted. */
   mime: string;
   size: number;
+  /** Shown inside the message (an image the HTML refers to) rather than attached. */
   inline: boolean;
+  risk: AttachmentRisk;
+  /** What the app can show of it by itself (attachments.ts), judged by its bytes. */
+  preview: "image" | "text" | null;
 }
 
 export interface MessageDetail {

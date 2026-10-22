@@ -26,10 +26,11 @@ use regards_core::secret::Secret;
 use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, AccountUpdateParams, AgentAccess,
-    AgentAccessParams, AgentActivityParams, AgentActivityResult, AgentSendParams, AsideParams, ClientKind,
-    ConnectionSecurity, DeleteResult, DiscoverParams, DiscoverResult, DraftAttachFileParams, DraftAttachImageParams,
-    DraftCreateParams, DraftDetachParams, DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult,
-    DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
+    AgentAccessParams, AgentActivityParams, AgentActivityResult, AgentSendParams, AsideParams, AttachmentFiles,
+    AttachmentPreview, AttachmentRef, AttachmentSaveAllParams, AttachmentSaveParams, ClientKind, ConnectionSecurity,
+    DeleteResult, DiscoverParams, DiscoverResult, DraftAttachFileParams, DraftAttachImageParams, DraftCreateParams,
+    DraftDetachParams, DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult, DraftRef,
+    DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
     ExplainResult, HoldListParams, HoldListResult, HoldRef, HoldView, IdentityListResult, IdentityRef,
     IdentitySaveParams, IdentityView, MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds,
     MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult, OauthFlowRef, OauthProvidersResult,
@@ -797,6 +798,117 @@ async fn message_source(bridge: State<'_, Bridge>, id: i64) -> Result<regards_ip
         .call(methods::MESSAGE_SOURCE, MessageRef { id })
         .await
         .map_err(describe)
+}
+
+/// What the app can show of an attachment by itself, by its place in the
+/// message's list of attachments.
+#[tauri::command]
+async fn attachment_preview(
+    bridge: State<'_, Bridge>,
+    message_id: i64,
+    index: u32,
+) -> Result<AttachmentPreview, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::ATTACHMENT_PREVIEW, AttachmentRef { message_id, index })
+        .await
+        .map_err(describe)
+}
+
+/// The name a saved file ended up with.
+fn saved_name(files: &AttachmentFiles) -> Vec<String> {
+    files
+        .paths
+        .iter()
+        .filter_map(|path| std::path::Path::new(path).file_name())
+        .map(|name| name.to_string_lossy().into_owned())
+        .collect()
+}
+
+/// Save an attachment where the person chooses in the system's save dialog,
+/// which starts in Downloads. The WebView never sees a path: the saved
+/// file's name, or `None` if the person cancelled.
+#[tauri::command]
+async fn attachment_save(
+    app: AppHandle,
+    bridge: State<'_, Bridge>,
+    message_id: i64,
+    index: u32,
+    name: String,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let mut dialog = app
+        .dialog()
+        .file()
+        .set_title("Save attachment")
+        .set_file_name(regards_core::attachment::file_name(Some(&name), ""));
+    if let Ok(downloads) = app.path().download_dir() {
+        dialog = dialog.set_directory(downloads);
+    }
+    let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file())
+        .await
+        .map_err(|error| error.to_string())?;
+    let Some(path) = picked else { return Ok(None) };
+    let path = path.into_path().map_err(|error| error.to_string())?;
+    let mut client = bridge.connect().await?.client;
+    let saved: AttachmentFiles = client
+        .call(
+            methods::ATTACHMENT_SAVE,
+            AttachmentSaveParams {
+                message_id,
+                index,
+                path: path.to_string_lossy().into_owned(),
+            },
+        )
+        .await
+        .map_err(describe)?;
+    Ok(saved_name(&saved).into_iter().next())
+}
+
+/// Save all of a message's attachments in a folder the person picks
+/// (Downloads to start with), never replacing a file: the names they were
+/// saved under, or `None` if the person cancelled.
+#[tauri::command]
+async fn attachment_save_all(
+    app: AppHandle,
+    bridge: State<'_, Bridge>,
+    message_id: i64,
+) -> Result<Option<Vec<String>>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let mut dialog = app.dialog().file().set_title("Save all attachments in");
+    if let Ok(downloads) = app.path().download_dir() {
+        dialog = dialog.set_directory(downloads);
+    }
+    let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_folder())
+        .await
+        .map_err(|error| error.to_string())?;
+    let Some(folder) = picked else { return Ok(None) };
+    let folder = folder.into_path().map_err(|error| error.to_string())?;
+    let mut client = bridge.connect().await?.client;
+    let saved: AttachmentFiles = client
+        .call(
+            methods::ATTACHMENT_SAVE_ALL,
+            AttachmentSaveAllParams {
+                message_id,
+                folder: folder.to_string_lossy().into_owned(),
+            },
+        )
+        .await
+        .map_err(describe)?;
+    Ok(Some(saved_name(&saved)))
+}
+
+/// Open an attachment with its program, from a read-only copy the daemon
+/// makes. The daemon refuses one that can only be saved.
+#[tauri::command]
+async fn attachment_open(bridge: State<'_, Bridge>, message_id: i64, index: u32) -> Result<(), String> {
+    let mut client = bridge.connect().await?.client;
+    let copy: AttachmentFiles = client
+        .call(methods::ATTACHMENT_OPEN, AttachmentRef { message_id, index })
+        .await
+        .map_err(describe)?;
+    let path = copy.paths.into_iter().next().ok_or("the attachment was not copied")?;
+    open::that_detached(&path).map_err(|error| format!("could not open the file: {error}"))
 }
 
 /// The conversation a message belongs to, across folders, oldest first.
@@ -1585,6 +1697,10 @@ fn main() {
             message_remind,
             message_view,
             message_source,
+            attachment_preview,
+            attachment_save,
+            attachment_save_all,
+            attachment_open,
             draft_create,
             draft_reply,
             draft_forward,

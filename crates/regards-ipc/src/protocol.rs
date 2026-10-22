@@ -74,6 +74,20 @@ pub mod methods {
     /// A message as it came, headers and all ("See the original message"):
     /// [`MessageSource`]. Agents: with Read access to its account.
     pub const MESSAGE_SOURCE: &str = "message.source";
+    /// What the app can show of an attachment by itself (an image or text):
+    /// [`AttachmentRef`] → [`AttachmentPreview`]. Agents: with Read access
+    /// to its account.
+    pub const ATTACHMENT_PREVIEW: &str = "attachment.preview";
+    /// Save an attachment where the person chose, in the system's save
+    /// dialog: [`AttachmentSaveParams`] → [`AttachmentFiles`]. `ui` only.
+    pub const ATTACHMENT_SAVE: &str = "attachment.save";
+    /// Save all of a message's attachments in a folder, never replacing a
+    /// file: [`AttachmentSaveAllParams`] → [`AttachmentFiles`]. `ui` only.
+    pub const ATTACHMENT_SAVE_ALL: &str = "attachment.save_all";
+    /// Copy an attachment to a private folder for the app to open it with
+    /// its program: [`AttachmentRef`] → [`AttachmentFiles`]. Refused for
+    /// one that can only be saved. `ui` only.
+    pub const ATTACHMENT_OPEN: &str = "attachment.open";
     /// Every unread message of a folder read, or of one Smart Inbox section
     /// of it, with one undo: [`MarkAllReadParams`] → [`SetFlagsResult`].
     /// Only what is on this device yet; `ui` only.
@@ -1897,6 +1911,58 @@ pub struct MessageSource {
 impl MessageSource {
     /// Bytes of a message's source given at most.
     pub const MAX: usize = 1024 * 1024;
+}
+
+/// One attachment: its place in [`MessageDetail::attachments`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttachmentRef {
+    pub message_id: i64,
+    pub index: u32,
+}
+
+/// Result of [`methods::ATTACHMENT_PREVIEW`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AttachmentPreview {
+    /// Show with an `<img>` only (an SVG then runs no script and loads nothing).
+    Image {
+        /// From the image's own bytes, not from what the sender declared.
+        mime: String,
+        /// Base64.
+        data: String,
+    },
+    /// Show as text, never as HTML.
+    Text { text: String, truncated: bool },
+}
+
+impl AttachmentPreview {
+    /// Largest image shown, in bytes.
+    pub const MAX_IMAGE: usize = 10 * 1024 * 1024;
+    /// Bytes of text shown at most.
+    pub const MAX_TEXT: usize = 1024 * 1024;
+}
+
+/// Parameters of [`methods::ATTACHMENT_SAVE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttachmentSaveParams {
+    pub message_id: i64,
+    pub index: u32,
+    /// Where to save it, chosen by the person: a file there is replaced.
+    pub path: String,
+}
+
+/// Parameters of [`methods::ATTACHMENT_SAVE_ALL`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttachmentSaveAllParams {
+    pub message_id: i64,
+    /// An existing folder, chosen by the person.
+    pub folder: String,
+}
+
+/// The files written, by full path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttachmentFiles {
+    pub paths: Vec<String>,
 }
 
 /// Parameters of [`methods::MESSAGE_MARK_ALL_READ`].
