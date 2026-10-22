@@ -239,6 +239,9 @@ pub mod methods {
     /// Whom to write to, as one types a recipient: the people an account
     /// writes with, best first. Agents: of accounts open to them (Read).
     pub const PEOPLE_SUGGEST: &str = "people.suggest";
+    /// Stop suggesting someone (a mistyped address, say) until there is new
+    /// mail with them ([`PeopleForgetResult`](super::PeopleForgetResult)). `ui` only.
+    pub const PEOPLE_FORGET: &str = "people.forget";
     /// How messages are shown: [`ReadingSettings`]. `ui` only.
     pub const READING_SETTINGS: &str = "reading.settings";
     /// Change [`ReadingSettings`]. `ui` only.
@@ -1977,6 +1980,22 @@ pub struct PeopleSuggestParams {
     /// 1 to 50; 8 when omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
+}
+
+/// Parameters of [`methods::PEOPLE_FORGET`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PeopleForgetParams {
+    pub address: String,
+    /// Forgotten by this account only; by every account when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+}
+
+/// The result of [`methods::PEOPLE_FORGET`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PeopleForgetResult {
+    /// How many accounts knew them (0: nobody to forget).
+    pub forgotten: u32,
 }
 
 /// The result of [`methods::PEOPLE_SUGGEST`]: best first (written to most,

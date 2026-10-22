@@ -641,6 +641,10 @@ impl Session {
                 let scope = self.search_scope(params.account_id.as_deref()).await?;
                 people::suggest(&self.state, params, scope).await
             }
+            methods::PEOPLE_FORGET => {
+                self.require_ui()?;
+                people::forget(&self.state, params(request)?).await
+            }
             methods::READING_SETTINGS => {
                 self.require_ui()?;
                 mail::reading_settings(&self.state).await

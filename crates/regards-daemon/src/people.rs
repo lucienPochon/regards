@@ -4,7 +4,9 @@
 
 use crate::State;
 use regards_core::headers::Person;
-use regards_ipc::protocol::{PeopleSuggestParams, PeopleSuggestResult, RpcError, codes};
+use regards_ipc::protocol::{
+    PeopleForgetParams, PeopleForgetResult, PeopleSuggestParams, PeopleSuggestResult, RpcError, codes,
+};
 use serde_json::{Value, json};
 
 const DEFAULT_LIMIT: u32 = 8;
@@ -43,5 +45,24 @@ pub(crate) async fn suggest(
                 address: Some(person.address),
             })
             .collect(),
+    }))
+}
+
+/// Not to be suggested any more, until there is new mail with them. The app only.
+pub(crate) async fn forget(state: &State, params: PeopleForgetParams) -> Result<Value, RpcError> {
+    let address = params.address.trim().to_owned();
+    if !address.contains('@') || address.len() > MAX_TYPED {
+        return Err(RpcError::new(codes::INVALID_PARAMS, "that is not an address"));
+    }
+    let accounts = params.account_id.map(|account| vec![account]);
+    let now = crate::compose::now_ms();
+    let forgotten = state
+        .store
+        .write(move |tx| regards_store::people::forget(tx, &address, accounts.as_deref(), now))
+        .await
+        .map_err(crate::session::internal)?
+        .value;
+    Ok(json!(PeopleForgetResult {
+        forgotten: u32::try_from(forgotten).unwrap_or(u32::MAX),
     }))
 }
