@@ -70,6 +70,12 @@ impl DataDirs {
         self.data.join("backups")
     }
 
+    /// Left by a daemon asked to remove everything: the next one to start
+    /// removes what is left before opening anything.
+    pub fn erase_marker(&self) -> PathBuf {
+        self.data.join("erase-pending")
+    }
+
     /// The desktop app's own settings, such as background mode.
     pub fn desktop_settings(&self) -> PathBuf {
         self.data.join("desktop.json")
@@ -79,6 +85,12 @@ impl DataDirs {
     /// contains message content or secrets.
     pub fn daemon_log(&self) -> PathBuf {
         self.data.join("logs").join("daemon.log")
+    }
+
+    /// The connection log, when the person turns it on (Settings › Support):
+    /// commands and replies, never mail, passwords, tokens or addresses.
+    pub fn connection_log(&self) -> PathBuf {
+        self.data.join("logs").join("connections.log")
     }
 
     /// Short identifier derived from the data directory. It names per-instance

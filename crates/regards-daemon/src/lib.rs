@@ -7,6 +7,7 @@
 mod access;
 mod accounts;
 mod actions;
+mod agents;
 mod assistant;
 mod audit;
 mod backfill;
@@ -14,6 +15,7 @@ mod compose;
 mod details;
 mod discover;
 mod draft_sync;
+mod erase;
 mod feed;
 mod holds;
 mod identities;
@@ -69,8 +71,12 @@ pub(crate) struct State {
     pub(crate) stop: watch::Sender<bool>,
     /// The desktop bridge's per-launch secret, when one was handed off.
     pub(crate) ui_token: Option<UiToken>,
+    /// Where this instance keeps everything.
+    pub(crate) dirs: DataDirs,
     /// The mail database.
     pub(crate) store: Store,
+    /// Every agent at once: on or off, and sent away (Settings › Agents).
+    pub(crate) agents: agents::Gate,
     /// The credential store, opened on first use so a missing Secret Service
     /// on Linux does not stop the daemon from starting.
     pub(crate) vault: OnceCell<Result<Vault, String>>,
@@ -167,6 +173,9 @@ impl Daemon {
             Err(TryLockError::WouldBlock) => return Err(DaemonError::AlreadyRunning(dirs.data().to_path_buf())),
             Err(TryLockError::Error(source)) => return Err(data_error(source)),
         }
+
+        // Asked to remove everything last time: done before anything is opened.
+        erase::finish(&dirs);
 
         // Only the lock holder opens the database, so two daemons never migrate it at once.
         let store = Store::open(&dirs).await?;
@@ -266,10 +275,16 @@ impl Daemon {
         } = self;
         let (stop, mut stopped) = watch::channel(false);
         let feed = Arc::new(feed::Feed::new(*store.subscribe().borrow()));
+        let agents_on = store
+            .read(|conn| regards_store::settings::get(conn, agents::KEY))
+            .await
+            .map_or(true, |value| value.as_deref() != Some("off"));
         let state = Arc::new(State {
+            agents: agents::Gate::new(agents_on),
             started: Instant::now(),
             stop,
             ui_token,
+            dirs: dirs.clone(),
             store,
             vault: OnceCell::new_with(vault.map(Ok)),
             oauth: oauth::Oauth::new(oauth_apps),
@@ -287,6 +302,14 @@ impl Daemon {
             late_send_grace,
             draft_pace,
         });
+        let logging = state
+            .store
+            .read(|conn| regards_store::settings::get(conn, mail::CONNECTION_LOG))
+            .await
+            .is_ok_and(|value| value.as_deref() == Some("on"));
+        if logging {
+            mail::apply_connection_log(&state, true);
+        }
         state.queue.attach(&state);
         queue::Queue::wake_all(&state);
         let follow = tokio::spawn({

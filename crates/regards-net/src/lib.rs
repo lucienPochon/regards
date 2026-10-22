@@ -3,6 +3,7 @@
 //! certificate verifier, either from the first byte or after STARTTLS.
 //! Validation is always on; there is no way to accept an invalid certificate.
 
+pub mod connlog;
 pub mod https;
 pub mod loopback;
 

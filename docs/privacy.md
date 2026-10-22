@@ -33,9 +33,10 @@ Every connection to a mail server, a sign-in service or a hosted AI provider use
 - **Settings and history:** your settings, the Outbox, and a record of what agents asked (kept 90 days), in the same folder.
 - **A log:** Regards' own log, for diagnosing problems. It never contains message content, passwords or tokens. It is kept small: one older copy at most.
   - **Detailed logging** (Settings › Support) makes it say more about what Regards does, under the same rules.
+  - **The connection log** (Settings › Support, off until you turn it on) records what Regards and your mail servers say to each other, to diagnose a server that misbehaves. It keeps command names and the servers' replies, and names the servers. It never keeps mail, folder names, searches, passwords, tokens, email addresses or your computer's IP address.
   - **Export diagnostics** writes the log, with versions and how many accounts of each kind, to a file you choose. Nothing is sent; you decide whether to share the file.
 
-Regards relies on your operating system's disk encryption to protect these files. To remove everything, remove your accounts in Regards, then delete its data folder.
+Regards relies on your operating system's disk encryption to protect these files. To remove everything, choose **Support › Remove everything from this computer**. Regards removes your passwords, sign-ins and keys from the credential store, then your mail, drafts, Outbox, settings and logs, and stops starting at login. Then it quits, and its next start is a first run. Mail on your servers is not touched.
 
 ## What your sent mail reveals
 

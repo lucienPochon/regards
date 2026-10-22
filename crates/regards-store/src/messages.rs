@@ -172,6 +172,19 @@ pub fn apply_flags(tx: &Transaction<'_>, mailbox_id: i64, changes: &[FlagChange]
 /// Unread messages per folder of an account, by folder id, where it shows
 /// (a message being moved counts in its target). The inbox leaves out what
 /// is set aside or snoozed past `now`, as it does in its list.
+/// The unread messages filed in a folder (not those on their way out of
+/// it), of one Smart Inbox section if asked: for "Mark all as read".
+pub fn unread_in(conn: &Connection, mailbox_id: i64, section: Option<Section>) -> Result<Vec<i64>, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT id FROM messages WHERE mailbox_id = ?1 AND seen = 0 AND deleted = 0 AND moving_to IS NULL \
+         AND (?2 IS NULL OR section = ?2) ORDER BY uid",
+    )?;
+    let ids = statement
+        .query_map(params![mailbox_id, section.map(Section::as_str)], |row| row.get(0))?
+        .collect::<Result<Vec<i64>, _>>()?;
+    Ok(ids)
+}
+
 pub fn unread_counts(
     conn: &Connection,
     account_id: &str,
@@ -806,6 +819,36 @@ mod tests {
                 ..Headers::default()
             },
         }
+    }
+
+    #[tokio::test]
+    async fn mark_all_read_finds_the_unread_of_a_folder_or_of_one_section() {
+        let (_temp, store, mailbox) = store_with_inbox().await;
+        let batch: Vec<NewMessage> = (1..=4)
+            .map(|uid| {
+                let mut new = message(uid, i64::from(uid) * 1000, &format!("m{uid}"));
+                new.flags.seen = uid == 2;
+                new.flags.deleted = uid == 4;
+                new
+            })
+            .collect();
+        store.write(move |tx| upsert(tx, mailbox, &batch)).await.unwrap();
+        let ids = store.read(move |c| unread_in(c, mailbox, None)).await.unwrap();
+        assert_eq!(ids.len(), 2, "not the read one, nor the deleted one");
+        let first = ids[0];
+        store
+            .write(move |tx| {
+                tx.execute("UPDATE messages SET section = 'notifications'", [])?;
+                tx.execute("UPDATE messages SET section = 'people' WHERE id = ?1", [first])?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let people = store
+            .read(move |c| unread_in(c, mailbox, Some(Section::People)))
+            .await
+            .unwrap();
+        assert_eq!(people, [first]);
     }
 
     #[tokio::test]

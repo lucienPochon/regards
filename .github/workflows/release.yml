@@ -101,6 +101,8 @@ jobs:
       - name: Install
         working-directory: apps/desktop
         run: npm ci
+      - name: cargo-about, for the licence list (Support › Licences)
+        run: cargo install cargo-about --version =0.9.2 --locked --features cli
       - name: Build the bundles, with the sidecar
         working-directory: apps/desktop
         shell: bash

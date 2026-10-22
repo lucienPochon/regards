@@ -28,6 +28,10 @@ pub mod methods {
     pub const DAEMON_HEALTH: &str = "daemon.health";
     /// Ask the daemon to stop.
     pub const DAEMON_SHUTDOWN: &str = "daemon.shutdown";
+    /// Remove everything Regards keeps on this computer (Support): every
+    /// credential at once, then the daemon stops and its files go once
+    /// nothing holds them ([`DaemonEraseParams`] → [`DaemonErased`]). `ui` only.
+    pub const DAEMON_ERASE: &str = "daemon.erase";
     /// List mail accounts. `ui` only, until agent access levels exist (ADR-0012).
     pub const ACCOUNT_LIST: &str = "account.list";
     /// Verify a password sign-in and add the account. `ui` only (ADR-0006).
@@ -70,6 +74,10 @@ pub mod methods {
     /// A message as it came, headers and all ("See the original message"):
     /// [`MessageSource`]. Agents: with Read access to its account.
     pub const MESSAGE_SOURCE: &str = "message.source";
+    /// Every unread message of a folder read, or of one Smart Inbox section
+    /// of it, with one undo: [`MarkAllReadParams`] → [`SetFlagsResult`].
+    /// Only what is on this device yet; `ui` only.
+    pub const MESSAGE_MARK_ALL_READ: &str = "message.mark_all_read";
     /// The conversation a message belongs to, across folders. `ui` only for now.
     pub const THREAD_GET: &str = "thread.get";
     /// Mark messages read or unread, flagged or not. Applied at once, sent to the
@@ -188,6 +196,12 @@ pub mod methods {
     pub const READING_SETTINGS: &str = "reading.settings";
     /// Change [`ReadingSettings`]. `ui` only.
     pub const READING_SET_SETTINGS: &str = "reading.set_settings";
+    /// Whether connections to mail servers are logged (Settings › Support):
+    /// [`ConnectionLogSettings`]. `ui` only, like the one below.
+    pub const CONNECTION_LOG_GET: &str = "support.connection_log";
+    /// Log connections, or stop; at once. The log holds commands and replies,
+    /// never mail, passwords, tokens or addresses.
+    pub const CONNECTION_LOG_SET: &str = "support.set_connection_log";
     /// Whether recent inbox mail is downloaded ahead (off by default). `ui` only.
     pub const PREFETCH_GET: &str = "prefetch.get";
     /// Download recent inbox mail ahead, or not; on starts at once. `ui` only.
@@ -215,6 +229,15 @@ pub mod methods {
     /// What agents did, newest first: every request, allowed or refused
     /// (ADR-0012 §4). Kept 90 days. `ui` only.
     pub const AGENT_ACTIVITY: &str = "agent.activity";
+    /// Every agent at once (Settings › Agents): [`AgentsSettings`]. `ui` only,
+    /// like the two below.
+    pub const AGENTS_SETTINGS: &str = "agents.settings";
+    /// Turn every agent off, or on again ([`AgentsEnabledParams`]). Off, the
+    /// CLI and MCP get nothing but `hello`; each account's own level stays
+    /// as it is. Turning off also ends the agents' connections.
+    pub const AGENTS_SET_ENABLED: &str = "agents.set_enabled";
+    /// End every agent's connection now: [`AgentsDisconnected`].
+    pub const AGENTS_DISCONNECT: &str = "agents.disconnect";
     /// What agents asked that waits for the person, newest first. `ui` only.
     pub const HOLD_LIST: &str = "hold.list";
     /// One hold. Agents: holds of the accounts open to them, to follow theirs.
@@ -1650,12 +1673,64 @@ pub struct PeopleSuggestResult {
     pub people: Vec<Person>,
 }
 
+/// Parameters of [`methods::CONNECTION_LOG_SET`], and the result of both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConnectionLogSettings {
+    /// Off by default.
+    pub on: bool,
+}
+
 /// The result of [`methods::ACCOUNT_RESYNC`]: the mail is coming back, as
 /// after adding the account (newest first, older in the background).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AccountResyncResult {
     /// Messages dropped from this device.
     pub dropped: u32,
+}
+
+/// The result of [`methods::AGENTS_SETTINGS`] and [`methods::AGENTS_SET_ENABLED`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentsSettings {
+    /// On by default; each account is still closed to agents until opened.
+    pub enabled: bool,
+    /// Agents connected now (the CLI, MCP servers).
+    pub connected: u32,
+}
+
+/// Parameters of [`methods::AGENTS_SET_ENABLED`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentsEnabledParams {
+    pub enabled: bool,
+}
+
+/// The result of [`methods::AGENTS_DISCONNECT`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentsDisconnected {
+    pub disconnected: u32,
+}
+
+/// Parameters of [`methods::DAEMON_ERASE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaemonEraseParams {
+    /// Exactly [`DaemonEraseParams::CONFIRMATION`], so nothing erases by mistake.
+    pub confirm: String,
+}
+
+impl DaemonEraseParams {
+    pub const CONFIRMATION: &str = "erase everything";
+
+    pub fn confirmed() -> Self {
+        Self {
+            confirm: Self::CONFIRMATION.to_owned(),
+        }
+    }
+}
+
+/// The result of [`methods::DAEMON_ERASE`]. The daemon stops right after.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaemonErased {
+    /// Credentials removed from the system's credential store.
+    pub credentials: u32,
 }
 
 /// How messages are shown, kept by the daemon.
@@ -1822,6 +1897,15 @@ pub struct MessageSource {
 impl MessageSource {
     /// Bytes of a message's source given at most.
     pub const MAX: usize = 1024 * 1024;
+}
+
+/// Parameters of [`methods::MESSAGE_MARK_ALL_READ`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MarkAllReadParams {
+    pub mailbox_id: i64,
+    /// Only this Smart Inbox section's; the whole folder's when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section: Option<Section>,
 }
 
 /// Result of [`methods::MESSAGE_LIST`].

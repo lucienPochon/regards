@@ -231,7 +231,7 @@ button:disabled {
 }
 
 /* The assistant: its dialog and its Settings page. */
-.assistant-dialog {
+.dialog.assistant-dialog {
   display: grid;
   gap: 14px;
   width: min(520px, calc(100vw - 32px));
@@ -318,6 +318,93 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* "See the original message". */
+.dialog.source-dialog {
+  display: grid;
+  gap: 10px;
+  width: min(860px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+}
+
+.source-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+
+.source-head h2 {
+  font-size: 17px;
+}
+
+.source-subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-text {
+  min-height: 0;
+  max-height: 60vh;
+  margin: 0;
+  padding: 12px 14px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--notice);
+  font: 12px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Support › Open-source licences. */
+.licence-filter {
+  width: min(320px, 100%);
+}
+
+.licence-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.licence-group {
+  min-width: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.licence-group summary {
+  padding: 8px 0;
+  cursor: pointer;
+}
+
+.licence-names {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.licence-text {
+  max-height: 320px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--notice);
+  font: 12px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+.licence-bare {
+  margin: 0 0 10px;
+  font-size: 13px;
 }
 
 .option-text .download-again {

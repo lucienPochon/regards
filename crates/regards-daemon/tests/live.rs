@@ -639,6 +639,59 @@ async fn live_flag_actions_apply_at_once_and_reach_the_server() {
 
 #[tokio::test]
 #[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_a_whole_folder_is_marked_read_at_once_and_can_be_undone() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    for n in 1..=3 {
+        seed.append(b"INBOX", &[], &message(n, &format!("M{n}"), "ada@example.test"))
+            .await
+            .unwrap();
+    }
+    seed.append(b"INBOX", &[SystemFlag::Seen], &message(4, "Read", "ada@example.test"))
+        .await
+        .unwrap();
+    let (_temp, mut desktop, _account, inbox, handle) = daemon_with_account(&live).await;
+
+    let all = regards_ipc::protocol::MarkAllReadParams {
+        mailbox_id: inbox,
+        section: None,
+    };
+    let result: SetFlagsResult = desktop.call(methods::MESSAGE_MARK_ALL_READ, all).await.unwrap();
+    assert_eq!(result.changed, 3, "the one already read is not counted");
+    assert_eq!(result.undo.as_ref().unwrap().description, "Marked 3 messages read");
+    assert!(messages(&mut desktop, inbox).await.messages.iter().all(|m| m.seen));
+    server_flags_become(&mut seed, |flags| {
+        flags.len() == 4 && flags.iter().all(|f| f.flags.seen)
+    })
+    .await;
+
+    // Nothing left to mark: nothing to undo.
+    let again: SetFlagsResult = desktop.call(methods::MESSAGE_MARK_ALL_READ, all).await.unwrap();
+    assert_eq!((again.changed, again.undo), (0, None));
+
+    // Undo makes the three unread again, and only them.
+    let _: Value = desktop
+        .call(
+            methods::UNDO_APPLY,
+            UndoParams {
+                id: result.undo.unwrap().id,
+            },
+        )
+        .await
+        .unwrap();
+    server_flags_become(&mut seed, |flags| flags.iter().filter(|f| f.flags.seen).count() == 1).await;
+    let local = messages(&mut desktop, inbox).await.messages;
+    assert_eq!(local.iter().filter(|m| !m.seen).count(), 3);
+    assert!(local.iter().find(|m| m.subject == "Read").unwrap().seen);
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
 async fn live_an_accounts_mail_can_be_fetched_again_and_its_pins_stay() {
     let live = live();
     let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
@@ -2832,6 +2885,26 @@ async fn live_agents_organise_mail_and_the_app_undoes_it() {
     handle.abort();
 }
 
+/// `method` on `ids`, asked again while a message is still on its way: the
+/// server shows a move done a moment before the daemon has recorded it, and
+/// until then the daemon says to try again (as an agent would).
+async fn once_moved(client: &mut Client, method: &str, ids: &[i64]) -> Result<Value, regards_ipc::ClientError> {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let result = client.call::<_, Value>(method, MessageIds { ids: ids.to_vec() }).await;
+        match &result {
+            Err(regards_ipc::ClientError::Rpc(error))
+                if error.code == regards_ipc::protocol::codes::CONFLICT
+                    && error.message.contains("still being moved")
+                    && Instant::now() < deadline =>
+            {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            _ => return result,
+        }
+    }
+}
+
 #[tokio::test]
 #[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
 async fn live_bulk_changes_and_deleting_for_good_wait_for_the_person() {
@@ -2905,24 +2978,16 @@ async fn live_bulk_changes_and_deleting_for_good_wait_for_the_person() {
 
     // Deleting for good: only from Trash or Junk, refused at once otherwise.
     let one = vec![ids[0]];
-    let refused = agent
-        .call::<_, Value>(methods::MESSAGE_DELETE, MessageIds { ids: one.clone() })
-        .await;
+    let refused = once_moved(&mut agent, methods::MESSAGE_DELETE, &one).await;
     assert!(
-        matches!(&refused, Err(regards_ipc::ClientError::Rpc(error)) if error.code == regards_ipc::protocol::codes::CONFLICT),
+        matches!(&refused, Err(regards_ipc::ClientError::Rpc(error))
+            if error.code == regards_ipc::protocol::codes::CONFLICT && !error.message.contains("still being moved")),
         "{refused:?}"
     );
-    let _: MoveResult = agent
-        .call(methods::MESSAGE_TRASH, MessageIds { ids: one.clone() })
-        .await
-        .unwrap();
+    once_moved(&mut agent, methods::MESSAGE_TRASH, &one).await.unwrap();
     server_count_becomes(&mut seed, b"Trash", 1).await;
     // From the Trash it always waits, even for one.
-    let deleting = held(
-        agent
-            .call::<_, Value>(methods::MESSAGE_DELETE, MessageIds { ids: one.clone() })
-            .await,
-    );
+    let deleting = held(once_moved(&mut agent, methods::MESSAGE_DELETE, &one).await);
     let rejected: HoldView = desktop
         .call(methods::HOLD_REJECT, HoldRef { id: deleting })
         .await
@@ -2932,11 +2997,7 @@ async fn live_bulk_changes_and_deleting_for_good_wait_for_the_person() {
         (HoldStatus::Rejected, "Delete 1 message for good")
     );
     server_count_becomes(&mut seed, b"Trash", 1).await;
-    let deleting = held(
-        agent
-            .call::<_, Value>(methods::MESSAGE_DELETE, MessageIds { ids: one })
-            .await,
-    );
+    let deleting = held(once_moved(&mut agent, methods::MESSAGE_DELETE, &one).await);
     let approved: HoldView = desktop
         .call(methods::HOLD_APPROVE, HoldRef { id: deleting })
         .await
