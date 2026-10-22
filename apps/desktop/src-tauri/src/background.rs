@@ -337,8 +337,16 @@ pub(crate) fn setup(app: &App) -> tauri::Result<()> {
                 show(tray.app_handle());
             }
         });
-    if let Some(icon) = app.default_window_icon() {
-        tray = tray.icon(icon.clone());
+    // The mark on Windows and Linux; on macOS, one colour the menu bar tints.
+    #[cfg(target_os = "macos")]
+    {
+        tray = tray
+            .icon(tauri::include_image!("icons/tray-template.png"))
+            .icon_as_template(true);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        tray = tray.icon(tauri::include_image!("icons/tray.png"));
     }
     tray.build(app)?;
 

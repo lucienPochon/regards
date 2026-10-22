@@ -91,6 +91,7 @@ import {
   viewKey,
 } from "./views";
 import { Welcome } from "./Welcome";
+import { Launch } from "./AppMark";
 
 /** How long an error notice stays. */
 const NOTICE_MS = 8000;
@@ -1384,6 +1385,7 @@ export function App() {
       ].join(" ")}
     >
       {banner}
+      {mail.state === "loading" && <Launch />}
       <Sidebar
         {...sidebarProps}
         expanded={layout.locked}

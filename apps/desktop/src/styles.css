@@ -735,30 +735,6 @@ button.link:hover {
 .hue-6 { --hue: #5c9c48; }
 .hue-7 { --hue: #dd6f55; }
 
-.app-mark {
-  display: inline-grid;
-  flex: none;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  background: var(--accent);
-  color: #fff;
-}
-
-.app-mark.tiny {
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
-  background: var(--rail-active);
-}
-
-.app-mark.large {
-  width: 68px;
-  height: 68px;
-  border-radius: 20px;
-}
-
 /* ---------- The window: sidebar · content ---------- */
 
 .app {
@@ -5428,4 +5404,114 @@ button.sender-row:hover:not(:disabled) {
 /* Beside the list, a reply's panel stays over the conversation. */
 .content.split .composer.panel {
   width: min(640px, calc(100% - var(--list-w) - 48px));
+}
+
+/* ---------- The mark (AppMark.tsx) and the launch screen ---------- */
+
+.mark {
+  display: block;
+  flex: none;
+}
+
+/* Drawing itself: the flap, then the point tracing the outline. */
+.mark-draw .mark-flap {
+  stroke-dasharray: 100;
+  animation: mark-line 0.55s cubic-bezier(0.6, 0, 0.3, 1) 0.1s both;
+}
+
+.mark-draw .mark-outline {
+  stroke-dasharray: 100;
+  animation: mark-line 1.5s cubic-bezier(0.55, 0.05, 0.25, 1) 0.6s both;
+}
+
+.mark-draw .mark-point {
+  animation: mark-appear 0.15s ease 0.6s both;
+}
+
+@keyframes mark-line {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes mark-appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* At rest, the point pulses: a halo leaves it and fades. */
+.mark-ring {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mark-ring 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+}
+
+.mark-draw .mark-ring {
+  animation-delay: 2.1s;
+}
+
+@keyframes mark-ring {
+  from {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  to {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+.launch {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: var(--bg);
+  animation: mark-appear 0.25s ease 0.35s both;
+}
+
+.launch .mark {
+  filter: drop-shadow(0 14px 24px rgb(16 26 21 / 0.28)) drop-shadow(0 2px 5px rgb(16 26 21 / 0.12));
+}
+
+.launch-name {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--text);
+}
+
+.launch-status {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.about-head .mark,
+.welcome-card .mark {
+  filter: drop-shadow(0 8px 16px rgb(16 26 21 / 0.22));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mark-draw .mark-flap,
+  .mark-draw .mark-outline,
+  .mark-draw .mark-point,
+  .mark-ring {
+    animation: none;
+  }
+
+  .mark-ring {
+    opacity: 0;
+  }
 }
