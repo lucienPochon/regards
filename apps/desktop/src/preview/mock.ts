@@ -1067,6 +1067,7 @@ function handle(cmd: string, args: Args): unknown {
       // The inbox also shows reminders that came due, from wherever they are filed.
       const place = (m: FixtureMessage) => (inbox ? inboxPlace(m) : m.received_at);
       const section = inbox ? ((args.section as Section | null) ?? null) : null;
+      const seen = inbox ? ((args.seen as boolean | null | undefined) ?? null) : null;
       const all = messages
         .filter((m) =>
           inbox
@@ -1080,6 +1081,7 @@ function handle(cmd: string, args: Args): unknown {
           if (section === null) return !(screeningMode === "hold" && placed === "new_senders");
           return shownIn(section, placed);
         })
+        .filter((m) => seen === null || m.seen === seen)
         .sort((a, b) => place(b) - place(a) || b.id - a.id)
         .filter((m) => !before || place(m) < before.received_at || (place(m) === before.received_at && m.id < before.id));
       const page = all.slice(0, limit);
