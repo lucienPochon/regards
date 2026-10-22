@@ -27,7 +27,8 @@ Each ADR records one significant decision: its context, the decision itself, the
 | [0017](0017-send-when-off-relay-in-v1.md) | Send later works when Regards is closed or the computer is off | Partially superseded by 0018 (§1, §2, §5 still in force) |
 | [0018](0018-modern-minimal-v1.md) | Modern, minimal 1.0: OAuth-first IMAP and a sealed Send Service for any email host | Accepted (timing and shape amended by 0019) |
 | [0019](0019-send-while-off-in-1-1.md) | 1.0 is fully local; sending while the computer is off (Send Service + Pro) ships in 1.1 | **Accepted** |
-| [0020](0020-voice-and-notes.md) | A voice per sending address and notes per person, for agents and the assistant | Proposed |
+| [0020](0020-voice-and-notes.md) | A voice per sending address and notes per person, for agents | Accepted |
+| [0021](0021-signatures.md) | Several signatures, one default per address | Accepted |
 
 **What Regards is, in one paragraph:**
 - **Regards 1.0** is a fully local desktop email client for Windows, macOS and Linux, with no Regards servers. It is built on a Rust core, Tauri 2 and React.
