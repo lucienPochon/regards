@@ -237,12 +237,13 @@ export function ReadingPane({
             type="button"
             className="reader-ask"
             title={`Ask ${assistant.name} about this conversation`}
+            aria-label={`Ask ${assistant.name}`}
             aria-haspopup="true"
             disabled={load.state !== "ready"}
             onClick={(event) => assistant.onMenu(anchorOf(event.currentTarget, "end"))}
           >
             <Icon name="agent" size={15} />
-            {assistant.name}
+            <span className="reader-ask-name">{assistant.name}</span>
             <Icon name="chevronDown" size={12} />
           </button>
         )}
