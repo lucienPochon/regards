@@ -637,6 +637,8 @@ const draftById = (id: number) => {
 let detailedLogs = false;
 let prefetch = false;
 let reading = { clean_links: true };
+// Two agents connected in the sample: Claude Code's MCP server and a CLI.
+let agentsGate = { enabled: true, connected: 2 };
 let assistant: { kind: string | null; base_url: string | null; model: string | null; has_key: boolean } =
   // `?assistant=on`: a provider already chosen.
   params.get("assistant") === "on"
@@ -950,6 +952,16 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return { agent_access: owner.account.agent_access };
     }
+    case "agents_settings":
+      return agentsGate;
+    case "agents_set_enabled":
+      agentsGate = { enabled: args.enabled as boolean, connected: args.enabled ? agentsGate.connected : 0 };
+      return agentsGate;
+    case "agents_disconnect": {
+      const sent = agentsGate.connected;
+      agentsGate = { ...agentsGate, connected: 0 };
+      return sent;
+    }
     case "agent_activity": {
       const before = (args.before as number | null) ?? null;
       const limit = (args.limit as number | null) ?? 100;
@@ -1116,6 +1128,26 @@ function handle(cmd: string, args: Args): unknown {
             mailbox_role: mailboxOf(m.mailboxId)?.role ?? null,
           })),
       };
+    }
+    case "message_mark_all_read": {
+      const section = (args.section as Section | null) ?? null;
+      const unread = messages.filter(
+        (m) =>
+          m.mailboxId === (args.mailboxId as number) &&
+          !m.seen &&
+          (section === null || shownIn(section, explanationOf(m).section)),
+      );
+      for (const message of unread) message.seen = true;
+      changed();
+      if (unread.length === 0) return { changed: 0, undo: null };
+      const id = nextId++;
+      const description = `Marked ${unread.length === 1 ? "1 message" : `${unread.length} messages`} read`;
+      undos.set(id, {
+        description,
+        restore: new Map(),
+        also: () => unread.forEach((message) => (message.seen = false)),
+      });
+      return { changed: unread.length, undo: { id, description } };
     }
     case "message_set_flags": {
       const ids = args.ids as number[];

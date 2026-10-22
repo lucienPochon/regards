@@ -1,8 +1,8 @@
 //! One client connection: handshake, then request dispatch.
 
 use crate::{
-    State, access, accounts, actions, assistant, audit, compose, discover, draft_sync, erase, holds, identities, mail,
-    notices, oauth, people, prefetch, smart, templates,
+    State, access, accounts, actions, agents, assistant, audit, compose, discover, draft_sync, erase, holds,
+    identities, mail, notices, oauth, people, prefetch, smart, templates,
 };
 use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
@@ -67,9 +67,17 @@ pub(crate) async fn run(stream: Stream, state: Arc<State>) -> Result<(), FrameEr
         feed: None,
     };
 
+    // Set once an agent has said hello: it changes when agents are sent away.
+    let mut kick: Option<watch::Receiver<u64>> = None;
     loop {
+        if kick.is_none() && session.agent_session.is_some() {
+            kick = Some(session.state.agents.subscribe());
+        }
         let incoming = if let Some(feed) = session.feed.as_mut() {
+            // Sent away first: a request that came at the same time is not served.
             let next = tokio::select! {
+                biased;
+                () = kicked(&mut kick) => return Ok(()),
                 incoming = framing::recv::<_, Value>(&mut framed) => Next::Request(incoming),
                 changed = feed.changed() => if changed.is_ok() { Next::Change } else { Next::FeedClosed },
             };
@@ -99,7 +107,11 @@ pub(crate) async fn run(stream: Stream, state: Arc<State>) -> Result<(), FrameEr
                 }
             }
         } else {
-            framing::recv::<_, Value>(&mut framed).await
+            tokio::select! {
+                biased;
+                () = kicked(&mut kick) => return Ok(()),
+                incoming = framing::recv::<_, Value>(&mut framed) => incoming,
+            }
         };
 
         let response = match incoming {
@@ -120,6 +132,17 @@ pub(crate) async fn run(stream: Stream, state: Arc<State>) -> Result<(), FrameEr
         if session.state.stop.borrow().to_owned() {
             return Ok(());
         }
+    }
+}
+
+/// Resolves when agents are sent away; never for the app's connection.
+async fn kicked(kick: &mut Option<watch::Receiver<u64>>) {
+    match kick {
+        Some(kick) => {
+            let _ = kick.changed().await;
+            tracing::debug!("an agent's connection was ended");
+        }
+        None => std::future::pending().await,
     }
 }
 
@@ -197,6 +220,9 @@ impl Session {
                 "the first request must be \"hello\"",
             ));
         }
+        if self.agent_session.is_some() && !self.state.agents.enabled() {
+            return Err(agents::turned_off());
+        }
         match request.method.as_str() {
             methods::DAEMON_HEALTH => Ok(to_value(HealthResult {
                 status: "ok".to_owned(),
@@ -227,6 +253,18 @@ impl Session {
             methods::ACCOUNT_SET_AGENT_SEND => {
                 self.require_ui()?;
                 accounts::set_agent_send(&self.state, params(request)?).await
+            }
+            methods::AGENTS_SETTINGS => {
+                self.require_ui()?;
+                Ok(agents::settings(&self.state))
+            }
+            methods::AGENTS_SET_ENABLED => {
+                self.require_ui()?;
+                agents::set_enabled(&self.state, params(request)?).await
+            }
+            methods::AGENTS_DISCONNECT => {
+                self.require_ui()?;
+                Ok(agents::disconnect(&self.state))
             }
             methods::AGENT_ACTIVITY => {
                 self.require_ui()?;
@@ -322,6 +360,10 @@ impl Session {
                 let params: MessageRef = params(request)?;
                 self.allow_message(Access::Read, params.id).await?;
                 mail::source(&self.state, params).await
+            }
+            methods::MESSAGE_MARK_ALL_READ => {
+                self.require_ui()?;
+                actions::mark_all_read(&self.state, params(request)?).await
             }
             methods::MESSAGE_HTML => {
                 let params: MessageHtmlParams = params(request)?;

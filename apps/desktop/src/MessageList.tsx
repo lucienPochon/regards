@@ -161,6 +161,7 @@ export function MessageList({
   onBack,
   onCompose,
   canCompose,
+  onMarkAllRead,
   feed,
   mode,
   openId,
@@ -183,6 +184,8 @@ export function MessageList({
   onBack?: () => void;
   onCompose: () => void;
   canCompose: boolean;
+  /** Every unread message of this folder or section, read (with Undo); absent where it means nothing. */
+  onMarkAllRead?: () => void;
   feed: MessageFeed;
   /** One line per message beside nothing ("single"), or three beside the reading pane ("split"). */
   mode: "single" | "split";
@@ -540,6 +543,11 @@ export function MessageList({
         <button type="button" className="icon-btn" title={`Search (${MOD_KEY}+F)`} aria-label="Search" onClick={() => search.onQuery("")}>
           <Icon name="search" size={17} />
         </button>
+        {onMarkAllRead && (
+          <button type="button" className="icon-btn" title="Mark everything here read" aria-label="Mark everything here read" onClick={onMarkAllRead}>
+            <Icon name="mailOpen" size={17} />
+          </button>
+        )}
         <button type="button" className="icon-btn" title="New message (c)" aria-label="New message" onClick={onCompose} disabled={!canCompose}>
           <Icon name="compose" size={17} />
         </button>

@@ -110,6 +110,7 @@ export const TOUR: Group[] = [
   {
     title: "Search",
     stops: [
+      { id: "mark-all-read", label: "Mark everything read", note: "Every unread message here, read at once, with Undo.", steps: ["wait:800", "click:[aria-label='Mark everything here read']", "wait:400"] },
       { id: "search", label: "Search the list", note: "Ctrl+F, then words; subjects, people and text.", steps: ["wait:700", "key:Mod+f", "type:garden"] },
       { id: "did-you-mean", label: "Did you mean", note: "A misspelt word, mended.", steps: ["wait:700", "key:Mod+f", "type:gardn"] },
       { id: "server-search", label: "Search on the server", note: "Nothing here: the server can look further back.", steps: ["wait:700", "key:Mod+f", "type:zebra"] },
@@ -148,6 +149,7 @@ export const TOUR: Group[] = [
     stops: [
       { id: "holds", label: "Agents waiting for you", note: "What agents asked to do, to allow or refuse.", steps: ["wait:800", "text:button=Agents are waiting"] },
       { id: "hold-link", label: "A hold opened from a link", note: "regards://hold/2 from a notification.", steps: ["wait:800", "call:link=hold:2"] },
+      { id: "agents-off", label: "Agents turned off", note: "One switch for every agent; each account keeps its level.", steps: settings("Agents", "wait:300", "click:.agents-gate [role=switch]", "wait:300") },
       { id: "agent-connect", label: "Connect an agent", note: "The command to run, or the lines to paste, for Claude Code, Codex, Cursor and others.", steps: settings("Agents", "wait:300", "see:.agent-connect=Connect") },
       { id: "agents", label: "Agent settings", note: "Access per account, sending, limits, activity and undo.", steps: settings("Agents") },
     ],
@@ -191,6 +193,8 @@ export const TOUR: Group[] = [
       { id: "s-accessibility", label: "Accessibility", note: "Zoom up to 200 % (also Ctrl + / − / 0), and single-key shortcuts on or off.", steps: settings("Accessibility") },
       { id: "s-shortcuts", label: "Shortcuts", note: "Every key.", steps: settings("Shortcuts") },
       { id: "s-support", label: "Support", note: "Updates, the background service, troubleshooting, help.", steps: settings("Support") },
+      { id: "s-licences", label: "Support › Open-source licences", note: "Regards' own, then those of what it is built on, by licence.", steps: settings("Support", "text:.link-row=Open-source licences", "wait:400", "click:.licence-group summary") },
+      { id: "s-erase", label: "Support › Remove everything from this computer", note: "Asks first, naming what goes; mail on the servers stays.", steps: settings("Support", "text:.settings-pane button=Remove everything") },
       { id: "s-diagnostics", label: "Support › Save diagnostics", note: "A file to attach to a report: no mail, addresses or passwords.", steps: settings("Support", "text:.settings-pane button=Save diagnostics") },
     ],
   },

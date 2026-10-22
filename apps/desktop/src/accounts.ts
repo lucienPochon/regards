@@ -387,6 +387,18 @@ export function setFlags(
   return invoke("message_set_flags", { ids, seen: flags.seen ?? null, flagged: flags.flagged ?? null });
 }
 
+/**
+ * "Mark all as read": every unread message of a folder, or of one Smart
+ * Inbox section of it, with one undo. Only what is on this device: older
+ * mail still being fetched keeps its state.
+ */
+export function markAllRead(
+  mailboxId: number,
+  section: Section | null = null,
+): Promise<{ changed: number; undo: UndoInfo | null }> {
+  return invoke("message_mark_all_read", { mailboxId, section });
+}
+
 export interface UndoInfo {
   id: number;
   description: string;
