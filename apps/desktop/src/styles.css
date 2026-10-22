@@ -44,6 +44,9 @@
   /* The reader's very light grey, a row under the pointer. */
   --reader-bg: #f4f6f5;
   --row-hover: #f3f4f4;
+  /* The open message's row, blue; deeper under the pointer, and when picked. */
+  --row-open: #e0ecfb;
+  --row-open-hover: #c6dcf7;
 
   --flag: #b86e00;
   --danger: #c63a2f;
@@ -95,6 +98,8 @@
     --rail-3: #24282b;
     --reader-bg: #141615;
     --row-hover: #212423;
+    --row-open: #1c2a3b;
+    --row-open-hover: #26405f;
     --flag: #f2a73a;
     --danger: #f08075;
     --danger-soft: #3a2422;
@@ -137,6 +142,8 @@
   --rail-3: #24282b;
   --reader-bg: #141615;
   --row-hover: #212423;
+  --row-open: #1c2a3b;
+  --row-open-hover: #26405f;
   --flag: #f2a73a;
   --danger: #f08075;
   --danger-soft: #3a2422;
@@ -1859,35 +1866,31 @@ button.list-title:hover {
   position: relative;
 }
 
-.rows.tall .row:not(.open):hover,
-.rows.tall .row.cursor:not(.open),
-.rows.tall .row:not(.open):has(> .row-main:focus-visible) {
+.rows.tall .row:not(.open):not(.picked):hover,
+.rows.tall .row.cursor:not(.open):not(.picked),
+.rows.tall .row:not(.open):not(.picked):has(> .row-main:focus-visible) {
   background: var(--row-hover);
 }
 
-.rows.tall .row.open,
-.rows.tall .row.open:hover {
-  background: var(--pill-strong);
+/* The open message blue, deeper under the pointer; picked rows the deeper blue. Hover elsewhere stays grey. */
+.rows .row.open {
+  background: var(--row-open);
 }
 
-.rows.tall .row.picked,
-.rows.tall .row.picked:hover {
-  background: var(--pill);
+.rows .row.open:hover,
+.rows .row.picked,
+.rows .row.picked:hover {
+  background: var(--row-open-hover);
 }
 
 .rows.wide .row {
   border-radius: 12px;
 }
 
-.rows.wide .row:not(.open):hover,
-.rows.wide .row.cursor:not(.open),
-.rows.wide .row:not(.open):has(> .row-main:focus-visible),
-.rows.wide .row.picked {
-  background: var(--pill);
-}
-
-.rows.wide .row.open {
-  background: var(--pill-strong);
+.rows.wide .row:not(.open):not(.picked):hover,
+.rows.wide .row.cursor:not(.open):not(.picked),
+.rows.wide .row:not(.open):not(.picked):has(> .row-main:focus-visible) {
+  background: var(--row-hover);
 }
 
 /* The keyboard's row: its tint, and a ring inside its edge. */
@@ -2126,12 +2129,13 @@ button.list-title:hover {
   align-items: center;
   gap: 1px;
   padding-left: 32px;
-  background: linear-gradient(to right, transparent, var(--pill) 28px);
+  background: linear-gradient(to right, transparent, var(--row-hover) 28px);
   transform: translateY(-50%);
 }
 
-.row.open .row-actions {
-  background: linear-gradient(to right, transparent, var(--pill-strong) 28px);
+.row.open .row-actions,
+.row.picked .row-actions {
+  background: linear-gradient(to right, transparent, var(--row-open-hover) 28px);
 }
 
 .rows.wide .row:hover .row-actions,
@@ -2343,6 +2347,7 @@ button.list-title:hover {
   min-width: 0;
   min-height: 0;
   background: var(--reader-bg);
+  container-type: inline-size;
 }
 
 .reader-bar {
@@ -2396,6 +2401,19 @@ button.list-title:hover {
 
 .reader-ask:disabled {
   opacity: 0.4;
+}
+
+/* A narrow reader keeps its actions: the assistant loses its name, then its button (each message's ⋯ still has it). */
+@container (max-width: 560px) {
+  .reader-ask-name {
+    display: none;
+  }
+}
+
+@container (max-width: 480px) {
+  .reader-ask {
+    display: none;
+  }
 }
 
 .reader-scroll {
