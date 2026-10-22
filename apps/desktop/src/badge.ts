@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 /**
  * The unread count on the taskbar or dock: the inboxes' unread mail (not
  * what is set aside or snoozed). On Windows, drawn over the icon, up to
- * 99+. On by default, for every account.
+ * 9+. On by default, for every account.
  */
 export interface BadgeSettings {
   on: boolean;

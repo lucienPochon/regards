@@ -145,20 +145,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_badge_fills_its_square_and_leaves_the_corners_clear() {
+    fn the_badge_is_a_disc_in_its_square() {
         for (count, size) in [(1, 16), (47, 24), (100, 32), (7, 20)] {
             let pixels = draw::badge(count, size);
             assert_eq!(pixels.len(), (size * size * 4) as usize);
             let alpha = |x: u32, y: u32| pixels[((y * size + x) * 4 + 3) as usize];
             assert_eq!(alpha(0, 0), 0, "{count} at {size}");
-            assert_eq!(alpha(size / 2, size - 2), 255, "{count} at {size}");
+            assert_eq!(alpha(size / 2, size / 2), 255, "{count} at {size}");
         }
     }
 
     #[test]
-    fn past_ninety_nine_the_badge_stops_counting() {
-        assert_eq!(draw::badge(100, 24), draw::badge(5000, 24));
-        assert_ne!(draw::badge(99, 24), draw::badge(100, 24));
+    fn past_nine_the_badge_stops_counting() {
+        assert_eq!(draw::badge(10, 24), draw::badge(5000, 24));
+        assert_ne!(draw::badge(9, 24), draw::badge(10, 24));
         assert_ne!(draw::badge(1, 16), draw::badge(7, 16));
     }
 

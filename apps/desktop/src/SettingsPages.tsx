@@ -493,7 +493,7 @@ const platform = navigator.platform;
 /** Where the unread count shows: the dock on a Mac, the taskbar elsewhere. */
 const DOCK = /Mac/.test(platform) ? "dock" : "taskbar";
 const BADGE_NOTE = /Win/.test(platform)
-  ? "The inboxes' unread mail, as in the sidebar, up to 99+. Not mail set aside or snoozed."
+  ? "The inboxes' unread mail, as in the sidebar, up to 9+. Not mail set aside or snoozed."
   : "The inboxes' unread mail, as in the sidebar. Not mail set aside or snoozed.";
 
 const NEW_MAIL: { id: NewMail; label: string; detail: string }[] = [
