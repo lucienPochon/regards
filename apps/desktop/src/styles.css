@@ -3160,7 +3160,76 @@ button.list-title:hover {
   position: relative;
   display: flex;
   flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
   min-width: 0;
+  padding: 4px 0;
+  cursor: text;
+}
+
+.address-line .address-input input {
+  flex: 1 0 120px;
+  padding: 4px 0;
+}
+
+/* Someone in the field: the name, the address on hover. */
+.address-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  border-radius: 999px;
+  background: var(--chip);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 24px;
+}
+
+.address-chip:focus-within {
+  background: var(--pill);
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+
+.address-chip.invalid {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.address-chip-name {
+  overflow: hidden;
+  max-width: 260px;
+  padding: 0 2px 0 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.address-chip-name:focus {
+  outline: none;
+}
+
+.address-chip-remove {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.address-chip-remove:hover {
+  background: var(--hover);
+  color: var(--text);
 }
 
 .address-suggestions {
@@ -3210,6 +3279,38 @@ button.list-title:hover {
   color: var(--muted);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* What matched what is typed. */
+.address-suggestion-text mark {
+  background: none;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.address-suggestion-forget {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.address-suggestions li:hover .address-suggestion-forget,
+.address-suggestions li.active .address-suggestion-forget {
+  opacity: 1;
+}
+
+.address-suggestion-forget:hover {
+  background: var(--hover);
+  color: var(--text);
 }
 
 .address-line input::placeholder {
