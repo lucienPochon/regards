@@ -1,8 +1,8 @@
 //! One client connection: handshake, then request dispatch.
 
 use crate::{
-    State, access, accounts, actions, agents, assistant, attachments, audit, compose, discover, draft_sync, erase,
-    holds, identities, mail, notes, notices, oauth, people, prefetch, smart, templates, voice,
+    State, access, accounts, actions, agents, assistant, attachments, audit, compose, context, discover, draft_sync,
+    erase, holds, identities, mail, notes, notices, oauth, people, prefetch, smart, templates, voice,
 };
 use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
@@ -355,7 +355,9 @@ impl Session {
             methods::MESSAGE_GET => {
                 let params: MessageRef = params(request)?;
                 self.allow_message(Access::Read, params.id).await?;
-                mail::get(&self.state, params).await
+                let of = Some(context::Of::Message(params.id));
+                let result = mail::get(&self.state, params).await?;
+                Ok(self.with_context(result, of).await)
             }
             methods::MESSAGE_SOURCE => {
                 let params: MessageRef = params(request)?;
@@ -403,22 +405,30 @@ impl Session {
             methods::DRAFT_CREATE => {
                 let params: DraftCreateParams = params(request)?;
                 self.allow_account(Access::Triage, &params.account_id).await?;
-                compose::create(&self.state, params).await
+                let result = compose::create(&self.state, params).await?;
+                let of = context::Of::draft_in(&result);
+                Ok(self.with_context(result, of).await)
             }
             methods::DRAFT_REPLY => {
                 let params: DraftReplyParams = params(request)?;
                 self.allow_message(Access::Triage, params.message_id).await?;
-                compose::reply(&self.state, params).await
+                let result = compose::reply(&self.state, params).await?;
+                let of = context::Of::draft_in(&result);
+                Ok(self.with_context(result, of).await)
             }
             methods::DRAFT_FORWARD => {
                 let params: MessageRef = params(request)?;
                 self.allow_message(Access::Triage, params.id).await?;
-                compose::forward(&self.state, params).await
+                let result = compose::forward(&self.state, params).await?;
+                let of = context::Of::draft_in(&result);
+                Ok(self.with_context(result, of).await)
             }
             methods::DRAFT_GET => {
                 let params: DraftRef = params(request)?;
                 self.allow_draft(Access::Triage, params.id).await?;
-                compose::get(&self.state, params).await
+                let result = compose::get(&self.state, params).await?;
+                let of = context::Of::draft_in(&result);
+                Ok(self.with_context(result, of).await)
             }
             methods::DRAFT_CHECK => {
                 let params: DraftRef = params(request)?;
@@ -433,7 +443,9 @@ impl Session {
             methods::DRAFT_UPDATE => {
                 let params: DraftUpdateParams = params(request)?;
                 self.allow_draft(Access::Triage, params.id).await?;
-                compose::update(&self.state, params).await
+                let result = compose::update(&self.state, params).await?;
+                let of = context::Of::draft_in(&result);
+                Ok(self.with_context(result, of).await)
             }
             methods::DRAFT_DELETE => {
                 let params: DraftRef = params(request)?;
@@ -734,7 +746,9 @@ impl Session {
             methods::THREAD_GET => {
                 let params: MessageRef = params(request)?;
                 self.allow_message(Access::Read, params.id).await?;
-                mail::thread(&self.state, params).await
+                let of = Some(context::Of::Thread(params.id));
+                let result = mail::thread(&self.state, params).await?;
+                Ok(self.with_context(result, of).await)
             }
             methods::MESSAGE_SET_FLAGS => {
                 let params: SetFlagsParams = params(request)?;
@@ -777,6 +791,15 @@ impl Session {
 
     fn is_ui(&self) -> bool {
         self.principal == Some(Principal::Ui)
+    }
+
+    /// For an agent: the result with its context, the voice and the people
+    /// in it (ADR-0020 §4). The app shows those its own way.
+    async fn with_context(&self, result: Value, of: Option<context::Of>) -> Value {
+        if self.is_ui() {
+            return result;
+        }
+        context::attach(&self.state, result, of).await
     }
 
     /// The app may; an agent, if the account allows it `needed` (ADR-0012).

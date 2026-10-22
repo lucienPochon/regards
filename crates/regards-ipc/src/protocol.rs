@@ -1679,6 +1679,17 @@ pub struct PersonMemory {
     pub notes: Vec<NoteView>,
 }
 
+/// What an agent is given with a message, a conversation or a draft, as
+/// its `context` (ADR-0020 §4): the person's voice for the address in play,
+/// and the other people in it (at most 10).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentContext {
+    /// The person's own guidance for writing; none while off or empty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice: Option<String>,
+    pub people: Vec<PersonMemory>,
+}
+
 /// A template.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TemplateView {
