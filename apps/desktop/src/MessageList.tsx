@@ -26,6 +26,12 @@ const SOMEDAY = 32_503_680_000_000;
 /** When the list is this close to its end, the next page is fetched. */
 const PREFETCH_PX = 800;
 
+/**
+ * The row gutter's own pictures: Done is a check, as in the reader's Back | Done,
+ * and read/unread is the row's dot, filled while unread.
+ */
+const GUTTER_ICONS: Record<string, IconName> = { archive: "check", read: "circleFilled", unread: "circle" };
+
 /** The top of a list: its name on two lines (with a menu when it has one), and buttons on the right. */
 export function ListHeader({
   title,
@@ -447,31 +453,18 @@ export function MessageList({
           palette(targetsFor(item));
         }}
       >
-        {mode === "split" ? (
-          // Beside the reader: Done, read/unread and delete, stacked in the margin.
-          <span className="row-gutter">
-            {isPicked ? (
-              <button type="button" className="gutter-check" aria-label="Unselect" aria-pressed onClick={() => toggle(item)}>
-                <Icon name="check" size={11} />
-              </button>
-            ) : (
-              choose(actions, "archive", "read", "unread", "delete").map((action) =>
-                // Done (archive) shows a check here, as in the reader's Back | Done.
-                button(action.id === "archive" ? { ...action, icon: "check" } : action, 13, "gutter-btn"),
-              )
-            )}
-          </span>
-        ) : (
-          <button
-            type="button"
-            className="row-check"
-            aria-label={isPicked ? "Unselect" : "Select"}
-            aria-pressed={isPicked}
-            onClick={() => toggle(item)}
-          >
-            <Icon name="check" size={12} />
-          </button>
-        )}
+        {/* Done, read/unread and delete in the margin: stacked beside the reader, in a line alone. */}
+        <span className="row-gutter">
+          {isPicked ? (
+            <button type="button" className="gutter-check" aria-label="Unselect" aria-pressed onClick={() => toggle(item)}>
+              <Icon name="check" size={11} />
+            </button>
+          ) : (
+            choose(actions, "archive", "read", "unread", "delete").map((action) =>
+              button({ ...action, icon: GUTTER_ICONS[action.id] ?? action.icon }, 13, "gutter-btn"),
+            )
+          )}
+        </span>
         <button
           type="button"
           className="row-main"
@@ -661,7 +654,7 @@ export function MessageList({
             </div>
           )
         ) : (
-          <div className={`rows ${mode === "single" ? "wide" : "tall"}${picked.size > 0 ? " picking" : ""}`}>
+          <div className={`rows ${mode === "single" ? "wide" : "tall"}`}>
             {searching && (
               <p className="search-summary" role="status">
                 <span>

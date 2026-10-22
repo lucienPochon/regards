@@ -2055,7 +2055,7 @@ button.list-title:hover {
   font-weight: 600;
 }
 
-/* Beside the reader: on hover, Done, read and delete stacked in the margin, in place of the dot. */
+/* On hover, Done, read and delete in the margin, in place of the dot: stacked beside the reader… */
 .row-gutter {
   position: absolute;
   top: 0;
@@ -2068,15 +2068,23 @@ button.list-title:hover {
   gap: 1px;
 }
 
-.rows.tall .row:hover .row-gutter,
-.rows.tall .row:focus-within .row-gutter,
-.rows.tall .row.picked .row-gutter {
+/* …and side by side alone, from the list's margin onto the row, so the pointer never leaves the row on the way. */
+.rows.wide .row-gutter {
+  left: -40px;
+  flex-direction: row;
+  align-items: center;
+  gap: 0;
+}
+
+.row:hover > .row-gutter,
+.row:focus-within > .row-gutter,
+.row.picked > .row-gutter {
   display: flex;
 }
 
-.rows.tall .row:hover .dot,
-.rows.tall .row:focus-within .dot,
-.rows.tall .row.picked .dot {
+.row:hover > .row-gutter + .row-main .dot,
+.row:focus-within > .row-gutter + .row-main .dot,
+.row.picked > .row-gutter + .row-main .dot {
   visibility: hidden;
 }
 
@@ -2087,6 +2095,10 @@ button.list-title:hover {
   height: 20px;
   border-radius: 5px;
   color: var(--muted);
+}
+
+.rows.wide .gutter-btn {
+  height: 24px;
 }
 
 .gutter-btn:hover {
@@ -2103,41 +2115,6 @@ button.list-title:hover {
   border-radius: 50%;
   background: var(--accent);
   color: var(--accent-text);
-}
-
-/* Alone: the round check in the gutter, on hover, while selecting, and when picked. */
-.row-check {
-  position: absolute;
-  top: 50%;
-  left: -32px;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border: 1.5px solid var(--border-strong);
-  border-radius: 50%;
-  background: var(--bg);
-  color: transparent;
-  transform: translateY(-50%);
-  visibility: hidden;
-}
-
-.row:hover .row-check,
-.row:focus-within .row-check,
-.picking .row-check {
-  visibility: visible;
-}
-
-.row-check:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.row.picked .row-check {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-text);
-  visibility: visible;
 }
 
 /* Alone: the row's actions over its end, in place of the date. */
