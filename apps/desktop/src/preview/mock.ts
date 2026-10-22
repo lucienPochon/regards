@@ -843,6 +843,12 @@ function handle(cmd: string, args: Args): unknown {
         .map(({ person }) => person);
       return { people };
     }
+    // A message's own window: a tab here, with the composer alone.
+    case "composer_window":
+      window.open(`preview.html?compose=${Number(args.draftId)}`, "_blank");
+      return null;
+    case "composer_window_open":
+      return false;
     case "people_forget": {
       const address = String(args.address ?? "").trim().toLowerCase();
       const known = !forgottenPeople.has(address);

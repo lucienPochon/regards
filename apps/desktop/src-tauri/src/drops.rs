@@ -66,18 +66,19 @@ fn name(path: &std::path::Path) -> String {
 }
 
 /// Tell the UI files are being dragged over the window (`files_drag`), and
-/// what was dropped (`files_dropped`).
+/// what was dropped (`files_dropped`): that window only, as each composer
+/// window takes the files dropped on it.
 pub(crate) fn on_window(window: &Window, event: &DragDropEvent) {
     match event {
         DragDropEvent::Enter { .. } => {
-            let _ = window.emit("files_drag", serde_json::json!({ "over": true }));
+            let _ = window.emit_to(window.label(), "files_drag", serde_json::json!({ "over": true }));
         }
         DragDropEvent::Leave => {
-            let _ = window.emit("files_drag", serde_json::json!({ "over": false }));
+            let _ = window.emit_to(window.label(), "files_drag", serde_json::json!({ "over": false }));
         }
         DragDropEvent::Drop { paths, position } => {
             let at = position.to_logical::<f64>(window.scale_factor().unwrap_or(1.0));
-            let _ = window.emit("files_drag", serde_json::json!({ "over": false }));
+            let _ = window.emit_to(window.label(), "files_drag", serde_json::json!({ "over": false }));
             let files: Vec<DroppedFile> = paths
                 .iter()
                 .map(|path| DroppedFile {
@@ -94,7 +95,8 @@ pub(crate) fn on_window(window: &Window, event: &DragDropEvent) {
             let excess = kept.1.len().saturating_sub(KEPT);
             kept.1.drain(..excess);
             drop(kept);
-            let _ = window.emit(
+            let _ = window.emit_to(
+                window.label(),
                 "files_dropped",
                 Dropped {
                     id,

@@ -6,6 +6,8 @@ import "./mock";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "../App";
+import { composerWindowDraft } from "../compose";
+import { ComposerWindow } from "../ComposerWindow";
 import { type Theme, applyTheme, savedTheme } from "../theme";
 import { Tour } from "./Tour";
 import "../styles.css";
@@ -30,11 +32,9 @@ if (params.has("layout") || params.has("sidebar") || params.has("view")) {
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root element");
-createRoot(root).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+// `?compose=<draft id>`: a message in a window of its own (a tab here).
+const draftId = composerWindowDraft();
+createRoot(root).render(<StrictMode>{draftId === null ? <App /> : <ComposerWindow draftId={draftId} />}</StrictMode>);
 
 // The Tour panel, in its own root beside the app.
 const tour = document.createElement("div");

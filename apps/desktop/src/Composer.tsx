@@ -1,6 +1,6 @@
 import type { Editor } from "@tiptap/core";
 import { AddressInput } from "./AddressInput";
-import { type KeyboardEvent, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, type MutableRefObject, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import {
   type Draft,
   type Queued,
@@ -67,10 +67,17 @@ export function Composer({
   pickReminder,
   pickTemplate,
   onAddAccount,
+  onPopOut,
+  saveRef,
 }: {
   draftId: number;
   mode: "full" | "panel";
-  onMode: (mode: "full" | "panel") => void;
+  /** Bigger or smaller; none in a window of its own. */
+  onMode?: (mode: "full" | "panel") => void;
+  /** Go on in a window of its own (saved first), with the subject for its title. */
+  onPopOut?: (subject: string) => void;
+  /** Given a way to save what is written now: a window of its own saves before it closes. */
+  saveRef?: MutableRefObject<(() => Promise<boolean>) | null>;
   onClose: () => void;
   onQueued: (queued: Queued) => void;
   /** Ask when to send it: Unix ms, or null if cancelled. */
@@ -284,6 +291,9 @@ export function Composer({
     await flush();
     onClose();
   }, [flush, onClose]);
+  useEffect(() => {
+    if (saveRef) saveRef.current = flush;
+  }, [flush, saveRef]);
 
   useShortcuts(
     {
@@ -626,15 +636,28 @@ export function Composer({
       <div className="composer-top">
         <span className="composer-title">{mode === "panel" ? fields?.subject || "New message" : ""}</span>
         <div className="composer-window">
-          <button
-            type="button"
-            className="icon-btn"
-            title={mode === "panel" ? "Full size" : "Smaller"}
-            aria-label={mode === "panel" ? "Full size" : "Smaller"}
-            onClick={() => onMode(mode === "panel" ? "full" : "panel")}
-          >
-            <Icon name={mode === "panel" ? "expand" : "shrink"} size={15} />
-          </button>
+          {onMode && (
+            <button
+              type="button"
+              className="icon-btn"
+              title={mode === "panel" ? "Full size" : "Smaller"}
+              aria-label={mode === "panel" ? "Full size" : "Smaller"}
+              onClick={() => onMode(mode === "panel" ? "full" : "panel")}
+            >
+              <Icon name={mode === "panel" ? "expand" : "shrink"} size={15} />
+            </button>
+          )}
+          {onPopOut && (
+            <button
+              type="button"
+              className="icon-btn"
+              title="Open in a new window"
+              aria-label="Open in a new window"
+              onClick={() => void flush().then(() => onPopOut(fields?.subject ?? ""))}
+            >
+              <Icon name="popOut" size={15} />
+            </button>
+          )}
           <button
             type="button"
             className="icon-btn"

@@ -1282,6 +1282,18 @@ button.link:hover {
   height: var(--band);
 }
 
+/* A message in a window of its own: the composer fills it, under the band. */
+.composer-own {
+  --band: 0px;
+  position: relative;
+  height: 100vh;
+  background: var(--bg);
+}
+
+.composer-own.framed {
+  --band: 32px;
+}
+
 .list-pane {
   position: relative;
   display: flex;

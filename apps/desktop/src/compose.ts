@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { MessageSummary, Person } from "./accounts";
 
 /** Mirrors `DraftView` in `regards-ipc`. */
@@ -306,10 +307,50 @@ export const attachDropped = (draftId: number, dropId: number, inline = false) =
     inline,
   });
 
+/**
+ * An event for this window only, as files dropped on one window are for it;
+ * in the browser preview, which has no windows, any.
+ */
+function listenHere<T>(name: string, handler: (payload: T) => void): Promise<UnlistenFn> {
+  let here: ReturnType<typeof getCurrentWebviewWindow> | null = null;
+  try {
+    here = getCurrentWebviewWindow();
+  } catch {
+    // The preview.
+  }
+  return here ? here.listen<T>(name, (event) => handler(event.payload)) : listen<T>(name, (event) => handler(event.payload));
+}
+
 /** Files are dragged over the window (`true`), or no longer are. */
 export const onFilesDrag = (handler: (over: boolean) => void): Promise<UnlistenFn> =>
-  listen<{ over: boolean }>("files_drag", (event) => handler(event.payload.over));
+  listenHere<{ over: boolean }>("files_drag", (payload) => handler(payload.over));
 
 /** Files were dropped on the window. */
 export const onFilesDropped = (handler: (dropped: Dropped) => void): Promise<UnlistenFn> =>
-  listen<Dropped>("files_dropped", (event) => handler(event.payload));
+  listenHere<Dropped>("files_dropped", handler);
+
+/** Open a draft in a window of its own, or bring that window to the front. */
+export const openComposerWindow = (draftId: number, title: string) => invoke("composer_window", { draftId, title });
+
+/** Whether a draft is open in a window of its own. */
+export const composerWindowOpen = (draftId: number) => invoke<boolean>("composer_window_open", { draftId });
+
+/** The draft a window of its own was opened for (its label is `compose-<id>`); `null` in the main window. */
+export function composerWindowDraft(): number | null {
+  let label = "";
+  try {
+    label = getCurrentWebviewWindow().label;
+  } catch {
+    // The preview: `?compose=<id>` stands in.
+    label = `compose-${new URLSearchParams(window.location.search).get("compose") ?? ""}`;
+  }
+  const id = Number(label.match(/^compose-(\d+)$/)?.[1]);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+/** What a message's own window tells the main one when it is sent: the undo is shown there. */
+export interface SentElsewhere {
+  queued: Queued;
+  accountId?: string;
+  replyingTo?: number | null;
+}

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { type CSSProperties, type KeyboardEvent, type PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type MarkResult,
@@ -26,11 +27,14 @@ import {
   type Draft,
   type Dropped,
   type Queued,
+  type SentElsewhere,
   attachDropped,
+  composerWindowOpen,
   getDraft,
   newDraft,
   onFilesDrag,
   onFilesDropped,
+  openComposerWindow,
   saveDraft,
 } from "./compose";
 import { Confirm, type ConfirmRequest } from "./Confirm";
@@ -73,7 +77,7 @@ import { type AssistantJob, AssistantDialog, useAssistantKind } from "./Assistan
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { type DragPayload, Sidebar } from "./Sidebar";
 import { useSidebarPrefs } from "./sidebar-prefs";
-import { presets, reminderPresets, sendPresets, snoozeMessages } from "./snooze";
+import { presets, reminderPresets, sendPresets, snoozeMessages, timeHint } from "./snooze";
 import { accountLabel, getPrefs, setPrefs, usePrefs, zoomStep } from "./prefs";
 import { applyTheme } from "./theme";
 import { TimePicker } from "./TimePicker";
@@ -140,16 +144,6 @@ function targetOf(items: ListItem[]): Target {
     reminding: items.length > 0 && items.every((item) => item.remind_at !== null),
     reminded: items.some((item) => item.reminded),
   };
-}
-
-/** A time beside its preset: "18:00", or "Thu 08:00" when it is not today. */
-function timeHint(until: number | "someday"): string | undefined {
-  if (until === "someday") return undefined;
-  const date = new Date(until);
-  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return date.toDateString() === new Date().toDateString()
-    ? time
-    : `${date.toLocaleDateString([], { weekday: "short" })} ${time}`;
 }
 
 /** The palette's order of message actions; archive is Done. */
@@ -484,6 +478,16 @@ export function App() {
   // Settings › Composer: replies and forwards open over the conversation, or full size.
   const compose = useCallback((start: Promise<Draft>) => startDraft(start, getPrefs().replyOpens), [startDraft]);
   const editDraft = useCallback((id: number) => {
+    // Open in a window of its own already: that window comes to the front.
+    void composerWindowOpen(id).then(
+      (elsewhere) => {
+        if (elsewhere) {
+          setComposer((now) => (now?.id === id ? null : now));
+          void openComposerWindow(id, "");
+        }
+      },
+      () => {},
+    );
     setComposer({ id, mode: "full" });
     getDraft(id).then(
       (draft) =>
@@ -759,6 +763,17 @@ export function App() {
       )
       .catch(failed);
   };
+  // A message sent from a window of its own: its undo is shown here.
+  const sentElsewhere = useRef<(sent: SentElsewhere) => void>(() => {});
+  sentElsewhere.current = (sent) => {
+    sentFrom(sent);
+    setQueued(sent.queued);
+  };
+  useEffect(() => {
+    const stop = listen<SentElsewhere>("composer_queued", (event) => sentElsewhere.current(event.payload));
+    return () => void stop.then((unlisten) => unlisten()).catch(() => {});
+  }, []);
+
   useEffect(() => {
     const stops = [onFilesDrag(setFilesOver), onFilesDropped((drop) => dropped.current(drop))];
     return () => {
@@ -1517,6 +1532,10 @@ export function App() {
             pickReminder={pickReminder}
             pickTemplate={pickTemplate}
             onAddAccount={() => setSettings("accounts")}
+            onPopOut={(subject) => {
+              setComposer(null);
+              openComposerWindow(composer.id, subject).catch(failed);
+            }}
           />
         )}
         {assistantJob && (

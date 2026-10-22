@@ -128,3 +128,13 @@ export function reminderPresets(now: Date = new Date(), prefs: PresetPrefs = {})
     until: dayAt(now, days[def.id], time(def.id)),
   }));
 }
+
+/** A time beside its preset: "18:00", or "Thu 08:00" when it is not today. */
+export function timeHint(until: number | "someday"): string | undefined {
+  if (until === "someday") return undefined;
+  const date = new Date(until);
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return date.toDateString() === new Date().toDateString()
+    ? time
+    : `${date.toLocaleDateString([], { weekday: "short" })} ${time}`;
+}

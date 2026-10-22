@@ -314,6 +314,13 @@ const PATHS = {
     </>
   ),
   chevronLeft: <path d="M14.5 6.5 9 12l5.5 5.5" />,
+  // A window of its own: one window over another.
+  popOut: (
+    <>
+      <rect x="8.5" y="3.5" width="12" height="10" rx="2" />
+      <path d="M15.5 16.5v1.5a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h3" />
+    </>
+  ),
   // A choice that opens a list: up and down.
   upDown: <path d="M8 9.5 12 5.5l4 4M8 14.5l4 4 4-4" />,
   split: (
