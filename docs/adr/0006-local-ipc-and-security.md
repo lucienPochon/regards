@@ -44,15 +44,16 @@ Loopback TCP is reachable by every local user and, through DNS-rebinding mistake
 4. **Tauri hardening:**
    - The WebView gets a **narrow, explicit command set**: no generic passthrough to the daemon, no shutdown or settings-of-agents from JS without a UI gesture.
    - Minimal Tauri capabilities; strict CSP.
-   - The email HTML reader runs in a sandboxed iframe without `allow-scripts`, with its own CSP and remote content blocked until the user opts in.
+   - The email HTML reader runs in a sandboxed iframe, with its own CSP and remote content blocked until the user opts in. The only script it runs is our own, which reports the message's height (amended 2026-10-22, below).
      - **Implementation (Phase 1), three layers:**
        1. **Sanitising in the daemon (`ammonia`):**
           - **Removed:** scripts, event handlers, forms, frames and objects; links other than `http(s)` and `mailto`; and `data:` anywhere except images.
           - **Inline images:** `cid:` images become `data:` URIs, within a size limit.
           - **Remote images:** removed and counted unless allowed.
           - **Hostile nesting:** sanitising costs grow with the square of the nesting depth. 20,000 nested elements took 0.7 s, and a 1 MB message could take minutes. Above 15,000 start tags (worst case about 0.4 s), the frame shows the message's text with a note instead.
-       2. **Its own origin:** the desktop serves the result through the `regards-mail` scheme, to the main window only. The response CSP is `default-src 'none'; style-src 'unsafe-inline'; img-src data:` (plus `https:`/`http:` once remote images are allowed), with `frame-src` limited to the link opener below and `form-action 'none'; base-uri 'none'`.
-       3. **The frame:** an `<iframe sandbox="">`, so no scripts, no same-origin access, no popups and no navigation. The app CSP allows framing only `regards-mail`.
+       2. **Its own origin:** the desktop serves the result through the `regards-mail` scheme, to the main window only. The response CSP is `default-src 'none'; script-src 'nonce-<new each page>'; style-src 'unsafe-inline'; img-src data:` (plus `https:`/`http:` once remote images are allowed), with `frame-src` limited to the link opener below and `form-action 'none'; base-uri 'none'`.
+       3. **The frame:** an `<iframe sandbox="allow-scripts">`: no same-origin access, no forms, no popups and no navigation. The app CSP allows framing only `regards-mail`.
+       - **Its height (amended 2026-10-22, the owner's choice):** with an empty sandbox the reader could not know how tall a message is, and the frame filled the screen however short the message. The desktop now adds one script to the page, allowed by a nonce made for that page alone. It only posts the page's height to the reader, which sizes the frame to it (capped at 30,000 px). The message's own scripts are still removed by `ammonia` and, if any survived, refused by the CSP. The script runs in the frame's own origin, which is not the app's, and may fetch nothing (`default-src 'none'`). Without randomness, no script is added and the frame keeps a fixed height.
      - **Links (Phase 1):** web links open in the default browser.
        - **Rewriting:** for the reading frame, the daemon rewrites each `http(s)` link to the desktop's own `regards-mail` opener, `/open?t=<token>&url=<URL>`.
        - **Opening:** the links target a hidden frame inside the message document (`<base target>`; the message's own `<base>`, targets and frames are removed). A click loads the opener there, so the message stays in view. The desktop then checks the token, accepts only `http`/`https` URLs, opens them in the browser and answers 204.
