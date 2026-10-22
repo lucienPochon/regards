@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { Icon } from "./icons";
+import { Icon, type IconName } from "./icons";
 import type { Anchor } from "./Menu";
 import { useShortcuts } from "./shortcuts";
 import { useDialogFocus } from "./dialogFocus";
@@ -10,11 +10,107 @@ export type InboxView = "smart" | "date" | "cards";
 const MARGIN = 8;
 
 // The ids are kept in the saved layout: "smart" is By priority, "cards" By category.
-const VIEWS: { id: InboxView; label: string; caption: string }[] = [
-  { id: "smart", label: "By priority", caption: "Priority first, then people by date. Notifications and newsletters in one row each." },
-  { id: "cards", label: "By category", caption: "Unread mail in a card per category. What you have seen goes below." },
-  { id: "date", label: "By date", caption: "Everything together, newest first." },
+const VIEWS: { id: InboxView; label: string; kind: string; about: string; badge: IconName }[] = [
+  {
+    id: "smart",
+    label: "By priority",
+    kind: "Smart Inbox",
+    about: "Priority first, then people by date; notifications and newsletters in one row each.",
+    badge: "boltFilled",
+  },
+  {
+    id: "cards",
+    label: "By category",
+    kind: "Smart Inbox",
+    about: "Unread mail under a heading per category; what you have seen goes below.",
+    badge: "sections",
+  },
+  { id: "date", label: "By date", kind: "Classic inbox", about: "Everything together, newest first.", badge: "calendar" },
 ];
+
+type Hue = "accent" | "warm" | "blue" | "violet";
+
+/** A message in a picture: who (a dot, or a glyph) over the sender and a line of text. */
+function PicRow({ hue, glyph }: { hue?: Hue; glyph?: IconName }) {
+  return (
+    <span className="pic-row">
+      {glyph ? (
+        <span className="pic-glyph">
+          <Icon name={glyph} size={10} />
+        </span>
+      ) : (
+        <span className={`pic-dot ${hue ?? ""}`} />
+      )}
+      <span className="pic-text">
+        <span className="pic-name" />
+        <span className="pic-line" />
+      </span>
+    </span>
+  );
+}
+
+/** A heading in a picture: a category's glyph, or just a short bar (a day). */
+function PicHead({ glyph }: { glyph?: IconName }) {
+  return (
+    <span className="pic-head">
+      {glyph && <Icon name={glyph} size={10} />}
+      <span className="pic-bar" />
+    </span>
+  );
+}
+
+/** A folded group's row: its glyph, then a few of its senders. */
+function PicGroup({ glyph, hues }: { glyph: IconName; hues: Hue[] }) {
+  return (
+    <span className="pic-row">
+      <span className="pic-glyph">
+        <Icon name={glyph} size={10} />
+      </span>
+      <span className="pic-senders">
+        {hues.map((hue, index) => (
+          <span key={index} className={`pic-mini ${hue}`} />
+        ))}
+      </span>
+    </span>
+  );
+}
+
+/** The view, drawn small: what sets it apart is how its rows are arranged. */
+function Picture({ view }: { view: InboxView }) {
+  if (view === "smart") {
+    return (
+      <>
+        <PicHead glyph="boltFilled" />
+        <PicRow hue="warm" />
+        <PicRow hue="blue" />
+        <PicHead />
+        <PicRow hue="accent" />
+        <PicGroup glyph="bell" hues={["warm", "blue", "violet"]} />
+        <PicGroup glyph="newspaper" hues={["accent", "warm"]} />
+      </>
+    );
+  }
+  if (view === "cards") {
+    return (
+      <>
+        <PicHead glyph="people" />
+        <PicRow hue="warm" />
+        <PicRow hue="blue" />
+        <PicHead glyph="bell" />
+        <PicRow hue="violet" />
+        <PicHead glyph="newspaper" />
+        <PicRow hue="accent" />
+      </>
+    );
+  }
+  return (
+    <>
+      {(["blue", "accent", "warm", "blue", "violet", "accent"] as Hue[]).map((hue, index) => (
+        <PicRow key={index} hue={hue} />
+      ))}
+    </>
+  );
+}
 
 /**
  * Under the inbox's title: how the inbox is shown, as three pictures to
@@ -93,57 +189,14 @@ export function ViewChooser({
               }}
             >
               <span className={`chooser-picture ${view.id}`} aria-hidden="true">
-                {view.id === "smart" ? (
-                  // Priority over its rows, then today: people, and a group's row.
-                  <>
-                    <span className="pic-group">
-                      <span className="pic-head" />
-                      <span className="pic-row">
-                        <span className="pic-dot" />
-                        <span className="pic-line" />
-                      </span>
-                    </span>
-                    <span className="pic-group">
-                      <span className="pic-head" />
-                      <span className="pic-row">
-                        <span className="pic-dot" />
-                        <span className="pic-line" />
-                      </span>
-                      <span className="pic-row">
-                        <span className="pic-dot" />
-                        <span className="pic-chips" />
-                      </span>
-                    </span>
-                  </>
-                ) : view.id === "cards" ? (
-                  // A heading over rows, per category.
-                  [2, 1, 1].map((rows, group) => (
-                    <span key={group} className="pic-group">
-                      <span className="pic-head" />
-                      {Array.from({ length: rows }, (_, index) => (
-                        <span key={index} className="pic-row">
-                          <span className="pic-dot" />
-                          <span className="pic-line" />
-                        </span>
-                      ))}
-                    </span>
-                  ))
-                ) : (
-                  Array.from({ length: 5 }, (_, index) => (
-                    <span key={index} className="pic-row">
-                      <span className="pic-dot" />
-                      <span className="pic-line" />
-                    </span>
-                  ))
-                )}
-                {current === view.id && (
-                  <span className="chooser-badge">
-                    <Icon name="check" size={11} />
-                  </span>
-                )}
+                <Picture view={view.id} />
+                <span className="pic-badge">
+                  <Icon name={view.badge} size={13} />
+                </span>
               </span>
               <strong>{view.label}</strong>
-              <span className="muted">{view.caption}</span>
+              <span className="muted">{view.kind}</span>
+              <span className="sr-only">{view.about}</span>
             </button>
           ))}
         </div>
