@@ -7,6 +7,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import type { MessageSummary, Person } from "../accounts";
 import type { Draft, OutboxEntry } from "../compose";
 import type { Identity } from "../identities";
+import type { Note } from "../notes";
 import type { Template } from "../templates";
 import type { AgentAccess, AgentActivity, Hold } from "../agents";
 import { type Explanation, type Policy, type Screening, SECTIONS, type Section } from "../smart";
@@ -486,6 +487,8 @@ const identities: Identity[] = accounts.flatMap((owner, index) => [
     name: owner.account.display_name,
     email: owner.account.email,
     signature: "",
+    voice: index === 0 ? "Warm but direct; short sentences.\nVous with clients, tu with people who already use tu." : "",
+    voice_on: index === 0,
     is_default: true,
   },
   ...(index === 0
@@ -496,11 +499,28 @@ const identities: Identity[] = accounts.flatMap((owner, index) => [
           name: `${owner.account.display_name} (work)`,
           email: "sam@studio.example",
           signature: "Sam Rivera · Studio Kiln",
+          voice: "",
+          voice_on: false,
           is_default: false,
         },
       ]
     : []),
 ]);
+// Notes about people (ADR-0020): two about the first account's most frequent sender.
+let notesOn = true;
+const notes: Note[] = accounts.length
+  ? [
+      { text: "Decides on renewals.", by: "person" as const, ago: 40 },
+      { text: "Prefers calls before 10:00.", by: "agent" as const, ago: 7, from_subject: "Contract renewal" },
+    ].map(({ ago, ...note }) => ({
+      ...note,
+      id: nextId++,
+      account_id: accounts[0].account.id,
+      address: "ines.moreau@example.com",
+      created_at: Date.now() - ago * 86_400_000,
+      updated_at: Date.now() - ago * 86_400_000,
+    }))
+  : [];
 const identityFor = (accountId: string, id: number | null | undefined) =>
   identities.find((i) => i.account_id === accountId && (id == null ? i.is_default : i.id === id));
 
@@ -1361,7 +1381,7 @@ function handle(cmd: string, args: Args): unknown {
       const saved = args.identity as Omit<Identity, "is_default"> & { id?: number };
       const existing = identities.find((i) => i.id === saved.id);
       if (existing) return Object.assign(existing, { name: saved.name, email: saved.email, signature: saved.signature });
-      const added: Identity = { ...saved, id: nextId++, is_default: false };
+      const added: Identity = { ...saved, id: nextId++, voice: "", voice_on: false, is_default: false };
       identities.push(added);
       return added;
     }
@@ -1375,6 +1395,52 @@ function handle(cmd: string, args: Args): unknown {
       const chosen = identities.find((i) => i.id === args.id);
       for (const i of identities) if (i.account_id === chosen?.account_id) i.is_default = i === chosen;
       return null;
+    }
+    case "identity_set_voice": {
+      const identity = identities.find((i) => i.id === args.id);
+      if (!identity) throw new Error("no such identity");
+      return Object.assign(identity, { voice: String(args.voice).trim(), voice_on: Boolean(args.on) });
+    }
+    case "note_list":
+      return {
+        notes: notes.filter(
+          (n) => n.account_id === args.accountId && n.address === String(args.address).trim().toLowerCase(),
+        ),
+      };
+    case "note_add": {
+      const asked = args.note as { account_id: string; address: string; text: string };
+      const note: Note = {
+        id: nextId++,
+        account_id: asked.account_id,
+        address: asked.address.trim().toLowerCase(),
+        text: asked.text.trim(),
+        by: "person",
+        created_at: Date.now(),
+        updated_at: Date.now(),
+      };
+      notes.push(note);
+      return { note };
+    }
+    case "note_update": {
+      const note = notes.find((n) => n.id === args.id);
+      if (!note) throw new Error("no such note");
+      return Object.assign(note, { text: String(args.text).trim(), by: "person", updated_at: Date.now() });
+    }
+    case "note_remove": {
+      const index = notes.findIndex((n) => n.id === args.id);
+      if (index === -1) throw new Error("no such note");
+      notes.splice(index, 1);
+      return { removed: true };
+    }
+    case "note_settings":
+    case "note_set_enabled": {
+      if (cmd === "note_set_enabled") notesOn = Boolean(args.on);
+      return { on: notesOn, notes: notes.length, people: new Set(notes.map((n) => `${n.account_id} ${n.address}`)).size };
+    }
+    case "note_forget_all": {
+      const forgotten = notes.length;
+      notes.length = 0;
+      return { forgotten };
     }
     case "draft_set_from": {
       const draft = draftById(args.id as number);

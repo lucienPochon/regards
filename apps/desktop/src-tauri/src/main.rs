@@ -31,14 +31,16 @@ use regards_ipc::protocol::{
     DeleteResult, DiscoverParams, DiscoverResult, DraftAttachFileParams, DraftAttachImageParams, DraftCreateParams,
     DraftDetachParams, DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult, DraftRef,
     DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
-    ExplainResult, HoldListParams, HoldListResult, HoldRef, HoldView, IdentityListResult, IdentityRef,
-    IdentitySaveParams, IdentityView, MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds,
-    MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult, OauthFlowRef, OauthProvidersResult,
-    OauthStartParams, OauthStartResult, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult,
-    PinParams, Principal, RemindParams, Screening, ScreeningParams, SearchParams, SearchResult, Section,
-    SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams, SenderSetResult, ServerSearchResult,
-    ServerSettings, SetFlagsParams, SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult,
-    TemplateRef, TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
+    ExplainResult, HoldApproveParams, HoldListParams, HoldListResult, HoldRef, HoldView, IdentityListResult,
+    IdentityRef, IdentitySaveParams, IdentitySetVoiceParams, IdentityView, MailboxListResult, MarkResult,
+    MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult,
+    NoteAddParams, NoteAddResult, NoteListParams, NoteListResult, NoteRef, NoteRemoved, NoteSetEnabledParams,
+    NoteSettings, NoteUpdateParams, NoteView, NotesForgotten, OauthFlowRef, OauthProvidersResult, OauthStartParams,
+    OauthStartResult, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal,
+    RemindParams, Screening, ScreeningParams, SearchParams, SearchResult, Section, SenderBlockParams,
+    SenderImagesParams, SenderImagesResult, SenderSetParams, SenderSetResult, ServerSearchResult, ServerSettings,
+    SetFlagsParams, SetFlagsResult, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef,
+    TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -336,11 +338,12 @@ async fn hold_list(bridge: State<'_, Bridge>, pending: bool) -> Result<HoldListR
         .map_err(describe)
 }
 
+/// Approve a hold; `text`: a suggested voice as the person edited it.
 #[tauri::command]
-async fn hold_approve(bridge: State<'_, Bridge>, id: i64) -> Result<HoldView, String> {
+async fn hold_approve(bridge: State<'_, Bridge>, id: i64, text: Option<String>) -> Result<HoldView, String> {
     let mut client = bridge.connect().await?.client;
     client
-        .call(methods::HOLD_APPROVE, HoldRef { id })
+        .call(methods::HOLD_APPROVE, HoldApproveParams { id, text })
         .await
         .map_err(describe)
 }
@@ -1280,6 +1283,79 @@ async fn identity_save(bridge: State<'_, Bridge>, identity: IdentitySaveParams) 
     client.call(methods::IDENTITY_SAVE, identity).await.map_err(describe)
 }
 
+/// An address's voice (ADR-0020), and whether agents get it.
+#[tauri::command]
+async fn identity_set_voice(
+    bridge: State<'_, Bridge>,
+    id: i64,
+    voice: String,
+    on: bool,
+) -> Result<IdentityView, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::IDENTITY_SET_VOICE, IdentitySetVoiceParams { id, voice, on })
+        .await
+        .map_err(describe)
+}
+
+/// The notes about one person in one account (ADR-0020).
+#[tauri::command]
+async fn note_list(bridge: State<'_, Bridge>, account_id: String, address: String) -> Result<NoteListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::NOTE_LIST, NoteListParams { account_id, address })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn note_add(bridge: State<'_, Bridge>, note: NoteAddParams) -> Result<NoteAddResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::NOTE_ADD, note).await.map_err(describe)
+}
+
+#[tauri::command]
+async fn note_update(bridge: State<'_, Bridge>, id: i64, text: String) -> Result<NoteView, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::NOTE_UPDATE, NoteUpdateParams { id, text })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn note_remove(bridge: State<'_, Bridge>, id: i64) -> Result<NoteRemoved, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::NOTE_REMOVE, NoteRef { id })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn note_settings(bridge: State<'_, Bridge>) -> Result<NoteSettings, String> {
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::NOTE_SETTINGS, Value::Null).await.map_err(describe)
+}
+
+#[tauri::command]
+async fn note_set_enabled(bridge: State<'_, Bridge>, on: bool) -> Result<NoteSettings, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::NOTE_SET_ENABLED, NoteSetEnabledParams { on })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
+async fn note_forget_all(bridge: State<'_, Bridge>) -> Result<NotesForgotten, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::NOTE_FORGET_ALL, Value::Null)
+        .await
+        .map_err(describe)
+}
+
 #[tauri::command]
 async fn identity_remove(bridge: State<'_, Bridge>, id: i64) -> Result<Value, String> {
     let mut client = bridge.connect().await?.client;
@@ -1724,6 +1800,14 @@ fn main() {
             identity_save,
             identity_remove,
             identity_make_default,
+            identity_set_voice,
+            note_list,
+            note_add,
+            note_update,
+            note_remove,
+            note_settings,
+            note_set_enabled,
+            note_forget_all,
             draft_send,
             outbox_list,
             outbox_undo,

@@ -22,6 +22,7 @@ mod holds;
 mod identities;
 mod limits;
 mod mail;
+mod notes;
 mod notices;
 mod oauth;
 mod people;
@@ -35,6 +36,7 @@ mod session;
 mod smart;
 mod sync;
 mod templates;
+mod voice;
 
 pub use oauth::OauthApp;
 use regards_core::paths::DataDirs;

@@ -2,7 +2,7 @@
 
 use crate::{
     State, access, accounts, actions, agents, assistant, attachments, audit, compose, discover, draft_sync, erase,
-    holds, identities, mail, notices, oauth, people, prefetch, smart, templates,
+    holds, identities, mail, notes, notices, oauth, people, prefetch, smart, templates, voice,
 };
 use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
@@ -10,13 +10,14 @@ use regards_ipc::framing::{self, FrameError};
 use regards_ipc::protocol::{
     AccountRef, AsideParams, AttachmentRef, ChangesNotification, ClientKind, DraftCreateParams, DraftListParams,
     DraftRef, DraftReplyParams, DraftSendParams, DraftSetFromParams, DraftUpdateParams, HealthResult, HelloParams,
-    HelloResult, HoldRef, JSONRPC, MessageHtmlParams, MessageIds, MessageListParams, MessageRef, MoveParams,
-    Notification, PROTOCOL_VERSIONS, PeopleSuggestParams, PinParams, Principal, RemindParams, Request, Response,
-    RpcError, SearchParams, SenderBlockParams, SenderSetParams, SetFlagsParams, SnoozeParams, ViewParams, codes,
-    methods, negotiate, notifications,
+    HelloResult, HoldRef, JSONRPC, MemoryParams, MessageHtmlParams, MessageIds, MessageListParams, MessageRef,
+    MoveParams, NoteAddParams, NoteListParams, NoteRef, Notification, PROTOCOL_VERSIONS, PeopleSuggestParams,
+    PinParams, Principal, RemindParams, Request, Response, RpcError, SearchParams, SenderBlockParams, SenderSetParams,
+    SetFlagsParams, SnoozeParams, ViewParams, VoiceSuggestParams, codes, methods, negotiate, notifications,
 };
 use regards_ipc::transport::Stream;
 use regards_store::holds::Reason;
+use regards_store::notes::Author;
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -482,6 +483,85 @@ impl Session {
             methods::IDENTITY_MAKE_DEFAULT => {
                 self.require_ui()?;
                 identities::make_default(&self.state, params(request)?).await
+            }
+            methods::IDENTITY_SET_VOICE => {
+                self.require_ui()?;
+                voice::set(&self.state, params(request)?).await
+            }
+            methods::VOICE_SUGGEST => {
+                let params: VoiceSuggestParams = params(request)?;
+                if self.is_ui() {
+                    return voice::apply(&self.state, params, None).await;
+                }
+                // Only the person changes a voice: an agent's suggestion waits (ADR-0020).
+                let scope = self.scope(Access::Triage, params.account_id.as_deref()).await?;
+                let about = voice::held(&self.state, &params, scope).await?;
+                self.allow_account(Access::Triage, &about.account_id).await?;
+                Err(holds::hold(&self.state, self.asker(request), about).await)
+            }
+            methods::NOTE_LIST => {
+                let params: NoteListParams = params(request)?;
+                if self.is_ui() {
+                    return notes::list(&self.state, params, regards_store::notes::PER_PERSON_MAX).await;
+                }
+                self.allow_account(Access::Read, &params.account_id).await?;
+                notes::require_on(&self.state).await?;
+                notes::list(&self.state, params, notes::FOR_AGENTS).await
+            }
+            methods::NOTE_ADD => {
+                let params: NoteAddParams = params(request)?;
+                if self.is_ui() {
+                    return notes::add(&self.state, params, Author::Person, None).await;
+                }
+                self.allow_account(Access::Triage, &params.account_id).await?;
+                notes::require_on(&self.state).await?;
+                let text = notes::checked(&params.text)?;
+                // A note that could plant something for later waits for the person.
+                if let Some(review) = regards_core::notes::needs_review(&text) {
+                    let about = notes::held(&self.state, &params, review).await?;
+                    return Err(holds::hold(&self.state, self.asker(request), about).await);
+                }
+                notes::add(&self.state, params, Author::Agent, self.agent_session.clone()).await
+            }
+            methods::NOTE_UPDATE => {
+                self.require_ui()?;
+                notes::update(&self.state, params(request)?).await
+            }
+            methods::NOTE_REMOVE => {
+                let params: NoteRef = params(request)?;
+                if !self.is_ui() {
+                    let note = notes::find(&self.state, params.id).await?;
+                    self.allow_within(Access::Triage, &note.account_id, "note").await?;
+                    notes::require_on(&self.state).await?;
+                    if note.author != Author::Agent {
+                        return Err(RpcError::new(
+                            codes::FORBIDDEN,
+                            "agents can only remove notes an agent wrote; the person's own notes are theirs",
+                        ));
+                    }
+                    self.note_before(serde_json::to_value(notes::view(note)).unwrap_or(Value::Null));
+                }
+                notes::remove(&self.state, params).await
+            }
+            methods::NOTE_SETTINGS => {
+                self.require_ui()?;
+                notes::settings(&self.state).await
+            }
+            methods::NOTE_SET_ENABLED => {
+                self.require_ui()?;
+                notes::set_enabled(&self.state, params(request)?).await
+            }
+            methods::NOTE_FORGET_ALL => {
+                self.require_ui()?;
+                notes::forget_all(&self.state).await
+            }
+            methods::MEMORY_GET => {
+                let params: MemoryParams = params(request)?;
+                let scope = self.scope(Access::Read, params.account_id.as_deref()).await?;
+                if scope.as_ref().is_some_and(Vec::is_empty) {
+                    return Err(RpcError::new(codes::NOT_FOUND, "no account is open to agents"));
+                }
+                notes::memory(&self.state, params, scope).await
             }
             methods::DRAFT_ATTACH_IMAGE => {
                 self.require_ui()?;

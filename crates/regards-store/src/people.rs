@@ -8,7 +8,7 @@
 //! out unless the account wrote to them; blocked senders always are.
 
 use crate::StoreError;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 /// A month, in ms: how fast what is past counts less.
 const FADE_MS: f64 = 30.0 * 24.0 * 3600.0 * 1000.0;
@@ -56,6 +56,33 @@ pub fn suggest(
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// What an account has had to do with one person (ADR-0020): the name they
+/// last gave, how many messages each side wrote, and when last.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Dealings {
+    pub name: Option<String>,
+    /// Written by the account to them.
+    pub sent: u32,
+    /// Written by them to the account.
+    pub received: u32,
+    pub last_at: i64,
+}
+
+/// `None` if neither side ever wrote to the other.
+pub fn dealings(conn: &Connection, account_id: &str, address: &str) -> Result<Option<Dealings>, StoreError> {
+    Ok(conn
+        .prepare_cached("SELECT name, sent, received, last_at FROM people WHERE account_id = ?1 AND address = ?2")?
+        .query_row(params![account_id, address.trim().to_lowercase()], |row| {
+            Ok(Dealings {
+                name: row.get(0)?,
+                sent: row.get(1)?,
+                received: row.get(2)?,
+                last_at: row.get(3)?,
+            })
+        })
+        .optional()?)
 }
 
 #[cfg(test)]
@@ -185,6 +212,28 @@ mod tests {
                 .await
                 .unwrap()
                 .is_empty()
+        );
+
+        // One person, as context for an agent.
+        let lena = store
+            .read(|conn| dealings(conn, "a1", " Lena@Example.net "))
+            .await
+            .unwrap();
+        assert_eq!(
+            lena,
+            Some(Dealings {
+                name: Some("Lena Okafor".into()),
+                sent: 0,
+                received: 2,
+                last_at: now - 2 * day,
+            })
+        );
+        assert_eq!(
+            store
+                .read(|conn| dealings(conn, "a1", "nobody@example.net"))
+                .await
+                .unwrap(),
+            None
         );
     }
 }

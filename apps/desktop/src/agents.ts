@@ -149,5 +149,7 @@ export interface Hold {
 export const listHolds = (pending = true) =>
   invoke<{ holds: Hold[] }>("hold_list", { pending }).then((result) => result.holds);
 /** It runs as the agent asked; the hold comes back with its result. */
-export const approveHold = (id: number) => invoke<Hold>("hold_approve", { id });
+/** Approve a hold; `text`: a suggested voice (`reason: "voice"`) as the person edited it. */
+export const approveHold = (id: number, text?: string) =>
+  invoke<Hold>("hold_approve", text === undefined ? { id } : { id, text });
 export const rejectHold = (id: number) => invoke<Hold>("hold_reject", { id });
