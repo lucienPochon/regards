@@ -25,6 +25,7 @@ import {
   textToHtml,
 } from "./compose";
 import { type Identity, listIdentities } from "./identities";
+import { type Signature, listSignatures, signatureIn } from "./signatures";
 import { IMAGE_TYPES, attachImage, draftImages, fileBase64, insertImage, toEditorHtml, toStoredHtml } from "./images";
 import type { Template } from "./templates";
 import { fileKind, fileSize, laterDate } from "./format";
@@ -94,6 +95,10 @@ export function Composer({
   // Who it can go out from, and a new editor when that changes the text.
   const [identities, setIdentities] = useState<Identity[]>([]);
   const [editorKey, setEditorKey] = useState(0);
+  // The signatures to choose from (ADR-0021), and the one the text has.
+  const [signatures, setSignatures] = useState<Signature[]>([]);
+  const [signatureId, setSignatureId] = useState<number | null>(null);
+  const signatureKnown = useRef(false);
   /** Files are dragged over the window: dropped, they are attached. */
   const [dragging, setDragging] = useState(false);
   const saved = useRef<string>("");
@@ -107,6 +112,7 @@ export function Composer({
 
   useEffect(() => {
     let current = true;
+    signatureKnown.current = false;
     getDraft(draftId)
       .then(async (loaded) => {
         // Images in the text are shown from their bytes while writing.
@@ -137,20 +143,47 @@ export function Composer({
     listIdentities(accountId).then(setIdentities, () => setIdentities([]));
   }, [accountId]);
 
+  useEffect(() => {
+    listSignatures().then(setSignatures, () => setSignatures([]));
+  }, []);
+
+  // The signature a draft has, recognised by its text once both are known.
+  useEffect(() => {
+    if (!draft || signatureKnown.current || signatures.length === 0) return;
+    signatureKnown.current = true;
+    setSignatureId(signatureIn(draft.body, signatures)?.id ?? null);
+  }, [draft, signatures]);
+
+  /** The text of the signature the message has now. */
+  const currentSignature = () =>
+    signatures.find((signature) => signature.id === signatureId)?.body ??
+    identities.find((identity) => identity.id === draft?.identity_id)?.signature ??
+    "";
+
   /** Send it from another identity: its signature takes the old one's place. */
   const changeFrom = async (identityId: number) => {
     if (!draft || !fields) return;
-    const old = identities.find((identity) => identity.id === draft.identity_id);
     const next = identities.find((identity) => identity.id === identityId);
     if (!next) return;
     setError(null);
     try {
+      const old = currentSignature();
       setDraft(await setDraftFrom(draft.id, next.id));
-      setFields({ ...fields, html: swapSignatureHtml(fields.html, old?.signature ?? "", next.signature) });
+      setFields({ ...fields, html: swapSignatureHtml(fields.html, old, next.signature) });
+      setSignatureId(next.signature_id);
       setEditorKey((key) => key + 1);
     } catch (failure) {
       setError(String(failure));
     }
+  };
+
+  /** Another signature, or none: it takes the old one's place in the text. */
+  const changeSignature = (value: string) => {
+    if (!fields) return;
+    const next = signatures.find((signature) => String(signature.id) === value) ?? null;
+    setFields({ ...fields, html: swapSignatureHtml(fields.html, currentSignature(), next?.body ?? "") });
+    setSignatureId(next?.id ?? null);
+    setEditorKey((key) => key + 1);
   };
 
   // Start where the writing goes: the address for a new message (the editor
@@ -476,6 +509,23 @@ export function Composer({
         <Icon name="sendLater" />
       </button>
       <span className="sep" />
+      {signatures.length > 0 && (
+        <select
+          className="composer-from"
+          aria-label="Signature"
+          title="Signature"
+          value={signatureId ?? ""}
+          onChange={(event) => changeSignature(event.target.value)}
+          disabled={locked}
+        >
+          <option value="">No signature</option>
+          {signatures.map((signature) => (
+            <option key={signature.id} value={signature.id}>
+              {signature.name}
+            </option>
+          ))}
+        </select>
+      )}
       {draft && identities.length > 1 ? (
         <select
           className="composer-from"
