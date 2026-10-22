@@ -22,6 +22,8 @@ import {
 } from "./background";
 import { type BadgeSettings, badgeSettings, setBadgeSettings } from "./badge";
 import { type MailAppStatus, mailAppStatus, makeMailApp } from "./links";
+import type { ConfirmRequest } from "./Confirm";
+import { DownloadAgain } from "./DownloadAgain";
 import { Icon, type IconName } from "./icons";
 import type { Layout } from "./layout";
 import { type NewMail, type NotificationSettings, notificationSettings, setNotificationSettings } from "./notifications";
@@ -35,7 +37,6 @@ import { type PresetDef, type PresetPrefs, REMINDER_PRESETS, SEND_PRESETS, SNOOZ
 import { type Theme, applyTheme, savedTheme } from "./theme";
 import { AboutUpdates } from "./UpdateCheck";
 import { LicencesPage } from "./LicencesPage";
-import type { ConfirmRequest } from "./Confirm";
 import { EraseEverything } from "./EraseEverything";
 
 /** Where the project lives, for help and reports. */
@@ -1032,7 +1033,13 @@ export function AccessibilityPage() {
 
 /** Support: the version and updates, the background service, and where to get help. */
 /** Detailed logs for a problem, and diagnostics saved to a file to attach to a report. */
-function Troubleshooting() {
+function Troubleshooting({
+  accounts,
+  confirm,
+}: {
+  accounts: AccountSummary[];
+  confirm: (request: ConfirmRequest) => Promise<boolean>;
+}) {
   const [detailed, setDetailed] = useState<boolean | null>(null);
   const [connections, setConnections] = useState<boolean | null>(null);
   const [changed, setChanged] = useState(false);
@@ -1127,6 +1134,7 @@ function Troubleshooting() {
           </button>
         </span>
       </div>
+      <DownloadAgain accounts={accounts} confirm={confirm} />
     </>
   );
 }
@@ -1134,10 +1142,12 @@ function Troubleshooting() {
 export function SupportPage({
   service,
   onRecheck,
+  accounts,
   confirm,
 }: {
   service: ServiceCheck;
   onRecheck: () => void;
+  accounts: AccountSummary[];
   confirm: (request: ConfirmRequest) => Promise<boolean>;
 }) {
   const [licences, setLicences] = useState(false);
@@ -1176,7 +1186,7 @@ export function SupportPage({
         <Icon name="refresh" size={15} />
         Check again
       </button>
-      <Troubleshooting />
+      <Troubleshooting accounts={accounts} confirm={confirm} />
       <h4 className="settings-subhead">Get help</h4>
       {error && <p className="error" role="alert">{error}</p>}
       {links.map((link) => (

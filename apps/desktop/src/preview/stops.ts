@@ -193,6 +193,7 @@ export const TOUR: Group[] = [
       { id: "s-accessibility", label: "Accessibility", note: "Zoom up to 200 % (also Ctrl + / − / 0), and single-key shortcuts on or off.", steps: settings("Accessibility") },
       { id: "s-shortcuts", label: "Shortcuts", note: "Every key.", steps: settings("Shortcuts") },
       { id: "s-support", label: "Support", note: "Updates, the background service, troubleshooting, help.", steps: settings("Support") },
+      { id: "s-download-again", label: "Support › Download an account again", note: "For when an account's mail looks wrong here; asks first, and says what stays.", params: { accounts: "2" }, steps: settings("Support", "text:.settings-pane button=Download again") },
       { id: "s-connection-log", label: "Support › Log connections", note: "Commands and replies with your mail servers, never your mail or passwords; at once.", steps: settings("Support", "see:.option=Log connections", "click:.settings-pane [aria-label='Log connections']") },
       { id: "s-licences", label: "Support › Open-source licences", note: "Regards' own, then those of what it is built on, by licence.", steps: settings("Support", "text:.link-row=Open-source licences", "wait:400", "click:.licence-group summary") },
       { id: "s-erase", label: "Support › Remove everything from this computer", note: "Asks first, naming what goes; mail on the servers stays.", steps: settings("Support", "text:.settings-pane button=Remove everything") },
