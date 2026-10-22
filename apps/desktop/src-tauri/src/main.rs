@@ -13,6 +13,7 @@
 
 mod background;
 mod badge;
+mod compose_window;
 mod drops;
 mod links;
 mod mail_frame;
@@ -1743,8 +1744,10 @@ fn main() {
             if let WindowEvent::ScaleFactorChanged { .. } = event {
                 window.state::<badge::Badge>().poke();
             }
-            // In background mode, closing the window leaves Regards in the tray.
+            // In background mode, closing the main window leaves Regards in the
+            // tray; a message's own window just closes.
             if let WindowEvent::CloseRequested { api, .. } = event
+                && window.label() == "main"
                 && window.state::<background::Background>().on()
             {
                 api.prevent_close();
@@ -1774,6 +1777,8 @@ fn main() {
             account_update,
             people_suggest,
             people_forget,
+            compose_window::composer_window,
+            compose_window::composer_window_open,
             draft_check,
             reading_settings,
             set_reading_settings,

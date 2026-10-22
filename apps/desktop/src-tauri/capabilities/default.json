@@ -1,14 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window: Tauri core defaults, and moving, minimising, maximising and closing the window from the app's own caption buttons (the window has no system title bar on Windows). Regards' own commands are defined in src/main.rs.",
-  "windows": ["main"],
+  "description": "The main window and each message written in its own (compose-<draft id>): Tauri core defaults, and moving, minimising, maximising and closing the window from the app's own caption buttons (the window has no system title bar on Windows); a message's window closes itself once it has saved. Regards' own commands are defined in src/main.rs.",
+  "windows": ["main", "compose-*"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
     "core:window:allow-internal-toggle-maximize",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
-    "core:window:allow-close"
+    "core:window:allow-close",
+    "core:window:allow-destroy"
   ]
 }
