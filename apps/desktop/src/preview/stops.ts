@@ -33,7 +33,7 @@ export const TOUR: Group[] = [
       {
         id: "smart-inbox",
         label: "Inbox by priority",
-        note: "New senders to accept or block, the Priority card, then today's mail. Notifications and Newsletters each sit in one row.",
+        note: "New senders to accept or block, Priority, then today's mail. Notifications and Newsletters each sit in one row.",
         params: { view: "smart" },
       },
       {

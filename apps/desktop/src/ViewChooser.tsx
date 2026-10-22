@@ -94,18 +94,25 @@ export function ViewChooser({
             >
               <span className={`chooser-picture ${view.id}`} aria-hidden="true">
                 {view.id === "smart" ? (
+                  // Priority over its rows, then today: people, and a group's row.
                   <>
-                    <span className="pic-card">
-                      <span className="pic-line" />
-                      <span className="pic-line short" />
+                    <span className="pic-group">
+                      <span className="pic-head" />
+                      <span className="pic-row">
+                        <span className="pic-dot" />
+                        <span className="pic-line" />
+                      </span>
                     </span>
-                    <span className="pic-row">
-                      <span className="pic-dot" />
-                      <span className="pic-line" />
-                    </span>
-                    <span className="pic-row">
-                      <span className="pic-dot" />
-                      <span className="pic-chips" />
+                    <span className="pic-group">
+                      <span className="pic-head" />
+                      <span className="pic-row">
+                        <span className="pic-dot" />
+                        <span className="pic-line" />
+                      </span>
+                      <span className="pic-row">
+                        <span className="pic-dot" />
+                        <span className="pic-chips" />
+                      </span>
                     </span>
                   </>
                 ) : view.id === "cards" ? (
