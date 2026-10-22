@@ -87,6 +87,11 @@ pub struct Script {
     /// Answer the first command with this verb ("LIST", "SELECT", "UID", ...) with
     /// these bytes instead, `{tag}` replaced by its tag, then hang up.
     pub hostile: Option<(&'static str, &'static [u8])>,
+    /// Untagged lines sent before the tagged OK of UID and FETCH commands:
+    /// for example `* 1 EXISTS`, mail that comes in while the client works.
+    pub meanwhile: &'static str,
+    /// Untagged lines sent in reply to IDLE before `+ idling`.
+    pub before_idling: &'static str,
 }
 
 impl Script {
@@ -96,6 +101,8 @@ impl Script {
             password,
             list: DEFAULT_LIST,
             hostile: None,
+            meanwhile: "",
+            before_idling: "",
         }
     }
 }
@@ -220,13 +227,14 @@ where
                  {tag} OK [READ-WRITE] Select completed\r\n"
             ),
             Some("UID") => match args.get(2).map(|v| v.to_ascii_uppercase()).as_deref() {
-                Some("SEARCH") => format!("* SEARCH\r\n{tag} OK Search completed\r\n"),
-                _ => format!("{tag} OK Done\r\n"),
+                Some("SEARCH") => format!("* SEARCH\r\n{}{tag} OK Search completed\r\n", script.meanwhile),
+                _ => format!("{}{tag} OK Done\r\n", script.meanwhile),
             },
-            Some("FETCH") => format!("{tag} OK Fetch completed\r\n"),
+            Some("FETCH") => format!("{}{tag} OK Fetch completed\r\n", script.meanwhile),
             // Nothing ever changes here: wait for DONE, then complete.
             Some("IDLE") => {
-                if write.write_all(b"+ idling\r\n").await.is_err() {
+                let accepted = format!("{}+ idling\r\n", script.before_idling);
+                if write.write_all(accepted.as_bytes()).await.is_err() {
                     break;
                 }
                 if read_command(&mut read, &mut write).await.is_none() {

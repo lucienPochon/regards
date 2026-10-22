@@ -118,7 +118,7 @@ async fn watch_once(
     sync::sync_mailbox(state, &mut session, &inbox).await?;
     tracing::info!(account = %account_id, "waiting for new mail (IDLE)");
     state.sync.set_push(account_id, true);
-    let outcome = idle_loop(state, account_id, &mut session, &inbox, stopped).await;
+    let outcome = idle_loop(state, account_id, &mut session, inbox.id, stopped).await;
     state.sync.set_push(account_id, false);
     if outcome.is_ok() {
         session.logout().await;
@@ -130,7 +130,7 @@ async fn idle_loop(
     state: &State,
     account_id: &str,
     session: &mut regards_imap::Session,
-    inbox: &mailboxes::Mailbox,
+    inbox_id: i64,
     stopped: &mut watch::Receiver<bool>,
 ) -> Result<(), SyncError> {
     loop {
@@ -140,7 +140,13 @@ async fn idle_loop(
         };
         match session.idle(IDLE_REFRESH, stop).await? {
             IdleEnd::Changed => {
-                let changes = sync::sync_mailbox(state, session, inbox).await?;
+                // From where the last sync left it, not from when push started.
+                let inbox = state
+                    .store
+                    .read(move |conn| mailboxes::get(conn, inbox_id))
+                    .await?
+                    .ok_or(SyncError::NoAccount)?;
+                let changes = sync::sync_mailbox(state, session, &inbox).await?;
                 tracing::debug!(account = %account_id, added = changes.messages_added, "inbox updated by push");
             }
             IdleEnd::Timeout => {}

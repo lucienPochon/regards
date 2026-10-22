@@ -1058,6 +1058,58 @@ async fn push_becomes(desktop: &mut Client, account_id: &str, active: bool) {
     }
 }
 
+/// Wait until the inbox lists `count` messages.
+async fn inbox_reaches(desktop: &mut Client, inbox: i64, count: usize) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let listed = messages(desktop, inbox).await.messages.len();
+        if listed == count {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "{listed} of {count} messages arrived by push"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_a_burst_of_new_mail_all_arrives_by_push_and_is_told_once() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
+    push_becomes(&mut desktop, &account.id, true).await;
+
+    // Mail keeps coming while push syncs the first of it: none may wait for
+    // the next message to be noticed.
+    for n in 1..=20 {
+        seed.append(b"INBOX", &[], &message(n, &format!("Burst {n}"), "ada@example.test"))
+            .await
+            .unwrap();
+    }
+    inbox_reaches(&mut desktop, inbox, 20).await;
+    seed.append(b"INBOX", &[], &message(21, "Last", "ada@example.test"))
+        .await
+        .unwrap();
+    inbox_reaches(&mut desktop, inbox, 21).await;
+
+    // Each is told of once, however many syncs it took.
+    let told: ArrivedResult = desktop.call(methods::MAIL_ARRIVED, Value::Null).await.unwrap();
+    let mut subjects: Vec<String> = told.arrivals.into_iter().map(|a| a.subject).collect();
+    subjects.sort();
+    let all = subjects.len();
+    subjects.dedup();
+    assert_eq!(all, subjects.len(), "some mail was told of twice");
+    assert_eq!(subjects.len(), 21);
+
+    seed.logout().await;
+    handle.abort();
+}
+
 #[tokio::test]
 #[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
 async fn live_actions_taken_offline_reach_the_server_once_it_is_back() {
