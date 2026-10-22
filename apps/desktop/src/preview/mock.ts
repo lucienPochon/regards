@@ -668,7 +668,7 @@ let connectionLog = false;
 let prefetch = false;
 let reading = { clean_links: true };
 // Two agents connected in the sample: Claude Code's MCP server and a CLI.
-let agentsGate = { enabled: true, connected: 2 };
+let agentsGate = { enabled: true, connected: 2, apps: ["claude-code"] };
 let assistant: { kind: string | null; base_url: string | null; model: string | null; has_key: boolean } =
   // `?assistant=on`: a provider already chosen.
   params.get("assistant") === "on"
@@ -774,6 +774,7 @@ function handle(cmd: string, args: Args): unknown {
         throw "On a Mac, the default mail app is chosen in Mail: Mail › Settings › General.";
       return null;
     case "open_url":
+    case "open_in_agent":
       return null;
     case "account_set_auto_copy": {
       const owner = accounts.find((a) => a.account.id === args.accountId);
@@ -988,11 +989,11 @@ function handle(cmd: string, args: Args): unknown {
     case "agents_settings":
       return agentsGate;
     case "agents_set_enabled":
-      agentsGate = { enabled: args.enabled as boolean, connected: args.enabled ? agentsGate.connected : 0 };
+      agentsGate = { enabled: args.enabled as boolean, connected: args.enabled ? agentsGate.connected : 0, apps: args.enabled ? agentsGate.apps : [] };
       return agentsGate;
     case "agents_disconnect": {
       const sent = agentsGate.connected;
-      agentsGate = { ...agentsGate, connected: 0 };
+      agentsGate = { ...agentsGate, connected: 0, apps: [] };
       return sent;
     }
     case "agent_activity": {

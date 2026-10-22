@@ -41,6 +41,8 @@ pub(crate) struct Server {
     client: Option<Client>,
     /// The protocol version agreed at `initialize`.
     version: Option<String>,
+    /// The app it serves, as it named itself at `initialize` (`clientInfo.name`).
+    app: Option<String>,
 }
 
 impl Server {
@@ -49,6 +51,7 @@ impl Server {
             dirs: Some(dirs),
             client: None,
             version: None,
+            app: None,
         }
     }
 
@@ -86,6 +89,12 @@ impl Server {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_owned();
+        // Ready: with Regards already running, say so now, so the app shows this
+        // agent as connected. Nothing is started for it.
+        if method == "notifications/initialized" {
+            self.connect_if_running().await;
+            return None;
+        }
         // Notifications (no id) get no reply.
         let id = message.get("id").cloned()?;
         let params = message.get("params").cloned().unwrap_or(Value::Null);
@@ -120,6 +129,12 @@ impl Server {
             .unwrap_or_default();
         let version = VERSIONS.iter().find(|v| **v == asked).unwrap_or(&VERSIONS[0]);
         self.version = Some((*version).to_owned());
+        self.app = params
+            .pointer("/clientInfo/name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned);
         json!({
             "protocolVersion": version,
             "capabilities": { "tools": { "listChanged": false } },
@@ -149,17 +164,34 @@ impl Server {
         result(tool, outcome, structured)
     }
 
+    fn launcher(&self) -> Result<Launcher, String> {
+        let dirs = self.dirs.clone().ok_or("no data directory")?;
+        let program = std::env::current_exe().map_err(|error| error.to_string())?;
+        Ok(Launcher::new(dirs, program).for_app(self.app.clone()))
+    }
+
     async fn client(&mut self) -> Result<&mut Client, String> {
         if self.client.is_none() {
-            let dirs = self.dirs.clone().ok_or("no data directory")?;
-            let program = std::env::current_exe().map_err(|error| error.to_string())?;
-            let connected = Launcher::new(dirs, program)
+            let connected = self
+                .launcher()?
                 .connect_or_start(ClientKind::Mcp, None, false)
                 .await
                 .map_err(|error| format!("could not reach the Regards daemon: {error}"))?;
             self.client = Some(connected.client);
         }
         Ok(self.client.as_mut().expect("connected above"))
+    }
+
+    /// Connect to Regards if it is running, and only then; a tool call starts it otherwise.
+    async fn connect_if_running(&mut self) {
+        if self.client.is_some() {
+            return;
+        }
+        let Ok(launcher) = self.launcher() else { return };
+        match launcher.connect_running(ClientKind::Mcp).await {
+            Ok(client) if client.is_same_build() => self.client = Some(client),
+            Ok(_) | Err(_) => {}
+        }
     }
 }
 
@@ -271,6 +303,7 @@ mod tests {
             dirs: None,
             client: None,
             version: None,
+            app: None,
         }
     }
 
@@ -285,6 +318,11 @@ mod tests {
             .unwrap();
         assert_eq!(reply["result"]["protocolVersion"], "2025-06-18");
         assert_eq!(reply["result"]["serverInfo"]["name"], "regards");
+        assert_eq!(
+            server.app.as_deref(),
+            Some("test"),
+            "the app it serves, to tell Regards"
+        );
         assert!(
             reply["result"]["instructions"]
                 .as_str()

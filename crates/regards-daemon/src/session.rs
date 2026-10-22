@@ -45,6 +45,8 @@ struct Session {
     limits: crate::limits::Limits,
     /// Set by `changes.subscribe`: changes to forward as notifications.
     feed: Option<watch::Receiver<ChangesNotification>>,
+    /// For an agent that said which app it runs in: listed while connected.
+    app: Option<agents::AppSeen>,
 }
 
 /// What woke the session up.
@@ -66,6 +68,7 @@ pub(crate) async fn run(stream: Stream, state: Arc<State>) -> Result<(), FrameEr
         stop_after_reply: false,
         limits: crate::limits::Limits::new(),
         feed: None,
+        app: None,
     };
 
     // Set once an agent has said hello: it changes when agents are sent away.
@@ -1004,6 +1007,10 @@ impl Session {
         self.client = Some(params.client_kind);
         if principal == Principal::Agent {
             self.agent_session = Some(regards_store::accounts::new_id());
+            self.app = params
+                .app
+                .as_deref()
+                .and_then(|app| agents::Gate::seen(&self.state, app));
         }
         tracing::debug!(client_kind = ?params.client_kind, ?principal, "handshake completed");
 

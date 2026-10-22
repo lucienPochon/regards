@@ -56,6 +56,8 @@ export interface Prefs {
   singleKeys: boolean;
   /** The unread counts beside the folders. */
   sidebarCounts: boolean;
+  /** The Agents button at the foot of the sidebar: recipes and the agents on this computer. */
+  agentsButton: boolean;
   /** The quick choices of each time picker: shown or not, and at what time. */
   snoozePresets: PresetPrefs;
   sendPresets: PresetPrefs;
@@ -86,6 +88,7 @@ export const DEFAULT_PREFS: Prefs = {
   zoom: 1,
   singleKeys: true,
   sidebarCounts: true,
+  agentsButton: true,
   snoozePresets: {},
   sendPresets: {},
   reminderPresets: {},

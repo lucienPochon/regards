@@ -16,9 +16,50 @@ export interface AgentsSettings {
   enabled: boolean;
   /** Agents connected now. */
   connected: number;
+  /** The agent apps connected now, as they name themselves (`claude-code`, say). */
+  apps: string[];
 }
 
 export const agentsSettings = () => invoke<AgentsSettings>("agents_settings");
+
+/** An agent app the Agents menu knows, and how a request is handed to it. */
+export interface AgentApp {
+  id: "claude-code" | "claude-app" | "codex" | "cursor";
+  label: string;
+  /** Opened with a request ready (`openInAgent`), or only copied to. */
+  opens: boolean;
+  /** What it does with a request handed to it. */
+  hint: string;
+  /** Whether a connected app's own name is this one. */
+  is: (name: string) => boolean;
+}
+
+export const AGENT_APPS: AgentApp[] = [
+  {
+    id: "claude-code",
+    label: "Claude Code",
+    opens: true,
+    hint: "Opens in a new terminal with the request ready: press Enter there.",
+    is: (name) => /claude/i.test(name) && /code/i.test(name),
+  },
+  {
+    id: "claude-app",
+    label: "Claude",
+    opens: true,
+    hint: "Opens a new chat in the Claude app with the request ready: send it there.",
+    is: (name) => /claude/i.test(name) && !/code/i.test(name),
+  },
+  { id: "codex", label: "Codex", opens: false, hint: "", is: (name) => /codex/i.test(name) },
+  { id: "cursor", label: "Cursor", opens: false, hint: "", is: (name) => /cursor/i.test(name) },
+];
+
+/** Whether an agent app is connected now. */
+export const isConnected = (app: AgentApp, settings: AgentsSettings | null) =>
+  Boolean(settings?.apps?.some((name) => app.is(name)));
+
+/** Open Claude Code or the Claude app with a request ready to send (nothing is sent until the person does). */
+export const openInAgent = (app: "claude-code" | "claude-app", prompt: string) =>
+  invoke<void>("open_in_agent", { app, prompt });
 
 /** Off also ends the connections of the agents connected now. */
 export const setAgentsEnabled = (enabled: boolean) => invoke<AgentsSettings>("agents_set_enabled", { enabled });

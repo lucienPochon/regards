@@ -54,6 +54,17 @@ impl Client {
         kind: ClientKind,
         ui_token: Option<&UiToken>,
     ) -> Result<Self, ClientError> {
+        Self::connect_as(endpoint, kind, ui_token, None).await
+    }
+
+    /// [`connect_with`](Self::connect_with), for an agent saying which app it
+    /// runs in (`app`, as that app names itself).
+    pub async fn connect_as(
+        endpoint: &Endpoint,
+        kind: ClientKind,
+        ui_token: Option<&UiToken>,
+        app: Option<&str>,
+    ) -> Result<Self, ClientError> {
         let stream = transport::connect(endpoint).await.map_err(|error| {
             if transport::is_not_running(&error) {
                 ClientError::NotRunning {
@@ -75,6 +86,7 @@ impl Client {
                     build_id: BUILD_ID.to_owned(),
                     client_kind: kind,
                     ui_token: ui_token.cloned(),
+                    app: app.map(str::to_owned),
                 },
             )
             .await?;
