@@ -24,6 +24,7 @@ import {
   swapSignatureHtml,
   textToHtml,
 } from "./compose";
+import { listAccounts } from "./accounts";
 import { type Identity, listIdentities } from "./identities";
 import { type Signature, listSignatures, signatureIn } from "./signatures";
 import { IMAGE_TYPES, attachImage, draftImages, fileBase64, insertImage, toEditorHtml, toStoredHtml } from "./images";
@@ -150,6 +151,21 @@ export function Composer({
     listIdentities(accountId).then(setIdentities, () => setIdentities([]));
   }, [accountId]);
 
+  // Every account's addresses, for the From menu: another account's moves the draft there.
+  const [everyone, setEveryone] = useState<Identity[][]>([]);
+  useEffect(() => {
+    let current = true;
+    listAccounts()
+      .then((accounts) => Promise.all(accounts.map((account) => listIdentities(account.id))))
+      .then(
+        (lists) => current && setEveryone(lists.filter((list) => list.length > 0)),
+        () => current && setEveryone([]),
+      );
+    return () => {
+      current = false;
+    };
+  }, []);
+
   useEffect(() => {
     listSignatures().then(setSignatures, () => setSignatures([]));
   }, []);
@@ -170,7 +186,8 @@ export function Composer({
   /** Send it from another identity: its signature takes the old one's place. */
   const changeFrom = async (identityId: number) => {
     if (!draft || !fields) return;
-    const next = identities.find((identity) => identity.id === identityId);
+    // Of this account, or another, where the draft then goes.
+    const next = [...identities, ...everyone.flat()].find((identity) => identity.id === identityId);
     if (!next) return;
     setError(null);
     try {
@@ -184,17 +201,24 @@ export function Composer({
     }
   };
 
-  /** The From menu: the addresses it can go from, the one it does ticked, and adding an account. */
+  /**
+   * The From menu: every account's addresses, account by account, the one it
+   * goes from ticked; then adding an account.
+   */
   const openFrom = (button: HTMLElement) => {
     if (!draft) return;
     const current = draft.identity_id ?? identities.find((identity) => identity.is_default)?.id;
-    const addresses: MenuEntry[] = identities.length
-      ? identities.map((identity) => ({
-          label: identity.email,
-          detail: identity.name || undefined,
-          icon: identity.id === current ? "check" : "user",
-          onSelect: () => void changeFrom(identity.id),
-        }))
+    const accounts = everyone.length ? everyone : [identities];
+    const addresses: MenuEntry[] = accounts.some((list) => list.length > 0)
+      ? accounts.flatMap((list, at) => [
+          ...(at > 0 ? ["separator" as const] : []),
+          ...list.map((identity) => ({
+            label: identity.email,
+            detail: identity.name || undefined,
+            icon: identity.id === current ? ("check" as const) : ("user" as const),
+            onSelect: () => void changeFrom(identity.id),
+          })),
+        ])
       : [{ label: draft.from.address ?? "", detail: draft.from.name ?? undefined, icon: "check", disabled: true, onSelect: () => undefined }];
     setFromMenu({
       anchor: anchorOf(button, "end"),

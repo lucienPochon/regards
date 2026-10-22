@@ -605,6 +605,10 @@ impl Session {
             methods::DRAFT_SET_FROM => {
                 let params: DraftSetFromParams = params(request)?;
                 self.allow_draft(Access::Triage, params.id).await?;
+                // Another account's address moves the draft there: that account too.
+                if let Some(account) = compose::identity_account(&self.state, params.identity_id).await? {
+                    self.allow_account(Access::Triage, &account).await?;
+                }
                 compose::set_from(&self.state, params).await
             }
             methods::DRAFT_SEND => {

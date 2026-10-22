@@ -86,6 +86,40 @@ pub fn set_identity(tx: &Transaction<'_>, id: i64, identity_id: i64, body: &str,
     Ok(())
 }
 
+/// Send a draft from another account: `identity_id` is one of its
+/// addresses. Its copy on the old account's server is to be deleted, and
+/// the new account's Drafts folder gets one in time. Refused while it is
+/// being sent.
+pub fn move_to(
+    tx: &Transaction<'_>,
+    id: i64,
+    account_id: &str,
+    identity_id: i64,
+    body: &str,
+    now: i64,
+) -> Result<(), StoreError> {
+    let Some(draft) = get(tx, id)?.filter(|draft| !draft.sending) else {
+        return Err(StoreError::Conflict(
+            "this message is being sent; undo or cancel it first".into(),
+        ));
+    };
+    let copy: (Option<i64>, Option<u32>) = tx.query_row(
+        "SELECT server_mailbox_id, server_uid FROM drafts WHERE id = ?1",
+        [id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    if let (Some(mailbox_id), Some(uid)) = copy {
+        crate::draft_sync::queue_delete(tx, &draft.account_id, mailbox_id, uid)?;
+    }
+    tx.execute(
+        "UPDATE drafts SET account_id = ?2, identity_id = ?3, body = ?4, updated_at = ?5, \
+         server_message_id = NULL, server_mailbox_id = NULL, server_uid = NULL, uploaded_at = NULL \
+         WHERE id = ?1",
+        params![id, account_id, identity_id, body, now],
+    )?;
+    Ok(())
+}
+
 /// What the person writing can change: recipients, subject and text.
 #[derive(Debug, Clone, Copy)]
 pub struct Edit<'a> {

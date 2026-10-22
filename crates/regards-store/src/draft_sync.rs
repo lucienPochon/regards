@@ -73,8 +73,8 @@ pub fn message_id(
 }
 
 /// The copy holding `version` of the draft is in `mailbox_id` as `uid`. The
-/// copy it replaces is queued for deletion; if the draft went meanwhile, so
-/// is this one. Returns whether the draft is still there.
+/// copy it replaces is queued for deletion; if the draft went meanwhile, or
+/// moved to another account, so is this one. Returns whether it is kept.
 pub fn uploaded(
     tx: &Transaction<'_>,
     account_id: &str,
@@ -83,17 +83,18 @@ pub fn uploaded(
     mailbox_id: i64,
     uid: u32,
 ) -> Result<bool, StoreError> {
-    let old: Option<(Option<i64>, Option<u32>)> = tx
+    let old: Option<(String, Option<i64>, Option<u32>)> = tx
         .query_row(
-            "SELECT server_mailbox_id, server_uid FROM drafts WHERE id = ?1",
+            "SELECT account_id, server_mailbox_id, server_uid FROM drafts WHERE id = ?1",
             [draft_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?;
-    let Some(old) = old else {
+    let Some((_, old_mailbox, old_uid)) = old.filter(|(owner, _, _)| owner == account_id) else {
         queue_delete(tx, account_id, mailbox_id, uid)?;
         return Ok(false);
     };
+    let old = (old_mailbox, old_uid);
     tx.execute(
         "UPDATE drafts SET server_mailbox_id = ?2, server_uid = ?3, uploaded_at = ?4 WHERE id = ?1",
         params![draft_id, mailbox_id, uid, version],
@@ -106,7 +107,13 @@ pub fn uploaded(
     Ok(true)
 }
 
-fn queue_delete(tx: &Transaction<'_>, account_id: &str, mailbox_id: i64, uid: u32) -> Result<(), StoreError> {
+/// The copy `uid` in `mailbox_id`, of `account_id`'s server, is to go.
+pub(crate) fn queue_delete(
+    tx: &Transaction<'_>,
+    account_id: &str,
+    mailbox_id: i64,
+    uid: u32,
+) -> Result<(), StoreError> {
     tx.execute(
         "INSERT INTO draft_copies_to_delete (account_id, mailbox_id, uid) SELECT ?1, ?2, ?3 \
          WHERE NOT EXISTS (SELECT 1 FROM draft_copies_to_delete WHERE mailbox_id = ?2 AND uid = ?3)",
@@ -233,47 +240,50 @@ mod tests {
     async fn fixture() -> (tempfile::TempDir, Store, String, i64) {
         let temp = tempfile::tempdir().unwrap();
         let store = Store::open(&DataDirs::at(temp.path())).await.unwrap();
-        let account = accounts::new_id();
-        let id = account.clone();
-        let drafts_box = store
-            .write(move |tx| {
-                let server = Server {
-                    host: "h".into(),
-                    port: 993,
-                    security: Security::Tls,
-                };
-                accounts::insert(
-                    tx,
-                    NewAccount {
-                        id: id.clone(),
-                        display_name: "Ada".into(),
-                        email: "ada@example.test".into(),
-                        auth_kind: AuthKind::Password,
-                        username: "ada".into(),
-                        secret_key: "k".into(),
-                        imap: server.clone(),
-                        smtp: server,
-                        imap_capabilities: vec![],
-                    },
-                )?;
-                mailboxes::reconcile(
-                    tx,
-                    &id,
-                    &[RemoteMailbox {
-                        remote_name: b"Drafts".to_vec(),
-                        name: "Drafts".into(),
-                        delimiter: Some('/'),
-                        role: Some(Role::Drafts),
-                        selectable: true,
-                        attributes: vec![],
-                    }],
-                )?;
-                Ok(mailboxes::list(tx, &id)?[0].id)
-            })
+        let (account, drafts_box) = store
+            .write(|tx| account_with_drafts(tx, "ada@example.test"))
             .await
             .unwrap()
             .value;
         (temp, store, account, drafts_box)
+    }
+
+    /// An account with a Drafts folder: its id and the folder's.
+    fn account_with_drafts(tx: &Transaction<'_>, email: &str) -> Result<(String, i64), StoreError> {
+        let id = accounts::new_id();
+        let server = Server {
+            host: "h".into(),
+            port: 993,
+            security: Security::Tls,
+        };
+        accounts::insert(
+            tx,
+            NewAccount {
+                id: id.clone(),
+                display_name: "Ada".into(),
+                email: email.into(),
+                auth_kind: AuthKind::Password,
+                username: "ada".into(),
+                secret_key: "k".into(),
+                imap: server.clone(),
+                smtp: server,
+                imap_capabilities: vec![],
+            },
+        )?;
+        mailboxes::reconcile(
+            tx,
+            &id,
+            &[RemoteMailbox {
+                remote_name: b"Drafts".to_vec(),
+                name: "Drafts".into(),
+                delimiter: Some('/'),
+                role: Some(Role::Drafts),
+                selectable: true,
+                attributes: vec![],
+            }],
+        )?;
+        let folder = mailboxes::list(tx, &id)?[0].id;
+        Ok((id, folder))
     }
 
     fn content(subject: &str) -> Content {
@@ -350,6 +360,78 @@ mod tests {
                 .value
         );
         assert_eq!(store.read(copies_to_delete).await.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_draft_moved_to_another_account_leaves_its_old_copy_to_delete() {
+        let (_temp, store, ada, ada_drafts) = fixture().await;
+        let a = ada.clone();
+        let (draft, bea, bea_drafts) = store
+            .write(move |tx| {
+                let draft = drafts::create(tx, &a, &content("Plans"), 1_000)?;
+                uploaded(tx, &a, draft, 1_000, ada_drafts, 7)?;
+                message_id(tx, draft, || "d1@example.test".into())?;
+                let (bea, bea_drafts) = account_with_drafts(tx, "bea@example.test")?;
+                let from = crate::identities::default_for(tx, &bea)?
+                    .expect("an account has an address")
+                    .id;
+                drafts::move_to(tx, draft, &bea, from, "Half written", 2_000)?;
+                Ok((draft, bea, bea_drafts))
+            })
+            .await
+            .unwrap()
+            .value;
+
+        // Ada's copy is to go, from Ada's server; Bea's Drafts folder is due one.
+        let queued = store.read(copies_to_delete).await.unwrap();
+        assert_eq!(
+            queued
+                .iter()
+                .map(|c| (c.account_id.as_str(), c.mailbox_id, c.uid))
+                .collect::<Vec<_>>(),
+            [(ada.as_str(), ada_drafts, 7)]
+        );
+        let found = store.read(|c| due(c, 99_000, 5_000, 10)).await.unwrap();
+        assert_eq!((found[0].draft_id, found[0].account_id.as_str()), (draft, bea.as_str()));
+        let moved = store.read(move |c| drafts::get(c, draft)).await.unwrap().unwrap();
+        assert_eq!(moved.account_id, bea);
+
+        // An upload to Ada's server that finishes after the move is not kept,
+        // and that copy goes too, from Ada's server. Bea's upload is kept.
+        let a = ada.clone();
+        assert!(
+            !store
+                .write(move |tx| uploaded(tx, &a, draft, 1_000, ada_drafts, 8))
+                .await
+                .unwrap()
+                .value
+        );
+        let b = bea.clone();
+        assert!(
+            store
+                .write(move |tx| uploaded(tx, &b, draft, 2_000, bea_drafts, 1))
+                .await
+                .unwrap()
+                .value
+        );
+        let queued = store.read(copies_to_delete).await.unwrap();
+        assert_eq!(
+            queued
+                .iter()
+                .map(|c| (c.account_id.as_str(), c.uid))
+                .collect::<Vec<_>>(),
+            [(ada.as_str(), 7), (ada.as_str(), 8)]
+        );
+        let fresh = store
+            .write(move |tx| message_id(tx, draft, || "d2@example.test".into()))
+            .await
+            .unwrap()
+            .value;
+        assert_eq!(
+            fresh.as_deref(),
+            Some("d2@example.test"),
+            "a Message-ID of its own on the new server"
+        );
     }
 
     #[tokio::test]

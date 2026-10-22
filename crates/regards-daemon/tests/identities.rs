@@ -12,9 +12,10 @@ mod world;
 use regards_core::headers::{self, Person};
 use regards_daemon::DEFAULT_LATE_SEND_GRACE;
 use regards_ipc::protocol::{
-    AccountRef, AccountSummary, AccountUpdateParams, AutoCopy, AutoCopyParams, CopyKind, DraftCheckResult,
-    DraftCreateParams, DraftRef, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
-    IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView, SendCheck, codes, methods,
+    AccountRef, AccountSummary, AccountUpdateParams, AgentAccess, AgentAccessParams, AutoCopy, AutoCopyParams,
+    CopyKind, DraftCheckResult, DraftCreateParams, DraftRef, DraftSendParams, DraftSendResult, DraftSetFromParams,
+    DraftUpdateParams, DraftView, IdentityListResult, IdentityRef, IdentitySaveParams, IdentityView, SendCheck, codes,
+    methods,
 };
 use regards_ipc::{Client, ClientError};
 use serde_json::Value;
@@ -220,6 +221,52 @@ async fn a_message_goes_out_from_the_identity_chosen_with_its_signature() {
     handle.abort();
 }
 
+#[tokio::test]
+async fn a_draft_goes_to_another_account_with_its_address() {
+    let world = World::new(DEFAULT_LATE_SEND_GRACE).await;
+    let Running {
+        endpoint,
+        mut desktop,
+        handle,
+    } = world.start().await;
+    let ada = world.add_account(&mut desktop).await;
+    let bea = world.add_account_as(&mut desktop, "Bea", "bea@example.test").await;
+    let draft = new_draft(&mut desktop, &ada.id).await;
+    let bea_address = identities(&mut desktop, &bea.id).await[0].id;
+    let from = |identity_id| DraftSetFromParams {
+        id: draft.id,
+        identity_id,
+    };
+
+    // An agent may move it only with Triage on both accounts.
+    let mut agent = Client::connect(&endpoint, regards_ipc::protocol::ClientKind::Mcp)
+        .await
+        .unwrap();
+    let triage = |account_id: &str| AgentAccessParams {
+        account_id: account_id.into(),
+        access: AgentAccess::Triage,
+    };
+    let _: Value = desktop
+        .call(methods::ACCOUNT_SET_AGENT_ACCESS, triage(&ada.id))
+        .await
+        .unwrap();
+    assert_eq!(
+        code(
+            agent
+                .call::<_, DraftView>(methods::DRAFT_SET_FROM, from(bea_address))
+                .await
+        ),
+        codes::FORBIDDEN
+    );
+
+    // The app moves it: Bea's now, from Bea's address.
+    let moved: DraftView = desktop.call(methods::DRAFT_SET_FROM, from(bea_address)).await.unwrap();
+    assert_eq!(moved.account_id, bea.id);
+    assert_eq!(moved.from.address.as_deref(), Some("bea@example.test"));
+    assert_eq!(moved.subject, "Plans");
+    handle.abort();
+}
+
 async fn rename(desktop: &mut Client, id: &str, name: &str) -> Result<AccountSummary, ClientError> {
     desktop
         .call(
@@ -321,9 +368,9 @@ async fn every_new_draft_gets_the_accounts_automatic_copy() {
     let _: Value = desktop
         .call(
             methods::ACCOUNT_SET_AGENT_ACCESS,
-            regards_ipc::protocol::AgentAccessParams {
+            AgentAccessParams {
                 account_id: account.id.clone(),
-                access: regards_ipc::protocol::AgentAccess::Triage,
+                access: AgentAccess::Triage,
             },
         )
         .await

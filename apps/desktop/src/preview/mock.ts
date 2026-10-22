@@ -1493,8 +1493,10 @@ function handle(cmd: string, args: Args): unknown {
     case "draft_set_from": {
       const draft = draftById(args.id as number);
       const old = identityFor(draft.account_id, draft.identity_id);
+      // Another account's address moves the draft there, as the daemon does.
       const next = identities.find((i) => i.id === args.identityId);
-      if (!next) throw new Error("That address is not one of this account's.");
+      if (!next) throw new Error("There is no such address.");
+      draft.account_id = next.account_id;
       const block = (signature: string) => (signature ? `\n\n${signature}` : "");
       const body =
         old?.signature && draft.body.includes(block(old.signature))

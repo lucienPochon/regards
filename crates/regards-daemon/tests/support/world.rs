@@ -96,12 +96,17 @@ impl World {
     }
 
     pub async fn add_account(&self, desktop: &mut Client) -> AccountSummary {
+        self.add_account_as(desktop, "Ada", "ada@example.test").await
+    }
+
+    /// Another account on the same fake servers, which take any user name.
+    pub async fn add_account_as(&self, desktop: &mut Client, name: &str, email: &str) -> AccountSummary {
         desktop
             .call(
                 methods::ACCOUNT_ADD,
                 AccountAddParams {
-                    display_name: "Ada".into(),
-                    email: "ada@example.test".into(),
+                    display_name: name.into(),
+                    email: email.into(),
                     username: None,
                     password: Secret::new(crate::fake_imap::PASSWORD),
                     imap: ServerSettings {
