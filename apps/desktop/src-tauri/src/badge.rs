@@ -1,7 +1,8 @@
 //! The unread count on the taskbar or dock: the inboxes' unread mail (not
 //! what is set aside or snoozed) of the accounts chosen, every one by
 //! default, kept current with the change feed. Windows' taskbar takes no
-//! number: there it is a dot while anything is unread.
+//! number, only a small picture over the icon: there the count is drawn into
+//! one.
 
 use crate::Bridge;
 use crate::background::Background;
@@ -12,6 +13,9 @@ use serde_json::Value;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::Notify;
+
+#[cfg(any(windows, test))]
+mod draw;
 
 /// How long a burst of changes is given to settle before counting.
 const SETTLE: Duration = Duration::from_millis(700);
@@ -107,34 +111,17 @@ fn show(app: &AppHandle, count: u32) {
         return;
     };
     #[cfg(windows)]
-    let shown = window.set_overlay_icon((count > 0).then(dot));
+    let shown = window.set_overlay_icon((count > 0).then(|| {
+        // The taskbar shows it at its small-icon size: 16 pixels at 100 %.
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let size = ((16.0 * scale).round() as u32).max(16);
+        tauri::image::Image::new_owned(draw::badge(count, size), size, size)
+    }));
     #[cfg(not(windows))]
     let shown = window.set_badge_count((count > 0).then_some(i64::from(count)));
     if let Err(error) = shown {
         eprintln!("badge: {error}");
     }
-}
-
-/// A 16-pixel dot in Regards' green with a white ring, for Windows' taskbar.
-#[cfg(windows)]
-fn dot() -> tauri::image::Image<'static> {
-    const SIZE: u32 = 16;
-    let mut pixels = Vec::with_capacity((SIZE * SIZE * 4) as usize);
-    let center = (SIZE as f32 - 1.0) / 2.0;
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let distance = ((x as f32 - center).powi(2) + (y as f32 - center).powi(2)).sqrt();
-            let pixel: [u8; 4] = if distance <= 5.5 {
-                [0x1d, 0x7a, 0x61, 0xff]
-            } else if distance <= 7.5 {
-                [0xff, 0xff, 0xff, 0xff]
-            } else {
-                [0, 0, 0, 0]
-            };
-            pixels.extend_from_slice(&pixel);
-        }
-    }
-    tauri::image::Image::new_owned(pixels, SIZE, SIZE)
 }
 
 #[tauri::command]
@@ -156,6 +143,24 @@ pub(crate) fn set_badge_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_badge_fills_its_square_and_leaves_the_corners_clear() {
+        for (count, size) in [(1, 16), (47, 24), (100, 32), (7, 20)] {
+            let pixels = draw::badge(count, size);
+            assert_eq!(pixels.len(), (size * size * 4) as usize);
+            let alpha = |x: u32, y: u32| pixels[((y * size + x) * 4 + 3) as usize];
+            assert_eq!(alpha(0, 0), 0, "{count} at {size}");
+            assert_eq!(alpha(size / 2, size - 2), 255, "{count} at {size}");
+        }
+    }
+
+    #[test]
+    fn past_ninety_nine_the_badge_stops_counting() {
+        assert_eq!(draw::badge(100, 24), draw::badge(5000, 24));
+        assert_ne!(draw::badge(99, 24), draw::badge(100, 24));
+        assert_ne!(draw::badge(1, 16), draw::badge(7, 16));
+    }
 
     #[test]
     fn every_account_counts_unless_some_are_chosen() {

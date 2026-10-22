@@ -1603,6 +1603,10 @@ fn main() {
             if let WindowEvent::DragDrop(drop) = event {
                 drops::on_window(window, drop);
             }
+            // Windows draws the badge at the screen's density: on another, again.
+            if let WindowEvent::ScaleFactorChanged { .. } = event {
+                window.state::<badge::Badge>().poke();
+            }
             // In background mode, closing the window leaves Regards in the tray.
             if let WindowEvent::CloseRequested { api, .. } = event
                 && window.state::<background::Background>().on()
