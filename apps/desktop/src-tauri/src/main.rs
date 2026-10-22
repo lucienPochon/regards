@@ -11,6 +11,7 @@
 // Release builds on Windows have no console window.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agent_apps;
 mod background;
 mod badge;
 mod compose_window;
@@ -1774,6 +1775,7 @@ fn main() {
             system::open_system_settings,
             system::open_url,
             system::open_in_agent,
+            agent_apps::agent_apps_found,
             account_update,
             people_suggest,
             people_forget,

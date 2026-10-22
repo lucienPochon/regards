@@ -2,9 +2,46 @@ import { describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
-const { AGENT_ACCESS_LEVELS, approveHold, listAgentActivity, listHolds, rejectHold, setAgentAccess } = await import(
-  "./agents"
-);
+const {
+  AGENT_ACCESS_LEVELS,
+  AGENT_APPS,
+  agentAppsFound,
+  approveHold,
+  isConnected,
+  isFound,
+  listAgentActivity,
+  listHolds,
+  rejectHold,
+  setAgentAccess,
+} = await import("./agents");
+
+describe("agent apps", () => {
+  const app = (id: string) => AGENT_APPS.find((entry) => entry.id === id)!;
+  const settings = { enabled: true, connected: 1, apps: ["codex-mcp-client"] };
+  const found = [
+    { id: "claude-code" as const, set_up: true },
+    { id: "cursor" as const, set_up: false },
+  ];
+
+  it("are looked for by the app", async () => {
+    invoke.mockResolvedValueOnce(found);
+    expect(await agentAppsFound()).toEqual(found);
+    expect(invoke).toHaveBeenLastCalledWith("agent_apps_found");
+  });
+
+  it("are found on this computer, or by being connected now", () => {
+    expect(isFound(app("claude-code"), null, found)).toBe(true);
+    expect(isFound(app("codex"), settings, found)).toBe(true);
+    expect(isFound(app("claude-app"), settings, found)).toBe(false);
+  });
+
+  it("are connected once Regards is set up in them, or while connected now", () => {
+    expect(isConnected(app("claude-code"), null, found)).toBe(true);
+    expect(isConnected(app("cursor"), null, found)).toBe(false);
+    expect(isConnected(app("codex"), settings, null)).toBe(true);
+    expect(isConnected(app("claude-app"), settings, found)).toBe(false);
+  });
+});
 
 describe("agent access", () => {
   it("is set through the app, and answers with what was stored", async () => {

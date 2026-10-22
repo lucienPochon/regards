@@ -79,7 +79,7 @@ The **Agents** button at the foot of the sidebar opens two tabs:
   - **Copy to the clipboard**, for any other agent.
 
   Nothing is sent until you send it in the agent. Regards itself sends nothing to any AI.
-- **Agents:** the agent apps Regards knows, marked **Active** while one is connected to Regards, or with **Connect**, which leads here.
+- **Agents:** the agent apps Regards found on this computer, by their settings folders (`~/.claude`, `~/.codex`, `~/.cursor`, the Claude app's). One is marked **Active** once Regards is set up in it (the skill from `regards skill --install` is in its skills folder, or `regards` is one of its MCP servers) or while it is connected; otherwise it has **Connect**, which leads here. Regards only looks: it changes nothing in those folders. When it finds none, it lists them all.
 
 You can hide the button from its menu; Settings › Agents shows it again.
 

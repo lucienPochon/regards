@@ -53,9 +53,27 @@ export const AGENT_APPS: AgentApp[] = [
   { id: "cursor", label: "Cursor", opens: false, hint: "", is: (name) => /cursor/i.test(name) },
 ];
 
+/** An agent app found on this computer. */
+export interface FoundAgentApp {
+  id: AgentApp["id"];
+  /** Regards is set up in it: its skill is installed, or `regards` is one of its MCP servers. */
+  set_up: boolean;
+}
+
+/** The agent apps on this computer, found by their settings folders. */
+export const agentAppsFound = () => invoke<FoundAgentApp[]>("agent_apps_found");
+
 /** Whether an agent app is connected now. */
-export const isConnected = (app: AgentApp, settings: AgentsSettings | null) =>
+const connectedNow = (app: AgentApp, settings: AgentsSettings | null) =>
   Boolean(settings?.apps?.some((name) => app.is(name)));
+
+/** Whether an agent app is found on this computer, or connected now from elsewhere. */
+export const isFound = (app: AgentApp, settings: AgentsSettings | null, found: FoundAgentApp[]) =>
+  found.some((entry) => entry.id === app.id) || connectedNow(app, settings);
+
+/** Whether an agent app is connected: Regards is set up in it, or it is connected now. */
+export const isConnected = (app: AgentApp, settings: AgentsSettings | null, found: FoundAgentApp[] | null) =>
+  Boolean(found?.some((entry) => entry.id === app.id && entry.set_up)) || connectedNow(app, settings);
 
 /** Open Claude Code or the Claude app with a request ready to send (nothing is sent until the person does). */
 export const openInAgent = (app: "claude-code" | "claude-app", prompt: string) =>
