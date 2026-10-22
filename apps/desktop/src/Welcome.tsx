@@ -1,14 +1,12 @@
 import { AccountForm } from "./AccountForm";
-import { Icon } from "./icons";
+import { AppMark } from "./AppMark";
 
 /** The first screen, before there is an account. */
 export function Welcome() {
   return (
     <main className="welcome">
       <section className="welcome-card">
-        <span className="app-mark large">
-          <Icon name="logo" size={40} />
-        </span>
+        <AppMark size={88} draw pulse />
         <h1>Welcome to Regards</h1>
         <p className="muted">
           Add your email account to begin. Regards keeps your password or sign-in in this computer's credential

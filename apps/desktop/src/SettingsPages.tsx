@@ -9,6 +9,7 @@ import {
   setPrefetch,
   setReadingSettings,
 } from "./accounts";
+import { AppMark } from "./AppMark";
 import { Avatar } from "./Avatar";
 import {
   type BackgroundSettings,
@@ -1171,9 +1172,7 @@ export function SupportPage({
   return (
     <>
       <div className="about-head">
-        <span className="app-mark">
-          <Icon name="logo" size={30} />
-        </span>
+        <AppMark size={56} />
         <div>
           <h3>Regards</h3>
           <p className="muted">Pre-alpha · local-first email</p>
