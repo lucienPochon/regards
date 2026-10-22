@@ -139,14 +139,26 @@ pub fn files(raw: &[u8]) -> Vec<File> {
 /// the name to save it as ([`attachment::file_name`]).
 pub fn attachment(raw: &[u8], index: usize) -> Option<(Attachment, File)> {
     let message = MessageParser::default().parse(raw)?;
-    let part = message.attachments().nth(index)?;
+    message.attachments().nth(index).map(with_bytes)
+}
+
+/// All of [`Body::attachments`] with their bytes, from one parse of the
+/// message: for a message whose attachments are shown one after another.
+pub fn attachments(raw: &[u8]) -> Vec<(Attachment, File)> {
+    MessageParser::default()
+        .parse(raw)
+        .map(|message| message.attachments().map(with_bytes).collect())
+        .unwrap_or_default()
+}
+
+fn with_bytes(part: &mail_parser::MessagePart<'_>) -> (Attachment, File) {
     let described = describe(part);
     let file = File {
         name: attachment::file_name(part.attachment_name(), &described.mime),
         mime: described.mime.clone(),
         data: part.contents().to_vec(),
     };
-    Some((described, file))
+    (described, file)
 }
 
 fn describe(part: &mail_parser::MessagePart<'_>) -> Attachment {
@@ -274,6 +286,9 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&file.data).trim(), "Caf\u{e9}");
         assert_eq!(attachment(raw, 0).unwrap().1.name, "attachment.png");
         assert!(attachment(raw, 3).is_none());
+        let all = attachments(raw);
+        assert_eq!(all.len(), 3);
+        assert_eq!(all[1], (described, file));
     }
 
     #[test]

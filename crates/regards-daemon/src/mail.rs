@@ -679,6 +679,14 @@ pub(crate) async fn load(state: &State, id: i64) -> Result<(Message, Vec<u8>), R
     }
 }
 
+/// The hash of a message's stored source; `None` until it is downloaded.
+pub(crate) async fn stored_hash(state: &State, id: i64) -> Result<Option<String>, RpcError> {
+    let (message, _) = find(state, id)
+        .await?
+        .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such message"))?;
+    Ok(message.blob_hash)
+}
+
 async fn find(state: &State, id: i64) -> Result<Option<(Message, Mailbox)>, RpcError> {
     state
         .store

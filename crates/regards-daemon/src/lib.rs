@@ -99,6 +99,8 @@ pub(crate) struct State {
     pub(crate) feed: Arc<feed::Feed>,
     /// Downloaded messages (ADR-0008).
     pub(crate) blobs: Blobs,
+    /// The attachments of the messages opened last, parsed once.
+    pub(crate) attachments: attachments::Recent,
     /// Runners sending queued actions to the servers (ADR-0010).
     pub(crate) queue: queue::Queue,
     /// Tasks fetching older mail, one per account.
@@ -299,6 +301,7 @@ impl Daemon {
             watchers: push::Watchers::default(),
             feed,
             blobs: Blobs::new(dirs.blobs()),
+            attachments: attachments::Recent::default(),
             queue: queue::Queue::default(),
             backfills: backfill::Backfills::default(),
             outbox: sender::Outbox::default(),
