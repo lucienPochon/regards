@@ -9,10 +9,11 @@ export type InboxView = "smart" | "date" | "cards";
 
 const MARGIN = 8;
 
+// The ids are kept in the saved layout: "smart" is By priority, "cards" By category.
 const VIEWS: { id: InboxView; label: string; caption: string }[] = [
-  { id: "smart", label: "Smart", caption: "Priority first, then people. Notifications and newsletters grouped." },
+  { id: "smart", label: "By priority", caption: "Priority first, then people by date. Notifications and newsletters in one row each." },
+  { id: "cards", label: "By category", caption: "Unread mail in a card per category. What you have seen goes below." },
   { id: "date", label: "By date", caption: "Everything together, newest first." },
-  { id: "cards", label: "Cards", caption: "Unread mail in a card per kind, then what you have read." },
 ];
 
 /**

@@ -13,12 +13,16 @@ import "../styles.css";
 const params = new URLSearchParams(window.location.search);
 const theme = params.get("theme");
 applyTheme(theme === "dark" || theme === "light" ? (theme as Theme) : savedTheme());
-// `?layout=single` and `?sidebar=icons` start from that layout; without them, from the default
-// (split view, sidebar open).
-if (params.has("layout") || params.has("sidebar")) {
+// `?layout=single`, `?sidebar=icons` and `?view=smart|cards|date` start from that layout; without
+// them, from the default (split view, sidebar open, the inbox by date).
+if (params.has("layout") || params.has("sidebar") || params.has("view")) {
   window.localStorage.setItem(
     "regards.layout",
-    JSON.stringify({ mode: params.get("layout") === "single" ? "single" : "split", locked: params.get("sidebar") !== "icons" }),
+    JSON.stringify({
+      mode: params.get("layout") === "single" ? "single" : "split",
+      locked: params.get("sidebar") !== "icons",
+      inboxView: params.get("view") ?? undefined,
+    }),
   );
 } else if (params.has("fresh")) {
   window.localStorage.removeItem("regards.layout");

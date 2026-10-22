@@ -369,6 +369,11 @@ export function App() {
     const extra = serverNow.items.filter((item) => !shown.has(item.id));
     return extra.length === 0 ? local : { ...local, items: [...local.items, ...extra].sort(newer) };
   }, [local, serverNow]);
+  // By category, Priority keeps its mail once read: the Seen card leaves it out.
+  const shownFeed = useMemo(
+    (): MessageFeed => (cardsOn ? { ...feed, items: feed.items.filter((item) => item.section !== "priority") } : feed),
+    [cardsOn, feed],
+  );
   const placeOf = useMemo(() => {
     const places = new Map<number, { accountId: string; role: ListItem["role"] }>();
     for (const entry of accounts) {
@@ -429,7 +434,8 @@ export function App() {
     CARD_ROWS,
     cardsOn && screen === "section",
   );
-  const cardPriority = useFirstPage(useMemo(() => sectionSources(cardList, "priority", false), [cardList]), CARD_ROWS, cardsOn);
+  // Priority keeps its mail once read; the other cards hold only unread mail.
+  const cardPriority = useFirstPage(useMemo(() => sectionSources(cardList, "priority"), [cardList]), CARD_ROWS, cardsOn);
   const cardPeople = useFirstPage(useMemo(() => sectionSources(cardList, "people", false), [cardList]), CARD_ROWS, cardsOn);
   const cardNotifications = useFirstPage(useMemo(() => sectionSources(cardList, "notifications", false), [cardList]), CARD_ROWS, cardsOn);
   const cardNewsletters = useFirstPage(useMemo(() => sectionSources(cardList, "newsletters", false), [cardList]), CARD_ROWS, cardsOn);
@@ -1109,15 +1115,15 @@ export function App() {
     view.kind === "section"
       ? `Inbox${view.inbox ? ` · ${(() => { const owner = accounts.find((entry) => entry.account.id === view.inbox?.accountId); return owner ? accountLabel(appPrefs, owner.account) : ""; })()}` : ""}`
       : view.kind === "mailbox"
-        ? `${viewAccount ? accountLabel(appPrefs, viewAccount.account) : ""}${accountInbox ? (smartOn ? " · Smart" : cardsOn ? " · Cards" : " · By date") : ""}`
+        ? `${viewAccount ? accountLabel(appPrefs, viewAccount.account) : ""}${accountInbox ? (smartOn ? " · By priority" : cardsOn ? " · By category" : " · By date") : ""}`
         : view.kind === "drafts"
           ? `${drafts.length} ${drafts.length === 1 ? "draft" : "drafts"}`
           : view.kind === "outbox"
             ? `${outbox.length} waiting`
             : smartOn
-              ? "Smart"
+              ? "By priority"
               : cardsOn
-                ? "Cards"
+                ? "By category"
                 : "By date";
   const empty =
     view.kind === "role" && view.role === "inbox"
@@ -1232,7 +1238,7 @@ export function App() {
     icon,
     tone: section === "priority" ? "priority" : section === "new_senders" ? "new" : "plain",
     items,
-    total: Math.max(cardCounts[section]?.unread ?? 0, items.length),
+    total: Math.max((section === "priority" ? cardCounts[section]?.total : cardCounts[section]?.unread) ?? 0, items.length),
     onAll: openSection(section),
     onRead:
       section === "new_senders"
@@ -1300,7 +1306,7 @@ export function App() {
         onCompose={writeNew}
         canCompose={composeFrom !== null}
         onMarkAllRead={readTargets().length > 0 ? markAllHere : undefined}
-        feed={feed}
+        feed={shownFeed}
         mode={layout.mode}
         openId={openItem?.id ?? null}
         picked={picked}

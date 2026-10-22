@@ -224,7 +224,7 @@ export function MessageList({
   own: ReadonlySet<string>;
   /** The inbox as the Smart Inbox: cards and groups around the People list. */
   smart?: SmartParts | null;
-  /** The inbox as cards: unread mail by kind, then the list (`feed`) as the card of mail read. */
+  /** The inbox by category: unread mail in a card per category, then the list (`feed`) as the card of mail seen. */
   cards?: InboxCard[] | null;
   search: SearchControls;
   screener?: Screener;
@@ -761,11 +761,11 @@ export function MessageList({
                   </section>
                 ))}
                 {items.length > 0 && (
-                  <section className="smart-card plain" aria-label="Read">
+                  <section className="smart-card plain" aria-label="Seen">
                     <div className="smart-card-top">
                       <h3 className="smart-card-head">
                         <Icon name="mailOpen" size={15} />
-                        Read
+                        Seen
                       </h3>
                     </div>
                     <ul>{items.map((item) => row(item))}</ul>

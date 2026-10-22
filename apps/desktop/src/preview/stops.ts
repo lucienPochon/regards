@@ -32,9 +32,17 @@ export const TOUR: Group[] = [
     stops: [
       {
         id: "smart-inbox",
-        label: "Smart Inbox",
+        label: "Inbox by priority",
         note: "New senders to accept or block, the Priority card, then today's mail. Notifications and Newsletters each sit in one row.",
+        params: { view: "smart" },
       },
+      {
+        id: "by-category",
+        label: "Inbox by category",
+        note: "Unread mail in a card per category, each with its check to mark it read; then what has been seen.",
+        params: { view: "cards" },
+      },
+      { id: "by-date", label: "Inbox by date", note: "The default: everything together, newest first.", params: { view: "date" } },
       { id: "unified", label: "Two accounts, one inbox", note: "Both accounts' mail together; the sidebar lists each account.", params: { accounts: "2" } },
       { id: "folded-sidebar", label: "Sidebar folded to icons", note: "The / key does the same.", params: { sidebar: "icons" } },
       { id: "folders-more", label: "More folders", note: "Folders beyond the usual ones.", steps: ["wait:700", "text:button=More"] },
