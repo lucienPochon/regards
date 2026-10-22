@@ -109,6 +109,8 @@ export function Composer({
   }, []);
   const timer = useRef<number | undefined>(undefined);
   const toField = useRef<HTMLInputElement>(null);
+  const ccField = useRef<HTMLInputElement>(null);
+  const bccField = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let current = true;
@@ -618,6 +620,7 @@ export function Composer({
                 value={fields.to}
                 onChange={(to) => change("to")({ target: { value: to } })}
                 accountId={accountId ?? null}
+                besides={`${fields.cc}, ${fields.bcc}`}
                 placeholder="name@example.org, …"
               />
               {!copies && (
@@ -628,24 +631,29 @@ export function Composer({
             </div>
             {copies && (
               <>
-                <label className="address-line">
-                  <span>Cc</span>
+                {/* Not labels either: the chips are controls too. */}
+                <div className="address-line">
+                  <span onClick={() => ccField.current?.focus()}>Cc</span>
                   <AddressInput
+                    inputRef={ccField}
                     label="Cc"
                     value={fields.cc}
                     onChange={(cc) => change("cc")({ target: { value: cc } })}
                     accountId={accountId ?? null}
+                    besides={`${fields.to}, ${fields.bcc}`}
                   />
-                </label>
-                <label className="address-line">
-                  <span>Bcc</span>
+                </div>
+                <div className="address-line">
+                  <span onClick={() => bccField.current?.focus()}>Bcc</span>
                   <AddressInput
+                    inputRef={bccField}
                     label="Bcc"
                     value={fields.bcc}
                     onChange={(bcc) => change("bcc")({ target: { value: bcc } })}
                     accountId={accountId ?? null}
+                    besides={`${fields.to}, ${fields.cc}`}
                   />
-                </label>
+                </div>
               </>
             )}
             <Suspense fallback={<p className="muted small">Opening the editor…</p>}>

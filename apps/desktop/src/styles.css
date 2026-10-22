@@ -872,9 +872,9 @@ button.link:hover {
 .rail .side-item {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   color: var(--rail-text);
 }
 
@@ -903,8 +903,8 @@ button.link:hover {
 .rail-me {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
 }
 
@@ -949,8 +949,8 @@ button.link:hover {
   position: relative;
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 26px;
+  width: 32px;
+  height: 30px;
   border-radius: 6px;
   color: var(--rail-dim);
 }
@@ -993,9 +993,9 @@ button.link:hover {
 .expanded .side-item {
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: 14px;
   width: calc(100% - 22px);
-  height: 30px;
+  height: 34px;
   margin: 0 11px;
   padding: 0 10px 0 15px;
   border-radius: 7px;
@@ -1432,17 +1432,23 @@ button.list-title:hover {
   padding: 2px 16px 0;
 }
 
+/* Like the app's other fields: white, a thin grey border, darker while typing. */
 .search-field {
   display: flex;
   flex: 1;
   align-items: center;
   gap: 10px;
-  height: 40px;
+  height: 38px;
   padding: 0 8px 0 13px;
-  border: 2px solid var(--accent);
+  border: 1px solid var(--border);
   border-radius: 9px;
-  background: var(--bg);
+  background: var(--bg-elev);
   color: var(--muted);
+  transition: border-color 0.12s;
+}
+
+.search-field:focus-within {
+  border-color: var(--border-strong);
 }
 
 .search-field input {
@@ -3154,7 +3160,76 @@ button.list-title:hover {
   position: relative;
   display: flex;
   flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
   min-width: 0;
+  padding: 4px 0;
+  cursor: text;
+}
+
+.address-line .address-input input {
+  flex: 1 0 120px;
+  padding: 4px 0;
+}
+
+/* Someone in the field: the name, the address on hover. */
+.address-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  border-radius: 999px;
+  background: var(--chip);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 24px;
+}
+
+.address-chip:focus-within {
+  background: var(--pill);
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+
+.address-chip.invalid {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.address-chip-name {
+  overflow: hidden;
+  max-width: 260px;
+  padding: 0 2px 0 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.address-chip-name:focus {
+  outline: none;
+}
+
+.address-chip-remove {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.address-chip-remove:hover {
+  background: var(--hover);
+  color: var(--text);
 }
 
 .address-suggestions {
@@ -3204,6 +3279,38 @@ button.list-title:hover {
   color: var(--muted);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* What matched what is typed. */
+.address-suggestion-text mark {
+  background: none;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.address-suggestion-forget {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.address-suggestions li:hover .address-suggestion-forget,
+.address-suggestions li.active .address-suggestion-forget {
+  opacity: 1;
+}
+
+.address-suggestion-forget:hover {
+  background: var(--hover);
+  color: var(--text);
 }
 
 .address-line input::placeholder {
@@ -3298,11 +3405,6 @@ button.list-title:hover {
   line-height: 1.6;
   outline: none;
   overflow-wrap: anywhere;
-}
-
-/* Writing: a thin accent bar just left of the text. */
-.compose-body.ProseMirror:focus-visible {
-  box-shadow: -12px 0 0 -10px var(--accent);
 }
 
 /* Images in the text: within the page; a chosen one outlined. */
