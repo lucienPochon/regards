@@ -80,6 +80,8 @@ const PATHS = {
       <path d="M3.6 10.6 12 16l8.4-5.4" />
     </>
   ),
+  circle: <circle cx="12" cy="12" r="7" />,
+  circleFilled: <circle cx="12" cy="12" r="7" fill="currentColor" />,
   reply: (
     <>
       <path d="M9.5 6.5 4 12l5.5 5.5" />
