@@ -320,6 +320,20 @@ const PATHS = {
   ),
   single: <rect x="3" y="4.5" width="18" height="15" rx="2.5" />,
   moon: <path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z" />,
+  download: (
+    <>
+      <path d="M12 4v11" />
+      <path d="m7 10.5 5 4.5 5-4.5" />
+      <path d="M5 19.5h14" />
+    </>
+  ),
+  external: (
+    <>
+      <path d="M14 4h6v6" />
+      <path d="m20 4-8.5 8.5" />
+      <path d="M18 13.5V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4.5" />
+    </>
+  ),
   logo: (
     <>
       <rect x="4" y="6" width="16" height="12" rx="2.2" />

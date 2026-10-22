@@ -2694,6 +2694,286 @@ button.list-title:hover {
   opacity: 1;
 }
 
+/* Received attachments: the tile opens the viewer; Save as… on hover. */
+.attachments-head button.link {
+  margin-left: 4px;
+  font-size: 13px;
+}
+
+.tile-open {
+  display: grid;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tile-open .tile-face {
+  overflow: hidden;
+  transition: border-color 0.12s;
+}
+
+.tile-open:hover .tile-face {
+  border-color: var(--border-strong);
+}
+
+.tile-open:focus-visible {
+  outline: none;
+}
+
+.tile-open:focus-visible .tile-face {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tile-face.thumbnail {
+  background: var(--bg-elev);
+}
+
+.tile-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tile-save {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--bg-elev);
+  color: var(--text-2);
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.tile:hover .tile-save,
+.tile-save:focus-visible {
+  opacity: 1;
+}
+
+.tile-save:hover {
+  color: var(--accent);
+}
+
+/* The attachment viewer: dark in both themes, as photo viewers are. */
+.viewer-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgb(14 17 16 / 0.97);
+  animation: fade 0.12s ease-out;
+}
+
+.viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  color: #f2f4f3;
+}
+
+.viewer:focus {
+  outline: none;
+}
+
+.viewer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 16px;
+}
+
+.viewer-title {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.viewer-title h2 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer-meta,
+.viewer-status {
+  color: #b9c0bc;
+  font-size: 12.5px;
+}
+
+.viewer-status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid rgb(255 255 255 / 0.28);
+  border-radius: 9px;
+  background: rgb(255 255 255 / 0.08);
+  color: #f2f4f3;
+  font-weight: 500;
+}
+
+.viewer-btn.square {
+  justify-content: center;
+  width: 34px;
+  padding: 0;
+}
+
+.viewer-btn:hover {
+  background: rgb(255 255 255 / 0.16);
+}
+
+.viewer-btn:focus-visible,
+.viewer-nav:focus-visible,
+.viewer-text pre:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+.viewer-error {
+  margin: 0 16px 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #5c1f1a;
+  color: #ffe4e0;
+}
+
+.viewer-stage {
+  position: relative;
+  display: grid;
+  flex: 1;
+  /* A definite area, so an image can fit it. */
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  place-items: center;
+  min-height: 0;
+  padding: 8px 72px 28px;
+  overflow: auto;
+}
+
+.viewer-stage img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+  /* Transparent images show on white, as on a page. */
+  background: #ffffff;
+  box-shadow: 0 8px 40px rgb(0 0 0 / 0.5);
+}
+
+.viewer-stage img.actual {
+  max-width: none;
+  max-height: none;
+  align-self: start;
+  justify-self: start;
+}
+
+.viewer-text {
+  display: grid;
+  gap: 8px;
+  width: min(920px, 100%);
+  max-height: 100%;
+  min-height: 0;
+}
+
+.viewer-text pre {
+  max-height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 20px 24px;
+  overflow: auto;
+  border-radius: 10px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font: 13px/1.55 var(--mono, ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.viewer-note {
+  color: #b9c0bc;
+  font-size: 13px;
+  text-align: center;
+}
+
+.viewer-none {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  max-width: 420px;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.viewer-face {
+  display: grid;
+  place-items: center;
+  width: 120px;
+  height: 140px;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.1);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.viewer-nav {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.12);
+  color: #f2f4f3;
+  transform: translateY(-50%);
+}
+
+.viewer-nav:hover {
+  background: rgb(255 255 255 / 0.22);
+}
+
+.viewer-nav.previous {
+  left: 14px;
+}
+
+.viewer-nav.next {
+  right: 14px;
+}
+
+@media (max-width: 640px) {
+  .viewer-stage {
+    padding: 8px 16px 72px;
+  }
+
+  .viewer-nav {
+    top: auto;
+    bottom: 14px;
+    transform: none;
+  }
+}
+
 /* ---------- Composer: the whole pane, or a panel over the conversation ---------- */
 
 .composer {
