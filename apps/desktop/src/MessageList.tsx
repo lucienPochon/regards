@@ -690,27 +690,30 @@ export function MessageList({
               </button>
             )}
             {newSenders && newSenders.total > 0 && !newSenders.held && (
-              <section className="smart-card new" aria-label="New senders">
-                <h3 className="smart-card-head">
-                  <Icon name="people" size={15} />
+              <section className="day" aria-label="New senders">
+                <h3 className="day-head category-head">
                   New senders
-                  <span className="smart-card-count">{newSenders.total}</span>
+                  <span className="category-count">{newSenders.total}</span>
                 </h3>
                 <ul>{newSenders.items.map((item) => row(item, true))}</ul>
                 {newSenders.total > newSenders.items.length && (
-                  <CardFoot items={newSenders.items} total={newSenders.total} onClick={newSenders.onAll} />
+                  <button type="button" className="category-more" onClick={newSenders.onAll}>
+                    View all {newSenders.total}
+                  </button>
                 )}
               </section>
             )}
             {priority && priority.items.length > 0 && (
-              <section className="smart-card priority" aria-label="Priority">
-                <h3 className="smart-card-head">
-                  <Icon name="boltFilled" size={15} />
+              <section className="day" aria-label="Priority">
+                <h3 className="day-head category-head">
                   Priority
+                  <span className="category-count">{priority.total}</span>
                 </h3>
                 <ul>{priority.items.map((item) => row(item))}</ul>
                 {priority.total > priority.items.length && (
-                  <CardFoot items={priority.items} total={priority.total} onClick={priority.onAll} />
+                  <button type="button" className="category-more" onClick={priority.onAll}>
+                    View all {priority.total}
+                  </button>
                 )}
               </section>
             )}
@@ -783,20 +786,6 @@ export function MessageList({
         </button>
       )}
     </section>
-  );
-}
-
-/** A card's footer: a few faces, and how many more there are. */
-function CardFoot({ items, total, onClick }: { items: ListItem[]; total: number; onClick: () => void }) {
-  return (
-    <button type="button" className="smart-card-foot" onClick={onClick}>
-      <span className="faces">
-        {items.slice(0, 3).map((item) => (
-          <Avatar key={item.id} person={item.from} size="xs" />
-        ))}
-      </span>
-      View all ({total})
-    </button>
   );
 }
 

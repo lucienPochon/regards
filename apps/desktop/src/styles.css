@@ -3537,82 +3537,10 @@ button.list-title:hover {
 /* ---------- Smart Inbox ---------- */
 
 /* Priority: one warm card around its rows. New senders: the same, in grey. */
-.smart-card {
-  margin: 4px 14px 6px;
-  overflow: hidden;
-  border-radius: 14px;
-  background: var(--warm-soft);
-}
-
-.rows.wide .smart-card {
-  margin: 4px 0 6px;
-}
-
-.smart-card.new {
-  border: 1px solid var(--border);
-  background: var(--notice);
-}
-
-.smart-card-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0 16px;
-  padding: 11px 1px 8px;
-  border-bottom: 1px solid var(--warm-line);
-  color: var(--warm-text);
-  font-size: 13.5px;
-  font-weight: 600;
-}
-
-.smart-card.new .smart-card-head {
-  border-bottom-color: var(--border);
-  color: var(--text-2);
-}
-
 .smart-card-count {
   color: var(--muted);
   font-size: 12.5px;
   font-weight: 400;
-}
-
-.rows .smart-card.priority .row:not(.open):hover,
-.rows .smart-card.priority .row.cursor:not(.open) {
-  background: var(--warm-hover);
-}
-
-.rows .smart-card.new .row:not(.open):hover,
-.rows .smart-card.new .row.cursor:not(.open) {
-  background: var(--hover);
-}
-
-/* A few faces, and the way to the whole group. */
-.smart-card-foot {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 7px 17px 11px 32px;
-  color: var(--warm-text);
-  font-size: 13px;
-  font-weight: 600;
-  text-align: left;
-}
-
-.smart-card-foot:hover {
-  text-decoration: underline;
-}
-
-.smart-card .faces .avatar {
-  box-shadow: 0 0 0 2px var(--warm-soft);
-}
-
-.smart-card.new .smart-card-foot {
-  color: var(--accent);
-}
-
-.smart-card.new .faces .avatar {
-  box-shadow: 0 0 0 2px var(--notice);
 }
 
 /* By category: each category a heading over its rows, as the days are in By date. */
@@ -3677,9 +3605,7 @@ button.list-title:hover {
   width: calc(100% - 28px);
   margin: 4px 14px 6px;
   padding: 9px 14px;
-  border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--notice);
   color: var(--text);
   text-align: left;
 }
@@ -4274,14 +4200,6 @@ button.sender-row:hover:not(:disabled) {
   border-color: var(--accent);
 }
 
-.pic-card {
-  display: grid;
-  gap: 7px;
-  padding: 11px 10px;
-  border-radius: 8px;
-  background: var(--warm-soft);
-}
-
 .pic-row {
   display: flex;
   align-items: center;
@@ -4307,10 +4225,6 @@ button.sender-row:hover:not(:disabled) {
 .pic-line.short {
   flex: none;
   width: 55%;
-}
-
-.pic-card .pic-line {
-  background: var(--warm-line);
 }
 
 .pic-group {
