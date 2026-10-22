@@ -1,7 +1,7 @@
 //! Identities (plan §5.9): the names and addresses an account sends as, its
-//! own and its aliases, each with a plain-text signature and a voice
-//! (ADR-0020). Exactly one per account is the default; it cannot be
-//! removed, only replaced as default.
+//! own and its aliases, each with a default signature from the list
+//! (ADR-0021) and a voice (ADR-0020). Exactly one per account is the
+//! default; it cannot be removed, only replaced as default.
 
 use crate::StoreError;
 use rusqlite::{Connection, ErrorCode, OptionalExtension, Row, Transaction, params};
@@ -15,6 +15,9 @@ pub struct Identity {
     pub account_id: String,
     pub name: String,
     pub email: String,
+    /// The default signature (ADR-0021), if any.
+    pub signature_id: Option<i64>,
+    /// Its text: empty for none.
     pub signature: String,
     /// How agents should write as this address; kept while switched off.
     pub voice: String,
@@ -35,10 +38,13 @@ impl Identity {
 pub struct Fields {
     pub name: String,
     pub email: String,
-    pub signature: String,
+    /// The default signature; none for none.
+    pub signature_id: Option<i64>,
 }
 
-const COLUMNS: &str = "id, account_id, name, email, signature, voice, voice_on, is_default";
+/// The identity and its default signature's text.
+const SELECT: &str = "SELECT i.id, i.account_id, i.name, i.email, i.signature_id, coalesce(s.body, ''), i.voice, \
+    i.voice_on, i.is_default FROM identities i LEFT JOIN signatures s ON s.id = i.signature_id";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<Identity> {
     Ok(Identity {
@@ -46,17 +52,18 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Identity> {
         account_id: row.get(1)?,
         name: row.get(2)?,
         email: row.get(3)?,
-        signature: row.get(4)?,
-        voice: row.get(5)?,
-        voice_on: row.get(6)?,
-        is_default: row.get(7)?,
+        signature_id: row.get(4)?,
+        signature: row.get(5)?,
+        voice: row.get(6)?,
+        voice_on: row.get(7)?,
+        is_default: row.get(8)?,
     })
 }
 
 /// An account's identities, the default first, then in the order added.
 pub fn list(conn: &Connection, account_id: &str) -> Result<Vec<Identity>, StoreError> {
     let mut statement = conn.prepare_cached(&format!(
-        "SELECT {COLUMNS} FROM identities WHERE account_id = ?1 ORDER BY is_default DESC, id"
+        "{SELECT} WHERE i.account_id = ?1 ORDER BY i.is_default DESC, i.id"
     ))?;
     let rows = statement.query_map([account_id], from_row)?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -64,18 +71,14 @@ pub fn list(conn: &Connection, account_id: &str) -> Result<Vec<Identity>, StoreE
 
 pub fn get(conn: &Connection, id: i64) -> Result<Option<Identity>, StoreError> {
     Ok(conn
-        .query_row(
-            &format!("SELECT {COLUMNS} FROM identities WHERE id = ?1"),
-            [id],
-            from_row,
-        )
+        .query_row(&format!("{SELECT} WHERE i.id = ?1"), [id], from_row)
         .optional()?)
 }
 
 pub fn default_for(conn: &Connection, account_id: &str) -> Result<Option<Identity>, StoreError> {
     Ok(conn
         .query_row(
-            &format!("SELECT {COLUMNS} FROM identities WHERE account_id = ?1 AND is_default = 1"),
+            &format!("{SELECT} WHERE i.account_id = ?1 AND i.is_default = 1"),
             [account_id],
             from_row,
         )
@@ -86,7 +89,7 @@ pub fn default_for(conn: &Connection, account_id: &str) -> Result<Option<Identit
 /// from the address that was written to); the first that matches.
 pub fn for_addresses(conn: &Connection, account_id: &str, addresses: &[&str]) -> Result<Option<Identity>, StoreError> {
     let mut statement = conn.prepare_cached(&format!(
-        "SELECT {COLUMNS} FROM identities WHERE account_id = ?1 AND lower(email) = lower(?2)"
+        "{SELECT} WHERE i.account_id = ?1 AND lower(i.email) = lower(?2)"
     ))?;
     for address in addresses {
         if let Some(found) = statement.query_row(params![account_id, address], from_row).optional()? {
@@ -98,27 +101,52 @@ pub fn for_addresses(conn: &Connection, account_id: &str, addresses: &[&str]) ->
 
 /// Add an identity; the first of an account becomes its default.
 pub fn add(tx: &Transaction<'_>, account_id: &str, fields: &Fields, now: i64) -> Result<i64, StoreError> {
+    signature_exists(tx, fields.signature_id)?;
     let first: bool = tx.query_row(
         "SELECT NOT EXISTS (SELECT 1 FROM identities WHERE account_id = ?1)",
         [account_id],
         |row| row.get(0),
     )?;
     let inserted = tx.execute(
-        "INSERT INTO identities (account_id, name, email, signature, is_default, created_at) \
+        "INSERT INTO identities (account_id, name, email, signature_id, is_default, created_at) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![account_id, fields.name, fields.email, fields.signature, first, now],
+        params![account_id, fields.name, fields.email, fields.signature_id, first, now],
     );
     taken(inserted, &fields.email)?;
     Ok(tx.last_insert_rowid())
 }
 
-/// Change an identity's name, address or signature. `false` if there is none.
+/// Change an identity's name, address or default signature. `false` if
+/// there is none.
 pub fn update(tx: &Transaction<'_>, id: i64, fields: &Fields) -> Result<bool, StoreError> {
+    signature_exists(tx, fields.signature_id)?;
     let updated = tx.execute(
-        "UPDATE identities SET name = ?2, email = ?3, signature = ?4 WHERE id = ?1",
-        params![id, fields.name, fields.email, fields.signature],
+        "UPDATE identities SET name = ?2, email = ?3, signature_id = ?4 WHERE id = ?1",
+        params![id, fields.name, fields.email, fields.signature_id],
     );
     Ok(taken(updated, &fields.email)? == 1)
+}
+
+/// Set only an identity's default signature (Settings › Composer ›
+/// Signatures). `false` if there is no such identity.
+pub fn set_signature(tx: &Transaction<'_>, id: i64, signature_id: Option<i64>) -> Result<bool, StoreError> {
+    signature_exists(tx, signature_id)?;
+    Ok(tx.execute(
+        "UPDATE identities SET signature_id = ?2 WHERE id = ?1",
+        params![id, signature_id],
+    )? == 1)
+}
+
+fn signature_exists(conn: &Connection, signature_id: Option<i64>) -> Result<(), StoreError> {
+    let Some(id) = signature_id else { return Ok(()) };
+    let exists: bool = conn.query_row("SELECT EXISTS (SELECT 1 FROM signatures WHERE id = ?1)", [id], |row| {
+        row.get(0)
+    })?;
+    if exists {
+        Ok(())
+    } else {
+        Err(StoreError::Conflict("no such signature".into()))
+    }
 }
 
 /// Set an identity's voice, and whether agents get it. `false` if there is
@@ -212,16 +240,24 @@ mod tests {
             ("Ada Lovelace", "ada@example.test")
         );
 
-        // An alias, with a signature.
+        // An alias, with a signature from the list.
         let a = account.clone();
-        let alias = store
+        let (alias, formal) = store
             .write(move |tx| {
+                let formal = crate::signatures::add(
+                    tx,
+                    &crate::signatures::Fields {
+                        name: "Formal".into(),
+                        body: "Ada\nAnalytical Engines Ltd".into(),
+                    },
+                    1,
+                )?;
                 let fields = Fields {
                     name: "Ada (work)".into(),
                     email: "ada@work.test".into(),
-                    signature: "Ada\nAnalytical Engines Ltd".into(),
+                    signature_id: Some(formal),
                 };
-                add(tx, &a, &fields, 1)
+                Ok((add(tx, &a, &fields, 1)?, formal))
             })
             .await
             .unwrap()
@@ -233,20 +269,34 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(found.id, alias, "found by the address written to, in any case");
+        assert_eq!(
+            (found.signature_id, found.signature.as_str()),
+            (Some(formal), "Ada\nAnalytical Engines Ltd")
+        );
 
-        // The same address twice: refused.
-        let a = account.clone();
-        let twice = store
-            .write(move |tx| {
-                let fields = Fields {
-                    name: String::new(),
-                    email: "Ada@Work.test".into(),
-                    signature: String::new(),
-                };
-                add(tx, &a, &fields, 2)
-            })
-            .await;
-        assert!(matches!(twice, Err(StoreError::Conflict(_))));
+        // The same address twice, or a signature that is not there: refused.
+        for (email, signature_id) in [("Ada@Work.test", None), ("ada@other.test", Some(999))] {
+            let a = account.clone();
+            let refused = store
+                .write(move |tx| {
+                    let fields = Fields {
+                        name: String::new(),
+                        email: email.into(),
+                        signature_id,
+                    };
+                    add(tx, &a, &fields, 2)
+                })
+                .await;
+            assert!(matches!(refused, Err(StoreError::Conflict(_))), "{email}");
+        }
+
+        // A signature deleted from the list leaves its addresses with none.
+        store
+            .write(move |tx| crate::signatures::remove(tx, formal))
+            .await
+            .unwrap();
+        let found = store.read(move |c| get(c, alias)).await.unwrap().unwrap();
+        assert_eq!((found.signature_id, found.signature.as_str()), (None, ""));
 
         // The default cannot go; once another is the default, it can.
         let own_id = own.id;

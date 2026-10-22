@@ -42,6 +42,7 @@ const MIGRATIONS: &[M<'static>] = &[
     M::up(include_str!("../migrations/0031_auto_copy.sql")),
     M::up(include_str!("../migrations/0032_people.sql")),
     M::up(include_str!("../migrations/0033_voice_notes.sql")),
+    M::up(include_str!("../migrations/0034_signatures.sql")),
 ];
 
 /// Backups kept before older ones are deleted.
@@ -288,5 +289,49 @@ mod tests {
 
         // Running an older build against the newer database is refused.
         assert!(matches!(run(&v1, &mut conn, &backups), Err(StoreError::TooNew)));
+    }
+
+    #[test]
+    fn each_addresss_signature_becomes_one_of_the_list_once() {
+        let temp = tempfile::tempdir().unwrap();
+        let backups = temp.path().join("backups");
+        let mut conn = Connection::open(temp.path().join("mail.db")).unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        run(&Migrations::from_slice(&MIGRATIONS[..33]), &mut conn, &backups).unwrap();
+        conn.execute_batch(
+            "INSERT INTO accounts (id, display_name, email, auth_kind, username, secret_key, imap_host, imap_port, \
+             imap_security, smtp_host, smtp_port, smtp_security, created_at, position) \
+             VALUES ('a', 'Ada', 'ada@example.test', 'password', 'ada', 'a/mail-password', 'h', 993, 'tls', 'h', 587, \
+             'starttls', 0, 0); \
+             INSERT INTO identities (id, account_id, name, email, signature, is_default, created_at) \
+             VALUES (1, 'a', 'Ada', 'ada@example.test', 'Ada\nEngines Ltd', 1, 5), \
+                    (2, 'a', 'Ada', 'ada@engines.test', 'Ada\nEngines Ltd', 0, 6), \
+                    (3, 'a', 'Ada', 'ada@home.test', '  ', 0, 7);",
+        )
+        .unwrap();
+
+        to_latest(&mut conn, &backups).unwrap();
+        let signatures: Vec<(i64, String, String)> = conn
+            .prepare("SELECT id, name, body FROM signatures")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(signatures.len(), 1, "the same text, once");
+        let (id, name, body) = &signatures[0];
+        assert_eq!((name.as_str(), body.as_str()), ("ada@example.test", "Ada\nEngines Ltd"));
+        let defaults: Vec<Option<i64>> = conn
+            .prepare("SELECT signature_id FROM identities ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(defaults, [Some(*id), Some(*id), None], "a blank one is none");
+        assert!(
+            conn.prepare("SELECT signature FROM identities").is_err(),
+            "the old column is gone"
+        );
     }
 }

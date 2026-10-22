@@ -144,7 +144,7 @@ pub fn insert(tx: &Transaction<'_>, new: NewAccount) -> Result<Account, StoreErr
         &crate::identities::Fields {
             name: new.display_name.clone(),
             email: new.email.clone(),
-            signature: String::new(),
+            signature_id: None,
         },
         created_at,
     )?;

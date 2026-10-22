@@ -34,6 +34,7 @@ mod scheduler;
 mod search;
 mod sender;
 mod session;
+mod signatures;
 mod smart;
 mod sync;
 mod templates;

@@ -2,7 +2,7 @@
 
 use crate::{
     State, access, accounts, actions, agents, assistant, attachments, audit, compose, context, discover, draft_sync,
-    erase, holds, identities, mail, notes, notices, oauth, people, prefetch, smart, templates, voice,
+    erase, holds, identities, mail, notes, notices, oauth, people, prefetch, signatures, smart, templates, voice,
 };
 use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
@@ -495,6 +495,22 @@ impl Session {
             methods::IDENTITY_MAKE_DEFAULT => {
                 self.require_ui()?;
                 identities::make_default(&self.state, params(request)?).await
+            }
+            methods::IDENTITY_SET_SIGNATURE => {
+                self.require_ui()?;
+                identities::set_signature(&self.state, params(request)?).await
+            }
+            methods::SIGNATURE_LIST => {
+                self.require_ui()?;
+                signatures::list(&self.state).await
+            }
+            methods::SIGNATURE_SAVE => {
+                self.require_ui()?;
+                signatures::save(&self.state, params(request)?).await
+            }
+            methods::SIGNATURE_REMOVE => {
+                self.require_ui()?;
+                signatures::remove(&self.state, params(request)?).await
             }
             methods::IDENTITY_SET_VOICE => {
                 self.require_ui()?;

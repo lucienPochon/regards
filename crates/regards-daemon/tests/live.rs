@@ -2034,6 +2034,7 @@ async fn live_a_reply_goes_out_from_the_address_it_was_written_to() {
                 account_id: account.id.clone(),
                 name: "Work".into(),
                 email: "work@example.test".into(),
+                signature_id: None,
                 signature: "The Workshop".into(),
             },
         )
