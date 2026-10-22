@@ -967,11 +967,10 @@ export function App() {
       },
       { label: "Check for new mail", icon: "refresh", onSelect: syncNow },
       { label: layout.locked ? "Fold the sidebar" : "Show the sidebar", icon: "sidebar", keys: "/", onSelect: toggleSidebar },
-      {
-        label: layout.mode === "split" ? "Open messages in place of the list" : "Open messages beside the list",
-        icon: layout.mode === "split" ? "single" : "split",
-        onSelect: () => setLayout({ mode: layout.mode === "split" ? "single" : "split" }),
-      },
+      // Back beside the list from here; leaving it is chosen in Settings › Appearance, not by a stray pick.
+      ...(layout.mode === "single"
+        ? [{ label: "Open messages beside the list", icon: "split" as const, onSelect: () => setLayout({ mode: "split" }) }]
+        : []),
       { label: "Light theme", icon: "sun", onSelect: () => applyTheme("light", true) },
       { label: "Dark theme", icon: "moon", onSelect: () => applyTheme("dark", true) },
       { label: "Theme as the system", icon: "sun", onSelect: () => applyTheme("system", true) },
