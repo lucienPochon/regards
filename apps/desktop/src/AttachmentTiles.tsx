@@ -115,7 +115,7 @@ function Tile({
         onClick={onOpen}
       >
         <span className={thumbnail ? "tile-face thumbnail" : "tile-face"}>
-          {thumbnail ? <img src={thumbnail} alt="" /> : saveOnly ? <Icon name="alert" size={26} /> : kind}
+          {thumbnail ? <img src={thumbnail} alt="" decoding="async" /> : saveOnly ? <Icon name="alert" size={26} /> : kind}
         </span>
         <span className="tile-name">{name}</span>
         <span className="tile-size">

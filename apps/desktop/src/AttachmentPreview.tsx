@@ -111,7 +111,7 @@ export function AttachmentViewer({
   if (shown.state === "loading") {
     stage = <p className="viewer-note">Loading…</p>;
   } else if (image) {
-    stage = <img className={actual ? "actual" : undefined} src={imageSource(image)} alt={name} />;
+    stage = <img className={actual ? "actual" : undefined} src={imageSource(image)} alt={name} decoding="async" />;
   } else if (shown.state === "ready" && shown.preview.kind === "text") {
     stage = (
       <div className="viewer-text">
