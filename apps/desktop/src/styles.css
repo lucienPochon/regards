@@ -1432,17 +1432,23 @@ button.list-title:hover {
   padding: 2px 16px 0;
 }
 
+/* Like the app's other fields: white, a thin grey border, darker while typing. */
 .search-field {
   display: flex;
   flex: 1;
   align-items: center;
   gap: 10px;
-  height: 40px;
+  height: 38px;
   padding: 0 8px 0 13px;
-  border: 2px solid var(--accent);
+  border: 1px solid var(--border);
   border-radius: 9px;
-  background: var(--bg);
+  background: var(--bg-elev);
   color: var(--muted);
+  transition: border-color 0.12s;
+}
+
+.search-field:focus-within {
+  border-color: var(--border-strong);
 }
 
 .search-field input {
@@ -3298,11 +3304,6 @@ button.list-title:hover {
   line-height: 1.6;
   outline: none;
   overflow-wrap: anywhere;
-}
-
-/* Writing: a thin accent bar just left of the text. */
-.compose-body.ProseMirror:focus-visible {
-  box-shadow: -12px 0 0 -10px var(--accent);
 }
 
 /* Images in the text: within the page; a chosen one outlined. */
