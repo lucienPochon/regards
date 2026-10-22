@@ -327,6 +327,17 @@ const PATHS = {
       <path d="M10.6 6.1A9.6 9.6 0 0 1 12 6c6 0 9.5 6 9.5 6a16 16 0 0 1-2.6 3.3M6.4 7.6C3.9 9.3 2.5 12 2.5 12s3.5 6 9.5 6c1.5 0 2.9-.4 4.1-1" />
     </>
   ),
+  // Mail grouped under headings: the inbox by category.
+  sections: (
+    <>
+      <rect x="4" y="4" width="6" height="6" rx="1.5" />
+      <path d="M13.5 5.5H20" />
+      <path d="M13.5 8.5H17.5" />
+      <rect x="4" y="14" width="6" height="6" rx="1.5" />
+      <path d="M13.5 15.5H20" />
+      <path d="M13.5 18.5H17.5" />
+    </>
+  ),
   download: (
     <>
       <path d="M12 4v11" />

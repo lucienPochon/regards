@@ -4184,35 +4184,45 @@ button.sender-row:hover:not(:disabled) {
   gap: 16px;
 }
 
+/* A tile: the view drawn small, its badge on the bottom edge, then its name. */
 .chooser-tile {
   display: grid;
+  justify-items: center;
   align-content: start;
-  gap: 3px;
-  padding: 0;
-  text-align: left;
+  gap: 2px;
+  padding: 6px 4px 4px;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.chooser-tile:hover {
+  background: var(--hover);
 }
 
 .chooser-tile strong {
-  margin-top: 7px;
-  font-size: 13.5px;
+  margin-top: 4px;
+  font-size: 14px;
 }
 
 .chooser-tile .muted {
   font-size: 12px;
-  line-height: 1.35;
 }
 
+/* A portrait screen of rows. */
 .chooser-picture {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  height: 150px;
-  padding: 14px;
-  overflow: hidden;
-  border: 2px solid var(--border);
-  border-radius: 10px;
-  background: var(--reader-bg);
+  gap: 6px;
+  width: 128px;
+  height: 168px;
+  margin-bottom: 16px;
+  padding: 13px 11px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-sm);
+  text-align: left;
 }
 
 .chooser-tile:hover .chooser-picture {
@@ -4221,71 +4231,133 @@ button.sender-row:hover:not(:disabled) {
 
 .chooser-tile.chosen .chooser-picture {
   border-color: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--accent);
 }
 
 .pic-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 2px;
-}
-
-.pic-dot {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--border-strong);
-}
-
-.pic-line {
-  flex: 1;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--border-strong);
-}
-
-.pic-line.short {
-  flex: none;
-  width: 55%;
-}
-
-.pic-group {
-  display: grid;
   gap: 7px;
 }
 
-.pic-head {
-  width: 32%;
-  height: 5px;
-  border-radius: 3px;
-  background: var(--muted);
-  opacity: 0.55;
+.pic-dot,
+.pic-mini {
+  flex: none;
+  border-radius: 50%;
+  background: var(--border-strong);
 }
 
-.pic-chips {
+.pic-dot {
+  width: 11px;
+  height: 11px;
+}
+
+.pic-mini {
+  width: 6px;
+  height: 6px;
+}
+
+.pic-dot.accent,
+.pic-mini.accent {
+  background: var(--accent);
+}
+
+.pic-dot.warm,
+.pic-mini.warm {
+  background: var(--warm);
+}
+
+.pic-dot.blue,
+.pic-mini.blue {
+  background: var(--blue);
+}
+
+.pic-dot.violet,
+.pic-mini.violet {
+  background: var(--violet);
+}
+
+/* Sender over a line of text. */
+.pic-text {
+  display: grid;
   flex: 1;
-  height: 10px;
-  border-radius: 5px;
-  background: linear-gradient(
-    90deg,
-    var(--blue-soft) 0 30%,
-    transparent 30% 35%,
-    var(--violet-soft) 35% 64%,
-    transparent 64% 69%,
-    var(--chip) 69%
-  );
+  gap: 3px;
+  min-width: 0;
 }
 
-.chooser-badge {
+.pic-name,
+.pic-line,
+.pic-bar {
+  height: 3px;
+  border-radius: 2px;
+}
+
+.pic-name {
+  width: 50%;
+  background: var(--text-2);
+  opacity: 0.6;
+}
+
+.pic-line {
+  width: 90%;
+  background: var(--border-strong);
+  opacity: 0.6;
+}
+
+.pic-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.pic-bar {
+  width: 34%;
+  background: var(--muted);
+  opacity: 0.5;
+}
+
+.pic-glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 11px;
+  height: 11px;
+  color: var(--muted);
+}
+
+/* A folded group: a few of its senders in a row. */
+.pic-senders {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 3px;
+  height: 9px;
+  padding: 0 4px;
+  border-radius: 5px;
+  background: var(--chip);
+}
+
+/* On the picture's bottom edge: what kind of view; filled when chosen. */
+.pic-badge {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  bottom: -14px;
+  left: 50%;
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
   border-radius: 50%;
+  background: var(--bg-elev);
+  color: var(--text-2);
+  box-shadow: var(--shadow-sm);
+  transform: translateX(-50%);
+}
+
+.chooser-tile.chosen .pic-badge {
+  border-color: var(--accent);
   background: var(--accent);
   color: var(--accent-text);
 }
