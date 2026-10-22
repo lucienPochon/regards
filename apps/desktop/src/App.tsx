@@ -1516,6 +1516,7 @@ export function App() {
             pickSendTime={pickSendTime}
             pickReminder={pickReminder}
             pickTemplate={pickTemplate}
+            onAddAccount={() => setSettings("accounts")}
           />
         )}
         {assistantJob && (

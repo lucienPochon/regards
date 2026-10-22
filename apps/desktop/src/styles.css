@@ -3016,15 +3016,21 @@ button.list-title:hover {
   flex: none;
   align-items: center;
   gap: 12px;
-  height: 60px;
-  padding: 6px 16px 0 24px;
+  height: 52px;
+  padding: 6px 12px 0 24px;
 }
 
 .panel .composer-top {
-  flex-direction: row-reverse;
   height: 46px;
-  padding: 0 10px 0 18px;
+  padding: 0 8px 0 18px;
   border-bottom: 1px solid var(--border);
+}
+
+/* Bigger or smaller, then Close, in the top right corner. */
+.composer-window {
+  display: flex;
+  flex: none;
+  gap: 2px;
 }
 
 .composer-title {
@@ -3036,23 +3042,22 @@ button.list-title:hover {
   white-space: nowrap;
 }
 
+/* The tools along the bottom: Saved first, then the buttons, From and Send at the end. */
 .composer-tools {
   display: flex;
   flex: none;
   align-items: center;
   gap: 1px;
-  margin-left: auto;
-}
-
-.panel .composer-tools {
-  justify-content: flex-end;
-  margin: 0;
-  padding: 6px 10px;
+  padding: 6px 10px 6px 18px;
   border-top: 1px solid var(--border);
 }
 
+.full .composer-tools {
+  padding: 10px 64px 12px 80px;
+}
+
 .composer-status {
-  margin-right: 8px;
+  margin-right: auto;
   color: var(--muted);
   font-size: 12px;
 }
@@ -3072,6 +3077,52 @@ button.list-title:hover {
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* From: the address, the name small below it, and a list to change it. */
+.composer-from-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  min-width: 0;
+  padding: 3px 6px 3px 8px;
+  border-radius: 7px;
+  color: var(--text-2);
+}
+
+.composer-from-button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.composer-from-text {
+  display: grid;
+  min-width: 0;
+  text-align: right;
+  line-height: 1.2;
+}
+
+.composer-from-text span,
+.composer-from-text small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-from-text span {
+  font-size: 13px;
+}
+
+.composer-from-text small {
+  color: var(--muted);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.composer-from-button .icon {
+  flex: none;
+  color: var(--muted);
 }
 
 .send-button {
