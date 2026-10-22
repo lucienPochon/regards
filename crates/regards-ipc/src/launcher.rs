@@ -115,6 +115,8 @@ pub struct Launcher {
     program: PathBuf,
     /// The log filter a daemon started from here gets (detailed logging).
     log: std::sync::Mutex<Option<String>>,
+    /// For an agent: the app it runs in, said in `hello`.
+    app: Option<String>,
 }
 
 impl Launcher {
@@ -126,7 +128,20 @@ impl Launcher {
             endpoint,
             program,
             log: std::sync::Mutex::new(None),
+            app: None,
         }
+    }
+
+    /// For an agent: say which app it runs in when connecting.
+    #[must_use]
+    pub fn for_app(mut self, app: Option<String>) -> Self {
+        self.app = app;
+        self
+    }
+
+    /// Connect to a daemon already running, without starting one.
+    pub async fn connect_running(&self, kind: ClientKind) -> Result<Client, ClientError> {
+        Client::connect_as(&self.endpoint, kind, None, self.app.as_deref()).await
     }
 
     /// The log filter for daemons started from now on (`None`: the default,
@@ -160,7 +175,7 @@ impl Launcher {
         let mut replaced = false;
 
         for attempt in 0..ATTEMPTS {
-            match Client::connect_with(&self.endpoint, kind, token.as_ref()).await {
+            match Client::connect_as(&self.endpoint, kind, token.as_ref(), self.app.as_deref()).await {
                 Ok(client) => {
                     let same_build = client.is_same_build();
                     let has_ui = client.principal() == Principal::Ui;

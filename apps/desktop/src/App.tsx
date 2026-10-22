@@ -65,6 +65,7 @@ import { OutboxList } from "./OutboxList";
 import { ReadingPane } from "./ReadingPane";
 import { SendToast } from "./SendToast";
 import { Settings, type SettingsTab } from "./Settings";
+import { AgentsMenu } from "./AgentsMenu";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { type Template, listTemplates, saveTemplate } from "./templates";
 import { type AssistantJob, AssistantDialog, useAssistantOn } from "./AssistantDialog";
@@ -206,6 +207,8 @@ export function App() {
   const [said, setSaid] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
   const [settings, setSettings] = useState<SettingsTab | null>(null);
+  // The sidebar's Agents menu, beside its button.
+  const [agentsMenu, setAgentsMenu] = useState<Anchor | null>(null);
   const [menu, setMenu] = useState<MenuRequest | null>(null);
   const [asking, setAsking] = useState<{ request: ConfirmRequest; resolve: (ok: boolean) => void } | null>(null);
   const [picking, setPicking] = useState<Picking | null>(null);
@@ -1362,6 +1365,10 @@ export function App() {
       setOverlay(false);
       setSettings("accounts");
     },
+    onAgents: (anchor: Anchor) => {
+      setOverlay(false);
+      setAgentsMenu(anchor);
+    },
     onSync: syncNow,
     syncing: busy,
     syncProblem,
@@ -1531,6 +1538,9 @@ export function App() {
         </>
       )}
       {help && <ShortcutHelp onClose={() => setHelp(false)} />}
+      {agentsMenu && (
+        <AgentsMenu anchor={agentsMenu} onSettings={() => setSettings("agents")} onClose={() => setAgentsMenu(null)} />
+      )}
       {settings && (
         <Settings
           tab={settings}

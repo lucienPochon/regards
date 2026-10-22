@@ -39,7 +39,13 @@ The `regards` command comes with Regards. Agents use it in either of two ways.
 
 **As an MCP server** (`regards mcp`):
 
-- Claude Code: `claude mcp add regards -- regards mcp`
+- Claude Code: `claude mcp add --scope user regards -- regards mcp`. With `--scope user`, Claude Code has Regards in every folder you start it from.
+- The Claude app: Settings › Developer › Edit Config, add the lines below to the file, then restart the app:
+
+  ```json
+  { "mcpServers": { "regards": { "command": "regards", "args": ["mcp"] } } }
+  ```
+
 - Codex, in `~/.codex/config.toml`:
 
   ```toml
@@ -63,7 +69,21 @@ regards search "invoice from:shop" --json  # every command prints JSON with --js
 
 `regards --help` lists the commands. `regards <command> --help` says what each needs and whether it changes mail.
 
-## 5. Your voice, and notes about people
+## 5. Ask your agent from Regards
+
+The **Agents** button at the foot of the sidebar opens two tabs:
+
+- **Recipes:** ready-made requests, such as a morning briefing, the messages that still need your reply, what you promised, or learning how you write. Choose one, then:
+  - **Claude Code** opens it in a new terminal, ready: press Enter there to start. This works once you have used Claude Code on this computer at least once.
+  - **Claude** opens a new chat in the Claude app, ready to send.
+  - **Copy to the clipboard**, for any other agent.
+
+  Nothing is sent until you send it in the agent. Regards itself sends nothing to any AI.
+- **Agents:** the agent apps Regards knows, marked **Active** while one is connected to Regards, or with **Connect**, which leads here.
+
+You can hide the button from its menu; Settings › Agents shows it again.
+
+## 6. Your voice, and notes about people
 
 So that agents write like you, and remember who people are:
 

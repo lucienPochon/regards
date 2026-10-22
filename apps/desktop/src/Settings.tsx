@@ -372,7 +372,22 @@ function AgentsTab({
         />
       )}
       <AgentConnect />
+      <AgentsButtonOption />
     </>
+  );
+}
+
+/** Settings › Agents: the sidebar's Agents button, which its menu can hide. */
+function AgentsButtonOption() {
+  const prefs = usePrefs();
+  return (
+    <Option
+      icon="agent"
+      label="Show Agents in the sidebar"
+      description="A button at the foot of the sidebar, with ready-made requests to hand an agent, and the agents on this computer."
+    >
+      <Toggle label="Show Agents in the sidebar" on={prefs.agentsButton} onChange={(on) => setPrefs({ agentsButton: on })} />
+    </Option>
   );
 }
 

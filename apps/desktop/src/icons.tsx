@@ -320,6 +320,13 @@ const PATHS = {
   ),
   single: <rect x="3" y="4.5" width="18" height="15" rx="2.5" />,
   moon: <path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z" />,
+  // An eye, struck through: hide.
+  eyeOff: (
+    <>
+      <path d="M3.5 3.5l17 17" />
+      <path d="M10.6 6.1A9.6 9.6 0 0 1 12 6c6 0 9.5 6 9.5 6a16 16 0 0 1-2.6 3.3M6.4 7.6C3.9 9.3 2.5 12 2.5 12s3.5 6 9.5 6c1.5 0 2.9-.4 4.1-1" />
+    </>
+  ),
   download: (
     <>
       <path d="M12 4v11" />

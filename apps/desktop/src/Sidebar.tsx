@@ -4,7 +4,7 @@ import { Avatar } from "./Avatar";
 import type { OutboxEntry } from "./compose";
 import { Icon, type IconName } from "./icons";
 import type { AccountMail, MailState } from "./mail";
-import type { MenuEntry, MenuRequest } from "./Menu";
+import { type Anchor, type MenuEntry, type MenuRequest, anchorOf } from "./Menu";
 import type { SidebarChanges, SidebarPrefs } from "./sidebar-prefs";
 import { accountColour, accountLabel, usePrefs } from "./prefs";
 import { useShortcuts } from "./shortcuts";
@@ -62,6 +62,7 @@ export function Sidebar({
   onToggleLock,
   onExpand,
   onSettings,
+  onAgents,
   onSync,
   syncing,
   syncProblem,
@@ -83,6 +84,8 @@ export function Sidebar({
   /** Open the full sidebar over the content. */
   onExpand: () => void;
   onSettings: () => void;
+  /** The Agents menu: recipes and the agents on this computer, beside `anchor`. */
+  onAgents?: (anchor: Anchor) => void;
   onSync: () => void;
   syncing: boolean;
   /** Why the last sync failed, if it did. */
@@ -262,6 +265,17 @@ export function Sidebar({
         {/* Empty rail space opens the sidebar too. */}
         <div className="rail-space" onClick={onExpand} aria-hidden="true" />
         <div className="rail-foot">
+          {onAgents && appPrefs.agentsButton && (
+            <button
+              type="button"
+              className="rail-me"
+              title="Agents"
+              aria-label="Agents"
+              onClick={(event) => onAgents(anchorOf(event.currentTarget))}
+            >
+              <Icon name="agent" size={16} />
+            </button>
+          )}
           <button type="button" className="rail-me" title="Settings" aria-label="Settings" onClick={onSettings}>
             {me ? <Avatar person={{ name: me.display_name, address: me.email }} size="xs" /> : <Icon name="settings" size={16} />}
           </button>
@@ -367,6 +381,12 @@ export function Sidebar({
         )}
       </div>
       <div className="side-foot">
+        {onAgents && appPrefs.agentsButton && (
+          <button type="button" className="side-item" onClick={(event) => onAgents(anchorOf(event.currentTarget))}>
+            <Icon name="agent" size={16} />
+            <span className="label">Agents</span>
+          </button>
+        )}
         <button type="button" className="side-item" onClick={onSettings}>
           {me ? <Avatar person={{ name: me.display_name, address: me.email }} size="xs" /> : <Icon name="settings" size={16} />}
           <span className="label">Settings</span>

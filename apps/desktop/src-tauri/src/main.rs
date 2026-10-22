@@ -1749,6 +1749,7 @@ fn main() {
             set_close_to_tray,
             system::open_system_settings,
             system::open_url,
+            system::open_in_agent,
             account_update,
             people_suggest,
             draft_check,
