@@ -636,7 +636,7 @@ function InboxTab({
       <Option
         icon="bolt"
         label="Inbox view"
-        description="Smart puts priority mail first and groups notifications and newsletters; By date shows everything together."
+        description="Smart puts priority mail first and groups notifications and newsletters; By date shows everything together; Cards puts unread mail in a card per kind, then what you have read."
       >
         <Choice
           label="Inbox view"
@@ -644,6 +644,7 @@ function InboxTab({
           options={[
             { id: "smart", label: "Smart" },
             { id: "date", label: "By date" },
+            { id: "cards", label: "Cards" },
           ]}
           onChange={(inboxView) => onLayout({ inboxView })}
         />

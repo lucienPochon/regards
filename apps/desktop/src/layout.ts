@@ -9,7 +9,7 @@ export interface Layout {
   /** The message list's width in split view, in pixels. */
   listWidth: number;
   /** The inbox by Smart Inbox section ("smart"), or simply newest first ("date"). */
-  inboxView: "smart" | "date";
+  inboxView: "smart" | "date" | "cards";
   /** In place ("single"): a handle on the list's edge opens the reader beside it. */
   handle: boolean;
 }
@@ -28,7 +28,7 @@ function load(): Layout {
       mode: saved?.mode === "single" ? "single" : "split",
       locked: saved?.locked !== false,
       listWidth: typeof saved?.listWidth === "number" ? clampList(saved.listWidth) : DEFAULT.listWidth,
-      inboxView: saved?.inboxView === "date" ? "date" : "smart",
+      inboxView: saved?.inboxView === "date" || saved?.inboxView === "cards" ? saved.inboxView : "smart",
       handle: saved?.handle !== false,
     };
   } catch {

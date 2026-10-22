@@ -114,18 +114,38 @@ export function sourcesFor(accounts: AccountMail[], view: View): Source[] {
   return sources;
 }
 
-/** One Smart Inbox section of every account's inbox. */
-export function sectionSources(accounts: AccountMail[], section: Section): Source[] {
+/**
+ * One Smart Inbox section of every account's inbox; with `seen`, only its
+ * mail read (true) or unread (false), as the card view shows it.
+ */
+export function sectionSources(accounts: AccountMail[], section: Section, seen: boolean | null = null): Source[] {
   return accounts.flatMap(({ account, mailboxes }) =>
     mailboxes
       .filter((mailbox) => mailbox.role === "inbox" && mailbox.selectable)
       .map(
         (mailbox): Source => ({
-          key: `section:${section}:${mailbox.id}`,
+          key: `section:${section}:${seen ?? "all"}:${mailbox.id}`,
           accountId: account.id,
           mailboxId: mailbox.id,
           role: "inbox",
-          fetch: (before, limit) => listMessages(mailbox.id, before, limit, section),
+          fetch: (before, limit) => listMessages(mailbox.id, before, limit, section, seen),
+        }),
+      ),
+  );
+}
+
+/** Every account's inbox, only its mail read (true) or unread (false): the card view's last card. */
+export function inboxSources(accounts: AccountMail[], seen: boolean): Source[] {
+  return accounts.flatMap(({ account, mailboxes }) =>
+    mailboxes
+      .filter((mailbox) => mailbox.role === "inbox" && mailbox.selectable)
+      .map(
+        (mailbox): Source => ({
+          key: `inbox:${seen}:${mailbox.id}`,
+          accountId: account.id,
+          mailboxId: mailbox.id,
+          role: "inbox",
+          fetch: (before, limit) => listMessages(mailbox.id, before, limit, null, seen),
         }),
       ),
   );

@@ -5,18 +5,19 @@ import { useShortcuts } from "./shortcuts";
 import { useDialogFocus } from "./dialogFocus";
 import { radioKeys, radioTab } from "./radios";
 
-export type InboxView = "smart" | "date";
+export type InboxView = "smart" | "date" | "cards";
 
 const MARGIN = 8;
 
 const VIEWS: { id: InboxView; label: string; caption: string }[] = [
   { id: "smart", label: "Smart", caption: "Priority first, then people. Notifications and newsletters grouped." },
   { id: "date", label: "By date", caption: "Everything together, newest first." },
+  { id: "cards", label: "Cards", caption: "Unread mail in a card per kind, then what you have read." },
 ];
 
 /**
- * Under the inbox's title: how the inbox is shown, as two pictures to choose
- * from, and with several accounts, which of them.
+ * Under the inbox's title: how the inbox is shown, as three pictures to
+ * choose from, and with several accounts, which of them.
  */
 export function ViewChooser({
   anchor,
@@ -104,6 +105,20 @@ export function ViewChooser({
                     <span className="pic-row">
                       <span className="pic-dot" />
                       <span className="pic-chips" />
+                    </span>
+                  </>
+                ) : view.id === "cards" ? (
+                  <>
+                    <span className="pic-card">
+                      <span className="pic-line" />
+                      <span className="pic-line short" />
+                    </span>
+                    <span className="pic-card plain">
+                      <span className="pic-line" />
+                      <span className="pic-line short" />
+                    </span>
+                    <span className="pic-card plain">
+                      <span className="pic-line short" />
                     </span>
                   </>
                 ) : (

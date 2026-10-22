@@ -3536,6 +3536,86 @@ button.list-title:hover {
   box-shadow: 0 0 0 2px var(--notice);
 }
 
+/* The card view: a card per kind of unread mail, then the mail read. */
+.smart-card.plain {
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+
+.smart-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px;
+  border-bottom: 1px solid var(--warm-line);
+}
+
+.smart-card-top .smart-card-head {
+  flex: 1;
+  margin: 0;
+  border-bottom: 0;
+}
+
+.smart-card.plain .smart-card-top,
+.smart-card.new .smart-card-top {
+  border-bottom-color: var(--border);
+}
+
+.smart-card.plain .smart-card-head {
+  color: var(--text-2);
+}
+
+.smart-card.plain .smart-card-foot {
+  color: var(--accent);
+}
+
+.smart-card.plain .faces .avatar {
+  box-shadow: 0 0 0 2px var(--bg-elev);
+}
+
+.rows .smart-card.plain .row:not(.open):hover,
+.rows .smart-card.plain .row.cursor:not(.open) {
+  background: var(--hover);
+}
+
+/* The round check: the card's mail read. */
+.card-read {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 50%;
+  color: var(--text-2);
+}
+
+.card-read:hover {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.smart-card.caught-up {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.smart-card.caught-up p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+
+.smart-card.caught-up .zero-mark {
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  outline: none;
+}
+
 /* New senders held before the inbox: one line that leads to them. */
 .screen-banner {
   display: flex;
@@ -4074,7 +4154,7 @@ button.sender-row:hover:not(:disabled) {
 /* Under the inbox's title: how it looks, as pictures. */
 .view-chooser {
   position: fixed;
-  width: min(560px, calc(100vw - 16px));
+  width: min(760px, calc(100vw - 16px));
   padding: 16px 18px 18px;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -4098,7 +4178,7 @@ button.sender-row:hover:not(:disabled) {
 
 .chooser-tiles {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -4178,6 +4258,16 @@ button.sender-row:hover:not(:disabled) {
 
 .pic-card .pic-line {
   background: var(--warm-line);
+}
+
+.pic-card.plain {
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+
+.pic-card.plain .pic-line {
+  background: var(--border-strong);
 }
 
 .pic-chips {
