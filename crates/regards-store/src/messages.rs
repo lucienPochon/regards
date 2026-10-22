@@ -172,6 +172,19 @@ pub fn apply_flags(tx: &Transaction<'_>, mailbox_id: i64, changes: &[FlagChange]
 /// Unread messages per folder of an account, by folder id, where it shows
 /// (a message being moved counts in its target). The inbox leaves out what
 /// is set aside or snoozed past `now`, as it does in its list.
+/// The unread messages filed in a folder (not those on their way out of
+/// it), of one Smart Inbox section if asked: for "Mark all as read".
+pub fn unread_in(conn: &Connection, mailbox_id: i64, section: Option<Section>) -> Result<Vec<i64>, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT id FROM messages WHERE mailbox_id = ?1 AND seen = 0 AND deleted = 0 AND moving_to IS NULL \
+         AND (?2 IS NULL OR section = ?2) ORDER BY uid",
+    )?;
+    let ids = statement
+        .query_map(params![mailbox_id, section.map(Section::as_str)], |row| row.get(0))?
+        .collect::<Result<Vec<i64>, _>>()?;
+    Ok(ids)
+}
+
 pub fn unread_counts(
     conn: &Connection,
     account_id: &str,
@@ -690,6 +703,63 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn forgetting_an_accounts_mail_keeps_the_account_and_its_marks() {
+        use crate::marks::{self, Mark};
+        let (_temp, store, mailbox) = store_with_inbox().await;
+        let batch: Vec<NewMessage> = (1..=2)
+            .map(|uid| {
+                let mut new = message(uid, i64::from(uid) * 1000, &format!("m{uid}"));
+                new.headers.message_id = Some(format!("m{uid}@x"));
+                new
+            })
+            .collect();
+        let account = store
+            .write(move |tx| {
+                upsert(tx, mailbox, &batch)?;
+                tx.execute(
+                    "UPDATE mailboxes SET uid_validity = 7, uid_next = 3 WHERE id = ?1",
+                    [mailbox],
+                )?;
+                let account: String =
+                    tx.query_row("SELECT account_id FROM mailboxes WHERE id = ?1", [mailbox], |r| {
+                        r.get(0)
+                    })?;
+                marks::set(tx, &account, "m1@x", Mark::Pinned, Some(10))?;
+                Ok(account)
+            })
+            .await
+            .unwrap()
+            .value;
+        let a = account.clone();
+        let dropped = store
+            .write(move |tx| accounts::forget_mail(tx, &a))
+            .await
+            .unwrap()
+            .value;
+        assert_eq!(dropped, 2);
+        let a = account.clone();
+        let (left, folder, pinned, still) = store
+            .read(move |c| {
+                Ok((
+                    c.query_row("SELECT count(*) FROM messages", [], |r| r.get::<_, i64>(0))?,
+                    mailboxes::get(c, mailbox)?.unwrap(),
+                    marks::get(c, &a, "m1@x")?.pinned_at,
+                    accounts::get(c, &a)?.is_some(),
+                ))
+            })
+            .await
+            .unwrap();
+        assert_eq!(left, 0);
+        assert_eq!(
+            (folder.uid_validity, folder.uid_next),
+            (None, None),
+            "the next sync starts afresh"
+        );
+        assert_eq!(pinned, Some(10), "a pin stays for when the message is back");
+        assert!(still, "the account stays");
+    }
+
     async fn store_with_inbox() -> (tempfile::TempDir, Store, i64) {
         let temp = tempfile::tempdir().unwrap();
         let store = Store::open(&DataDirs::at(temp.path())).await.unwrap();
@@ -749,6 +819,36 @@ mod tests {
                 ..Headers::default()
             },
         }
+    }
+
+    #[tokio::test]
+    async fn mark_all_read_finds_the_unread_of_a_folder_or_of_one_section() {
+        let (_temp, store, mailbox) = store_with_inbox().await;
+        let batch: Vec<NewMessage> = (1..=4)
+            .map(|uid| {
+                let mut new = message(uid, i64::from(uid) * 1000, &format!("m{uid}"));
+                new.flags.seen = uid == 2;
+                new.flags.deleted = uid == 4;
+                new
+            })
+            .collect();
+        store.write(move |tx| upsert(tx, mailbox, &batch)).await.unwrap();
+        let ids = store.read(move |c| unread_in(c, mailbox, None)).await.unwrap();
+        assert_eq!(ids.len(), 2, "not the read one, nor the deleted one");
+        let first = ids[0];
+        store
+            .write(move |tx| {
+                tx.execute("UPDATE messages SET section = 'notifications'", [])?;
+                tx.execute("UPDATE messages SET section = 'people' WHERE id = ?1", [first])?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let people = store
+            .read(move |c| unread_in(c, mailbox, Some(Section::People)))
+            .await
+            .unwrap();
+        assert_eq!(people, [first]);
     }
 
     #[tokio::test]

@@ -15,6 +15,8 @@ In Regards, open **Settings › Agents** and set each account:
 
 Only you can change these, in the app. Agents cannot change them.
 
+To stop every agent at once, turn agents off in Settings › Agents. While they are off, agents get nothing, whatever each account allows: they are told "agents are turned off in Regards". The agents connected at that moment are disconnected. Each account keeps its level for when you turn agents on again. You can also disconnect the agents connected now without turning them off, and they may connect again.
+
 ## 2. What waits for you
 
 - **Every send**, unless you chose an undo window for the account:

@@ -70,6 +70,12 @@ impl DataDirs {
         self.data.join("backups")
     }
 
+    /// Left by a daemon asked to remove everything: the next one to start
+    /// removes what is left before opening anything.
+    pub fn erase_marker(&self) -> PathBuf {
+        self.data.join("erase-pending")
+    }
+
     /// The desktop app's own settings, such as background mode.
     pub fn desktop_settings(&self) -> PathBuf {
         self.data.join("desktop.json")

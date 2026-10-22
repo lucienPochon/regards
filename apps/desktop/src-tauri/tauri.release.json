@@ -1,6 +1,6 @@
 {
   "build": {
-    "beforeBuildCommand": "node scripts/sidecar.mjs && npm run build"
+    "beforeBuildCommand": "node scripts/sidecar.mjs && node scripts/licences.mjs --required && node scripts/licences-npm.mjs && npm run build"
   },
   "bundle": {
     "externalBin": [

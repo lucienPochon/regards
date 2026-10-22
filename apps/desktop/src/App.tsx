@@ -5,10 +5,11 @@ import {
   type MessageCursor,
   type MoveResult,
   type Person,
-  type UndoInfo,
+  type Role,
   archiveMessages,
   getMessage,
   getThread,
+  markAllRead,
   moveMessages,
   pinMessages,
   remindMessages,
@@ -75,7 +76,7 @@ import { accountLabel, getPrefs, setPrefs, usePrefs, zoomStep } from "./prefs";
 import { applyTheme } from "./theme";
 import { TimePicker } from "./TimePicker";
 import { PLATFORM, TitleBar } from "./TitleBar";
-import { UndoToast } from "./UndoToast";
+import { type UndoBar, UndoToast } from "./UndoToast";
 import {
   INBOX,
   MARKED_ICONS,
@@ -198,7 +199,7 @@ export function App() {
   // The assistant: offered once a provider is chosen in Settings; what was asked of it.
   const assistantOn = useAssistantOn();
   const [assistantJob, setAssistantJob] = useState<AssistantJob | null>(null);
-  const [undo, setUndo] = useState<UndoInfo | null>(null);
+  const [undo, setUndo] = useState<UndoBar | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // Something done that has no undo, said briefly.
   const [said, setSaid] = useState<string | null>(null);
@@ -273,6 +274,36 @@ export function App() {
     () => accounts.filter((entry) => !hiddenKey.split(",").includes(entry.account.id)),
     [accounts, hiddenKey],
   );
+  // "Mark everything read": the folders (and Smart Inbox section) the list shows; none for Pinned, Drafts and the like.
+  const readTargets = (): { mailboxId: number; section: Section | null }[] => {
+    const inboxesOf = (entries: typeof accounts, role: Role) =>
+      entries.flatMap((entry) => entry.mailboxes.filter((m) => m.role === role).map((m) => m.id));
+    if (view.kind === "mailbox") return [{ mailboxId: view.mailboxId, section: null }];
+    if (view.kind === "role") return inboxesOf(view.role === "inbox" ? unified : accounts, view.role).map((mailboxId) => ({ mailboxId, section: null }));
+    if (view.kind === "section") {
+      const ids = view.inbox ? [view.inbox.mailboxId] : inboxesOf(unified, "inbox");
+      return ids.map((mailboxId) => ({ mailboxId, section: view.section }));
+    }
+    return [];
+  };
+  const markAllHere = () => {
+    const targets = readTargets();
+    Promise.all(targets.map((target) => markAllRead(target.mailboxId, target.section)))
+      .then((results) => {
+        const changed = results.reduce((sum, result) => sum + result.changed, 0);
+        const undos = results.flatMap((result) => (result.undo ? [result.undo] : []));
+        if (changed === 0 || undos.length === 0) {
+          setSaid("Nothing unread here");
+          return;
+        }
+        setUndo({
+          id: undos[0].id,
+          description: undos.length === 1 ? undos[0].description : `Marked ${changed} messages read`,
+          also: undos.slice(1).map((one) => one.id),
+        });
+      })
+      .catch(failed);
+  };
   // Accounts whose Microsoft or Google sign-in expired: nothing syncs or sends until they sign in again.
   const signedOut = accounts.filter((entry) => entry.account.needs_sign_in);
   const inInbox = view.kind === "role" && view.role === "inbox";
@@ -867,8 +898,9 @@ export function App() {
           ),
         }),
     });
+    entries.push("separator");
+    if (readTargets().length > 0) entries.push({ label: "Mark everything here read", icon: "mailOpen", onSelect: markAllHere });
     entries.push(
-      "separator",
       { label: "New message", icon: "compose", keys: "c", onSelect: writeNew },
       {
         label: "Search mail",
@@ -1195,6 +1227,7 @@ export function App() {
         onBack={view.kind === "section" ? () => changeView(inboxOf(view)) : undefined}
         onCompose={writeNew}
         canCompose={composeFrom !== null}
+        onMarkAllRead={readTargets().length > 0 ? markAllHere : undefined}
         feed={feed}
         mode={layout.mode}
         openId={openItem?.id ?? null}

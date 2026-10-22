@@ -7,6 +7,25 @@ import { invoke } from "@tauri-apps/api/core";
  */
 export type AgentAccess = "off" | "read" | "triage" | "send";
 
+/** Mirrors `AgentsSettings`: the switch for every agent at once. */
+export interface AgentsSettings {
+  /**
+   * On by default. Off, the CLI and MCP get nothing ("agents are turned off
+   * in Regards"), whatever each account allows; the accounts keep their levels.
+   */
+  enabled: boolean;
+  /** Agents connected now. */
+  connected: number;
+}
+
+export const agentsSettings = () => invoke<AgentsSettings>("agents_settings");
+
+/** Off also ends the connections of the agents connected now. */
+export const setAgentsEnabled = (enabled: boolean) => invoke<AgentsSettings>("agents_set_enabled", { enabled });
+
+/** End every agent's connection now; they may connect again. Returns how many there were. */
+export const disconnectAgents = () => invoke<number>("agents_disconnect");
+
 export interface AgentAccessLevel {
   value: AgentAccess;
   label: string;

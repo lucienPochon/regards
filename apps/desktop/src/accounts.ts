@@ -236,6 +236,17 @@ export function syncAccount(accountId: string): Promise<unknown> {
   return invoke("account_sync", { accountId });
 }
 
+/**
+ * Support › Troubleshooting: drop an account's mail on this device and fetch
+ * it again, newest first, as after adding it. The account and its settings,
+ * drafts, outbox, pins, snoozes and reminders stay; a reply still waiting
+ * goes out, but its original is not marked answered. Resolves with how many
+ * messages were dropped, once the mail starts coming back.
+ */
+export function resyncAccount(accountId: string): Promise<number> {
+  return invoke<number>("account_resync", { accountId });
+}
+
 export interface Person {
   name: string | null;
   address: string | null;
@@ -374,6 +385,18 @@ export function setFlags(
   flags: { seen?: boolean; flagged?: boolean },
 ): Promise<{ changed: number; undo: UndoInfo | null }> {
   return invoke("message_set_flags", { ids, seen: flags.seen ?? null, flagged: flags.flagged ?? null });
+}
+
+/**
+ * "Mark all as read": every unread message of a folder, or of one Smart
+ * Inbox section of it, with one undo. Only what is on this device: older
+ * mail still being fetched keeps its state.
+ */
+export function markAllRead(
+  mailboxId: number,
+  section: Section | null = null,
+): Promise<{ changed: number; undo: UndoInfo | null }> {
+  return invoke("message_mark_all_read", { mailboxId, section });
 }
 
 export interface UndoInfo {

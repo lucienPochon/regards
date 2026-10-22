@@ -20,6 +20,7 @@ import { type Anchor, type MenuEntry, anchorOf } from "./Menu";
 import { getPrefs, usePrefs } from "./prefs";
 import { senderImages, setSenderImages } from "./smart";
 import { asMarkdown, printMessage } from "./messageText";
+import { SourceDialog } from "./SourceDialog";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 
 type Load = { state: "loading" } | { state: "ready"; detail: MessageDetail } | { state: "failed"; message: string };
@@ -298,6 +299,7 @@ function ThreadMessage({
   // Settings › General: images from the web load in every message, or only when asked.
   const [allowRemote, setAllowRemote] = useState(() => getPrefs().remoteImages);
   const [details, setDetails] = useState(false);
+  const [source, setSource] = useState(false);
   const { message } = entry;
   const ready = load.state === "ready" ? load.detail : null;
   const when = fullDate(message.sent_at ?? message.received_at);
@@ -394,6 +396,7 @@ function ThreadMessage({
           onSelect: () => void navigator.clipboard?.writeText(asMarkdown(ready)).catch(() => {}),
         },
         { label: "Print…", icon: "text", onSelect: () => printMessage(ready) },
+        { label: "See the original message", icon: "quote", onSelect: () => setSource(true) },
       );
     }
     if (onAssistant) {
@@ -454,6 +457,9 @@ function ThreadMessage({
         </button>
       </div>
       {details && ready && <Details detail={ready} />}
+      {source && (
+        <SourceDialog messageId={message.id} subject={message.subject || "(no subject)"} onClose={() => setSource(false)} />
+      )}
       <div className="mail-body">
         {load.state === "loading" && <p className="muted">Opening…</p>}
         {load.state === "failed" && <p className="error" role="alert">{load.message}</p>}
