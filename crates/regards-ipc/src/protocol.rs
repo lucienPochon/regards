@@ -214,8 +214,9 @@ pub mod methods {
     pub const DRAFT_ATTACH_IMAGE: &str = "draft.attach_image";
     /// The images in a draft's text, to show while writing. `ui` only.
     pub const DRAFT_IMAGES: &str = "draft.images";
-    /// Send a draft from another of its account's identities; the signature
-    /// in a plain-text draft is swapped for the new one's.
+    /// Send a draft from another identity, of its account or of another one,
+    /// where the draft moves (agents: Triage on both). The signature in a
+    /// plain-text draft is swapped for the new one's.
     pub const DRAFT_SET_FROM: &str = "draft.set_from";
     /// Freeze the draft into the outbox; it goes once the undo window is over,
     /// or at the time asked for (send later).

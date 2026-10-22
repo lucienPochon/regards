@@ -1003,8 +1003,9 @@ fn stored(identity: &Identity) -> Option<i64> {
     (identity.id != 0).then_some(identity.id)
 }
 
-/// Send a draft from another of its account's identities. A plain-text
-/// draft's signature is swapped; a formatted one keeps its text.
+/// Send a draft from another identity: of its account, or of another
+/// account, where the draft then moves (with its copy on the server). A
+/// plain-text draft's signature is swapped; a formatted one keeps its text.
 pub(crate) async fn set_from(state: &State, params: DraftSetFromParams) -> Result<Value, RpcError> {
     let (id, identity_id, now) = (params.id, params.identity_id, now_ms());
     state
@@ -1014,19 +1015,31 @@ pub(crate) async fn set_from(state: &State, params: DraftSetFromParams) -> Resul
             let account =
                 accounts::get(tx, &draft.account_id)?.ok_or_else(|| StoreError::Conflict("no such account".into()))?;
             let new = identities::get(tx, identity_id)?
-                .filter(|i| i.account_id == account.id)
-                .ok_or_else(|| StoreError::Conflict("that address is not one of this account's".into()))?;
+                .ok_or_else(|| StoreError::Conflict("there is no such address".into()))?;
             let old = identity_of(tx, &account, draft.identity_id)?;
             let body = if draft.html.is_some() {
                 draft.body.clone()
             } else {
                 compose::swap_signature(&draft.body, &old.signature, &new.signature)
             };
-            drafts::set_identity(tx, id, new.id, &body, now)
+            if new.account_id == account.id {
+                drafts::set_identity(tx, id, new.id, &body, now)
+            } else {
+                drafts::move_to(tx, id, &new.account_id, new.id, &body, now)
+            }
         })
         .await
         .map_err(conflict)?;
     view(state, id).await
+}
+
+/// The account an identity is of, if there is such an identity.
+pub(crate) async fn identity_account(state: &State, identity_id: i64) -> Result<Option<String>, RpcError> {
+    state
+        .store
+        .read(move |conn| Ok(identities::get(conn, identity_id)?.map(|identity| identity.account_id)))
+        .await
+        .map_err(crate::session::internal)
 }
 
 fn draft_view(draft: Draft, identity: &Identity, files: Vec<drafts::Attachment>) -> DraftView {
