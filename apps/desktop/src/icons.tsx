@@ -334,10 +334,12 @@ const PATHS = {
       <path d="M18 13.5V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4.5" />
     </>
   ),
+  // The mark (AppMark.tsx) as a line icon: the envelope drawn by one point.
   logo: (
     <>
-      <rect x="4" y="6" width="16" height="12" rx="2.2" />
-      <path d="M4.8 7.2 12 12.6l7.2-5.4" />
+      <path d="M5.25 14V9.1a1.8 1.8 0 0 1 1.8-1.8h9.9a1.8 1.8 0 0 1 1.8 1.8v5.8a1.8 1.8 0 0 1-1.8 1.8h-6.55" />
+      <path d="M6.15 8.2 12 12.45l5.85-4.25" />
+      <circle cx="10.4" cy="16.7" r="1.7" fill="currentColor" stroke="none" />
     </>
   ),
 } satisfies Record<string, ReactNode>;
