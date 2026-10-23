@@ -199,6 +199,7 @@ export function MessageList({
   onCompose,
   canCompose,
   onMarkAllRead,
+  onEmpty,
   showDone,
   feed,
   mode,
@@ -226,6 +227,8 @@ export function MessageList({
   canCompose: boolean;
   /** Every unread message of this folder or section, read (with Undo); absent where it means nothing. */
   onMarkAllRead?: () => void;
+  /** Trash and Junk: delete all of it for good (after asking). */
+  onEmpty?: { label: string; run: () => void };
   /** The inbox by date: its Done mail shown among it, or not (Ctrl+E). */
   showDone?: { on: boolean; toggle: () => void };
   feed: MessageFeed;
@@ -587,6 +590,11 @@ export function MessageList({
       />
     ) : (
       <ListHeader title={title} subtitle={subtitle} onTitle={onTitle} onBack={onBack}>
+        {onEmpty && items.length > 0 && (
+          <button type="button" className="list-empty-btn" onClick={onEmpty.run}>
+            {onEmpty.label}
+          </button>
+        )}
         {showDone && (
           <button
             type="button"
