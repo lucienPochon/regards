@@ -3,9 +3,10 @@ import { type Identity, listIdentities, makeDefaultIdentity, removeIdentity, sav
 import { Icon } from "./icons";
 
 /**
- * An account's addresses and signatures (plan §5.9): the names and addresses
- * it sends as, each with a plain-text signature. New messages go out from
- * the default; a reply from the address it was written to.
+ * An account's addresses (plan §5.9): the names and addresses it sends as.
+ * New messages go out from the default; a reply from the address it was
+ * written to. Each address's signature is chosen in Settings › Composer ›
+ * Signatures (ADR-0021).
  */
 export function IdentitiesEditor({ accountId }: { accountId: string }) {
   const [identities, setIdentities] = useState<Identity[] | null>(null);
@@ -62,10 +63,8 @@ function IdentityForm({
 }) {
   const [name, setName] = useState(identity?.name ?? "");
   const [email, setEmail] = useState(identity?.email ?? "");
-  const [signature, setSignature] = useState(identity?.signature ?? "");
   const [busy, setBusy] = useState(false);
-  const changed =
-    identity === null || name !== identity.name || email !== identity.email || signature !== identity.signature;
+  const changed = identity === null || name !== identity.name || email !== identity.email;
 
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -81,7 +80,10 @@ function IdentityForm({
   };
   const save = (event: FormEvent) => {
     event.preventDefault();
-    void run(() => saveIdentity({ id: identity?.id ?? null, account_id: accountId, name, email, signature }));
+    // Its default signature stays as chosen in Settings › Composer › Signatures.
+    void run(() =>
+      saveIdentity({ id: identity?.id ?? null, account_id: accountId, name, email, signature_id: identity?.signature_id ?? null }),
+    );
   };
 
   return (
@@ -108,16 +110,6 @@ function IdentityForm({
             />
           </label>
         </div>
-        <label className="grow">
-          Signature
-          <textarea
-            className="input"
-            rows={3}
-            value={signature}
-            onChange={(e) => setSignature(e.target.value)}
-            placeholder="Added below what you write, above a quote"
-          />
-        </label>
         <div className="dialog-actions">
           {onCancel && (
             <button type="button" className="btn small" onClick={onCancel} disabled={busy}>

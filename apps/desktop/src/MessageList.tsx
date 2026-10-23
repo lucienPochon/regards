@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import type { Person } from "./accounts";
-import { type Action, choose } from "./actions";
+import { type Action, actionTitle, choose } from "./actions";
 import { Avatar } from "./Avatar";
 import { dateSection, laterDate, listDate, peopleShort, personName } from "./format";
 import { Icon, type IconName } from "./icons";
@@ -215,7 +215,8 @@ export function MessageList({
   mode: "single" | "split";
   openId: number | null;
   picked: ReadonlySet<number>;
-  onOpen: (item: ListItem) => void;
+  /** `how`: "step" when the keyboard moved to it beside the list. */
+  onOpen: (item: ListItem, how?: "step") => void;
   onPick: (ids: Set<number>) => void;
   actionsFor: (items: ListItem[]) => Action[];
   /** Done with a whole day: its messages archived, one undo. Only where Done means something (the inbox). */
@@ -309,7 +310,7 @@ export function MessageList({
     anchor.current = item.id;
     stepped.current = true;
     setCursor(item.id);
-    if (mode === "split") onOpen(item);
+    if (mode === "split") onOpen(item, "step");
   };
 
   // What an action applies to: the selection when the row is in it, else the row.
@@ -344,6 +345,7 @@ export function MessageList({
     ArrowDown: () => step(1),
     k: () => step(-1),
     ArrowUp: () => step(-1),
+    ...(prefs.keySet === "standard" ? { ArrowRight: () => step(1), ArrowLeft: () => step(-1) } : {}),
     x: () => {
       const item = current();
       if (item) toggle(item);
@@ -426,7 +428,7 @@ export function MessageList({
         key={action.id}
         type="button"
         className={className}
-        title={`${action.label} (${action.keys[0]})`}
+        title={actionTitle(action)}
         aria-label={action.label}
         onClick={(event) => action.run(anchorOf(event.currentTarget, "end"))}
       >
@@ -883,7 +885,7 @@ function SelectionBar({
             key={action.id}
             type="button"
             className={action.danger ? "icon-btn danger" : "icon-btn"}
-            title={`${action.label} (${action.keys[0]})`}
+            title={actionTitle(action)}
             aria-label={action.label}
             onClick={(event) => action.run(anchorOf(event.currentTarget, "end"))}
           >

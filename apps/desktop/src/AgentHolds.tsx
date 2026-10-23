@@ -5,9 +5,17 @@ import { useChanges } from "./changes";
 import { type Draft, getDraft, undoSend } from "./compose";
 import { fileSize, fullDate, peopleFull } from "./format";
 import { Icon } from "./icons";
+import { VOICE_MAX } from "./identities";
 
 /** The draft's text shown in full up to this, then cut. */
 const TEXT_SHOWN = 1500;
+
+/** The text an agent wrote for a voice or a note hold: what is decided on. */
+function heldText(hold: Hold): string | null {
+  if (hold.reason !== "voice" && hold.reason !== "note") return null;
+  const text = (hold.params as { text?: unknown } | null)?.text;
+  return typeof text === "string" ? text : null;
+}
 
 /** The holds still waiting, kept current (holding and deciding are ordinary changes). */
 export function usePendingHolds(): Hold[] {
@@ -117,6 +125,9 @@ function HoldCard({
   const [draft, setDraft] = useState<Draft | "gone" | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const suggested = heldText(hold);
+  // A suggested voice, as the person edits it before approving.
+  const [voice, setVoice] = useState<string | null>(null);
   useEffect(() => {
     if (hold.draft_id === null) return;
     getDraft(hold.draft_id).then(setDraft, () => setDraft("gone"));
@@ -130,7 +141,18 @@ function HoldCard({
       .finally(() => setBusy(false));
   };
   const approve =
-    hold.reason === "sending" ? "Send" : hold.reason === "delete" ? "Delete for good" : "Approve";
+    hold.reason === "sending"
+      ? "Send"
+      : hold.reason === "delete"
+        ? "Delete for good"
+        : hold.reason === "note"
+          ? "Save anyway"
+          : "Approve";
+  // Approved as edited, when it was.
+  const approveAsEdited = (id: number) =>
+    approveHold(id, voice !== null && voice.trim() !== (suggested ?? "").trim() ? voice.trim() : undefined);
+  // A note that waits looks risky: rejecting it is the safe, main choice.
+  const rejectFirst = hold.reason === "note";
 
   return (
     <li ref={card} className={`hold-card ${hold.reason}${focused ? " focused" : ""}`}>
@@ -150,6 +172,29 @@ function HoldCard({
       {hold.reason === "delete" && (
         <p className="hold-why muted">Deleted for good, these can&apos;t be brought back.</p>
       )}
+      {hold.reason === "voice" &&
+        suggested !== null &&
+        (voice === null ? (
+          <p className="hold-said">{suggested}</p>
+        ) : (
+          <div className="hold-edit">
+            <textarea
+              aria-label="Suggested voice"
+              rows={7}
+              maxLength={VOICE_MAX}
+              value={voice}
+              onChange={(event) => setVoice(event.target.value)}
+              autoFocus
+            />
+            <span className="muted small">
+              {voice.length} / {VOICE_MAX.toLocaleString()}
+            </span>
+          </div>
+        ))}
+      {hold.reason === "voice" && (
+        <p className="hold-why muted">It describes how you write, not what you wrote about. Nothing changes until you approve.</p>
+      )}
+      {hold.reason === "note" && suggested !== null && <p className="hold-said">{suggested}</p>}
       {hold.draft_id !== null &&
         (draft === null ? (
           <p className="muted hold-why">Loading the message…</p>
@@ -193,17 +238,36 @@ function HoldCard({
         ))}
       {problem && <p className="error hold-why" role="alert">{problem}</p>}
       <div className="hold-buttons">
-        <button type="button" className="btn small" onClick={decide(rejectHold)} disabled={busy}>
-          Reject
-        </button>
-        <button
-          type="button"
-          className={hold.reason === "delete" ? "btn small danger-fill" : "btn small primary"}
-          onClick={decide(approveHold)}
-          disabled={busy || draft === "gone"}
-        >
-          {approve}
-        </button>
+        {rejectFirst ? (
+          // The safe choice is the main one, at the end.
+          <>
+            <button type="button" className="btn small" onClick={decide(approveHold)} disabled={busy}>
+              {approve}
+            </button>
+            <button type="button" className="btn small primary" onClick={decide(rejectHold)} disabled={busy}>
+              Reject
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="btn small" onClick={decide(rejectHold)} disabled={busy}>
+              Reject
+            </button>
+            {hold.reason === "voice" && suggested !== null && voice === null && (
+              <button type="button" className="btn small" onClick={() => setVoice(suggested)} disabled={busy}>
+                Edit
+              </button>
+            )}
+            <button
+              type="button"
+              className={hold.reason === "delete" ? "btn small danger-fill" : "btn small primary"}
+              onClick={decide(hold.reason === "voice" ? approveAsEdited : approveHold)}
+              disabled={busy || draft === "gone" || (voice !== null && voice.trim() === "")}
+            >
+              {approve}
+            </button>
+          </>
+        )}
       </div>
     </li>
   );
@@ -249,9 +313,15 @@ function Outcome({ hold, focused = false, onDismiss }: { hold: Hold; focused?: b
         ? sendAt !== null && sendAt > Date.now()
           ? `Scheduled for ${fullDate(sendAt)}.`
           : "Sent to the Outbox."
-        : "Done."
+        : hold.reason === "voice"
+          ? "Voice saved. Agents use it from now on."
+          : hold.reason === "note"
+            ? "Saved on their card, marked as an agent's note."
+            : "Done."
       : hold.status === "rejected"
-        ? "Rejected: nothing was done."
+        ? hold.reason === "voice"
+          ? "Rejected: your voice did not change."
+          : "Rejected: nothing was done."
         : hold.status === "failed"
           ? `Not done: ${hold.error ?? "it could not run"}`
           : hold.status === "expired"
