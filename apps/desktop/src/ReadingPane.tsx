@@ -1,4 +1,4 @@
-import { type Ref, useCallback, useEffect, useRef, useState } from "react";
+import { type Ref, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type MailboxSummary,
   type MessageDetail,
@@ -20,7 +20,8 @@ import type { ListItem } from "./mail";
 import { type Anchor, type MenuEntry, anchorOf } from "./Menu";
 import { getPrefs, usePrefs } from "./prefs";
 import { senderImages, setSenderImages } from "./smart";
-import { asMarkdown, printMessage } from "./messageText";
+import { asMarkdown, printMessage, textParts } from "./messageText";
+import { openUrl } from "./background";
 import { useDark } from "./theme";
 import { SourceDialog } from "./SourceDialog";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
@@ -534,7 +535,7 @@ function ThreadMessage({
                 src={messageHtmlUrl(message.id, allowRemote || fromSender === true, dark)}
               />
             ) : (
-              <pre className="text-body">{ready.text.trim() || "(no text)"}</pre>
+              <TextBody text={ready.text.trim()} onFailed={setImagesError} />
             )}
             <AttachmentTiles messageId={message.id} attachments={ready.attachments} />
           </>
@@ -557,6 +558,36 @@ function ThreadMessage({
         </div>
       )}
     </li>
+  );
+}
+
+/** A message's plain text, its web addresses as links that open in the browser. */
+function TextBody({ text, onFailed }: { text: string; onFailed: (problem: string) => void }) {
+  const parts = useMemo(() => textParts(text), [text]);
+  if (!text) return <pre className="text-body">(no text)</pre>;
+  return (
+    <pre className="text-body">
+      {parts.map((part, at) =>
+        part.url ? (
+          <a
+            key={at}
+            href={part.url}
+            title={part.url}
+            rel="noreferrer"
+            onClick={(event) => {
+              // Never in the app's own window: in the browser.
+              event.preventDefault();
+              openUrl(part.url).catch((failure: unknown) => onFailed(String(failure)));
+            }}
+            onAuxClick={(event) => event.preventDefault()}
+          >
+            {part.text}
+          </a>
+        ) : (
+          part.text
+        ),
+      )}
+    </pre>
   );
 }
 

@@ -58,6 +58,70 @@ async fn new_draft(desktop: &mut Client, account_id: &str) -> DraftView {
 }
 
 #[tokio::test]
+async fn editing_an_addresss_signature_text_edits_it_instead_of_adding_copies() {
+    let world = World::new(DEFAULT_LATE_SEND_GRACE).await;
+    let Running {
+        mut desktop, handle, ..
+    } = world.start().await;
+    let account = world.add_account(&mut desktop).await;
+    let own = own_identity(&mut desktop, &account.id).await;
+    let save = |id: Option<i64>, email: &str, signature: &str| IdentitySaveParams {
+        id,
+        account_id: account.id.clone(),
+        name: own.name.clone(),
+        email: email.into(),
+        signature_id: None,
+        signature: signature.into(),
+    };
+
+    // Typed letter by letter in the address editor: one signature, its text the last.
+    let mut kept = None;
+    for text in ["A", "Ad", "Ada L."] {
+        let saved: IdentityView = desktop
+            .call(methods::IDENTITY_SAVE, save(Some(own.id), &own.email, text))
+            .await
+            .unwrap();
+        assert!(
+            kept.is_none() || kept == saved.signature_id,
+            "a new signature for {text:?}"
+        );
+        kept = saved.signature_id;
+    }
+    assert_eq!(
+        signatures(&mut desktop).await,
+        [(own.email.clone(), "Ada L.".to_owned())]
+    );
+
+    // Shared with another address, it stays as it is for that one.
+    let alias: IdentityView = desktop
+        .call(methods::IDENTITY_SAVE, save(None, "ada@alias.test", "Ada L."))
+        .await
+        .unwrap();
+    assert_eq!(alias.signature_id, kept);
+    let changed: IdentityView = desktop
+        .call(methods::IDENTITY_SAVE, save(Some(own.id), &own.email, "Ada Lovelace"))
+        .await
+        .unwrap();
+    assert_ne!(changed.signature_id, kept);
+    let alias_now = desktop
+        .call::<_, IdentityListResult>(
+            methods::IDENTITY_LIST,
+            AccountRef {
+                account_id: account.id.clone(),
+            },
+        )
+        .await
+        .unwrap()
+        .identities
+        .into_iter()
+        .find(|identity| identity.id == alias.id)
+        .unwrap();
+    assert_eq!(alias_now.signature.as_str(), "Ada L.");
+    assert_eq!(signatures(&mut desktop).await.len(), 2);
+    handle.abort();
+}
+
+#[tokio::test]
 async fn an_address_uses_one_of_the_list_and_new_drafts_get_it() {
     let world = World::new(DEFAULT_LATE_SEND_GRACE).await;
     let Running {

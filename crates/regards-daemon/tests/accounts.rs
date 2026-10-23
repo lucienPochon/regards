@@ -10,8 +10,9 @@ use regards_core::secret::Secret;
 use regards_daemon::Daemon;
 use regards_imap::TlsOptions;
 use regards_ipc::protocol::{
-    AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind, ConnectionSecurity, DiscoverParams,
-    DiscoverResult, DiscoverSource, MailboxListResult, Provider, ServerSettings, SyncResult, codes, methods,
+    AccountAddParams, AccountLoginParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind,
+    ConnectionSecurity, DiscoverParams, DiscoverResult, DiscoverSource, MailboxListResult, Provider, ServerSettings,
+    SyncResult, codes, methods,
 };
 use regards_ipc::{Client, ClientError, Endpoint, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -98,6 +99,11 @@ async fn agents_cannot_add_or_remove_accounts() {
     for (method, body) in [
         (methods::ACCOUNT_ADD, add),
         (methods::ACCOUNT_REMOVE, json!({ "id": "x" })),
+        (
+            methods::ACCOUNT_SET_LOGIN,
+            json!({ "id": "x", "imap": { "host": "h", "port": 993, "security": "tls" },
+                    "smtp": { "host": "h", "port": 465, "security": "tls" } }),
+        ),
     ] {
         let (code, _) = rpc_error(agent.call::<_, Value>(method, body).await);
         assert_eq!(code, codes::FORBIDDEN, "{method} must be refused for agents");
@@ -199,6 +205,84 @@ async fn a_failed_sign_in_stores_nothing_and_says_why() {
 
     let listed: Vec<AccountSummary> = desktop.call(methods::ACCOUNT_LIST, Value::Null).await.unwrap();
     assert!(listed.is_empty());
+}
+
+fn login(id: &str, port: u16, password: Option<&str>) -> AccountLoginParams {
+    AccountLoginParams {
+        id: id.into(),
+        username: None,
+        password: password.map(Secret::new),
+        imap: ServerSettings {
+            host: "localhost".into(),
+            port,
+            security: ConnectionSecurity::Tls,
+        },
+        smtp: ServerSettings {
+            host: "localhost".into(),
+            port: 465,
+            security: ConnectionSecurity::Tls,
+        },
+    }
+}
+
+#[tokio::test]
+async fn a_changed_password_or_server_is_checked_then_kept() {
+    let pki = pki(&["localhost"]);
+    let (old_port, _) = fake_server(&pki, "* OK ready\r\n", PASSWORD).await;
+    let (new_port, mut new_logins) = fake_server(&pki, "* OK ready\r\n", "rotated").await;
+    let running = start(
+        TlsOptions::platform()
+            .with_extra_roots_pem(pki.ca_pem.as_bytes())
+            .unwrap(),
+    )
+    .await;
+    let mut desktop = running.desktop().await;
+    let added: AccountSummary = desktop
+        .call(methods::ACCOUNT_ADD, params("ada@example.test", old_port, PASSWORD))
+        .await
+        .unwrap();
+    let key = SecretKey::new(&added.id, SecretKind::MailPassword);
+
+    // Refused by the server: nothing changes.
+    let (code, data) = rpc_error(
+        desktop
+            .call::<_, Value>(methods::ACCOUNT_SET_LOGIN, login(&added.id, new_port, Some("wrong")))
+            .await,
+    );
+    assert_eq!(code, codes::ACCOUNT_CHECK_FAILED);
+    assert_eq!(data, Some(json!({ "reason": "auth_failed" })));
+    assert_eq!(running.vault.get(&key).await.unwrap().unwrap().expose(), PASSWORD);
+
+    // The new password on the new server: both kept, the account stays.
+    let changed: AccountSummary = desktop
+        .call(methods::ACCOUNT_SET_LOGIN, login(&added.id, new_port, Some("rotated")))
+        .await
+        .unwrap();
+    assert_eq!(changed.id, added.id);
+    assert_eq!((changed.imap.port, changed.smtp.port), (new_port, 465));
+    assert_eq!(changed.username, "ada@example.test");
+    assert_eq!(running.vault.get(&key).await.unwrap().unwrap().expose(), "rotated");
+    assert!(new_logins.next().await.is_some());
+
+    // No password given: the stored one is checked with the servers.
+    let again: AccountSummary = desktop
+        .call(methods::ACCOUNT_SET_LOGIN, login(&added.id, new_port, None))
+        .await
+        .unwrap();
+    assert_eq!(again.imap.port, new_port);
+
+    let (code, _) = rpc_error(
+        desktop
+            .call::<_, Value>(methods::ACCOUNT_SET_LOGIN, login("no-such-account", new_port, None))
+            .await,
+    );
+    assert_eq!(code, codes::NOT_FOUND);
+    let (code, _) = rpc_error(
+        desktop
+            .call::<_, Value>(methods::ACCOUNT_SET_LOGIN, login(&added.id, new_port, Some("")))
+            .await,
+    );
+    assert_eq!(code, codes::INVALID_PARAMS);
 }
 
 #[tokio::test]
