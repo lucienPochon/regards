@@ -1804,6 +1804,7 @@ export function App() {
             mode={composer.mode}
             onMode={(mode) => setComposer({ ...composer, mode })}
             onClose={() => setComposer(null)}
+            onDiscarded={setUndo}
             onQueued={(result) => {
               sentFrom(composer, result.done);
               setComposer(null);
