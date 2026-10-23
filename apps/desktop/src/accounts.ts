@@ -253,6 +253,36 @@ export interface MailboxListResult {
   sync: SyncState;
 }
 
+/**
+ * A new folder on the server, at the top of the account (`parentId: null`)
+ * or inside another (Spark: Ctrl+Shift+U). Throws the server's words if it
+ * says no, and "there is a folder with that name already".
+ */
+export function createFolder(accountId: string, parentId: number | null, name: string): Promise<MailboxSummary> {
+  return invoke<MailboxSummary>("mailbox_create", { accountId, parentId, name });
+}
+
+/**
+ * Rename a folder: its own name, not its path. The folders inside follow,
+ * and all keep their mail. Not Inbox, Sent, Drafts, Trash, Junk or Archive.
+ */
+export function renameFolder(mailboxId: number, name: string): Promise<MailboxSummary> {
+  return invoke<MailboxSummary>("mailbox_rename", { mailboxId, name });
+}
+
+/**
+ * Delete a folder, the folders inside it and all their mail, on the server.
+ * It cannot be undone: confirm first, saying how much mail goes. Not a role folder.
+ */
+export function deleteFolder(mailboxId: number): Promise<void> {
+  return invoke<void>("mailbox_delete", { mailboxId });
+}
+
+/** Delete everything in Trash or Junk for good. It cannot be undone: confirm first. */
+export function emptyFolder(mailboxId: number): Promise<{ deleted: number }> {
+  return invoke("mailbox_empty", { mailboxId });
+}
+
 export function listMailboxes(accountId: string): Promise<MailboxListResult> {
   return invoke<MailboxListResult>("mailbox_list", { accountId });
 }
