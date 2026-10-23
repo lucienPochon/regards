@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { type AccountSummary, removeAccount, syncAccount, updateAccount } from "./accounts";
 import { AgentActivity } from "./AgentActivity";
 import { AgentConnect } from "./AgentConnect";
+import { NotesSection, VoiceEditor, VoiceSection } from "./AgentVoice";
+import type { Identity } from "./identities";
 import { AgentsGate } from "./AgentsGate";
 import { AgentHolds } from "./AgentHolds";
 import { leafName } from "./views";
@@ -18,9 +20,9 @@ import type { Layout } from "./layout";
 import { type Screening, setScreening } from "./smart";
 import { TemplatesEditor } from "./TemplatesEditor";
 import type { AccountMail, MailState, ServiceCheck } from "./mail";
-import { MOD_KEY, SHORTCUTS, useShortcuts } from "./shortcuts";
+import { MOD_KEY, shortcutList, useShortcuts } from "./shortcuts";
 import { ACCOUNT_COLOURS, COLOUR_NAMES, accountColour, setPrefs, usePrefs } from "./prefs";
-import { Choice, LinkRow, Option, Toggle } from "./SettingsControls";
+import { Choice, LinkRow, Option, Select, Toggle } from "./SettingsControls";
 import {
   AccessibilityPage,
   AppearancePage,
@@ -165,7 +167,7 @@ export function Settings({
           {tab === "appearance" && <AppearancePage layout={layout} onLayout={onLayout} accounts={accounts} />}
           {tab === "notifications" && <NotificationsPage accounts={accounts} />}
           {tab === "scheduling" && <SchedulingPage />}
-          {tab === "composer" && <ComposerPage accounts={accounts} onAccounts={() => onTab("accounts")} />}
+          {tab === "composer" && <ComposerPage accounts={accounts} confirm={confirm} onAccounts={() => onTab("accounts")} />}
           {tab === "accessibility" && <AccessibilityPage />}
           {tab === "shortcuts" && <ShortcutsTab />}
           {tab === "support" && <SupportPage service={service} onRecheck={onRecheck} accounts={accounts} confirm={confirm} />}
@@ -230,6 +232,8 @@ function AgentsTab({
   const accounts = mail.state === "ready" ? mail.accounts : [];
   // What was chosen here, until the accounts are read again.
   const [chosen, setChosen] = useState<Record<string, AgentAccess>>({});
+  // An address's voice, open in its own page.
+  const [voiceFor, setVoiceFor] = useState<Identity | null>(null);
   const [error, setError] = useState<string | null>(null);
   const levelOf = (account: AccountSummary) => chosen[account.id] ?? account.agent_access ?? "off";
   // At Send: each send asked (null), or sent after this many seconds unless called back.
@@ -278,6 +282,8 @@ function AgentsTab({
       },
     );
   };
+
+  if (voiceFor) return <VoiceEditor identity={voiceFor} onBack={() => setVoiceFor(null)} />;
 
   return (
     <>
@@ -363,6 +369,8 @@ function AgentsTab({
         ten minutes. Whatever level an account has, changes to more than 50 messages at once and deleting for good wait
         for you at the top of this page, and so does every send, unless an account lets its sends go after a delay.
       </p>
+      <VoiceSection accounts={accounts.map(({ account }) => account)} onOpen={setVoiceFor} />
+      <NotesSection confirm={confirm} />
       {accounts.length > 0 && (
         <AgentActivity
           accounts={accounts.map(({ account }) => ({ id: account.id, email: account.email }))}
@@ -436,7 +444,7 @@ function AccountName({ account }: { account: AccountSummary }) {
             ? "Saving…"
             : state === "saved"
               ? "Saved."
-              : "Who your mail is from. An address with a name of its own (Addresses & signatures) keeps it. Empty: the address.")}
+              : "Who your mail is from. An address with a name of its own (Addresses) keeps it. Empty: the address.")}
       </span>
     </label>
   );
@@ -537,7 +545,7 @@ function AccountRow({
           Sync now
         </button>
         <button type="button" className="btn small" aria-expanded={addresses} onClick={() => setAddresses(!addresses)}>
-          Addresses &amp; signatures
+          Addresses
         </button>
         <button type="button" className="btn small" aria-expanded={options} onClick={() => setOptions(!options)}>
           Details
@@ -716,6 +724,21 @@ export function ShortcutsTab() {
   return (
     <>
       <h3>Keyboard shortcuts</h3>
+      <Option
+        icon="keyboard"
+        label="Keys"
+        description="Standard: E done, S snooze, R reply all, Shift+R reply, as in most desktop mail apps. Classic: the keys of earlier Regards versions."
+      >
+        <Select
+          label="Keys"
+          value={prefs.keySet}
+          options={[
+            { id: "standard", label: "Standard" },
+            { id: "classic", label: "Classic" },
+          ]}
+          onChange={(keySet) => setPrefs({ keySet })}
+        />
+      </Option>
       {!prefs.singleKeys && (
         <p className="muted settings-note">
           Single-key shortcuts are off (Settings › Accessibility): only those with {MOD_KEY}, and keys such as Escape and
@@ -723,7 +746,7 @@ export function ShortcutsTab() {
         </p>
       )}
       <dl className="shortcut-list">
-        {SHORTCUTS.map((shortcut) => (
+        {shortcutList(prefs.keySet).map((shortcut) => (
           <div key={shortcut.keys}>
             <dt>
               <kbd>{shortcut.keys}</kbd>

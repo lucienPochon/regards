@@ -10,7 +10,7 @@ import {
   messageHtmlUrl,
   setFlags,
 } from "./accounts";
-import { type Action, type Target, actionKeys, choose } from "./actions";
+import { type Action, type Target, actionKeys, actionTitle, choose } from "./actions";
 import { AttachmentTiles } from "./AttachmentTiles";
 import { Avatar } from "./Avatar";
 import { useChanges } from "./changes";
@@ -18,7 +18,7 @@ import { fullDate, peopleFull, personName } from "./format";
 import { Icon } from "./icons";
 import type { ListItem } from "./mail";
 import { type Anchor, type MenuEntry, anchorOf } from "./Menu";
-import { getPrefs, usePrefs } from "./prefs";
+import { MARK_READ_AFTER, STEP_DWELL, getPrefs, usePrefs } from "./prefs";
 import { senderImages, setSenderImages } from "./smart";
 import { asMarkdown, printMessage, textParts } from "./messageText";
 import { openUrl } from "./background";
@@ -84,6 +84,7 @@ export function ReadingPane({
   assistant,
   onClose,
   onStep,
+  stepped = false,
 }: {
   item: ListItem;
   /** The folders of the message's account. */
@@ -100,6 +101,8 @@ export function ReadingPane({
   onClose: () => void;
   /** The next (1) or previous (-1) message of the list, when the list is not beside it. */
   onStep?: (by: number) => void;
+  /** Opened by stepping through the list with the keyboard: read only if one stays. */
+  stepped?: boolean;
 }) {
   const load = useDetail(item.id, true);
   const [thread, setThread] = useState<ThreadEntry[]>([]);
@@ -108,12 +111,21 @@ export function ReadingPane({
   const currentCard = useRef<HTMLLIElement>(null);
   const markedRead = useRef(false);
 
-  // Opening a message marks it read (to become a setting).
+  // An opened message is marked read as Settings › General says: at once, after
+  // a few seconds, or never; one only passed with the keyboard stays unread.
   useEffect(() => {
-    if (load.state !== "ready" || markedRead.current) return;
-    markedRead.current = true;
-    if (!load.detail.message.seen) setFlags([item.id], { seen: true }).catch(() => {});
-  }, [load, item.id]);
+    if (load.state !== "ready" || markedRead.current || load.detail.message.seen) return;
+    const after = MARK_READ_AFTER[prefs.markRead];
+    if (after === null) return;
+    const timer = window.setTimeout(
+      () => {
+        markedRead.current = true;
+        setFlags([item.id], { seen: true }).catch(() => {});
+      },
+      stepped ? Math.max(after, STEP_DWELL) : after,
+    );
+    return () => window.clearTimeout(timer);
+  }, [load, item.id, prefs.markRead, stepped]);
 
   // The rest of the conversation is a nicety: without it, the message still shows.
   const loadThread = useCallback(() => {
@@ -149,10 +161,13 @@ export function ReadingPane({
   const actions = actionsFor(target);
   const done = choose(actions, "archive")[0];
   const subject = message.subject || "(no subject)";
+  const standard = prefs.keySet === "standard";
   useShortcuts({
     Escape: onClose,
     ...(onStep ? { j: () => onStep(1), k: () => onStep(-1) } : {}),
+    ...(onStep && standard ? { ArrowRight: () => onStep(1), ArrowLeft: () => onStep(-1) } : {}),
     ...(load.state === "ready" ? actionKeys(actions) : {}),
+    ...(load.state === "ready" && standard ? { p: () => printMessage(load.detail) } : {}),
   });
 
   const entries: ThreadEntry[] =
@@ -189,7 +204,7 @@ export function ReadingPane({
       key={action.id}
       type="button"
       className="icon-btn"
-      title={`${action.label} (${action.keys[0]})`}
+      title={actionTitle(action)}
       aria-label={action.label}
       aria-pressed={action.id === "flag" ? message.flagged : action.id === "pin" ? message.pinned : undefined}
       disabled={load.state !== "ready"}
@@ -214,7 +229,7 @@ export function ReadingPane({
           {done && (
             <button
               type="button"
-              title={`Done: ${done.label} (${done.keys[0]})`}
+              title={`Done: ${actionTitle(done)}`}
               aria-label={done.label}
               disabled={load.state !== "ready"}
               onClick={() => done.run(null)}
@@ -546,7 +561,7 @@ function ThreadMessage({
               key={action.id}
               type="button"
               className="icon-btn small"
-              title={`${action.label} (${action.keys[0]})`}
+              title={actionTitle(action)}
               aria-label={action.label}
               onClick={() => action.run(null)}
             >
