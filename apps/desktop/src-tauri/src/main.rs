@@ -44,7 +44,8 @@ use regards_ipc::protocol::{
     Section, SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams, SenderSetResult,
     ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SignatureListResult, SignatureRef,
     SignatureSaveParams, SignatureView, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef,
-    TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
+    TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, UnsubscribeParams, UnsubscribeResult, View,
+    ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -988,6 +989,20 @@ async fn thread_get(bridge: State<'_, Bridge>, id: i64) -> Result<ThreadView, St
         .map_err(describe)
 }
 
+/// Leave the mailing list a message came from: one click, an email, or its page to open.
+#[tauri::command]
+async fn message_unsubscribe(
+    bridge: State<'_, Bridge>,
+    id: i64,
+    undo_seconds: Option<u32>,
+) -> Result<UnsubscribeResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_UNSUBSCRIBE, UnsubscribeParams { id, undo_seconds })
+        .await
+        .map_err(describe)
+}
+
 /// Every unread message of a folder (or of one Smart Inbox section) read, with one undo.
 #[tauri::command]
 async fn message_mark_all_read(
@@ -1880,6 +1895,7 @@ fn main() {
             smart_set_screening,
             message_get,
             thread_get,
+            message_unsubscribe,
             message_set_flags,
             message_mark_all_read,
             message_archive,
