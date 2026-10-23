@@ -738,6 +738,7 @@ async fn search_messages(
     account_id: Option<String>,
     before: Option<MessageCursor>,
     limit: Option<u32>,
+    utc_offset_minutes: Option<i32>,
 ) -> Result<SearchResult, String> {
     let mut client = bridge.connect().await?.client;
     client
@@ -748,6 +749,7 @@ async fn search_messages(
                 account_id,
                 limit,
                 before,
+                utc_offset_minutes,
             },
         )
         .await
@@ -762,6 +764,7 @@ async fn search_server(
     account_id: Option<String>,
     before: Option<MessageCursor>,
     limit: Option<u32>,
+    utc_offset_minutes: Option<i32>,
 ) -> Result<ServerSearchResult, String> {
     let mut client = bridge.connect().await?.client;
     client
@@ -772,6 +775,7 @@ async fn search_server(
                 account_id,
                 limit,
                 before,
+                utc_offset_minutes,
             },
         )
         .await

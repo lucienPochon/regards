@@ -9,6 +9,7 @@ import { AgentHolds } from "./AgentHolds";
 import { leafName } from "./views";
 import { AGENT_ACCESS_LEVELS, AGENT_SEND_WINDOW, type AgentAccess, setAgentAccess, setAgentSend } from "./agents";
 import { AccountForm } from "./AccountForm";
+import { AccountLogin } from "./AccountLogin";
 import { IdentitiesEditor } from "./IdentitiesEditor";
 import { AssistantPage } from "./AssistantSettings";
 import { OauthWaiting, PROVIDERS, useOauth } from "./OauthSignIn";
@@ -464,6 +465,8 @@ function AccountRow({
   const [error, setError] = useState<string | null>(null);
   const [addresses, setAddresses] = useState(false);
   const [options, setOptions] = useState(false);
+  // "Change password…" from the row: Details open on the password.
+  const [password, setPassword] = useState(0);
   const prefs = usePrefs();
   const colour = accountColour(prefs, account.id);
   // A sign-in with Microsoft or Google that expired or was withdrawn: sign in again.
@@ -525,6 +528,18 @@ function AccountRow({
             Sign in again
           </button>
         )}
+        {!provider && problem && (
+          <button
+            type="button"
+            className="btn small"
+            onClick={() => {
+              setOptions(true);
+              setPassword((now) => now + 1);
+            }}
+          >
+            Change password…
+          </button>
+        )}
         <button type="button" className="btn small" onClick={syncNow} disabled={syncing || sync?.running}>
           <Icon name="refresh" size={15} />
           Sync now
@@ -553,6 +568,7 @@ function AccountRow({
     {options && (
       <li className="account-options">
         <AccountName account={account} />
+        {!provider && <AccountLogin key={password} account={account} open={password > 0 ? "password" : null} />}
         <label className="account-title">
           Label in Regards
           <input

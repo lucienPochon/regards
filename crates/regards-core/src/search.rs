@@ -4,8 +4,10 @@
 //!   prefix, so results come as one types. `"a phrase"` matches as written,
 //!   `-word` leaves out.
 //! - `from:` `to:` `subject:` look in one place; `has:attachment`,
-//!   `is:unread` / `is:read` / `is:flagged` (`is:starred`), `in:<folder>`
-//!   and `before:` / `after:` (`YYYY-MM-DD`, UTC days) filter.
+//!   `is:unread` / `is:read` / `is:flagged` (`is:starred`), `is:pinned`,
+//!   `in:<folder>` and `before:` / `after:` (`YYYY-MM-DD`, UTC days)
+//!   filter; with a clock ([`parse_at`]), so do "today", "last week" and
+//!   the like, in local days.
 //! - Anything else with a colon is searched as words.
 //!
 //! What is typed never reaches FTS5's own syntax: every word is quoted.
@@ -23,6 +25,8 @@ pub struct Query {
     /// `Some(true)`: only unread; `Some(false)`: only read.
     pub unread: Option<bool>,
     pub flagged: bool,
+    /// Only what is pinned (kept on this device, by Message-ID).
+    pub pinned: bool,
     /// A folder, by name or role (`inbox`, `sent` …).
     pub folder: Option<String>,
     /// Received before (exclusive) / on or after, Unix ms.
@@ -50,9 +54,32 @@ pub struct Term {
 }
 
 pub fn parse(input: &str) -> Query {
+    parse_with(input, None)
+}
+
+/// [`parse`], with Spark's relative dates too: `today`, `yesterday`, `this
+/// week`, `last week`, `this month`, `last month`, `last 3 days` (or weeks,
+/// months; `two` to `ten` spelled out), and the same in French. A week
+/// starts on Monday, a day at local midnight: `now` is Unix ms, and
+/// `offset_minutes` the local time's offset from UTC.
+pub fn parse_at(input: &str, now: i64, offset_minutes: i32) -> Query {
+    parse_with(
+        input,
+        Some(Clock {
+            now,
+            offset: i64::from(offset_minutes) * 60_000,
+        }),
+    )
+}
+
+fn parse_with(input: &str, clock: Option<Clock>) -> Query {
     let mut query = Query::default();
     let mut parts: Vec<String> = Vec::new();
-    let tokens = tokens(input);
+    let mut tokens = tokens(input);
+    if let Some((after, before)) = clock.and_then(|clock| take_relative(&mut tokens, clock)) {
+        query.after = Some(after);
+        query.before = Some(before);
+    }
     let last_word = tokens
         .iter()
         .rposition(|token| matches!(token, Token::Word { negated: false, .. }));
@@ -120,6 +147,7 @@ fn apply(query: &mut Query, text: &str) -> bool {
         ("is", "unread") => query.unread = Some(true),
         ("is", "read") => query.unread = Some(false),
         ("is", "flagged" | "starred") => query.flagged = true,
+        ("is", "pinned") => query.pinned = true,
         ("in", folder) if !folder.is_empty() => query.folder = Some(folder.to_owned()),
         ("before", day) => match day_start(day) {
             Some(ms) => query.before = Some(ms),
@@ -316,15 +344,132 @@ fn day_start(day: &str) -> Option<i64> {
     if !(1..=12).contains(&month) || !(1..=31).contains(&date) {
         return None;
     }
-    // Days from the civil date (Howard Hinnant's algorithm).
+    Some(days_from_civil(year, month, date) * DAY)
+}
+
+const DAY: i64 = 86_400_000;
+
+/// What time it is where the person is, for relative dates.
+#[derive(Debug, Clone, Copy)]
+struct Clock {
+    /// Unix ms.
+    now: i64,
+    /// Local time minus UTC, in ms.
+    offset: i64,
+}
+
+/// The first relative date among the plain words (not quoted, no field,
+/// not left out), taken out of them: when it starts (inclusive) and ends.
+fn take_relative(tokens: &mut Vec<Token>, clock: Clock) -> Option<(i64, i64)> {
+    let words: Vec<Option<String>> = tokens
+        .iter()
+        .map(|token| match token {
+            Token::Word {
+                text,
+                negated: false,
+                field: None,
+            } => Some(text.to_lowercase()),
+            _ => None,
+        })
+        .collect();
+    for start in 0..words.len() {
+        for len in (1..=3).rev() {
+            let Some(phrase) = words.get(start..start + len) else {
+                continue;
+            };
+            let Some(phrase) = phrase.iter().cloned().collect::<Option<Vec<String>>>() else {
+                continue;
+            };
+            if let Some(range) = relative_range(&phrase, clock) {
+                tokens.drain(start..start + len);
+                return Some(range);
+            }
+        }
+    }
+    None
+}
+
+fn relative_range(words: &[String], clock: Clock) -> Option<(i64, i64)> {
+    let today = (clock.now + clock.offset).div_euclid(DAY);
+    let start = |day: i64| day * DAY - clock.offset;
+    let tomorrow = start(today + 1);
+    // 1970-01-01 was a Thursday: Monday is 0.
+    let monday = today - (today + 3).rem_euclid(7);
+    let (year, month, date) = civil_from_days(today);
+    let first = days_from_civil(year, month, 1);
+    let (last_year, last_month) = if month == 1 { (year - 1, 12) } else { (year, month - 1) };
+    let words: Vec<&str> = words.iter().map(String::as_str).collect();
+    Some(match words.as_slice() {
+        ["today"] | ["aujourd'hui"] | ["aujourd’hui"] => (start(today), tomorrow),
+        ["yesterday"] | ["hier"] => (start(today - 1), start(today)),
+        ["this", "week"] | ["cette", "semaine"] => (start(monday), tomorrow),
+        ["last", "week"] | ["la", "semaine", "dernière"] | ["semaine", "dernière"] => {
+            (start(monday - 7), start(monday))
+        }
+        ["this", "month"] | ["ce", "mois"] | ["ce", "mois-ci"] => (start(first), tomorrow),
+        ["last", "month"] | ["le", "mois", "dernier"] | ["mois", "dernier"] => {
+            (start(days_from_civil(last_year, last_month, 1)), start(first))
+        }
+        ["last", count, unit] => {
+            let count = number(count)?;
+            let from = match unit.trim_end_matches('s') {
+                "day" => today + 1 - count,
+                "week" => today + 1 - 7 * count,
+                // The same date `count` months back (the month's last day if it has fewer).
+                "month" => {
+                    let back = year * 12 + (month - 1) - count;
+                    let (y, m) = (back.div_euclid(12), back.rem_euclid(12) + 1);
+                    days_from_civil(y, m, date.min(days_in_month(y, m)))
+                }
+                _ => return None,
+            };
+            (start(from), tomorrow)
+        }
+        _ => return None,
+    })
+}
+
+/// 1 to 99, or "two" to "ten".
+fn number(word: &str) -> Option<i64> {
+    const SPELLED: [&str; 9] = ["two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+    match word.parse::<i64>() {
+        Ok(n) if (1..=99).contains(&n) => Some(n),
+        Ok(_) => None,
+        Err(_) => SPELLED.iter().position(|w| *w == word).map(|at| at as i64 + 2),
+    }
+}
+
+/// Days from 1970-01-01 to a civil date (Howard Hinnant's algorithm).
+fn days_from_civil(year: i64, month: i64, date: i64) -> i64 {
     let y = if month <= 2 { year - 1 } else { year };
     let era = y.div_euclid(400);
     let yoe = y - era * 400;
     let mp = (month + 9) % 12;
     let doy = (153 * mp + 2) / 5 + date - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468;
-    Some(days * 86_400_000)
+    era * 146_097 + doe - 719_468
+}
+
+/// The civil date `days` after 1970-01-01: (year, month, date).
+fn civil_from_days(days: i64) -> (i64, i64, i64) {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let date = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    (yoe + era * 400 + i64::from(month <= 2), month, date)
+}
+
+fn days_in_month(year: i64, month: i64) -> i64 {
+    let next = if month == 12 {
+        days_from_civil(year + 1, 1, 1)
+    } else {
+        days_from_civil(year, month + 1, 1)
+    };
+    next - days_from_civil(year, month, 1)
 }
 
 #[cfg(test)]
@@ -427,5 +572,69 @@ mod tests {
         assert_eq!(day_start("2000-03-01"), Some(951_868_800_000));
         assert_eq!(day_start("2026-13-01"), None);
         assert_eq!(day_start("2026-10"), None);
+    }
+
+    /// Thursday 2026-10-22, 15:00 in Zurich (UTC+2).
+    const NOW: i64 = 1_792_674_000_000;
+    const ZURICH: i32 = 120;
+
+    fn local(day: &str) -> i64 {
+        day_start(day).unwrap() - 120 * 60_000
+    }
+
+    fn dates(input: &str) -> (Option<i64>, Option<i64>, Option<String>) {
+        let query = parse_at(input, NOW, ZURICH);
+        (query.after, query.before, query.text)
+    }
+
+    #[test]
+    fn relative_dates_are_local_days_and_leave_the_other_words() {
+        assert_eq!(
+            dates("today"),
+            (Some(local("2026-10-22")), Some(local("2026-10-23")), None)
+        );
+        assert_eq!(
+            dates("Yesterday"),
+            (Some(local("2026-10-21")), Some(local("2026-10-22")), None)
+        );
+        // Weeks start on Monday.
+        assert_eq!(dates("this week").0, Some(local("2026-10-19")));
+        assert_eq!(
+            dates("report last week"),
+            (
+                Some(local("2026-10-12")),
+                Some(local("2026-10-19")),
+                Some("\"report\"*".into())
+            )
+        );
+        assert_eq!(
+            dates("last month"),
+            (Some(local("2026-09-01")), Some(local("2026-10-01")), None)
+        );
+        assert_eq!(dates("this month").0, Some(local("2026-10-01")));
+        assert_eq!(dates("last 3 days").0, Some(local("2026-10-20")));
+        assert_eq!(dates("last two weeks").0, Some(local("2026-10-09")));
+        assert_eq!(dates("last 2 months").0, Some(local("2026-08-22")));
+        // In French too.
+        assert_eq!(dates("hier").0, Some(local("2026-10-21")));
+        assert_eq!(dates("la semaine dernière").0, Some(local("2026-10-12")));
+        assert_eq!(dates("le mois dernier").0, Some(local("2026-09-01")));
+        // Quoted, or without a clock, they are words.
+        assert_eq!(dates("\"last week\"").0, None);
+        assert_eq!(parse("today").after, None);
+        assert_eq!(dates("last summer").0, None);
+    }
+
+    #[test]
+    fn the_calendar_helpers_agree() {
+        for day in [-1, 0, 59, 10_957, 20_383, 20_747] {
+            let (y, m, d) = civil_from_days(day);
+            assert_eq!(days_from_civil(y, m, d), day);
+        }
+        assert_eq!(
+            (days_in_month(2024, 2), days_in_month(2026, 2), days_in_month(2026, 12)),
+            (29, 28, 31)
+        );
+        assert!(parse("is:pinned budget").pinned);
     }
 }
