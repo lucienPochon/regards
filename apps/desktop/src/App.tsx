@@ -65,7 +65,16 @@ import {
 } from "./mail";
 import { type OpenLink, onOpenLink, takeLink } from "./links";
 import { useRecentSearches } from "./recent-searches";
-import { searchMessages, searchServer, searchTerm } from "./search";
+import {
+  type SavedSearch,
+  listSavedSearches,
+  removeSavedSearch,
+  reorderSavedSearches,
+  saveSearch,
+  searchMessages,
+  searchServer,
+  searchTerm,
+} from "./search";
 import { openUrl } from "./background";
 import { type Anchor, Menu, type MenuEntry, type MenuRequest } from "./Menu";
 import { type Bundle, type InboxCard, ListHeader, MessageList, type Screener } from "./MessageList";
@@ -79,13 +88,15 @@ import { Settings, type SettingsTab } from "./Settings";
 import { AgentsMenu } from "./AgentsMenu";
 import { ConnectDialog, type ConnectId } from "./ConnectDialog";
 import { ShortcutHelp } from "./ShortcutHelp";
+import { NameDialog, type NameRequest } from "./NameDialog";
 import { type Template, listTemplates, saveTemplate } from "./templates";
 import { type AssistantJob, AssistantDialog, useAssistantKind } from "./AssistantDialog";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { type DragPayload, Sidebar } from "./Sidebar";
 import { useSidebarPrefs } from "./sidebar-prefs";
 import { presets, reminderPresets, sendPresets, snoozeMessages, timeHint } from "./snooze";
-import { accountLabel, getPrefs, setPrefs, usePrefs, zoomStep } from "./prefs";
+import { ACCOUNT_COLOURS, COLOUR_NAMES, accountLabel, getPrefs, setPrefs, usePrefs, zoomStep } from "./prefs";
+import { useChanges } from "./changes";
 import { applyTheme } from "./theme";
 import { TimePicker } from "./TimePicker";
 import { PLATFORM, TitleBar } from "./TitleBar";
@@ -154,6 +165,8 @@ function targetOf(items: ListItem[]): Target {
       items.length === 1 && (items[0].section === "newsletters" || items[0].section === "notifications")
         ? { from: items[0].from }
         : null,
+    // Rows stand for their conversations.
+    conversation: true,
   };
 }
 
@@ -545,6 +558,8 @@ export function App() {
     (request: ConfirmRequest) => new Promise<boolean>((resolve) => setAsking({ request, resolve })),
     [],
   );
+  // A name asked for: a new folder's, or a folder's new one.
+  const [naming, setNaming] = useState<NameRequest | null>(null);
   const folderOf = useCallback(
     (accountId: string, role: string) =>
       accounts.find((entry) => entry.account.id === accountId)?.mailboxes.find((m) => m.role === role && m.selectable)?.id ??
@@ -938,6 +953,90 @@ export function App() {
     if (index !== -1 && next) setOpen(next);
   };
 
+  // Saved searches (#205): kept by name, run again when opened from the sidebar.
+  const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
+  const loadSaved = useCallback(() => {
+    listSavedSearches().then(setSavedSearches, () => setSavedSearches([]));
+  }, []);
+  useEffect(loadSaved, [loadSaved]);
+  useChanges(loadSaved);
+  const openSaved = (saved: SavedSearch) => {
+    if (layout.mode === "single") setOpen(null);
+    setSearch({ query: saved.query, accountId: saved.account_id });
+  };
+  const savedNow =
+    search && savedSearches.find((saved) => saved.query === search.query.trim() && saved.account_id === search.accountId);
+  const saveThisSearch = () => {
+    const query = search?.query.trim();
+    if (!query) return;
+    const accountId = search?.accountId ?? null;
+    setNaming({
+      title: "Save this search",
+      label: "Name",
+      value: "",
+      confirm: "Save",
+      onSave: (name) =>
+        saveSearch({ name, query, accountId }).then(() => setSaid(`Saved: “${name}” is in the sidebar`)),
+    });
+  };
+  const savedMenu = (saved: SavedSearch): MenuEntry[] => {
+    const change = (fields: Partial<{ name: string; query: string; color: string | null }>) =>
+      saveSearch({ id: saved.id, name: saved.name, query: saved.query, accountId: saved.account_id, color: saved.color, ...fields });
+    return [
+      {
+        label: "Rename…",
+        icon: "compose",
+        onSelect: () =>
+          setNaming({ title: `Rename “${saved.name}”`, label: "Name", value: saved.name, confirm: "Rename", onSave: (name) => change({ name }) }),
+      },
+      {
+        label: "Edit the search…",
+        icon: "search",
+        onSelect: () =>
+          setNaming({
+            title: `What “${saved.name}” looks for`,
+            label: "Search for",
+            value: saved.query,
+            confirm: "Save",
+            onSave: (query) => change({ query }),
+          }),
+      },
+      {
+        label: "Colour…",
+        icon: "sun",
+        onSelect: () =>
+          setMenu({
+            anchor: { x: 0, y: 0 },
+            variant: "palette",
+            title: `Colour of “${saved.name}”`,
+            label: "Colour",
+            entries: [
+              { label: "No colour", onSelect: () => void change({ color: null }).catch(failed) },
+              ...ACCOUNT_COLOURS.map((colour) => ({
+                label: COLOUR_NAMES[colour] ?? colour,
+                onSelect: () => void change({ color: colour }).catch(failed),
+              })),
+            ],
+          }),
+      },
+      "separator",
+      {
+        label: "Forget it…",
+        icon: "trash",
+        danger: true,
+        onSelect: () =>
+          void confirm({
+            title: `Forget “${saved.name}”?`,
+            body: "The saved search goes from the sidebar. Its mail stays where it is.",
+            confirm: "Forget",
+            danger: true,
+          }).then((ok) => {
+            if (ok) removeSavedSearch(saved.id).catch(failed);
+          }),
+      },
+    ];
+  };
+
   /** Messages dropped on a sidebar folder: filed there, or marked as the folder says. */
   const dropOn = (target: View, payload: DragPayload) => {
     const { ids } = payload;
@@ -1047,6 +1146,8 @@ export function App() {
           setSearch({ query: "", accountId: null });
         },
       },
+      ...(search?.query.trim() && !savedNow ? [{ label: "Save this search…", icon: "star" as const, onSelect: saveThisSearch }] : []),
+      ...savedSearches.map((saved) => ({ label: `Search: ${saved.name}`, icon: "search" as const, detail: saved.query, onSelect: () => openSaved(saved) })),
       { label: "Check for new mail", icon: "refresh", keys: standardKeys ? "Mod+r" : undefined, onSelect: syncNow },
       { label: layout.locked ? "Fold the sidebar" : "Show the sidebar", icon: "sidebar", keys: "/", onSelect: toggleSidebar },
       // Back beside the list from here; leaving it is chosen in Settings › Appearance, not by a stray pick.
@@ -1496,6 +1597,7 @@ export function App() {
         cards={cards}
         search={{
           query: search?.query ?? null,
+          onSave: savedNow ? undefined : saveThisSearch,
           onQuery: (query) => {
             setSearch(query === null ? null : { query, accountId: search?.accountId ?? null });
             if (query === null) setPicked(new Set());
@@ -1639,6 +1741,15 @@ export function App() {
     changes: sidebarChanges,
     onMenu: setMenu,
     onDrop: dropOn,
+    saved: {
+      searches: savedSearches,
+      active: savedNow ? savedNow.id : null,
+      onOpen: openSaved,
+      menu: savedMenu,
+      onReorder: (ids: number[]) => {
+        reorderSavedSearches(ids).then(setSavedSearches, failed);
+      },
+    },
   };
 
   return (
@@ -1887,6 +1998,7 @@ export function App() {
           }}
         />
       )}
+      {naming && <NameDialog request={naming} onClose={() => setNaming(null)} />}
       {menu && <Menu request={menu} onClose={() => setMenu(null)} />}
       {chooser && (
         <ViewChooser

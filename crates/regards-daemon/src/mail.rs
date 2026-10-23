@@ -40,7 +40,7 @@ pub(crate) async fn list(state: &State, params: MessageListParams) -> Result<Val
             format!("limit must be 1 to {MAX_PAGE}"),
         ));
     }
-    let (mailbox_id, section, seen) = (params.mailbox_id, params.section, params.seen);
+    let (mailbox_id, section, seen, with_done) = (params.mailbox_id, params.section, params.seen, params.with_done);
     let before = params.before.map(|c| Cursor {
         received_at: c.received_at,
         id: c.id,
@@ -64,7 +64,12 @@ pub(crate) async fn list(state: &State, params: MessageListParams) -> Result<Val
                         except,
                         seen,
                     };
-                    messages::inbox_page(conn, mailbox_id, limit + 1, before, account, now, &sections)?
+                    let mut rows = messages::inbox_page(conn, mailbox_id, limit + 1, before, account, now, &sections)?;
+                    if with_done && section.is_none() && seen.is_none() {
+                        rows.extend(done_page(conn, &mailbox, limit + 1, before)?);
+                        rows.sort_by_key(|row| std::cmp::Reverse((row.listed_at, row.id)));
+                    }
+                    rows
                 }
                 None => messages::list(conn, mailbox_id, limit + 1, before)?,
             };
@@ -89,7 +94,25 @@ pub(crate) async fn list(state: &State, params: MessageListParams) -> Result<Val
     Ok(json!(MessageListResult { messages, next }))
 }
 
-/// The marks of a page of messages.
+/// What `inbox`'s account filed as Done, for "Show Done": its Archive, or
+/// else its All Mail (Gmail), without the copies that are in the inbox too.
+fn done_page(
+    conn: &rusqlite::Connection,
+    inbox: &Mailbox,
+    limit: u32,
+    before: Option<Cursor>,
+) -> Result<Vec<Message>, StoreError> {
+    let folders = mailboxes::list(conn, &inbox.account_id)?;
+    let selectable = |role: Role| folders.iter().find(|m| m.role == Some(role) && m.selectable);
+    if let Some(archive) = selectable(Role::Archive) {
+        return messages::done_page(conn, archive.id, None, limit, before);
+    }
+    match selectable(Role::All) {
+        Some(all) => messages::done_page(conn, all.id, Some(inbox.id), limit, before),
+        None => Ok(Vec::new()),
+    }
+}
+
 /// What a page's summaries need beyond its rows: their marks (by Message-ID)
 /// and the size of their conversations (by thread).
 #[derive(Default)]

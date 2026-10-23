@@ -82,6 +82,13 @@ const PATHS = {
       <path d="M15.5 17.5h6" />
     </>
   ),
+  // No network: a cloud, struck through.
+  offline: (
+    <>
+      <path d="M8.5 18.5H7a4.5 4.5 0 0 1-.6-9A6 6 0 0 1 12 5.5M15.6 6.6a6 6 0 0 1 2.3 3.6A4 4 0 0 1 18 18.5h-4.5" />
+      <path d="M4 4l16 16" />
+    </>
+  ),
   mailOpen: (
     <>
       <path d="M3 10.2 12 4l9 6.2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
