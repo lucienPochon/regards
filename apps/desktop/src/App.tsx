@@ -187,6 +187,8 @@ export function App() {
 
   const [view, setView] = useState<View>(INBOX);
   const [open, setOpen] = useState<ListItem | null>(null);
+  // Opened by stepping through the list with the keyboard: read only if one stays on it.
+  const [openedByStep, setOpenedByStep] = useState(false);
   const [picked, setPicked] = useState<Set<number>>(() => new Set());
   // The draft being written; its account and the message it answers, once known.
   const [composer, setComposer] = useState<{
@@ -1342,8 +1344,9 @@ export function App() {
         mode={layout.mode}
         openId={openItem?.id ?? null}
         picked={picked}
-        onOpen={(item) => {
+        onOpen={(item, how) => {
           if (typed) rememberSearch(typed);
+          setOpenedByStep(how === "step");
           setOpen(item);
         }}
         onPick={setPicked}
@@ -1397,6 +1400,7 @@ export function App() {
     <ReadingPane
       key={openItem.id}
       item={openItem}
+      stepped={openedByStep}
       folders={folders}
       mode={layout.mode}
       actionsFor={actionsFor}
