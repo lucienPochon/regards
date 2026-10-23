@@ -2922,6 +2922,11 @@ button.list-title:hover {
   background: #fff;
 }
 
+/* In the dark theme the page darkens itself, on the card's own colour. */
+.html-body.dark {
+  background: transparent;
+}
+
 .text-body {
   margin: 0;
   font: inherit;
@@ -4009,6 +4014,41 @@ button.list-title:hover {
   border-color: var(--accent);
   background: var(--accent);
   color: var(--accent-text);
+}
+
+/* New senders: everyone at once, at the heading's end. */
+.screen-all {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.screen-all button {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.screen-all-accept {
+  color: var(--accent);
+}
+
+.screen-all-block {
+  color: var(--text-2);
+}
+
+.screen-all button:hover {
+  background: var(--hover);
+}
+
+.screen-all-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px 6px 33px;
+  font-size: 13px;
 }
 
 .category-more {
@@ -6076,6 +6116,10 @@ button.sender-row:hover:not(:disabled) {
   font-size: 12.5px;
 }
 
+.form-status.error {
+  color: var(--danger);
+}
+
 .account-form .dialog-actions {
   margin-top: 0;
 }
@@ -6333,6 +6377,34 @@ button.sender-row:hover:not(:disabled) {
 .option.link-row > .icon:last-child {
   flex: none;
   color: var(--muted);
+}
+
+/* Settings › Accounts › Details: a password account's servers and user name. */
+.login-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 6px 0 10px;
+  font-size: 13px;
+}
+
+.login-facts dt {
+  color: var(--muted);
+}
+
+.login-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.login-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.login-form {
+  margin-top: 4px;
 }
 
 .subpage-head {

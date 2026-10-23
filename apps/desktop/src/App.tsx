@@ -7,6 +7,7 @@ import {
   type MoveResult,
   type Person,
   type Role,
+  type UndoInfo,
   archiveMessages,
   unsubscribe,
   getMessage,
@@ -1385,6 +1386,25 @@ export function App() {
       ]
     : null;
   // A new sender: accepted into People, or blocked (their mail goes to Junk, undoably).
+  /**
+   * Everyone in New senders, each once with their messages: all of the
+   * section (one account's when only its inbox is shown), not only the rows shown.
+   */
+  const newSendersAll = async () => {
+    const only = view.kind === "section" ? view.inbox?.accountId : undefined;
+    const list = await allOf(sectionSources(only ? scope.filter((entry) => entry.account.id === only) : scope, "new_senders"));
+    const senders = new Map<string, { accountId: string; address: string; ids: number[] }>();
+    for (const item of list) {
+      const address = item.from?.address?.toLowerCase();
+      if (!address) continue;
+      const key = `${item.accountId} ${address}`;
+      const sender = senders.get(key) ?? { accountId: item.accountId, address, ids: [] };
+      sender.ids.push(item.id);
+      senders.set(key, sender);
+    }
+    return [...senders.values()];
+  };
+  const someone = (count: number) => (count === 1 ? "1 sender" : `${count} senders`);
   const screener: Screener = {
     accept: (item) => {
       const address = item.from?.address;
@@ -1393,6 +1413,41 @@ export function App() {
     block: (item) => {
       const address = item.from?.address;
       if (address) blockSender(item.accountId, address).then((result) => moved([item.id], result), failed);
+    },
+    acceptAll: () => {
+      newSendersAll()
+        .then(async (senders) => {
+          await Promise.all(senders.map((sender) => setSender(sender.accountId, sender.address, { policy: "people", priority: false })));
+          if (senders.length > 0) setSaid(`Accepted ${someone(senders.length)}: their mail is in People`);
+        })
+        .catch(failed);
+    },
+    // One undo for all of them: each block's own undo, made together.
+    blockAll: () => {
+      newSendersAll()
+        .then(async (senders) => {
+          if (senders.length === 0) return;
+          const ok = await confirm({
+            title: `Block ${someone(senders.length)}?`,
+            body: "Their mail goes to Junk, and so does what they send later. Undo brings it all back.",
+            confirm: "Block all",
+            danger: true,
+          });
+          if (!ok) return;
+          const undos: UndoInfo[] = [];
+          for (const sender of senders) {
+            const result = await blockSender(sender.accountId, sender.address);
+            if (result.undo) undos.push(result.undo);
+          }
+          moved(
+            senders.flatMap((sender) => sender.ids),
+            null,
+          );
+          if (undos.length > 0) {
+            setUndo({ id: undos[0].id, description: `Blocked ${someone(senders.length)}`, also: undos.slice(1).map((undo) => undo.id) });
+          }
+        })
+        .catch(failed);
     },
   };
 

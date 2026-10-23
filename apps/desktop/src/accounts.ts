@@ -457,6 +457,28 @@ export interface MoveResult {
 }
 
 /**
+ * What unsubscribing did: the sender took a one-click request (`done`); an
+ * email asking to leave is in the Outbox, undoable as a send (`sent`, its
+ * `queued` as `sendDraft` gives it); or the list's page is to be opened in
+ * the browser to finish there (`web`, always `https://`, through `openUrl`).
+ */
+export type UnsubscribeResult =
+  | { kind: "done" }
+  | { kind: "sent"; queued: { outbox_id: number; undo_until: number; send_at: number | null } }
+  | { kind: "web"; url: string };
+
+/**
+ * Leave the mailing list a message came from (its `List-Unsubscribe`
+ * header): one click where the sender takes one, else an email to the
+ * list's address (from the address it writes to), else its page. Throws
+ * when the message gives no way; newsletters and notifications usually do.
+ * It acts outside the app: ask first, naming the sender.
+ */
+export function unsubscribe(id: number, undoSeconds: number | null = null): Promise<UnsubscribeResult> {
+  return invoke<UnsubscribeResult>("message_unsubscribe", { id, undoSeconds });
+}
+
+/**
  * Each message with the rest of its conversation in the same folder (not
  * deleted): what an action on a conversation's row covers. Archive, trash,
  * move and mark read these, so a Done leaves nothing of the conversation

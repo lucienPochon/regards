@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 const { searchMessages, searchServer, searchTerm } = await import("./search");
+// "today" and "last week" are this computer's days.
+const offset = -new Date().getTimezoneOffset();
 
 describe("search", () => {
   it("asks the daemon with what was typed, every account by default", async () => {
@@ -13,6 +15,7 @@ describe("search", () => {
       accountId: null,
       before: null,
       limit: null,
+      utcOffsetMinutes: offset,
     });
     invoke.mockResolvedValueOnce({ messages: [], top: [], next: null, indexing: 0 });
     await searchMessages("garden", { accountId: "a1", before: { received_at: 5, id: 9 }, limit: 20 });
@@ -21,6 +24,7 @@ describe("search", () => {
       accountId: "a1",
       before: { received_at: 5, id: 9 },
       limit: 20,
+      utcOffsetMinutes: offset,
     });
   });
 
@@ -32,6 +36,7 @@ describe("search", () => {
       accountId: "a1",
       before: null,
       limit: null,
+      utcOffsetMinutes: offset,
     });
     expect(found.not_here).toBe(2);
   });
