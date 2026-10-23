@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { type AccountSummary, removeAccount, syncAccount, updateAccount } from "./accounts";
 import { AgentActivity } from "./AgentActivity";
 import { AgentConnect } from "./AgentConnect";
+import { NotesSection, VoiceEditor, VoiceSection } from "./AgentVoice";
+import type { Identity } from "./identities";
 import { AgentsGate } from "./AgentsGate";
 import { AgentHolds } from "./AgentHolds";
 import { leafName } from "./views";
@@ -229,6 +231,8 @@ function AgentsTab({
   const accounts = mail.state === "ready" ? mail.accounts : [];
   // What was chosen here, until the accounts are read again.
   const [chosen, setChosen] = useState<Record<string, AgentAccess>>({});
+  // An address's voice, open in its own page.
+  const [voiceFor, setVoiceFor] = useState<Identity | null>(null);
   const [error, setError] = useState<string | null>(null);
   const levelOf = (account: AccountSummary) => chosen[account.id] ?? account.agent_access ?? "off";
   // At Send: each send asked (null), or sent after this many seconds unless called back.
@@ -277,6 +281,8 @@ function AgentsTab({
       },
     );
   };
+
+  if (voiceFor) return <VoiceEditor identity={voiceFor} onBack={() => setVoiceFor(null)} />;
 
   return (
     <>
@@ -362,6 +368,8 @@ function AgentsTab({
         ten minutes. Whatever level an account has, changes to more than 50 messages at once and deleting for good wait
         for you at the top of this page, and so does every send, unless an account lets its sends go after a delay.
       </p>
+      <VoiceSection accounts={accounts.map(({ account }) => account)} onOpen={setVoiceFor} />
+      <NotesSection confirm={confirm} />
       {accounts.length > 0 && (
         <AgentActivity
           accounts={accounts.map(({ account }) => ({ id: account.id, email: account.email }))}
