@@ -40,7 +40,8 @@ export function RichEditor({
   /** HTML to start from. */
   initial: string;
   onChange: (html: string) => void;
-  onSend: () => void;
+  /** Ctrl+Enter sends; Ctrl+Shift+Enter sends and files the conversation as Done. */
+  onSend: (done: boolean) => void;
   /** Images pasted: to store, then put in the text (`insertImage`). */
   onImages?: (files: File[]) => void;
   /** The editor, once there, for what the composer puts in it. */
@@ -66,14 +67,18 @@ export function RichEditor({
         },
       }),
       InlineImage,
-      // Cmd/Ctrl+Enter sends, before the line break that would otherwise take it.
+      // Cmd/Ctrl+Enter sends (with Shift, and Done), before the line break that would otherwise take it.
       Extension.create({
         name: "sendKey",
         priority: 1000,
         addKeyboardShortcuts() {
           return {
             "Mod-Enter": () => {
-              send.current();
+              send.current(false);
+              return true;
+            },
+            "Mod-Shift-Enter": () => {
+              send.current(true);
               return true;
             },
           };
