@@ -5885,6 +5885,58 @@ button.sender-row:hover:not(:disabled) {
   margin: 0;
 }
 
+/* Settings › Composer › Signatures: the page's own button beside its title. */
+.signatures-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.signatures-head .subpage-head {
+  margin-bottom: 0;
+}
+
+.signature-editor {
+  display: grid;
+  gap: 14px;
+}
+
+.signature-field {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.signature-field > span:first-child {
+  font-weight: 600;
+}
+
+.signature-field textarea {
+  height: auto;
+  min-height: 170px;
+  padding: 10px 12px;
+  font-family: inherit;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.signature-count {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.signature-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.signature-buttons .spacer {
+  flex: 1;
+}
+
 .settings-subhead {
   margin: 22px 0 4px;
   color: var(--muted);

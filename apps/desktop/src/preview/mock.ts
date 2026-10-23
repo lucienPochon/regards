@@ -1417,10 +1417,12 @@ function handle(cmd: string, args: Args): unknown {
     case "identity_list":
       return { identities: identities.filter((i) => i.account_id === args.accountId) };
     case "identity_save": {
-      const saved = args.identity as Omit<Identity, "is_default"> & { id?: number };
+      const saved = args.identity as { id?: number; account_id: string; name: string; email: string; signature_id: number | null };
+      const chosen = signatures.find((s) => s.id === saved.signature_id) ?? null;
+      const signature = { signature_id: chosen?.id ?? null, signature: chosen?.body ?? "" };
       const existing = identities.find((i) => i.id === saved.id);
-      if (existing) return Object.assign(existing, { name: saved.name, email: saved.email, signature: saved.signature });
-      const added: Identity = { ...saved, id: nextId++, signature_id: null, voice: "", voice_on: false, is_default: false };
+      if (existing) return Object.assign(existing, { name: saved.name, email: saved.email }, signature);
+      const added: Identity = { ...saved, ...signature, id: nextId++, voice: "", voice_on: false, is_default: false };
       identities.push(added);
       return added;
     }
