@@ -6407,6 +6407,30 @@ button.sender-row:hover:not(:disabled) {
   margin-top: 4px;
 }
 
+/* Settings › Templates: what a template fills in by itself. */
+.template-hint {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--notice);
+  font-size: 13px;
+}
+
+.template-hint ul {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.template-hint code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--chip);
+  font-size: 12px;
+}
+
 .subpage-head {
   display: flex;
   align-items: center;
