@@ -74,6 +74,14 @@ const PATHS = {
       <path d="M3.8 6.8 12 13l8.2-6.2" />
     </>
   ),
+  // Leaving a mailing list: an envelope with a minus at its corner.
+  unsubscribe: (
+    <>
+      <path d="M21 11.5V7.5A2.5 2.5 0 0 0 18.5 5h-13A2.5 2.5 0 0 0 3 7.5v9A2.5 2.5 0 0 0 5.5 19H12.5" />
+      <path d="M3.8 6.8 12 13l8.2-6.2" />
+      <path d="M15.5 17.5h6" />
+    </>
+  ),
   // No network: a cloud, struck through.
   offline: (
     <>
