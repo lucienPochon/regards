@@ -37,18 +37,18 @@ Regards works with any email account that offers **IMAP** (for reading) and **SM
 ## The same everywhere
 
 These don't depend on your provider: they happen on your computer.
-- **New mail** shows up as it arrives, on servers that support IMAP IDLE, which most do. Others are checked every 5 minutes.
+- **New mail** shows up as it arrives, on servers that support IMAP IDLE, which most do; others are checked every 5 minutes. Your other folders (Sent from your phone, folders your server files mail into) follow within 5 minutes.
 - **Smart Inbox, snooze, reminders, pins, search, templates and signatures** all work, offline too, with mail you already have.
-- **Undo send:** every message waits 10 seconds before it goes, so you can take it back. You can set 0 to 60 seconds.
+- **Undo send:** every message waits 10 seconds before it goes, so you can take it back. You can set 5 seconds to a minute.
 - **No internet:** what you send waits in the Outbox, and goes when you're back online.
 
 ## Scheduled mail needs your computer on (until Regards 1.1)
 
-You can schedule a message for later with any provider. In Regards 1.0, **your computer must be on at that time**, with Regards running in the background, which is on by default. Regards says so when you schedule, for example: "This computer must be on at 09:00."
+You can schedule a message for later with any provider. In Regards 1.0, **your computer must be on at that time**, with Regards running in the background, which is on by default. The Outbox says so beside each scheduled message, for example: "This computer must be on then."
 
 If your computer was off or asleep:
 - **Up to an hour late:** the message goes as soon as Regards is back.
-- **More than an hour late:** it waits for you, and you choose *Send now* or a new time. A "Monday 9:00" message may not suit Monday at 15:00, so Regards doesn't send it on its own.
+- **More than an hour late:** it waits for you in the Outbox, and you choose *Send now* or edit it. A "Monday 9:00" message may not suit Monday at 15:00, so Regards doesn't send it on its own.
 
 **From Regards 1.1:** your provider can hold the message where it supports that. A Pro option will send it on time with your computer off, whatever your provider.
 

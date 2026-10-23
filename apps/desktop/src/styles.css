@@ -1376,6 +1376,45 @@ button.link:hover {
   padding: 8px 0 16px;
 }
 
+/* Offline, or a sync problem: what it means, at the foot; a click tries again. */
+.side-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: calc(100% - 16px);
+  margin: 0 8px 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--rail-hover);
+  color: var(--rail-strong);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.side-status > .icon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--warm);
+}
+
+.side-status > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.side-status span span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--rail-dim);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.rail-status {
+  color: var(--warm);
+}
+
 /* All folders: a second dark panel beside the sidebar, over the mail */
 
 .panel-catcher {
