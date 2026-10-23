@@ -1023,6 +1023,7 @@ async fn live_older_mail_is_fetched_in_the_background() {
     let limits = SyncLimits {
         initial_window: 3,
         backfill_batch: 2,
+        ..SyncLimits::default()
     };
     let (_temp, mut desktop, account, inbox, handle) = daemon_with_limits(&live, limits).await;
     // Appended within a second, they share an arrival time: compare them as a set.
@@ -1112,6 +1113,145 @@ async fn live_a_burst_of_new_mail_all_arrives_by_push_and_is_told_once() {
     subjects.dedup();
     assert_eq!(all, subjects.len(), "some mail was told of twice");
     assert_eq!(subjects.len(), 21);
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_mail_filed_in_other_folders_shows_while_push_waits_on_the_inbox() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let _ = seed.create_mailbox(b"Sent").await;
+    let limits = SyncLimits {
+        folders_every: Duration::from_secs(1),
+        ..SyncLimits::default()
+    };
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_limits(&live, limits).await;
+    push_becomes(&mut desktop, &account.id, true).await;
+
+    // Sent from another device, and a folder a server rule fills.
+    seed.append(b"Sent", &[], &message(1, "From the phone", "ada@example.test"))
+        .await
+        .unwrap();
+    seed.create_mailbox(b"Receipts").await.unwrap();
+    seed.append(b"Receipts", &[], &message(2, "Your order", "shop@example.test"))
+        .await
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let (sent, receipts) = loop {
+        let listed = folders(&mut desktop, &account.id).await.mailboxes;
+        let id = |name: &str| listed.iter().find(|m| m.name == name).map(|m| m.id);
+        if let (Some(sent), Some(receipts)) = (id("Sent"), id("Receipts"))
+            && messages(&mut desktop, sent).await.messages.len() == 1
+            && messages(&mut desktop, receipts).await.messages.len() == 1
+        {
+            break (sent, receipts);
+        }
+        assert!(
+            Instant::now() < deadline,
+            "other folders were not synced while push ran"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    };
+    assert_ne!(sent, receipts);
+
+    // Push still waits on the inbox afterwards.
+    seed.append(b"INBOX", &[], &message(3, "Still pushed", "bob@example.test"))
+        .await
+        .unwrap();
+    inbox_reaches(&mut desktop, inbox, 1).await;
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_unsubscribing_writes_to_the_list_or_opens_its_page() {
+    use regards_ipc::protocol::{UnsubscribeParams, UnsubscribeResult, codes};
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let newsletter = |n: u32, unsubscribe: &str| {
+        format!(
+            "From: News <news@lists.example>\r\nTo: {}@example.test\r\nSubject: Issue {n}\r\n\
+             Message-ID: <issue-{n}@lists.example>\r\n{unsubscribe}Content-Type: text/plain\r\n\r\nNews {n}\r\n",
+            live.user
+        )
+        .into_bytes()
+    };
+    seed.append(
+        b"INBOX",
+        &[],
+        &newsletter(
+            1,
+            "List-Unsubscribe: <https://lists.example/u?k=1>, <mailto:leave@lists.example?subject=stop%20please>\r\n",
+        ),
+    )
+    .await
+    .unwrap();
+    seed.append(
+        b"INBOX",
+        &[],
+        &newsletter(2, "List-Unsubscribe: <https://lists.example/u?k=2>\r\n"),
+    )
+    .await
+    .unwrap();
+    seed.append(b"INBOX", &[], &newsletter(3, "")).await.unwrap();
+    let (_temp, mut desktop, _account, inbox, handle) = daemon_with_account(&live).await;
+    let ids: Vec<(String, i64)> = messages(&mut desktop, inbox)
+        .await
+        .messages
+        .into_iter()
+        .map(|m| (m.subject, m.id))
+        .collect();
+    let id = |subject: &str| ids.iter().find(|(s, _)| s == subject).unwrap().1;
+    let unsubscribe = |id: i64| UnsubscribeParams {
+        id,
+        undo_seconds: Some(60),
+    };
+
+    // An address to write to: an email in the Outbox, with an undo.
+    let sent: UnsubscribeResult = desktop
+        .call(methods::MESSAGE_UNSUBSCRIBE, unsubscribe(id("Issue 1")))
+        .await
+        .unwrap();
+    let UnsubscribeResult::Sent { queued } = sent else {
+        panic!("{sent:?}")
+    };
+    let entries = outbox(&mut desktop).await;
+    let entry = entries
+        .iter()
+        .find(|e| e.id == queued.outbox_id)
+        .expect("in the Outbox");
+    assert_eq!(entry.subject, "stop please");
+    let _: Value = desktop
+        .call(methods::OUTBOX_UNDO, OutboxRef { id: queued.outbox_id })
+        .await
+        .unwrap();
+
+    // Only a page: the app opens it.
+    let page: UnsubscribeResult = desktop
+        .call(methods::MESSAGE_UNSUBSCRIBE, unsubscribe(id("Issue 2")))
+        .await
+        .unwrap();
+    assert_eq!(
+        page,
+        UnsubscribeResult::Web {
+            url: "https://lists.example/u?k=2".into()
+        }
+    );
+
+    // Nothing to unsubscribe with.
+    let none = desktop
+        .call::<_, Value>(methods::MESSAGE_UNSUBSCRIBE, unsubscribe(id("Issue 3")))
+        .await;
+    assert!(matches!(none, Err(regards_ipc::ClientError::Rpc(e)) if e.code == codes::NOT_FOUND));
 
     seed.logout().await;
     handle.abort();

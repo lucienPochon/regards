@@ -9,10 +9,10 @@ use regards_core::smart::{Screening, Section};
 use regards_core::{body, html};
 use regards_imap::SearchTerm;
 use regards_ipc::protocol::{
-    AccountRef, ConnectionLogSettings, MessageCursor, MessageDetail, MessageHtml, MessageHtmlParams, MessageListParams,
-    MessageListResult, MessageRef, MessageSource, MessageSummary, ReadingSettings, RpcError, SearchParams,
-    SearchResult, SenderImagesParams, SenderImagesResult, ServerSearchResult, ThreadEntry, ThreadView, View,
-    ViewParams, codes,
+    AccountRef, ConnectionLogSettings, ConversationIdsResult, MessageCursor, MessageDetail, MessageHtml,
+    MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef, MessageSource, MessageSummary,
+    ReadingSettings, RpcError, SearchParams, SearchResult, SenderImagesParams, SenderImagesResult, ServerSearchResult,
+    ThreadEntry, ThreadView, View, ViewParams, codes,
 };
 use regards_store::mailboxes::Mailbox;
 use regards_store::marks::{self, Mark, Marks};
@@ -173,7 +173,13 @@ fn search_request(params: &SearchParams) -> Result<(u32, Query, Option<Cursor>),
         received_at: c.received_at,
         id: c.id,
     });
-    Ok((limit, regards_core::search::parse(&params.query), before))
+    // Relative dates ("last week") in the person's days; UTC ones without an offset.
+    let offset = params
+        .utc_offset_minutes
+        .filter(|offset| (-14 * 60..=14 * 60).contains(offset))
+        .unwrap_or(0);
+    let query = regards_core::search::parse_at(&params.query, crate::compose::now_ms(), offset);
+    Ok((limit, query, before))
 }
 
 /// [`page_info`] for rows of any accounts: marks are kept by account.
@@ -260,7 +266,8 @@ pub(crate) async fn search_server(
     scope: Option<Vec<String>>,
 ) -> Result<Value, RpcError> {
     let (limit, query, before) = search_request(&params)?;
-    if query.is_empty() {
+    // Pins are kept on this device: what is pinned is all here already.
+    if query.is_empty() || query.pinned {
         return Ok(json!(ServerSearchResult {
             messages: Vec::new(),
             next: None,
@@ -840,6 +847,18 @@ fn summary(m: Message, info: &PageInfo) -> MessageSummary {
 }
 
 /// The conversation of a message, across folders.
+/// `message.conversation_ids`: each message with the rest of its
+/// conversation in the same folder, which an action on its row covers.
+pub(crate) async fn conversation_ids(state: &State, params: MessageIds) -> Result<Value, RpcError> {
+    let ids = params.ids;
+    let all = state
+        .store
+        .read(move |conn| messages::conversation_ids(conn, &ids))
+        .await
+        .map_err(store_error)?;
+    Ok(json!(ConversationIdsResult { ids: all }))
+}
+
 pub(crate) async fn thread(state: &State, params: MessageRef) -> Result<Value, RpcError> {
     let id = params.id;
     let entries = state

@@ -22,6 +22,7 @@ pub mod paths;
 pub mod search;
 pub mod secret;
 pub mod smart;
+pub mod unsubscribe;
 
 /// Human-readable product name.
 pub const PRODUCT_NAME: &str = "Regards";

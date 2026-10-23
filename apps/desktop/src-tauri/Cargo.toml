@@ -33,9 +33,17 @@ tauri-plugin-autostart = "2.7"
 # Notifications (ADR-0011), used from Rust only. 2.5.1 is the newest 2.x older
 # than two weeks; later ones wait.
 tauri-plugin-notification = "~2.5.1"
+# The main window comes back at its size, place and maximised state. 2.5.0
+# (2026-09-26) is the newest older than two weeks.
+tauri-plugin-window-state = "~2.5.0"
 getrandom.workspace = true
 open = "5.4"
 tokio.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# A click on a notification opens what it is about; the plugin can't tell of
+# clicks. The version the plugin already uses (0.8.1, 2026-07-17).
+tauri-winrt-notification = "=0.8.1"
 
 [lints]
 workspace = true

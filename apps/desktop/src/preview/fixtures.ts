@@ -225,7 +225,7 @@ const SPECS: Spec[] = [
     ago: 26 * HOUR,
     from: hannah,
     subject: "Book club: next pick",
-    text: "Three options for November, vote by Friday:\n\n1. A novel about a lighthouse keeper\n2. The essay collection Yuki recommended\n3. Something short, since December is busy\n\nHannah",
+    text: "Three options for November, vote by Friday:\n\n1. A novel about a lighthouse keeper\n2. The essay collection Yuki recommended\n3. Something short, since December is busy\n\nThe reviews are at https://bookclub.example/november (and the old list at www.bookclub.example/past).\n\nHannah",
     cc: [yuki, priya],
   },
   {

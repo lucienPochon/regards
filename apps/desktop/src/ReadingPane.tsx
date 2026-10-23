@@ -1,16 +1,17 @@
-import { type Ref, useCallback, useEffect, useRef, useState } from "react";
+import { type Ref, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type MailboxSummary,
   type MessageDetail,
   type Person,
   type Role,
   type ThreadEntry,
+  conversationIds,
   getMessage,
   getThread,
   messageHtmlUrl,
   setFlags,
 } from "./accounts";
-import { type Action, type Target, actionKeys, choose } from "./actions";
+import { type Action, type Target, actionKeys, actionTitle, choose } from "./actions";
 import { AttachmentTiles } from "./AttachmentTiles";
 import { Avatar } from "./Avatar";
 import { useChanges } from "./changes";
@@ -18,9 +19,11 @@ import { fullDate, peopleFull, personName } from "./format";
 import { Icon } from "./icons";
 import type { ListItem } from "./mail";
 import { type Anchor, type MenuEntry, anchorOf } from "./Menu";
-import { getPrefs, usePrefs } from "./prefs";
+import { MARK_READ_AFTER, STEP_DWELL, getPrefs, usePrefs } from "./prefs";
 import { senderImages, setSenderImages } from "./smart";
-import { asMarkdown, printMessage } from "./messageText";
+import { asMarkdown, printMessage, textParts } from "./messageText";
+import { openUrl } from "./background";
+import { useDark } from "./theme";
 import { SourceDialog } from "./SourceDialog";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 
@@ -83,6 +86,7 @@ export function ReadingPane({
   assistant,
   onClose,
   onStep,
+  stepped = false,
 }: {
   item: ListItem;
   /** The folders of the message's account. */
@@ -99,6 +103,8 @@ export function ReadingPane({
   onClose: () => void;
   /** The next (1) or previous (-1) message of the list, when the list is not beside it. */
   onStep?: (by: number) => void;
+  /** Opened by stepping through the list with the keyboard: read only if one stays. */
+  stepped?: boolean;
 }) {
   const load = useDetail(item.id, true);
   const [thread, setThread] = useState<ThreadEntry[]>([]);
@@ -107,12 +113,24 @@ export function ReadingPane({
   const currentCard = useRef<HTMLLIElement>(null);
   const markedRead = useRef(false);
 
-  // Opening a message marks it read (to become a setting).
+  // An opened message is marked read as Settings › General says: at once, after
+  // a few seconds, or never; one only passed with the keyboard stays unread.
   useEffect(() => {
-    if (load.state !== "ready" || markedRead.current) return;
-    markedRead.current = true;
-    if (!load.detail.message.seen) setFlags([item.id], { seen: true }).catch(() => {});
-  }, [load, item.id]);
+    if (load.state !== "ready" || markedRead.current || load.detail.message.seen) return;
+    const after = MARK_READ_AFTER[prefs.markRead];
+    if (after === null) return;
+    const timer = window.setTimeout(
+      () => {
+        markedRead.current = true;
+        // With the rest of its conversation in the folder, as a row's Mark read.
+        conversationIds([item.id])
+          .then((ids) => setFlags(ids, { seen: true }))
+          .catch(() => {});
+      },
+      stepped ? Math.max(after, STEP_DWELL) : after,
+    );
+    return () => window.clearTimeout(timer);
+  }, [load, item.id, prefs.markRead, stepped]);
 
   // The rest of the conversation is a nicety: without it, the message still shows.
   const loadThread = useCallback(() => {
@@ -131,7 +149,9 @@ export function ReadingPane({
   const message = detail?.message ?? item;
   const mailboxId = detail?.mailbox_id ?? item.mailboxId;
   const folder = folders.find((f) => f.id === mailboxId);
+  // The toolbar acts on the conversation, as its row does; a card's ⋯ on that one message.
   const target: Target = {
+    conversation: true,
     ids: [item.id],
     single: item.id,
     accountId: item.accountId,
@@ -148,10 +168,13 @@ export function ReadingPane({
   const actions = actionsFor(target);
   const done = choose(actions, "archive")[0];
   const subject = message.subject || "(no subject)";
+  const standard = prefs.keySet === "standard";
   useShortcuts({
     Escape: onClose,
     ...(onStep ? { j: () => onStep(1), k: () => onStep(-1) } : {}),
+    ...(onStep && standard ? { ArrowRight: () => onStep(1), ArrowLeft: () => onStep(-1) } : {}),
     ...(load.state === "ready" ? actionKeys(actions) : {}),
+    ...(load.state === "ready" && standard ? { p: () => printMessage(load.detail) } : {}),
   });
 
   const entries: ThreadEntry[] =
@@ -188,7 +211,7 @@ export function ReadingPane({
       key={action.id}
       type="button"
       className="icon-btn"
-      title={`${action.label} (${action.keys[0]})`}
+      title={actionTitle(action)}
       aria-label={action.label}
       aria-pressed={action.id === "flag" ? message.flagged : action.id === "pin" ? message.pinned : undefined}
       disabled={load.state !== "ready"}
@@ -213,7 +236,7 @@ export function ReadingPane({
           {done && (
             <button
               type="button"
-              title={`Done: ${done.label} (${done.keys[0]})`}
+              title={`Done: ${actionTitle(done)}`}
               aria-label={done.label}
               disabled={load.state !== "ready"}
               onClick={() => done.run(null)}
@@ -318,6 +341,7 @@ function ThreadMessage({
   const own = useDetail(entry.message.id, given === null && expanded);
   const load = given ?? own;
   const [showText, setShowText] = useState(false);
+  const dark = useDark();
   // Settings › General: images from the web load in every message, or only when asked.
   const [allowRemote, setAllowRemote] = useState(() => getPrefs().remoteImages);
   const [details, setDetails] = useState(false);
@@ -521,18 +545,18 @@ function ThreadMessage({
               // Only our script, which says how tall the message is (its page's CSP allows no
               // other); no same-origin access, no forms, popups or navigation.
               <iframe
-                // Loaded again when the sender's images are allowed or blocked.
-                key={String(fromSender)}
+                // Loaded again when the sender's images are allowed or blocked, or the theme changes.
+                key={`${fromSender}:${dark}`}
                 ref={frame}
-                className="html-body"
+                className={dark ? "html-body dark" : "html-body"}
                 style={frameHeight === null ? undefined : { height: frameHeight }}
                 sandbox="allow-scripts"
                 referrerPolicy="no-referrer"
                 title="Message content"
-                src={messageHtmlUrl(message.id, allowRemote || fromSender === true)}
+                src={messageHtmlUrl(message.id, allowRemote || fromSender === true, dark)}
               />
             ) : (
-              <pre className="text-body">{ready.text.trim() || "(no text)"}</pre>
+              <TextBody text={ready.text.trim()} onFailed={setImagesError} />
             )}
             <AttachmentTiles messageId={message.id} attachments={ready.attachments} />
           </>
@@ -545,7 +569,7 @@ function ThreadMessage({
               key={action.id}
               type="button"
               className="icon-btn small"
-              title={`${action.label} (${action.keys[0]})`}
+              title={actionTitle(action)}
               aria-label={action.label}
               onClick={() => action.run(null)}
             >
@@ -555,6 +579,36 @@ function ThreadMessage({
         </div>
       )}
     </li>
+  );
+}
+
+/** A message's plain text, its web addresses as links that open in the browser. */
+function TextBody({ text, onFailed }: { text: string; onFailed: (problem: string) => void }) {
+  const parts = useMemo(() => textParts(text), [text]);
+  if (!text) return <pre className="text-body">(no text)</pre>;
+  return (
+    <pre className="text-body">
+      {parts.map((part, at) =>
+        part.url ? (
+          <a
+            key={at}
+            href={part.url}
+            title={part.url}
+            rel="noreferrer"
+            onClick={(event) => {
+              // Never in the app's own window: in the browser.
+              event.preventDefault();
+              openUrl(part.url).catch((failure: unknown) => onFailed(String(failure)));
+            }}
+            onAuxClick={(event) => event.preventDefault()}
+          >
+            {part.text}
+          </a>
+        ) : (
+          part.text
+        ),
+      )}
+    </pre>
   );
 }
 

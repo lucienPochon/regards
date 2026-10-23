@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 export type Theme = "system" | "light" | "dark";
 
 const KEY = "regards.theme";
@@ -22,4 +24,27 @@ export function applyTheme(theme: Theme, save = false): void {
   } catch {
     // Not remembered; it still applies now.
   }
+}
+
+/** Whether the app is dark now: chosen so, or the system's colours while it follows the system. */
+export function isDark(): boolean {
+  const chosen = document.documentElement.dataset.theme;
+  return chosen ? chosen === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+/** `isDark`, kept current as the theme is chosen or the system's colours change. */
+export function useDark(): boolean {
+  const [dark, setDark] = useState(isDark);
+  useEffect(() => {
+    const update = () => setDark(isDark());
+    const system = window.matchMedia("(prefers-color-scheme: dark)");
+    system.addEventListener("change", update);
+    const chosen = new MutationObserver(update);
+    chosen.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => {
+      system.removeEventListener("change", update);
+      chosen.disconnect();
+    };
+  }, []);
+  return dark;
 }

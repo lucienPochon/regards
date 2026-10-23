@@ -36,6 +36,10 @@ const parked = (m: FixtureMessage) => m.aside === true || (m.snoozed_until ?? 0)
 const inboxPlace = (m: FixtureMessage) =>
   m.surfaced_at && (m.reminded || m.surfaced_at > m.received_at) ? m.surfaced_at : m.received_at;
 let nextId = 10_000;
+// Saved searches (Smart Folders), as the sidebar lists them.
+let savedSearches: Array<{ id: number; name: string; query: string; account_id: string | null; color: string | null }> = [
+  { id: 9_001, name: "Receipts", query: "receipt has:attachment", account_id: null, color: "#1d7a61" },
+];
 // Checking for updates: not asked yet (`?updates=on` or `off` answers it), and what a check found.
 let updateChecks: boolean | null = params.get("updates") === "on" ? true : params.get("updates") === "off" ? false : null;
 let updateFound: { version: string; url: string; published_at: string | null } | null = null;
@@ -60,6 +64,29 @@ if (params.get("agentsend") === "1" && accounts[0]) {
       by_agent: true,
     });
   });
+}
+// `?sendfail=1`: a message in the Outbox is refused by the server a moment after the app opens.
+if (params.get("sendfail") === "1" && accounts[0]) {
+  const entry: OutboxEntry = {
+    id: 902,
+    account_id: accounts[0].account.id,
+    draft_id: null,
+    subject: "Quote for the bathroom tiles",
+    recipients: [{ name: "Tomás Herrera", address: "tomas@herrera-tiles.example" }],
+    state: "sending",
+    undo_until: Date.now() - 1000,
+    send_at: null,
+    next_attempt_at: Date.now(),
+    attempts: 1,
+    last_error: null,
+    executor: "device",
+    needs_this_computer: true,
+  };
+  outbox.push(entry);
+  window.setTimeout(() => {
+    Object.assign(entry, { state: "failed", last_error: "the server refused tomas@herrera-tiles.example (no such mailbox)" });
+    changed();
+  }, 2500);
 }
 // `?autocopy=bcc` (or cc): the first account copies every new message to an archive address.
 if ((params.get("autocopy") === "bcc" || params.get("autocopy") === "cc") && accounts[0]) {
@@ -280,8 +307,31 @@ function sampleHolds(): Hold[] {
     result: null,
     error: null,
   });
+  const email = owner.account.email;
   return [
     hold(2, 1, "sending", "draft.send", "Send “Re: Garden plot schedule” to Lena Okafor", heldDraft),
+    {
+      ...hold(3, 4, "voice", "voice.suggest", `Change your voice for ${email}`, null),
+      params: {
+        address: email,
+        text: "Writes in English, or in French when the other person does.\nFriendly and short: the answer first, then one clear next step.\nOpens with “Hi,” and signs “Sam”.\nNever promises a date or a price: leaves [TO CONFIRM].",
+      },
+    },
+    {
+      ...hold(
+        4,
+        5,
+        "note",
+        "note.add",
+        "Save a note about anna@client.example. It has bank details in it, and comes from a message that anna@client.example did not send (billing@client-payments.example).",
+        null,
+      ),
+      params: {
+        account_id: owner.account.id,
+        address: "anna@client.example",
+        text: "Invoices now go to IBAN CH93 0076 2011 6238 5295 7, not the old account.",
+      },
+    },
     hold(1, 6, "bulk", "message.archive", "Archive 120 messages", null),
   ];
 }
@@ -527,7 +577,8 @@ const notes: Note[] = accounts.length
     ].map(({ ago, ...note }) => ({
       ...note,
       id: nextId++,
-      account_id: accounts[0].account.id,
+      // The account she writes to (the work one, when there are two).
+      account_id: (accounts.find((a) => a.mailboxes.some((m) => m.id === 21)) ?? accounts[0]).account.id,
       address: "ines.moreau@example.com",
       created_at: Date.now() - ago * 86_400_000,
       updated_at: Date.now() - ago * 86_400_000,
@@ -731,6 +782,28 @@ function handle(cmd: string, args: Args): unknown {
       return accounts.map((a) => a.account);
     case "account_add":
       throw new Error("The preview cannot sign in to a real server.");
+    case "account_set_login": {
+      const input = args.input as {
+        id: string;
+        username: string | null;
+        password: string | null;
+        imapHost: string;
+        imapPort: number;
+        smtpHost: string;
+        smtpPort: number;
+        smtpSecurity: "tls" | "starttls";
+      };
+      const owner = accounts.find((a) => a.account.id === input.id);
+      if (!owner) throw "No such account.";
+      // "wrong" stands for a password the server turns down.
+      if (input.password === "wrong") throw "The server did not accept the user name or password.";
+      const account = owner.account as unknown as Record<string, unknown>;
+      account.username = input.username?.trim() || owner.account.email;
+      account.imap = { host: input.imapHost.trim(), port: input.imapPort, security: "tls" };
+      account.smtp = { host: input.smtpHost.trim() || input.imapHost.trim(), port: input.smtpPort, security: input.smtpSecurity };
+      changed();
+      return owner.account;
+    }
     case "account_discover": {
       const domain = String(args.email ?? "").split("@")[1]?.toLowerCase() ?? "";
       if (domain === "outlook.com" || domain === "hotmail.com") {
@@ -1208,6 +1281,18 @@ function handle(cmd: string, args: Args): unknown {
         attachments: message.attachments,
       };
     }
+    case "message_conversation_ids": {
+      const all: number[] = [];
+      for (const id of args.ids as number[]) {
+        const message = byId(id);
+        const conversation = messages
+          .filter((m) => m.id === id || (m.thread === message.thread && m.mailboxId === message.mailboxId))
+          .sort((a, b) => b.received_at - a.received_at || b.id - a.id)
+          .map((m) => m.id);
+        for (const found of [id, ...conversation]) if (!all.includes(found)) all.push(found);
+      }
+      return all;
+    }
     case "thread_get": {
       const message = byId(args.id as number);
       return {
@@ -1252,6 +1337,11 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       // The daemon records an undo for it too; the app shows none for its own flag changes.
       return { changed: ids.length, undo: null };
+    }
+    case "message_unsubscribe": {
+      // In the preview every message takes one click.
+      byId(args.id as number);
+      return { kind: "done" };
     }
     case "message_archive": {
       // Done with a reminder shown from another folder: it leaves the inbox and stays filed.
@@ -1417,10 +1507,12 @@ function handle(cmd: string, args: Args): unknown {
     case "identity_list":
       return { identities: identities.filter((i) => i.account_id === args.accountId) };
     case "identity_save": {
-      const saved = args.identity as Omit<Identity, "is_default"> & { id?: number };
+      const saved = args.identity as { id?: number; account_id: string; name: string; email: string; signature_id: number | null };
+      const chosen = signatures.find((s) => s.id === saved.signature_id) ?? null;
+      const signature = { signature_id: chosen?.id ?? null, signature: chosen?.body ?? "" };
       const existing = identities.find((i) => i.id === saved.id);
-      if (existing) return Object.assign(existing, { name: saved.name, email: saved.email, signature: saved.signature });
-      const added: Identity = { ...saved, id: nextId++, signature_id: null, voice: "", voice_on: false, is_default: false };
+      if (existing) return Object.assign(existing, { name: saved.name, email: saved.email }, signature);
+      const added: Identity = { ...saved, ...signature, id: nextId++, voice: "", voice_on: false, is_default: false };
       identities.push(added);
       return added;
     }
@@ -1633,6 +1725,33 @@ function handle(cmd: string, args: Args): unknown {
       if (undo) undo.also = () => void (before ? choices.set(key, before) : choices.delete(key));
       return result;
     }
+    case "saved_search_list":
+      return { searches: savedSearches };
+    case "saved_search_save": {
+      const given = args.search as { id: number | null; name: string; query: string; account_id: string | null; color: string | null };
+      const name = given.name.trim();
+      if (!name) throw "give the saved search a name";
+      if (!given.query.trim()) throw "there is nothing to search for";
+      const saved = { ...given, id: given.id ?? nextId++, name, query: given.query.trim() };
+      const at = savedSearches.findIndex((s) => s.id === saved.id);
+      if (at >= 0) savedSearches[at] = saved;
+      else savedSearches.push(saved);
+      changed();
+      return saved;
+    }
+    case "saved_search_reorder": {
+      const ids = args.ids as number[];
+      savedSearches = [
+        ...ids.map((id) => savedSearches.find((s) => s.id === id)).filter((s) => s !== undefined),
+        ...savedSearches.filter((s) => !ids.includes(s.id)),
+      ];
+      changed();
+      return { searches: savedSearches };
+    }
+    case "saved_search_remove":
+      savedSearches = savedSearches.filter((s) => s.id !== args.id);
+      changed();
+      return null;
     case "template_list":
       return { templates: [...templates].sort((a, b) => a.name.localeCompare(b.name)) };
     case "template_save": {
@@ -1711,5 +1830,8 @@ mockIPC(
   (path: string) => {
     const id = Number(path.match(/message\/(\d+)/)?.[1]);
     const html = messages.find((m) => m.id === id)?.html ?? "";
-    return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+    // As the desktop darkens it (`dark=1`), roughly: inverted with its hues kept, pictures as sent.
+    const dark =
+      "<style>html{background:#fff;filter:invert(0.88) hue-rotate(180deg)}img,picture,video,[style*=background-image]{filter:invert(1) hue-rotate(180deg)}</style>";
+    return `data:text/html;charset=utf-8,${encodeURIComponent(path.includes("dark=1") ? dark + html : html)}`;
   };

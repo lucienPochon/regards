@@ -80,6 +80,11 @@ export interface Queued {
    * on then ("your computer must be on at 09:00", ADR-0019).
    */
   needs_this_computer?: boolean;
+  /**
+   * Sent with Send and Done (Ctrl+Shift+Enter): the conversation it answers
+   * is filed as Done, whatever the setting. Set by the composer.
+   */
+  done?: boolean;
 }
 
 /** Something to ask about before a draft goes (`checkDraft`). */
@@ -127,9 +132,26 @@ export const suggestPeople = (query: string, accountId: string | null = null) =>
 export const forgetPerson = (address: string, accountId: string | null = null) =>
   invoke<{ forgotten: number }>("people_forget", { address, accountId }).then((result) => result.forgotten);
 
-export const newDraft = (accountId: string) => invoke<Draft>("draft_create", { accountId });
-export const replyDraft = (messageId: number, all: boolean) => invoke<Draft>("draft_reply", { messageId, all });
-export const forwardDraft = (messageId: number) => invoke<Draft>("draft_forward", { messageId });
+/**
+ * Drafts started in this window (a new message, a reply, a forward) and not
+ * written in yet: closed as they are, they are deleted rather than kept and
+ * copied to the server's Drafts. Not drafts opened from Drafts, from a
+ * template, a link or an agent: those have something to keep.
+ */
+const untouched = new Set<number>();
+const started = (draft: Draft) => {
+  untouched.add(draft.id);
+  return draft;
+};
+/** Whether a draft was started here and nothing was done to it yet (see `untouched`). */
+export const isUntouched = (id: number) => untouched.has(id);
+/** Something was done to it: kept from now on, even closed as it is. */
+export const touchDraft = (id: number) => untouched.delete(id);
+
+export const newDraft = (accountId: string) => invoke<Draft>("draft_create", { accountId }).then(started);
+export const replyDraft = (messageId: number, all: boolean) =>
+  invoke<Draft>("draft_reply", { messageId, all }).then(started);
+export const forwardDraft = (messageId: number) => invoke<Draft>("draft_forward", { messageId }).then(started);
 export const listDrafts = () => invoke<{ drafts: Draft[] }>("draft_list");
 export const getDraft = (id: number) => invoke<Draft>("draft_get", { id });
 /** Pick files with the system dialog and attach them; `null` if cancelled. */

@@ -73,6 +73,32 @@ export function updateAccount(id: string, displayName: string): Promise<AccountS
   return invoke<AccountSummary>("account_update", { id, displayName });
 }
 
+/**
+ * A password account's new sign-in. `password: null` keeps the one it has,
+ * so only the servers or user name change. IMAP always uses TLS.
+ */
+export interface LoginInput {
+  id: string;
+  username: string | null;
+  password: string | null;
+  imapHost: string;
+  imapPort: number;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecurity: ConnectionSecurity;
+}
+
+/**
+ * Change a password account's password, user name or servers, for example
+ * after the password was changed at the provider. The daemon signs in to
+ * the IMAP server with them first: on refusal it throws as `addAccount`
+ * does (`checkFailure`), and nothing changes. The account keeps its mail,
+ * drafts and outbox, syncs again, and what waited to be sent goes.
+ */
+export function setLogin(input: LoginInput): Promise<AccountSummary> {
+  return invoke<AccountSummary>("account_set_login", { input });
+}
+
 /** A copy every new draft of an account gets: Cc or Bcc to one address. */
 export interface AutoCopy {
   kind: "cc" | "bcc";
@@ -391,9 +417,12 @@ export function getThread(id: number): Promise<{ messages: ThreadEntry[] }> {
 /**
  * Where the sandboxed reading frame loads a message's sanitised HTML from
  * (the `regards-mail` scheme, served by the desktop bridge with a strict CSP).
+ * With `dark`, the page is darkened for the dark theme: the message inverted
+ * with its hues kept and its pictures as sent, on the dark card's colour
+ * (`--bg-elev`). Load it again when the theme changes.
  */
-export function messageHtmlUrl(id: number, allowRemote: boolean): string {
-  return convertFileSrc(`message/${id}?remote=${allowRemote ? 1 : 0}`, "regards-mail");
+export function messageHtmlUrl(id: number, allowRemote: boolean, dark = false): string {
+  return convertFileSrc(`message/${id}?remote=${allowRemote ? 1 : 0}${dark ? "&dark=1" : ""}`, "regards-mail");
 }
 
 /** Mark messages read or unread, flagged or not. Applied at once; the server is told in the background. */
@@ -425,6 +454,39 @@ export interface UndoInfo {
 export interface MoveResult {
   moved: number;
   undo: UndoInfo | null;
+}
+
+/**
+ * What unsubscribing did: the sender took a one-click request (`done`); an
+ * email asking to leave is in the Outbox, undoable as a send (`sent`, its
+ * `queued` as `sendDraft` gives it); or the list's page is to be opened in
+ * the browser to finish there (`web`, always `https://`, through `openUrl`).
+ */
+export type UnsubscribeResult =
+  | { kind: "done" }
+  | { kind: "sent"; queued: { outbox_id: number; undo_until: number; send_at: number | null } }
+  | { kind: "web"; url: string };
+
+/**
+ * Leave the mailing list a message came from (its `List-Unsubscribe`
+ * header): one click where the sender takes one, else an email to the
+ * list's address (from the address it writes to), else its page. Throws
+ * when the message gives no way; newsletters and notifications usually do.
+ * It acts outside the app: ask first, naming the sender.
+ */
+export function unsubscribe(id: number, undoSeconds: number | null = null): Promise<UnsubscribeResult> {
+  return invoke<UnsubscribeResult>("message_unsubscribe", { id, undoSeconds });
+}
+
+/**
+ * Each message with the rest of its conversation in the same folder (not
+ * deleted): what an action on a conversation's row covers. Archive, trash,
+ * move and mark read these, so a Done leaves nothing of the conversation
+ * behind. The ones given come first, each once. Not for an action on one
+ * message of a conversation (a card's ⋯ in the reading pane).
+ */
+export function conversationIds(ids: number[]): Promise<number[]> {
+  return invoke<number[]>("message_conversation_ids", { ids });
 }
 
 export function archiveMessages(ids: number[]): Promise<MoveResult> {

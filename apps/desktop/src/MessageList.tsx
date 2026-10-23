@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import type { Person } from "./accounts";
-import { type Action, choose } from "./actions";
+import { type Action, actionTitle, choose } from "./actions";
 import { Avatar } from "./Avatar";
 import { dateSection, laterDate, listDate, peopleShort, personName } from "./format";
 import { Icon, type IconName } from "./icons";
@@ -83,6 +83,8 @@ export interface Bundle {
   /** When its newest message came: where the group sits when groups follow the dates. */
   newest?: number;
   onOpen: () => void;
+  /** Done with the whole group: all of it archived, one undo. None for Pinned. */
+  onDone?: () => void;
 }
 
 /** Searching all mail (Ctrl/⌘+F), in place of the header. */
@@ -150,10 +152,26 @@ export interface InboxCard {
   screen?: boolean;
 }
 
-/** Accepting or blocking a new sender, from their row. */
+/** Accepting or blocking a new sender, from their row; or every new sender at once. */
 export interface Screener {
   accept: (item: ListItem) => void;
   block: (item: ListItem) => void;
+  acceptAll: () => void;
+  blockAll: () => void;
+}
+
+/** Every new sender at once: let them all in, or block them all (after asking). */
+function ScreenAll({ screener }: { screener: Screener }) {
+  return (
+    <span className="screen-all">
+      <button type="button" className="screen-all-accept" title="Accept every new sender: their mail goes to People" onClick={screener.acceptAll}>
+        Accept all
+      </button>
+      <button type="button" className="screen-all-block" title="Block every new sender: their mail goes to Junk" onClick={screener.blockAll}>
+        Block all
+      </button>
+    </span>
+  );
 }
 
 /** A row's marks in words, for screen readers: the dot, pin, flag and the rest are pictures. */
@@ -186,6 +204,7 @@ export function MessageList({
   onOpen,
   onPick,
   actionsFor,
+  onDoneAll,
   onPalette,
   empty,
   onSplit,
@@ -209,9 +228,12 @@ export function MessageList({
   mode: "single" | "split";
   openId: number | null;
   picked: ReadonlySet<number>;
-  onOpen: (item: ListItem) => void;
+  /** `how`: "step" when the keyboard moved to it beside the list. */
+  onOpen: (item: ListItem, how?: "step") => void;
   onPick: (ids: Set<number>) => void;
   actionsFor: (items: ListItem[]) => Action[];
+  /** Done with a whole day: its messages archived, one undo. Only where Done means something (the inbox). */
+  onDoneAll?: (items: ListItem[]) => void;
   /** The command palette, for these actions (right-click and the ⋯ buttons); `about` is the one message. */
   onPalette: (actions: Action[], title: string, about?: ListItem) => void;
   empty: { title: string; body: string };
@@ -301,7 +323,7 @@ export function MessageList({
     anchor.current = item.id;
     stepped.current = true;
     setCursor(item.id);
-    if (mode === "split") onOpen(item);
+    if (mode === "split") onOpen(item, "step");
   };
 
   // What an action applies to: the selection when the row is in it, else the row.
@@ -336,6 +358,7 @@ export function MessageList({
     ArrowDown: () => step(1),
     k: () => step(-1),
     ArrowUp: () => step(-1),
+    ...(prefs.keySet === "standard" ? { ArrowRight: () => step(1), ArrowLeft: () => step(-1) } : {}),
     x: () => {
       const item = current();
       if (item) toggle(item);
@@ -418,7 +441,7 @@ export function MessageList({
         key={action.id}
         type="button"
         className={className}
-        title={`${action.label} (${action.keys[0]})`}
+        title={actionTitle(action)}
         aria-label={action.label}
         onClick={(event) => action.run(anchorOf(event.currentTarget, "end"))}
       >
@@ -667,6 +690,12 @@ export function MessageList({
                 <ServerRow server={search.server} />
               </p>
             )}
+            {screenAll && screener && items.length > 0 && !searching && (
+              <div className="screen-all-bar">
+                <span className="muted">Accept them into People, or block them: their mail goes to Junk.</span>
+                <ScreenAll screener={screener} />
+              </div>
+            )}
             {searching && search.top.length > 0 && items.length > TOP_AFTER && (
               <section className="day top-results" aria-label="Top results">
                 <h3 className="day-head">Top results</h3>
@@ -689,6 +718,7 @@ export function MessageList({
                 <h3 className="day-head category-head">
                   New senders
                   <span className="category-count">{newSenders.total}</span>
+                  {screener && <ScreenAll screener={screener} />}
                 </h3>
                 <ul>{newSenders.items.map((item) => row(item, true))}</ul>
                 {newSenders.total > newSenders.items.length && (
@@ -720,6 +750,7 @@ export function MessageList({
                     <h3 className="day-head category-head">
                       {card.label}
                       <span className="category-count">{card.total}</span>
+                      {card.screen && screener && <ScreenAll screener={screener} />}
                       {card.onRead && (
                         <button
                           type="button"
@@ -750,7 +781,12 @@ export function MessageList({
             )}
             {!showCards && sections.map((section) => (
               <section key={section.label} className="day" aria-label={section.label}>
-                <h3 className="day-head">{section.label}</h3>
+                <h3 className="day-head">
+                  {section.label}
+                  {onDoneAll && section.items.length > 0 && (
+                    <DoneAll count={section.items.length} what={section.label} onDone={() => onDoneAll(section.items)} />
+                  )}
+                </h3>
                 <ul>
                   {(bundlesIn.get(section.label) ?? []).map((bundle) => (
                     <BundleRow key={bundle.key} bundle={bundle} />
@@ -781,6 +817,16 @@ export function MessageList({
         </button>
       )}
     </section>
+  );
+}
+
+/** Done with everything under a heading or in a group: shown on hover, at the right. */
+function DoneAll({ count, what, onDone }: { count: number; what: string; onDone: () => void }) {
+  const label = `Done with ${what}: archive ${count === 1 ? "1 message" : `${count} messages`}`;
+  return (
+    <button type="button" className="done-all" title={label} aria-label={label} onClick={onDone}>
+      <Icon name="check" size={12} />
+    </button>
   );
 }
 
@@ -819,6 +865,11 @@ function BundleRow({ bundle }: { bundle: Bundle }) {
           <Icon name="chevronRight" size={16} />
         </span>
       </button>
+      {bundle.onDone && bundle.count > 0 && (
+        <span className="bundle-done">
+          <DoneAll count={bundle.count} what={bundle.label} onDone={bundle.onDone} />
+        </span>
+      )}
     </li>
   );
 }
@@ -850,7 +901,7 @@ function SelectionBar({
             key={action.id}
             type="button"
             className={action.danger ? "icon-btn danger" : "icon-btn"}
-            title={`${action.label} (${action.keys[0]})`}
+            title={actionTitle(action)}
             aria-label={action.label}
             onClick={(event) => action.run(anchorOf(event.currentTarget, "end"))}
           >

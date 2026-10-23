@@ -106,7 +106,18 @@ jobs:
       - name: Build the bundles, with the sidecar
         working-directory: apps/desktop
         shell: bash
-        run: npm run release -- --target ${{ matrix.target }}
+        # The OAuth apps' client ids, built in with option_env! (docs/oauth-setup.md).
+        # An unset secret arrives empty, and the daemon then offers no sign-in
+        # for that provider, only an app password.
+        env:
+          REGARDS_MICROSOFT_CLIENT_ID: ${{ secrets.REGARDS_MICROSOFT_CLIENT_ID }}
+          REGARDS_GOOGLE_CLIENT_ID: ${{ secrets.REGARDS_GOOGLE_CLIENT_ID }}
+          REGARDS_GOOGLE_CLIENT_SECRET: ${{ secrets.REGARDS_GOOGLE_CLIENT_SECRET }}
+        run: |
+          for name in REGARDS_MICROSOFT_CLIENT_ID REGARDS_GOOGLE_CLIENT_ID; do
+            [ -n "${!name}" ] || echo "::warning::$name is not set: this build has no sign-in for that provider"
+          done
+          npm run release -- --target ${{ matrix.target }}
       - name: Upload to the draft
         shell: bash
         env:

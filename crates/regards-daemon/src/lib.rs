@@ -30,6 +30,7 @@ mod people;
 mod prefetch;
 mod push;
 mod queue;
+mod saved;
 mod scheduler;
 mod search;
 mod sender;
@@ -38,6 +39,7 @@ mod signatures;
 mod smart;
 mod sync;
 mod templates;
+mod unsubscribe;
 mod voice;
 
 pub use oauth::OauthApp;
@@ -124,6 +126,9 @@ pub struct SyncLimits {
     pub initial_window: u32,
     /// Older messages are then fetched in the background, this many at a time.
     pub backfill_batch: u32,
+    /// While push waits on the inbox, the other folders (Sent from the
+    /// phone, folders filled by server rules) are synced this often.
+    pub folders_every: Duration,
 }
 
 impl Default for SyncLimits {
@@ -131,6 +136,7 @@ impl Default for SyncLimits {
         Self {
             initial_window: 2000,
             backfill_batch: 500,
+            folders_every: Duration::from_secs(5 * 60),
         }
     }
 }

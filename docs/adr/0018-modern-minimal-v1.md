@@ -23,7 +23,7 @@ The project owner wants the **most modern, most secure and simplest** design, si
    - **Key policies bound to the measured code image:** for example AWS KMS `kms:RecipientAttestation:ImageSha384`, which ties a key to the enclave's PCR0 hash.
    - **Precedent:** Apple's Private Cloud Compute uses attestation with a public transparency log.
 
-## Decision (proposed)
+## Decision
 
 ### Three rules
 
@@ -108,7 +108,7 @@ flowchart LR
 ## Consequences
 
 - **Microsoft users** are supported in 1.0, at $0 cost.
-- **Password providers such as Infomaniak** get send-while-off in 1.0 without anyone at Regards being able to read their password.
+- **Password providers such as Infomaniak** get send-while-off (in 1.1, [ADR-0019](0019-send-while-off-in-1-1.md)) without anyone at Regards being able to read their password.
 - **Google approval time** becomes a schedule item. Gmail works with app passwords until approval.
 - **Two Google OAuth registrations:**
   - the desktop client with a restricted scope; data stays local, so no CASA is expected
