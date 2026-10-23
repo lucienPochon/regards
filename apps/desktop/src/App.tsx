@@ -26,6 +26,7 @@ import { Composer } from "./Composer";
 import {
   type Draft,
   type Dropped,
+  type OutboxEntry,
   type Queued,
   type SentElsewhere,
   attachDropped,
@@ -181,7 +182,10 @@ export function App() {
   const { check, recheck } = useService();
   const mail = useMail();
   const drafts = useDrafts();
-  const outbox = useOutbox();
+  // A send that failed, or may not have gone: said here too, since the system's
+  // notification stays quiet while this window is in front.
+  const [unsent, setUnsent] = useState<OutboxEntry | null>(null);
+  const outbox = useOutbox(setUnsent);
   const [layout, setLayout] = useLayout();
   const [prefs, sidebarChanges] = useSidebarPrefs();
   const [overlay, setOverlay] = useState(false);
@@ -472,6 +476,8 @@ export function App() {
   }, [said]);
 
   const failed = useCallback((error: unknown) => setNotice(String(error)), []);
+  // Shown while it is still failed: sent again or edited, it goes.
+  const unsentNow = unsent && outbox.find((entry) => entry.id === unsent.id && (entry.state === "failed" || entry.state === "uncertain"));
   /** Replies and forwards open in a panel over the conversation; new messages take the whole pane. */
   const startDraft = useCallback(
     (start: Promise<Draft>, mode: "full" | "panel") => {
@@ -1568,6 +1574,28 @@ export function App() {
           />
         )}
         <div className="dock" aria-live="polite">
+          {unsentNow && (
+            <div className="toast error" role="alert">
+              <Icon name="alert" size={16} />
+              <span>
+                {unsentNow.state === "uncertain"
+                  ? `“${unsentNow.subject || "(no subject)"}” may not have been sent. Check before sending it again.`
+                  : `“${unsentNow.subject || "(no subject)"}” was not sent${unsentNow.last_error ? `: ${unsentNow.last_error}` : "."}`}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setUnsent(null);
+                  changeView({ kind: "outbox" });
+                }}
+              >
+                Outbox
+              </button>
+              <button type="button" onClick={() => setUnsent(null)}>
+                Dismiss
+              </button>
+            </div>
+          )}
           {notice && (
             <div className="toast error" role="alert">
               <Icon name="alert" size={16} />
