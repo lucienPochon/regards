@@ -151,6 +151,26 @@ export function inboxSources(accounts: AccountMail[], seen: boolean): Source[] {
   );
 }
 
+/** At most this many messages are done at once: as many as one change may touch. */
+export const ALL_AT_ONCE = 1000;
+
+/** Every message of some sources (up to `ALL_AT_ONCE`), read page by page: a whole group, to finish it. */
+export async function allOf(sources: Source[]): Promise<ListItem[]> {
+  const items: ListItem[] = [];
+  for (const source of sources) {
+    let before: MessageCursor | null = null;
+    do {
+      const page: MessageListResult = await source.fetch(before, 200);
+      for (const message of page.messages) {
+        items.push({ ...message, mailboxId: source.mailboxId ?? message.mailbox_id, accountId: source.accountId, role: source.role });
+      }
+      before = page.next;
+    } while (before && items.length < ALL_AT_ONCE);
+    if (items.length >= ALL_AT_ONCE) break;
+  }
+  return items.sort(newer).slice(0, ALL_AT_ONCE);
+}
+
 /**
  * The newest few of some sources, merged: enough for a card or a group row
  * to show who and how many. Kept current.
