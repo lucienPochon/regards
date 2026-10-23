@@ -73,6 +73,32 @@ export function updateAccount(id: string, displayName: string): Promise<AccountS
   return invoke<AccountSummary>("account_update", { id, displayName });
 }
 
+/**
+ * A password account's new sign-in. `password: null` keeps the one it has,
+ * so only the servers or user name change. IMAP always uses TLS.
+ */
+export interface LoginInput {
+  id: string;
+  username: string | null;
+  password: string | null;
+  imapHost: string;
+  imapPort: number;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecurity: ConnectionSecurity;
+}
+
+/**
+ * Change a password account's password, user name or servers, for example
+ * after the password was changed at the provider. The daemon signs in to
+ * the IMAP server with them first: on refusal it throws as `addAccount`
+ * does (`checkFailure`), and nothing changes. The account keeps its mail,
+ * drafts and outbox, syncs again, and what waited to be sent goes.
+ */
+export function setLogin(input: LoginInput): Promise<AccountSummary> {
+  return invoke<AccountSummary>("account_set_login", { input });
+}
+
 /** A copy every new draft of an account gets: Cc or Bcc to one address. */
 export interface AutoCopy {
   kind: "cc" | "bcc";
