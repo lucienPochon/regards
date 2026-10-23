@@ -45,6 +45,7 @@ import {
   type ListItem,
   type MessageFeed,
   inboxSources,
+  allOf,
   newer,
   sectionSources,
   sourcesFor,
@@ -1194,6 +1195,15 @@ export function App() {
           })
       : undefined;
 
+  /** Done with these: archived together, one undo (as Done on a selection). */
+  const doneWith = (list: ListItem[]) => {
+    if (list.length > 0) choose(actionsForItems(list), "archive")[0]?.run(null);
+  };
+  /** Done with a whole group: every message of the section in every inbox. */
+  const doneSection = (section: Section) => () => {
+    allOf(sectionSources(scope, section)).then(doneWith, failed);
+  };
+
   // The Smart Inbox around the People list.
   const openSection = (section: Section) => () =>
     changeView({ kind: "section", section, inbox: view.kind === "mailbox" && accountInbox ? { mailboxId: view.mailboxId, accountId: view.accountId } : undefined });
@@ -1224,6 +1234,7 @@ export function App() {
             messages: notificationItems,
             newest: notificationItems[0]?.listed_at,
             onOpen: openSection("notifications"),
+            onDone: doneSection("notifications"),
           },
           {
             key: "newsletters",
@@ -1234,6 +1245,7 @@ export function App() {
             messages: newsletterItems,
             newest: newsletterItems[0]?.listed_at,
             onOpen: openSection("newsletters"),
+            onDone: doneSection("newsletters"),
           },
           {
             key: "pinned",
@@ -1329,6 +1341,7 @@ export function App() {
         }}
         onPick={setPicked}
         actionsFor={actionsForItems}
+        onDoneAll={role === "inbox" || view.kind === "section" ? doneWith : undefined}
         onPalette={(actions, paletteTitle, about) => palette(actions, paletteTitle, about ? [senderEntry(about)] : [])}
         empty={empty}
         onSplit={layout.mode === "single" && layout.handle ? () => setLayout({ mode: "split" }) : undefined}

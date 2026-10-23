@@ -83,6 +83,8 @@ export interface Bundle {
   /** When its newest message came: where the group sits when groups follow the dates. */
   newest?: number;
   onOpen: () => void;
+  /** Done with the whole group: all of it archived, one undo. None for Pinned. */
+  onDone?: () => void;
 }
 
 /** Searching all mail (Ctrl/⌘+F), in place of the header. */
@@ -186,6 +188,7 @@ export function MessageList({
   onOpen,
   onPick,
   actionsFor,
+  onDoneAll,
   onPalette,
   empty,
   onSplit,
@@ -212,6 +215,8 @@ export function MessageList({
   onOpen: (item: ListItem) => void;
   onPick: (ids: Set<number>) => void;
   actionsFor: (items: ListItem[]) => Action[];
+  /** Done with a whole day: its messages archived, one undo. Only where Done means something (the inbox). */
+  onDoneAll?: (items: ListItem[]) => void;
   /** The command palette, for these actions (right-click and the ⋯ buttons); `about` is the one message. */
   onPalette: (actions: Action[], title: string, about?: ListItem) => void;
   empty: { title: string; body: string };
@@ -750,7 +755,12 @@ export function MessageList({
             )}
             {!showCards && sections.map((section) => (
               <section key={section.label} className="day" aria-label={section.label}>
-                <h3 className="day-head">{section.label}</h3>
+                <h3 className="day-head">
+                  {section.label}
+                  {onDoneAll && section.items.length > 0 && (
+                    <DoneAll count={section.items.length} what={section.label} onDone={() => onDoneAll(section.items)} />
+                  )}
+                </h3>
                 <ul>
                   {(bundlesIn.get(section.label) ?? []).map((bundle) => (
                     <BundleRow key={bundle.key} bundle={bundle} />
@@ -781,6 +791,16 @@ export function MessageList({
         </button>
       )}
     </section>
+  );
+}
+
+/** Done with everything under a heading or in a group: shown on hover, at the right. */
+function DoneAll({ count, what, onDone }: { count: number; what: string; onDone: () => void }) {
+  const label = `Done with ${what}: archive ${count === 1 ? "1 message" : `${count} messages`}`;
+  return (
+    <button type="button" className="done-all" title={label} aria-label={label} onClick={onDone}>
+      <Icon name="check" size={12} />
+    </button>
   );
 }
 
@@ -819,6 +839,11 @@ function BundleRow({ bundle }: { bundle: Bundle }) {
           <Icon name="chevronRight" size={16} />
         </span>
       </button>
+      {bundle.onDone && bundle.count > 0 && (
+        <span className="bundle-done">
+          <DoneAll count={bundle.count} what={bundle.label} onDone={bundle.onDone} />
+        </span>
+      )}
     </li>
   );
 }
