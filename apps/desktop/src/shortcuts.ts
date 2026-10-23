@@ -138,6 +138,7 @@ const STANDARD: { keys: string; action: string }[] = [
   { keys: "Shift+O / o", action: "Open every message of the conversation, or fold the older ones" },
   { keys: `${MOD_KEY}+G / ${MOD_KEY}+D / ${MOD_KEY}+S`, action: "Go to Set aside, Pinned, Snoozed" },
   { keys: `${MOD_KEY}+Shift+G`, action: "Go to a folder" },
+  { keys: `${MOD_KEY}+Shift+U`, action: "New folder (inside the open one)" },
   { keys: `${MOD_KEY}+Alt+1 / 2 / 3`, action: "Inbox by priority, by category, by date" },
   { keys: `${MOD_KEY}+R`, action: "Check for new mail" },
   { keys: `${MOD_KEY}+Enter`, action: "Send, in the composer" },
@@ -172,6 +173,7 @@ const CLASSIC: { keys: string; action: string }[] = [
   { keys: "Shift+O / o", action: "Open every message of the conversation, or fold the older ones" },
   { keys: `${MOD_KEY}+Enter`, action: "Send, in the composer" },
   { keys: `${MOD_KEY}+Shift+T`, action: "Insert a template, in the composer" },
+  { keys: `${MOD_KEY}+Shift+U`, action: "New folder (inside the open one)" },
   { keys: `${MOD_KEY}+,`, action: "Settings" },
   { keys: "?", action: "Show or hide these shortcuts" },
 ];
