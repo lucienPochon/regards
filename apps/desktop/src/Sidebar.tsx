@@ -8,6 +8,7 @@ import { type Anchor, type MenuEntry, type MenuRequest, anchorOf } from "./Menu"
 import type { SidebarChanges, SidebarPrefs } from "./sidebar-prefs";
 import { accountColour, accountLabel, usePrefs } from "./prefs";
 import { useShortcuts } from "./shortcuts";
+import { useOnline } from "./online";
 import { MARKED_ICONS, MARKED_LABELS, ROLE_ICONS, ROLE_LABELS, type View, depth, leafName, sameView, viewKey } from "./views";
 import { useDialogFocus } from "./dialogFocus";
 
@@ -105,6 +106,13 @@ export function Sidebar({
   const nameOf = (account: { id: string; email: string }) => accountLabel(appPrefs, account);
   const me = accounts[0]?.account;
   const hidden = new Set(prefs.hidden);
+  // Offline, or a sync that fails: said at the foot, and on the rail.
+  const online = useOnline();
+  const status = !online
+    ? { label: "Offline", detail: "Mail you send waits in the Outbox and goes when you're back online." }
+    : syncProblem
+      ? { label: "Sync problem", detail: syncProblem }
+      : null;
 
   const roleExists = (r: Role) => accounts.some((a) => a.mailboxes.some((m) => m.role === r && m.selectable));
   const exists = (row: Row) => (row.view.kind === "role" ? roleExists(row.view.role) : accounts.length > 0 || row.view.kind !== "marked");
@@ -265,6 +273,17 @@ export function Sidebar({
         {/* Empty rail space opens the sidebar too. */}
         <div className="rail-space" onClick={onExpand} aria-hidden="true" />
         <div className="rail-foot">
+          {status && (
+            <button
+              type="button"
+              className="rail-me rail-status"
+              title={`${status.label}: ${status.detail}`}
+              aria-label={`${status.label}: ${status.detail}`}
+              onClick={online ? onSync : undefined}
+            >
+              <Icon name={online ? "alert" : "offline"} size={18} />
+            </button>
+          )}
           {onAgents && appPrefs.agentsButton && (
             <button
               type="button"
@@ -381,6 +400,20 @@ export function Sidebar({
         )}
       </div>
       <div className="side-foot">
+        {status && (
+          <button
+            type="button"
+            className="side-status"
+            title={online ? "Try again" : status.detail}
+            onClick={online ? onSync : undefined}
+          >
+            <Icon name={online ? "alert" : "offline"} size={17} />
+            <span>
+              <strong>{status.label}</strong>
+              <span>{status.detail}</span>
+            </span>
+          </button>
+        )}
         {onAgents && appPrefs.agentsButton && (
           <button type="button" className="side-item" onClick={(event) => onAgents(anchorOf(event.currentTarget))}>
             <Icon name="agent" size={19} />
