@@ -280,8 +280,31 @@ function sampleHolds(): Hold[] {
     result: null,
     error: null,
   });
+  const email = owner.account.email;
   return [
     hold(2, 1, "sending", "draft.send", "Send “Re: Garden plot schedule” to Lena Okafor", heldDraft),
+    {
+      ...hold(3, 4, "voice", "voice.suggest", `Change your voice for ${email}`, null),
+      params: {
+        address: email,
+        text: "Writes in English, or in French when the other person does.\nFriendly and short: the answer first, then one clear next step.\nOpens with “Hi,” and signs “Sam”.\nNever promises a date or a price: leaves [TO CONFIRM].",
+      },
+    },
+    {
+      ...hold(
+        4,
+        5,
+        "note",
+        "note.add",
+        "Save a note about anna@client.example. It has bank details in it, and comes from a message that anna@client.example did not send (billing@client-payments.example).",
+        null,
+      ),
+      params: {
+        account_id: owner.account.id,
+        address: "anna@client.example",
+        text: "Invoices now go to IBAN CH93 0076 2011 6238 5295 7, not the old account.",
+      },
+    },
     hold(1, 6, "bulk", "message.archive", "Archive 120 messages", null),
   ];
 }
