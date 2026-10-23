@@ -500,10 +500,13 @@ export function App() {
       () => {},
     );
   }, []);
-  /** A message has gone to the Outbox: remember its account, and with doneAfterReply, file the conversation it answers. */
-  const sentFrom = (sent: { accountId?: string; replyingTo?: number | null } | null) => {
+  /**
+   * A message has gone to the Outbox: remember its account, and with Send and
+   * Done (`done`) or doneAfterReply, file the conversation it answers.
+   */
+  const sentFrom = (sent: { accountId?: string; replyingTo?: number | null } | null, done = false) => {
     if (sent?.accountId) setPrefs({ lastFrom: sent.accountId });
-    if (!sent?.replyingTo || !getPrefs().doneAfterReply) return;
+    if (!sent?.replyingTo || !(done || getPrefs().doneAfterReply)) return;
     getThread(sent.replyingTo)
       .then(({ messages }) => {
         const ids = messages.filter((entry) => entry.mailbox_role === "inbox").map((entry) => entry.message.id);
@@ -769,7 +772,7 @@ export function App() {
   // A message sent from a window of its own: its undo is shown here.
   const sentElsewhere = useRef<(sent: SentElsewhere) => void>(() => {});
   sentElsewhere.current = (sent) => {
-    sentFrom(sent);
+    sentFrom(sent, sent.queued.done);
     setQueued(sent.queued);
   };
   useEffect(() => {
@@ -1526,7 +1529,7 @@ export function App() {
             onMode={(mode) => setComposer({ ...composer, mode })}
             onClose={() => setComposer(null)}
             onQueued={(result) => {
-              sentFrom(composer);
+              sentFrom(composer, result.done);
               setComposer(null);
               setQueued(result);
             }}
