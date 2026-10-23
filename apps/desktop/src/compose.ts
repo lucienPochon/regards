@@ -149,9 +149,14 @@ export const isUntouched = (id: number) => untouched.has(id);
 export const touchDraft = (id: number) => untouched.delete(id);
 
 export const newDraft = (accountId: string) => invoke<Draft>("draft_create", { accountId }).then(started);
+/** This computer's time minus UTC, in minutes: a reply's "On … wrote:" and a forward's "Date:" are in it. */
+const localOffset = () => -new Date().getTimezoneOffset();
+/** A reply, addressed and quoted (formatted mail formatted, in a cited blockquote). */
 export const replyDraft = (messageId: number, all: boolean) =>
-  invoke<Draft>("draft_reply", { messageId, all }).then(started);
-export const forwardDraft = (messageId: number) => invoke<Draft>("draft_forward", { messageId }).then(started);
+  invoke<Draft>("draft_reply", { messageId, all, utcOffsetMinutes: localOffset() }).then(started);
+/** A forward, with the original's files (and formatting, when it has some). */
+export const forwardDraft = (messageId: number) =>
+  invoke<Draft>("draft_forward", { messageId, utcOffsetMinutes: localOffset() }).then(started);
 export const listDrafts = () => invoke<{ drafts: Draft[] }>("draft_list");
 export const getDraft = (id: number) => invoke<Draft>("draft_get", { id });
 /** Pick files with the system dialog and attach them; `null` if cancelled. */

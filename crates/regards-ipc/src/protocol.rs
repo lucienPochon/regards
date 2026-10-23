@@ -1495,6 +1495,19 @@ pub struct DraftReplyParams {
     /// Reply to everyone, not just the sender.
     #[serde(default)]
     pub all: bool,
+    /// The local time's offset from UTC in minutes, for "On <when>, … wrote:";
+    /// UTC when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub utc_offset_minutes: Option<i32>,
+}
+
+/// Parameters of [`methods::DRAFT_FORWARD`]: `{ "id": … }` as a [`MessageRef`], and
+/// optionally the local time's offset from UTC in minutes for its "Date:" line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftForwardParams {
+    pub id: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub utc_offset_minutes: Option<i32>,
 }
 
 /// Names a draft.

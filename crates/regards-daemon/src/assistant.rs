@@ -338,6 +338,7 @@ pub(crate) async fn run(state: &State, params: AssistantParams) -> Result<Value,
             let reply = DraftReplyParams {
                 message_id: params.message_id,
                 all: params.all,
+                utc_offset_minutes: None,
             };
             let made = crate::compose::reply_with(state, reply, &text).await?;
             Some(serde_json::from_value::<DraftView>(made).map_err(crate::session::internal)?)

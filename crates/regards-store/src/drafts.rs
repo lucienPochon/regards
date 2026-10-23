@@ -42,6 +42,8 @@ pub struct Content {
     pub references: Vec<String>,
     pub replying_to: Option<i64>,
     pub identity_id: Option<i64>,
+    /// Its formatted version, `body` being the plain one; none for plain text.
+    pub html: Option<String>,
 }
 
 /// A new draft. It gets the account's automatic Cc or Bcc, if it has one
@@ -53,7 +55,7 @@ pub fn create(tx: &Transaction<'_>, account_id: &str, content: &Content, now: i6
     }
     tx.execute(
         "INSERT INTO drafts (account_id, to_json, cc_json, bcc_json, subject, body, in_reply_to, references_json, \
-         replying_to, created_at, updated_at, identity_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, ?11)",
+         replying_to, created_at, updated_at, identity_id, html) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, ?11, ?12)",
         params![
             account_id,
             json(&content.to),
@@ -66,6 +68,7 @@ pub fn create(tx: &Transaction<'_>, account_id: &str, content: &Content, now: i6
             content.replying_to,
             now,
             content.identity_id,
+            content.html,
         ],
     )?;
     Ok(tx.last_insert_rowid())

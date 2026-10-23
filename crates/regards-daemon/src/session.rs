@@ -8,12 +8,13 @@ use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
 use regards_ipc::framing::{self, FrameError};
 use regards_ipc::protocol::{
-    AccountRef, AsideParams, AttachmentRef, ChangesNotification, ClientKind, DraftCreateParams, DraftListParams,
-    DraftRef, DraftReplyParams, DraftSendParams, DraftSetFromParams, DraftUpdateParams, HealthResult, HelloParams,
-    HelloResult, HoldRef, JSONRPC, MemoryParams, MessageHtmlParams, MessageIds, MessageListParams, MessageRef,
-    MoveParams, NoteAddParams, NoteListParams, NoteRef, Notification, PROTOCOL_VERSIONS, PeopleSuggestParams,
-    PinParams, Principal, RemindParams, Request, Response, RpcError, SearchParams, SenderBlockParams, SenderSetParams,
-    SetFlagsParams, SnoozeParams, ViewParams, VoiceSuggestParams, codes, methods, negotiate, notifications,
+    AccountRef, AsideParams, AttachmentRef, ChangesNotification, ClientKind, DraftCreateParams, DraftForwardParams,
+    DraftListParams, DraftRef, DraftReplyParams, DraftSendParams, DraftSetFromParams, DraftUpdateParams, HealthResult,
+    HelloParams, HelloResult, HoldRef, JSONRPC, MemoryParams, MessageHtmlParams, MessageIds, MessageListParams,
+    MessageRef, MoveParams, NoteAddParams, NoteListParams, NoteRef, Notification, PROTOCOL_VERSIONS,
+    PeopleSuggestParams, PinParams, Principal, RemindParams, Request, Response, RpcError, SearchParams,
+    SenderBlockParams, SenderSetParams, SetFlagsParams, SnoozeParams, ViewParams, VoiceSuggestParams, codes, methods,
+    negotiate, notifications,
 };
 use regards_ipc::transport::Stream;
 use regards_store::holds::Reason;
@@ -424,7 +425,7 @@ impl Session {
                 Ok(self.with_context(result, of).await)
             }
             methods::DRAFT_FORWARD => {
-                let params: MessageRef = params(request)?;
+                let params: DraftForwardParams = params(request)?;
                 self.allow_message(Access::Triage, params.id).await?;
                 let result = compose::forward(&self.state, params).await?;
                 let of = context::Of::draft_in(&result);
