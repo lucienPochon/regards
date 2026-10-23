@@ -26,7 +26,7 @@ import {
   textToHtml,
   touchDraft,
 } from "./compose";
-import { listAccounts } from "./accounts";
+import { type UndoInfo, listAccounts } from "./accounts";
 import { type Identity, listIdentities } from "./identities";
 import { type Signature, listSignatures, signatureIn } from "./signatures";
 import { IMAGE_TYPES, attachImage, draftImages, fileBase64, insertImage, toEditorHtml, toStoredHtml } from "./images";
@@ -66,6 +66,7 @@ export function Composer({
   mode,
   onMode,
   onClose,
+  onDiscarded,
   onQueued,
   pickSendTime,
   pickReminder,
@@ -83,6 +84,8 @@ export function Composer({
   /** Given a way to save what is written now: a window of its own saves before it closes. */
   saveRef?: MutableRefObject<(() => Promise<boolean>) | null>;
   onClose: () => void;
+  /** The bin deleted it: offer `undo`, which makes it again. */
+  onDiscarded?: (undo: UndoInfo) => void;
   onQueued: (queued: Queued) => void;
   /** Ask when to send it: Unix ms, or null if cancelled. */
   pickSendTime: (anchor: Anchor) => Promise<number | null>;
@@ -510,7 +513,8 @@ export function Composer({
     if (!draft) return;
     window.clearTimeout(timer.current);
     try {
-      await deleteDraft(draft.id);
+      const { undo } = await deleteDraft(draft.id);
+      if (undo) onDiscarded?.(undo);
       onClose();
     } catch (failure) {
       setError(String(failure));
