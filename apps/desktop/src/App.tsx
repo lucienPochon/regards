@@ -147,6 +147,8 @@ function targetOf(items: ListItem[]): Target {
     snoozed: items.length > 0 && items.every((item) => item.snoozed_until !== null),
     reminding: items.length > 0 && items.every((item) => item.remind_at !== null),
     reminded: items.some((item) => item.reminded),
+    // Rows stand for their conversations.
+    conversation: true,
   };
 }
 
