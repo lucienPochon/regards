@@ -1567,7 +1567,7 @@ export function App() {
             <Icon name="compose" size={17} />
           </button>
         </ListHeader>
-        <DraftsList drafts={drafts} open={composer?.id ?? null} onOpen={editDraft} onFailed={failed} />
+        <DraftsList drafts={drafts} open={composer?.id ?? null} onOpen={editDraft} onFailed={failed} onUndo={setUndo} />
       </section>
     ) : view.kind === "outbox" ? (
       <section className="list-pane" aria-label="Outbox">

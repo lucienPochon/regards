@@ -1458,7 +1458,8 @@ function handle(cmd: string, args: Args): unknown {
       const index = drafts.findIndex((d) => d.id === args.id);
       if (index !== -1) drafts.splice(index, 1);
       changed();
-      return null;
+      // As the daemon answers (#212); the preview keeps no way back.
+      return { deleted: index !== -1, undo: null };
     }
     case "draft_attach_files":
       return null;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { MessageSummary } from "./accounts";
+import type { MessageSummary, UndoInfo } from "./accounts";
 import { Avatar } from "./Avatar";
 import { useChanges } from "./changes";
 import { type Draft, adoptDraft, deleteDraft, listDraftsElsewhere } from "./compose";
@@ -16,11 +16,14 @@ export function DraftsList({
   open,
   onOpen,
   onFailed,
+  onUndo,
 }: {
   drafts: Draft[];
   open: number | null;
   onOpen: (draftId: number) => void;
   onFailed: (error: unknown) => void;
+  /** A discarded draft can come back for a while: the undo bar. */
+  onUndo?: (undo: UndoInfo) => void;
 }) {
   const [elsewhere, setElsewhere] = useState<MessageSummary[]>([]);
   const load = useCallback(() => {
@@ -70,7 +73,11 @@ export function DraftsList({
                     className="icon-btn small"
                     title="Discard draft"
                     aria-label="Discard draft"
-                    onClick={() => deleteDraft(draft.id).catch(onFailed)}
+                    onClick={() =>
+                      deleteDraft(draft.id).then((result) => {
+                        if (result.undo) onUndo?.(result.undo);
+                      }, onFailed)
+                    }
                   >
                     <Icon name="trash" size={16} />
                   </button>
