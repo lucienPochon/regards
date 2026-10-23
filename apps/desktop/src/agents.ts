@@ -95,6 +95,9 @@ export interface CommandLine {
 export const commandLine = (change?: "add" | "remove") =>
   invoke<CommandLine>("command_line", { change: change ?? null });
 
+/** Open Cursor, asking it to add Regards as an MCP server: the person confirms there. */
+export const addToCursor = () => invoke<void>("add_to_cursor");
+
 /** Open Claude Code or the Claude app with a request ready to send (nothing is sent until the person does). */
 export const openInAgent = (app: "claude-code" | "claude-app", prompt: string) =>
   invoke<void>("open_in_agent", { app, prompt });

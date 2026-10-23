@@ -71,6 +71,7 @@ import { ReadingPane } from "./ReadingPane";
 import { SendToast } from "./SendToast";
 import { Settings, type SettingsTab } from "./Settings";
 import { AgentsMenu } from "./AgentsMenu";
+import { ConnectDialog, type ConnectId } from "./ConnectDialog";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { type Template, listTemplates, saveTemplate } from "./templates";
 import { type AssistantJob, AssistantDialog, useAssistantKind } from "./AssistantDialog";
@@ -206,6 +207,8 @@ export function App() {
   const [settings, setSettings] = useState<SettingsTab | null>(null);
   // The sidebar's Agents menu, beside its button.
   const [agentsMenu, setAgentsMenu] = useState<Anchor | null>(null);
+  // The Connect dialog, with this agent's card open.
+  const [connecting, setConnecting] = useState<ConnectId | null>(null);
   const [menu, setMenu] = useState<MenuRequest | null>(null);
   const [asking, setAsking] = useState<{ request: ConfirmRequest; resolve: (ok: boolean) => void } | null>(null);
   const [picking, setPicking] = useState<Picking | null>(null);
@@ -1644,7 +1647,15 @@ export function App() {
       )}
       {help && <ShortcutHelp onClose={() => setHelp(false)} />}
       {agentsMenu && (
-        <AgentsMenu anchor={agentsMenu} onSettings={() => setSettings("agents")} onClose={() => setAgentsMenu(null)} />
+        <AgentsMenu
+          anchor={agentsMenu}
+          onSettings={() => setSettings("agents")}
+          onConnect={setConnecting}
+          onClose={() => setAgentsMenu(null)}
+        />
+      )}
+      {connecting && (
+        <ConnectDialog open={connecting} onSettings={() => setSettings("agents")} onClose={() => setConnecting(null)} />
       )}
       {settings && (
         <Settings
