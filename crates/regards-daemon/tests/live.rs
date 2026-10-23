@@ -1171,6 +1171,94 @@ async fn live_mail_filed_in_other_folders_shows_while_push_waits_on_the_inbox() 
 
 #[tokio::test]
 #[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_unsubscribing_writes_to_the_list_or_opens_its_page() {
+    use regards_ipc::protocol::{UnsubscribeParams, UnsubscribeResult, codes};
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let newsletter = |n: u32, unsubscribe: &str| {
+        format!(
+            "From: News <news@lists.example>\r\nTo: {}@example.test\r\nSubject: Issue {n}\r\n\
+             Message-ID: <issue-{n}@lists.example>\r\n{unsubscribe}Content-Type: text/plain\r\n\r\nNews {n}\r\n",
+            live.user
+        )
+        .into_bytes()
+    };
+    seed.append(
+        b"INBOX",
+        &[],
+        &newsletter(
+            1,
+            "List-Unsubscribe: <https://lists.example/u?k=1>, <mailto:leave@lists.example?subject=stop%20please>\r\n",
+        ),
+    )
+    .await
+    .unwrap();
+    seed.append(
+        b"INBOX",
+        &[],
+        &newsletter(2, "List-Unsubscribe: <https://lists.example/u?k=2>\r\n"),
+    )
+    .await
+    .unwrap();
+    seed.append(b"INBOX", &[], &newsletter(3, "")).await.unwrap();
+    let (_temp, mut desktop, _account, inbox, handle) = daemon_with_account(&live).await;
+    let ids: Vec<(String, i64)> = messages(&mut desktop, inbox)
+        .await
+        .messages
+        .into_iter()
+        .map(|m| (m.subject, m.id))
+        .collect();
+    let id = |subject: &str| ids.iter().find(|(s, _)| s == subject).unwrap().1;
+    let unsubscribe = |id: i64| UnsubscribeParams {
+        id,
+        undo_seconds: Some(60),
+    };
+
+    // An address to write to: an email in the Outbox, with an undo.
+    let sent: UnsubscribeResult = desktop
+        .call(methods::MESSAGE_UNSUBSCRIBE, unsubscribe(id("Issue 1")))
+        .await
+        .unwrap();
+    let UnsubscribeResult::Sent { queued } = sent else {
+        panic!("{sent:?}")
+    };
+    let entries = outbox(&mut desktop).await;
+    let entry = entries
+        .iter()
+        .find(|e| e.id == queued.outbox_id)
+        .expect("in the Outbox");
+    assert_eq!(entry.subject, "stop please");
+    let _: Value = desktop
+        .call(methods::OUTBOX_UNDO, OutboxRef { id: queued.outbox_id })
+        .await
+        .unwrap();
+
+    // Only a page: the app opens it.
+    let page: UnsubscribeResult = desktop
+        .call(methods::MESSAGE_UNSUBSCRIBE, unsubscribe(id("Issue 2")))
+        .await
+        .unwrap();
+    assert_eq!(
+        page,
+        UnsubscribeResult::Web {
+            url: "https://lists.example/u?k=2".into()
+        }
+    );
+
+    // Nothing to unsubscribe with.
+    let none = desktop
+        .call::<_, Value>(methods::MESSAGE_UNSUBSCRIBE, unsubscribe(id("Issue 3")))
+        .await;
+    assert!(matches!(none, Err(regards_ipc::ClientError::Rpc(e)) if e.code == codes::NOT_FOUND));
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
 async fn live_formatted_mail_is_quoted_and_forwarded_formatted_in_local_time() {
     use regards_ipc::protocol::DraftForwardParams;
     let live = live();
