@@ -508,6 +508,28 @@ struct Inverse {
     /// Notes removed, to put back as they were.
     #[serde(default)]
     notes_removed: Vec<crate::notes::Kept>,
+    /// Drafts deleted, to make again as they were.
+    #[serde(default)]
+    drafts_deleted: Vec<crate::compose::KeptDraft>,
+}
+
+/// Keep how to undo a draft's deletion, for a while.
+pub(crate) fn record_draft_undo(
+    tx: &rusqlite::Transaction<'_>,
+    kept: crate::compose::KeptDraft,
+    now: i64,
+) -> Result<UndoInfo, StoreError> {
+    let description = "Deleted a draft";
+    let inverse = serde_json::to_string(&Inverse {
+        drafts_deleted: vec![kept],
+        ..Inverse::default()
+    })
+    .expect("plain data serializes");
+    let id = undo::record(tx, description, &inverse, now, now + UNDO_FOR_MS)?;
+    Ok(UndoInfo {
+        id,
+        description: description.to_owned(),
+    })
 }
 
 /// Keep how to undo notes added or removed, for a while.
@@ -713,8 +735,12 @@ pub(crate) async fn apply_undo(state: &Arc<State>, params: UndoParams) -> Result
             for kept in inverse.notes_removed {
                 notes += usize::from(regards_store::notes::restore(tx, &kept.into())?);
             }
+            let mut drafts = 0;
+            for kept in &inverse.drafts_deleted {
+                drafts += usize::from(crate::compose::restore_draft(tx, kept, now)?.is_some());
+            }
             Ok((
-                moved + inverse.marks.len() + inverse.unblock.len() + flags.len() + notes,
+                moved + inverse.marks.len() + inverse.unblock.len() + flags.len() + notes + drafts,
                 accounts,
             ))
         })

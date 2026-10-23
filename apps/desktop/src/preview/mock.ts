@@ -1200,10 +1200,13 @@ function handle(cmd: string, args: Args): unknown {
       const place = (m: FixtureMessage) => (inbox ? inboxPlace(m) : m.received_at);
       const section = inbox ? ((args.section as Section | null) ?? null) : null;
       const seen = inbox ? ((args.seen as boolean | null | undefined) ?? null) : null;
+      // Show Done: the account's Archive among the inbox, by date.
+      const archive = inbox && args.withDone && section === null && seen === null ? account?.mailboxes.find((b) => b.role === "archive")?.id : undefined;
       const all = messages
         .filter((m) =>
           inbox
-            ? !parked(m) && (m.mailboxId === args.mailboxId || (m.reminded === true && account?.mailboxes.some((b) => b.id === m.mailboxId)))
+            ? (archive !== undefined && m.mailboxId === archive) ||
+              (!parked(m) && (m.mailboxId === args.mailboxId || (m.reminded === true && account?.mailboxes.some((b) => b.id === m.mailboxId))))
             : m.mailboxId === args.mailboxId,
         )
         .filter((m) => {

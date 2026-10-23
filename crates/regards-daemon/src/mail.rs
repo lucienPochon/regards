@@ -40,7 +40,7 @@ pub(crate) async fn list(state: &State, params: MessageListParams) -> Result<Val
             format!("limit must be 1 to {MAX_PAGE}"),
         ));
     }
-    let (mailbox_id, section, seen) = (params.mailbox_id, params.section, params.seen);
+    let (mailbox_id, section, seen, with_done) = (params.mailbox_id, params.section, params.seen, params.with_done);
     let before = params.before.map(|c| Cursor {
         received_at: c.received_at,
         id: c.id,
@@ -64,11 +64,17 @@ pub(crate) async fn list(state: &State, params: MessageListParams) -> Result<Val
                         except,
                         seen,
                     };
-                    messages::inbox_page(conn, mailbox_id, limit + 1, before, account, now, &sections)?
+                    let mut rows = messages::inbox_page(conn, mailbox_id, limit + 1, before, account, now, &sections)?;
+                    if with_done && section.is_none() && seen.is_none() {
+                        rows.extend(done_page(conn, &mailbox, limit + 1, before)?);
+                        rows.sort_by_key(|row| std::cmp::Reverse((row.listed_at, row.id)));
+                    }
+                    rows
                 }
                 None => messages::list(conn, mailbox_id, limit + 1, before)?,
             };
-            let info = page_info(conn, &mailbox.account_id, &rows)?;
+            let mut info = page_info(conn, &mailbox.account_id, &rows)?;
+            info.conversations = conversation_states(conn, &rows)?;
             Ok(Some((rows, info)))
         })
         .await
@@ -89,13 +95,34 @@ pub(crate) async fn list(state: &State, params: MessageListParams) -> Result<Val
     Ok(json!(MessageListResult { messages, next }))
 }
 
-/// The marks of a page of messages.
+/// What `inbox`'s account filed as Done, for "Show Done": its Archive, or
+/// else its All Mail (Gmail), without the copies that are in the inbox too.
+fn done_page(
+    conn: &rusqlite::Connection,
+    inbox: &Mailbox,
+    limit: u32,
+    before: Option<Cursor>,
+) -> Result<Vec<Message>, StoreError> {
+    let folders = mailboxes::list(conn, &inbox.account_id)?;
+    let selectable = |role: Role| folders.iter().find(|m| m.role == Some(role) && m.selectable);
+    if let Some(archive) = selectable(Role::Archive) {
+        return messages::done_page(conn, archive.id, None, limit, before);
+    }
+    match selectable(Role::All) {
+        Some(all) => messages::done_page(conn, all.id, Some(inbox.id), limit, before),
+        None => Ok(Vec::new()),
+    }
+}
+
 /// What a page's summaries need beyond its rows: their marks (by Message-ID)
 /// and the size of their conversations (by thread).
 #[derive(Default)]
 struct PageInfo {
     marks: HashMap<String, Marks>,
     threads: HashMap<i64, u32>,
+    /// In a folder's list, where a conversation is one row: how each looks
+    /// from all its messages there, by (folder, thread).
+    conversations: HashMap<(i64, i64), messages::ConversationState>,
 }
 
 fn page_info(conn: &rusqlite::Connection, account_id: &str, rows: &[Message]) -> Result<PageInfo, StoreError> {
@@ -106,7 +133,32 @@ fn page_info(conn: &rusqlite::Connection, account_id: &str, rows: &[Message]) ->
     Ok(PageInfo {
         marks: marks::of(conn, account_id, &ids)?,
         threads: messages::thread_sizes(conn, &threads)?,
+        conversations: HashMap::new(),
     })
+}
+
+/// How the conversation of each row of a folder's page looks there, for
+/// [`PageInfo::conversations`]: by each row's folder (Done rows are in theirs).
+fn conversation_states(
+    conn: &rusqlite::Connection,
+    rows: &[Message],
+) -> Result<HashMap<(i64, i64), messages::ConversationState>, StoreError> {
+    let mut by_folder: HashMap<i64, Vec<i64>> = HashMap::new();
+    for row in rows {
+        if let Some(thread) = row.thread_id {
+            by_folder
+                .entry(row.moving_to.unwrap_or(row.mailbox_id))
+                .or_default()
+                .push(thread);
+        }
+    }
+    let mut states = HashMap::new();
+    for (folder, threads) in by_folder {
+        for (thread, state) in messages::conversation_states(conn, folder, &threads)? {
+            states.insert((folder, thread), state);
+        }
+    }
+    Ok(states)
 }
 
 /// An account's pinned, set-aside or snoozed messages (one per Message-ID), newest first.
@@ -810,6 +862,12 @@ async fn keep_source(
 const SUMMARY_RECIPIENTS: usize = 3;
 
 fn summary(m: Message, info: &PageInfo) -> MessageSummary {
+    // A conversation's row: unread while any of it is, with files if any has some.
+    let folder = m.moving_to.unwrap_or(m.mailbox_id);
+    let conversation = m
+        .thread_id
+        .and_then(|thread| info.conversations.get(&(folder, thread)))
+        .copied();
     let mark = m
         .message_id
         .as_ref()
@@ -830,7 +888,7 @@ fn summary(m: Message, info: &PageInfo) -> MessageSummary {
             .and_then(|thread| info.threads.get(&thread))
             .copied()
             .unwrap_or(1),
-        has_attachments: m.has_attachments.unwrap_or(false),
+        has_attachments: conversation.map_or(m.has_attachments.unwrap_or(false), |c| c.has_attachments),
         preview: m.preview,
         id: m.id,
         uid: m.uid,
@@ -839,7 +897,7 @@ fn summary(m: Message, info: &PageInfo) -> MessageSummary {
         from: m.from,
         received_at: m.received_at,
         sent_at: m.sent_at,
-        seen: m.flags.seen,
+        seen: conversation.map_or(m.flags.seen, |c| c.seen),
         flagged: m.flags.flagged,
         answered: m.flags.answered,
         size: m.size,

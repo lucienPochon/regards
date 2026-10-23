@@ -5,6 +5,7 @@ import {
   type Person,
   type Role,
   type ThreadEntry,
+  conversationIds,
   getMessage,
   getThread,
   messageHtmlUrl,
@@ -121,7 +122,10 @@ export function ReadingPane({
     const timer = window.setTimeout(
       () => {
         markedRead.current = true;
-        setFlags([item.id], { seen: true }).catch(() => {});
+        // With the rest of its conversation in the folder, as a row's Mark read.
+        conversationIds([item.id])
+          .then((ids) => setFlags(ids, { seen: true }))
+          .catch(() => {});
       },
       stepped ? Math.max(after, STEP_DWELL) : after,
     );
@@ -145,7 +149,9 @@ export function ReadingPane({
   const message = detail?.message ?? item;
   const mailboxId = detail?.mailbox_id ?? item.mailboxId;
   const folder = folders.find((f) => f.id === mailboxId);
+  // The toolbar acts on the conversation, as its row does; a card's ⋯ on that one message.
   const target: Target = {
+    conversation: true,
     ids: [item.id],
     single: item.id,
     accountId: item.accountId,
@@ -158,6 +164,8 @@ export function ReadingPane({
     snoozed: message.snoozed_until !== null,
     reminding: message.remind_at !== null,
     reminded: message.reminded,
+    unsubscribe: message.section === "newsletters" || message.section === "notifications" ? { from: message.from } : null,
+    done: item.done === true,
   };
   const actions = actionsFor(target);
   const done = choose(actions, "archive")[0];
@@ -240,7 +248,7 @@ export function ReadingPane({
           )}
         </div>
         <div className="reader-tools">
-          {choose(actions, "delete", "flag", "unread", "read", "pin", "aside", "snooze").map(tool)}
+          {choose(actions, "delete", "flag", "unread", "read", "pin", "aside", "snooze", "unsubscribe").map(tool)}
           <button
             type="button"
             className="icon-btn"

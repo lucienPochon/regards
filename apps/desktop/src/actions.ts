@@ -2,6 +2,7 @@ import {
   type MarkResult,
   type MoveResult,
   archiveMessages,
+  conversationIds,
   deleteForever,
   moveMessages,
   pinMessages,
@@ -11,6 +12,7 @@ import {
   trashMessages,
 } from "./accounts";
 import { type KeySet, getPrefs } from "./prefs";
+import type { Person } from "./accounts";
 import { type Draft, forwardDraft, replyDraft } from "./compose";
 import type { ConfirmRequest } from "./Confirm";
 import type { IconName } from "./icons";
@@ -43,6 +45,16 @@ export interface Target {
   reminding: boolean;
   /** Some are reminders that came due, shown in the inbox. */
   reminded: boolean;
+  /** One newsletter or notification: Unsubscribe is offered, naming who sent it. */
+  unsubscribe?: { from: Person | null } | null;
+  /** All Done mail shown in the inbox (Show Done): Done takes them back to it. */
+  done?: boolean;
+  /**
+   * Rows of the list, or the message open in the reader: Done, Delete, Move,
+   * Junk and Mark read cover the rest of each one's conversation in its
+   * folder too. Not for one message of a conversation (a card's ⋯).
+   */
+  conversation?: boolean;
 }
 
 /** What actions need from the app around them. */
@@ -63,6 +75,10 @@ export interface ActionHost {
   pickReminder: (anchor: Anchor | null) => Promise<number | null>;
   /** The account's Junk folder, if it has one (for Mark as junk). */
   junkFolder?: (accountId: string) => number | null;
+  /** Leave the mailing list a message came from, after asking. */
+  unsubscribe?: (id: number, from: Person | null) => void;
+  /** The account's inbox (for Back to inbox, on Done mail). */
+  inboxFolder?: (accountId: string) => number | null;
 }
 
 export type ActionId =
@@ -79,7 +95,8 @@ export type ActionId =
   | "archive"
   | "move"
   | "junk"
-  | "delete";
+  | "delete"
+  | "unsubscribe";
 
 export interface Action {
   id: ActionId;
@@ -110,6 +127,7 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
     move: ["Mod+Shift+M"],
     junk: ["Shift+1"],
     delete: ["Delete", "Backspace"],
+    unsubscribe: [],
   },
   classic: {
     reply: ["r"],
@@ -126,6 +144,7 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
     move: ["v"],
     junk: ["!"],
     delete: ["#", "Delete"],
+    unsubscribe: [],
   },
 };
 
@@ -140,8 +159,11 @@ export const actionTitle = (action: Action) =>
  */
 export function messageActions(target: Target, host: ActionHost): Action[] {
   const { ids } = target;
+  // What leaves the folder or is marked read: with the rest of each conversation
+  // there, so a Done leaves nothing of it behind. `host.moved` still gets the rows.
+  const all = (): Promise<number[]> => (target.conversation ? conversationIds(ids) : Promise.resolve(ids));
   const flags = (change: { seen?: boolean; flagged?: boolean }) => {
-    setFlags(ids, change).catch(host.failed);
+    (change.seen === undefined ? Promise.resolve(ids) : all()).then((list) => setFlags(list, change)).catch(host.failed);
   };
   const move = (start: () => Promise<MoveResult>) => {
     start()
@@ -246,8 +268,8 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       run: () =>
         move(() =>
           target.pinned && getPrefs().pinnedArchive === "unpin"
-            ? pinMessages(ids, false).then(() => archiveMessages(ids))
-            : archiveMessages(ids),
+            ? pinMessages(ids, false).then(all).then(archiveMessages)
+            : all().then(archiveMessages),
         ),
     },
   );
@@ -261,7 +283,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       shown: true,
       run: (anchor) => {
         void host.pickFolder(account, target.mailboxId, anchor ?? null).then((folder) => {
-          if (folder !== null) move(() => moveMessages(ids, folder));
+          if (folder !== null) move(() => all().then((list) => moveMessages(list, folder)));
         });
       },
     });
@@ -274,9 +296,13 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
         icon: "junk",
         keys: keys.junk,
         shown: true,
-        run: () => move(() => moveMessages(ids, junk)),
+        run: () => move(() => all().then((list) => moveMessages(list, junk))),
       });
     }
+  }
+  if (target.single !== null && target.unsubscribe && host.unsubscribe) {
+    const [id, from, leave] = [target.single, target.unsubscribe.from, host.unsubscribe];
+    actions.push({ id: "unsubscribe", label: "Unsubscribe…", icon: "unsubscribe", keys: keys.unsubscribe, shown: true, run: () => leave(id, from) });
   }
   actions.push({
     id: "delete",
@@ -287,24 +313,31 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
     danger: target.disposable,
     run: () => {
       if (!target.disposable) {
-        move(() => trashMessages(ids));
+        move(() => all().then(trashMessages));
         return;
       }
-      void host
-        .confirm({
-          title: ids.length === 1 ? "Delete this message for good?" : `Delete ${ids.length} messages for good?`,
-          body: `${ids.length === 1 ? "It is" : "They are"} removed from the server. This cannot be undone.`,
-          confirm: "Delete forever",
-          danger: true,
-        })
-        .then((ok) => {
+      // Counted with the rest of their conversations, so the question says how many go.
+      void all()
+        .then(async (list) => {
+          const ok = await host.confirm({
+            title: list.length === 1 ? "Delete this message for good?" : `Delete ${list.length} messages for good?`,
+            body: `${list.length === 1 ? "It is" : "They are"} removed from the server. This cannot be undone.`,
+            confirm: "Delete forever",
+            danger: true,
+          });
           if (!ok) return;
-          deleteForever(ids)
-            .then(() => host.moved(ids, null))
-            .catch(host.failed);
-        });
+          await deleteForever(list);
+          host.moved(ids, null);
+        })
+        .catch(host.failed);
     },
   });
+  // Show Done: on Done mail, Done (E) takes it back to the inbox.
+  const inbox = target.done && target.accountId !== null ? (host.inboxFolder?.(target.accountId) ?? null) : null;
+  const archive = actions.findIndex((action) => action.id === "archive");
+  if (inbox !== null && archive !== -1) {
+    actions[archive] = { ...actions[archive], label: "Back to inbox", icon: "inbox", run: () => move(() => moveMessages(ids, inbox)) };
+  }
   return actions;
 }
 

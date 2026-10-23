@@ -9,9 +9,10 @@ use regards_core::executor::Executor;
 use regards_core::headers::{self, Person};
 use regards_ipc::protocol::{
     DraftAttachFileParams, DraftAttachImageParams, DraftAttachment, DraftCheckResult, DraftCreateParams,
-    DraftDetachParams, DraftImage, DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams,
-    DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView, MessageRef, OutboxEntryView,
-    OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxState, OutboxUndoResult, RpcError, codes,
+    DraftDetachParams, DraftForwardParams, DraftImage, DraftImagesResult, DraftListParams, DraftListResult, DraftRef,
+    DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
+    OutboxEntryView, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxState, OutboxUndoResult, RpcError,
+    codes,
 };
 use regards_store::drafts::{self, Content, Draft, Edit};
 use regards_store::identities::{self, Identity};
@@ -122,20 +123,27 @@ pub(crate) async fn reply_with(state: &State, params: DraftReplyParams, written:
         &me,
         params.all,
     );
+    let offset = params
+        .utc_offset_minutes
+        .filter(|offset| (-14 * 60..=14 * 60).contains(offset));
+    let above = format!("{written}{}", compose::signature_block(&identity.signature));
+    // Formatted mail is quoted formatted; the plain text goes with it.
+    let html = regards_core::html::quotable(&source)
+        .map(|quoted| compose::quote_html(&above, &quoted, original.from.as_ref(), original.date, offset));
     let content = Content {
         to,
         cc,
         bcc: Vec::new(),
         subject: compose::reply_subject(&original.subject),
         body: format!(
-            "{written}{}{}",
-            compose::signature_block(&identity.signature),
-            compose::quote(&text, original.from.as_ref(), original.date)
+            "{above}{}",
+            compose::quote_at(&text, original.from.as_ref(), original.date, offset)
         ),
         in_reply_to: original.message_id.clone(),
         references: compose::reply_references(&original.references, original.message_id.as_deref()),
         replying_to: Some(message.id),
         identity_id: stored(&identity),
+        html,
     };
     store_new(state, account.id, content).await
 }
@@ -189,7 +197,10 @@ pub(crate) async fn unsubscribe_draft(
 }
 
 /// A forward: the original's text and headers below, nobody addressed yet.
-pub(crate) async fn forward(state: &State, params: MessageRef) -> Result<Value, RpcError> {
+pub(crate) async fn forward(state: &State, params: DraftForwardParams) -> Result<Value, RpcError> {
+    let offset = params
+        .utc_offset_minutes
+        .filter(|offset| (-14 * 60..=14 * 60).contains(offset));
     let (message, source) = crate::mail::load(state, params.id).await?;
     let mailbox_id = message.mailbox_id;
     let account_id = state
@@ -199,14 +210,16 @@ pub(crate) async fn forward(state: &State, params: MessageRef) -> Result<Value, 
         .map_err(crate::session::internal)?
         .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "the message's account no longer exists"))?;
     let original = headers::parse(&source);
+    let formatted = regards_core::html::quotable(&source);
     // The original's files go too.
     let (text, files) = text_and_files(state, source).await?;
-    let forwarded = compose::forwarded(
+    let forwarded = compose::forwarded_at(
         &text,
         original.from.as_ref(),
         &original.to,
         &original.subject,
         original.date,
+        offset,
     );
     let subject = compose::forward_subject(&original.subject);
     let now = now_ms();
@@ -216,10 +229,24 @@ pub(crate) async fn forward(state: &State, params: MessageRef) -> Result<Value, 
             let account =
                 accounts::get(tx, &account_id)?.ok_or_else(|| StoreError::Conflict("no such account".into()))?;
             let identity = identity_of(tx, &account, None)?;
+            let above = compose::signature_block(&identity.signature);
+            // Formatted mail is forwarded formatted; the plain text goes with it.
+            let html = formatted.map(|original_html| {
+                compose::forwarded_html(
+                    &above,
+                    &original_html,
+                    original.from.as_ref(),
+                    &original.to,
+                    &original.subject,
+                    original.date,
+                    offset,
+                )
+            });
             let content = Content {
                 subject,
-                body: format!("{}{forwarded}", compose::signature_block(&identity.signature)),
+                body: format!("{above}{forwarded}"),
                 identity_id: stored(&identity),
+                html,
                 ..Content::default()
             };
             let id = drafts::create(tx, &account_id, &content, now)?;
@@ -351,18 +378,99 @@ pub(crate) async fn update(state: &State, params: DraftUpdateParams) -> Result<V
     view(state, id).await
 }
 
+/// `draft.delete`. What it said and its files are kept for a while, so the
+/// deletion can be undone (`undo` in the answer); the files' bytes stay in
+/// the blob store meanwhile.
 pub(crate) async fn delete(state: &State, params: DraftRef) -> Result<Value, RpcError> {
-    let id = params.id;
-    let deleted = state
+    let (id, now) = (params.id, now_ms());
+    let undo = state
         .store
-        .write(move |tx| drafts::delete(tx, id))
+        .write(move |tx| {
+            let Some(draft) = drafts::get(tx, id)? else {
+                return Ok(None);
+            };
+            let files = drafts::attachments(tx, id)?
+                .into_iter()
+                .map(|file| (file.blob_hash, file.name, file.mime, file.size, file.content_id))
+                .collect();
+            if !drafts::delete(tx, id)? {
+                return Ok(None);
+            }
+            let kept = KeptDraft {
+                account_id: draft.account_id,
+                to: draft.to,
+                cc: draft.cc,
+                bcc: draft.bcc,
+                subject: draft.subject,
+                body: draft.body,
+                html: draft.html,
+                in_reply_to: draft.in_reply_to,
+                references: draft.references,
+                replying_to: draft.replying_to,
+                identity_id: draft.identity_id,
+                files,
+            };
+            crate::actions::record_draft_undo(tx, kept, now).map(Some)
+        })
         .await
         .map_err(conflict)?
-        .value;
-    if !deleted {
-        return Err(RpcError::new(codes::NOT_FOUND, "no such draft"));
+        .value
+        .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such draft"))?;
+    Ok(json!({ "deleted": true, "undo": undo }))
+}
+
+/// A deleted draft as it was, to make it again when its deletion is undone.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct KeptDraft {
+    account_id: String,
+    to: Vec<Person>,
+    cc: Vec<Person>,
+    bcc: Vec<Person>,
+    subject: String,
+    body: String,
+    html: Option<String>,
+    in_reply_to: Option<String>,
+    references: Vec<String>,
+    replying_to: Option<i64>,
+    identity_id: Option<i64>,
+    /// Blob, name, type, size, and Content-ID for an image in the text.
+    files: Vec<(String, String, String, u64, Option<String>)>,
+}
+
+/// Make a deleted draft again (a new id); `None` if its account has gone since.
+pub(crate) fn restore_draft(tx: &Transaction<'_>, kept: &KeptDraft, now: i64) -> Result<Option<i64>, StoreError> {
+    if accounts::get(tx, &kept.account_id)?.is_none() {
+        return Ok(None);
     }
-    Ok(json!({ "deleted": true }))
+    // An identity or answered message deleted since is left out.
+    let identity_id = match kept.identity_id {
+        Some(id) => identities::get(tx, id)?.map(|identity| identity.id),
+        None => None,
+    };
+    let replying_to = match kept.replying_to {
+        Some(id) => messages::get(tx, id)?.map(|message| message.id),
+        None => None,
+    };
+    let content = Content {
+        to: kept.to.clone(),
+        cc: kept.cc.clone(),
+        bcc: kept.bcc.clone(),
+        subject: kept.subject.clone(),
+        body: kept.body.clone(),
+        html: kept.html.clone(),
+        in_reply_to: kept.in_reply_to.clone(),
+        references: kept.references.clone(),
+        replying_to,
+        identity_id,
+    };
+    let id = drafts::create(tx, &kept.account_id, &content, now)?;
+    for (hash, name, mime, size, content_id) in &kept.files {
+        match content_id {
+            Some(cid) => drafts::attach_inline(tx, id, (hash, name, mime, *size), cid)?,
+            None => drafts::attach(tx, id, hash, name, mime, *size)?,
+        };
+    }
+    Ok(Some(id))
 }
 
 /// Attach a file the user chose. The daemon reads it once into `blobs/`;
