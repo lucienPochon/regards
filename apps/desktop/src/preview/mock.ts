@@ -550,7 +550,8 @@ const notes: Note[] = accounts.length
     ].map(({ ago, ...note }) => ({
       ...note,
       id: nextId++,
-      account_id: accounts[0].account.id,
+      // The account she writes to (the work one, when there are two).
+      account_id: (accounts.find((a) => a.mailboxes.some((m) => m.id === 21)) ?? accounts[0]).account.id,
       address: "ines.moreau@example.com",
       created_at: Date.now() - ago * 86_400_000,
       updated_at: Date.now() - ago * 86_400_000,
