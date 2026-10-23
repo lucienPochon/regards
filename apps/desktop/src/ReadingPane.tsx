@@ -10,7 +10,7 @@ import {
   messageHtmlUrl,
   setFlags,
 } from "./accounts";
-import { type Action, type Target, actionKeys, choose } from "./actions";
+import { type Action, type Target, actionKeys, actionTitle, choose } from "./actions";
 import { AttachmentTiles } from "./AttachmentTiles";
 import { Avatar } from "./Avatar";
 import { useChanges } from "./changes";
@@ -148,10 +148,13 @@ export function ReadingPane({
   const actions = actionsFor(target);
   const done = choose(actions, "archive")[0];
   const subject = message.subject || "(no subject)";
+  const standard = prefs.keySet === "standard";
   useShortcuts({
     Escape: onClose,
     ...(onStep ? { j: () => onStep(1), k: () => onStep(-1) } : {}),
+    ...(onStep && standard ? { ArrowRight: () => onStep(1), ArrowLeft: () => onStep(-1) } : {}),
     ...(load.state === "ready" ? actionKeys(actions) : {}),
+    ...(load.state === "ready" && standard ? { p: () => printMessage(load.detail) } : {}),
   });
 
   const entries: ThreadEntry[] =
@@ -188,7 +191,7 @@ export function ReadingPane({
       key={action.id}
       type="button"
       className="icon-btn"
-      title={`${action.label} (${action.keys[0]})`}
+      title={actionTitle(action)}
       aria-label={action.label}
       aria-pressed={action.id === "flag" ? message.flagged : action.id === "pin" ? message.pinned : undefined}
       disabled={load.state !== "ready"}
@@ -213,7 +216,7 @@ export function ReadingPane({
           {done && (
             <button
               type="button"
-              title={`Done: ${done.label} (${done.keys[0]})`}
+              title={`Done: ${actionTitle(done)}`}
               aria-label={done.label}
               disabled={load.state !== "ready"}
               onClick={() => done.run(null)}
@@ -545,7 +548,7 @@ function ThreadMessage({
               key={action.id}
               type="button"
               className="icon-btn small"
-              title={`${action.label} (${action.keys[0]})`}
+              title={actionTitle(action)}
               aria-label={action.label}
               onClick={() => action.run(null)}
             >
