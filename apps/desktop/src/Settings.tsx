@@ -522,7 +522,7 @@ function AccountRow({
           Sync now
         </button>
         <button type="button" className="btn small" aria-expanded={addresses} onClick={() => setAddresses(!addresses)}>
-          Addresses &amp; signatures
+          Addresses
         </button>
         <button type="button" className="btn small" aria-expanded={options} onClick={() => setOptions(!options)}>
           Details
