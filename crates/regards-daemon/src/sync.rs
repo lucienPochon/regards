@@ -229,7 +229,11 @@ async fn sync_with(state: &State, session: &mut Session, account_id: &str) -> Re
     Ok(summary)
 }
 
-async fn sync_mailbox_list(state: &State, session: &mut Session, account_id: &str) -> Result<Reconciled, SyncError> {
+pub(crate) async fn sync_mailbox_list(
+    state: &State,
+    session: &mut Session,
+    account_id: &str,
+) -> Result<Reconciled, SyncError> {
     let listed = session.list_mailboxes().await?;
     let candidates: Vec<Candidate<'_>> = listed
         .iter()

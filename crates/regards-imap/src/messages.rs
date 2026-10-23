@@ -614,6 +614,30 @@ impl Session {
         ok(&reply, "CREATE")
     }
 
+    /// Listed as subscribed, so webmail and other clients that show only
+    /// subscribed folders show it too.
+    pub async fn subscribe_mailbox(&mut self, remote_name: &[u8]) -> Result<(), ImapError> {
+        let reply = self
+            .conn
+            .run(CommandBody::Subscribe {
+                mailbox: mailbox(remote_name)?,
+            })
+            .await?;
+        ok(&reply, "SUBSCRIBE")
+    }
+
+    /// Its folders inside go with it (RFC 3501 §6.3.5).
+    pub async fn rename_mailbox(&mut self, from: &[u8], to: &[u8]) -> Result<(), ImapError> {
+        let reply = self
+            .conn
+            .run(CommandBody::Rename {
+                from: mailbox(from)?,
+                to: mailbox(to)?,
+            })
+            .await?;
+        ok(&reply, "RENAME")
+    }
+
     pub async fn delete_mailbox(&mut self, remote_name: &[u8]) -> Result<(), ImapError> {
         let reply = self
             .conn

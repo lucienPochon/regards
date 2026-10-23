@@ -1108,6 +1108,51 @@ function handle(cmd: string, args: Args): unknown {
       return new Promise((resolve) => window.setTimeout(() => resolve(null), 800));
     case "account_sync":
       return new Promise((resolve) => window.setTimeout(() => resolve(null), 900));
+    case "mailbox_create": {
+      const owner = accounts.find((a) => a.account.id === args.accountId);
+      if (!owner) throw "no such account";
+      const name = String(args.name ?? "").trim();
+      if (!name || name.includes("/")) throw "enter a name for the folder, without “/”";
+      const parent = owner.mailboxes.find((m) => m.id === args.parentId);
+      const path = parent ? `${parent.name}/${name}` : name;
+      if (owner.mailboxes.some((m) => m.name.toLowerCase() === path.toLowerCase())) throw "there is a folder with that name already";
+      const made = { id: nextId++, name: path, delimiter: "/", role: null, selectable: true, unread: 0 };
+      owner.mailboxes.push(made as (typeof owner.mailboxes)[number]);
+      changed();
+      return made;
+    }
+    case "mailbox_rename": {
+      const folder = mailboxOf(args.mailboxId as number);
+      const owner = accountOfMailbox(args.mailboxId as number);
+      if (!folder || !owner) throw "no such folder";
+      if (folder.role) throw `the account's ${folder.role} cannot be renamed`;
+      const old = folder.name;
+      const path = [...old.split("/").slice(0, -1), String(args.name).trim()].join("/");
+      for (const m of owner.mailboxes) {
+        if (m.name === old || m.name.startsWith(`${old}/`)) m.name = path + m.name.slice(old.length);
+      }
+      changed();
+      return { ...folder, unread: 0 };
+    }
+    case "mailbox_delete": {
+      const folder = mailboxOf(args.mailboxId as number);
+      const owner = accountOfMailbox(args.mailboxId as number);
+      if (!folder || !owner) throw "no such folder";
+      if (folder.role) throw `the account's ${folder.role} cannot be deleted`;
+      const gone = owner.mailboxes.filter((m) => m.name === folder.name || m.name.startsWith(`${folder.name}/`)).map((m) => m.id);
+      owner.mailboxes = owner.mailboxes.filter((m) => !gone.includes(m.id));
+      messages = messages.filter((m) => !gone.includes(m.mailboxId));
+      changed();
+      return null;
+    }
+    case "mailbox_empty": {
+      const folder = mailboxOf(args.mailboxId as number);
+      if (folder?.role !== "trash" && folder?.role !== "junk") throw "only Trash and Junk can be emptied";
+      const deleted = messages.filter((m) => m.mailboxId === folder.id).length;
+      messages = messages.filter((m) => m.mailboxId !== folder.id);
+      changed();
+      return { deleted };
+    }
     case "mailbox_list": {
       const owner = accounts.find((a) => a.account.id === args.accountId);
       // Unread per folder; the inbox leaves out what is set aside or snoozed.

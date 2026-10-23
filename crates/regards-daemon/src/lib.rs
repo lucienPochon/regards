@@ -19,6 +19,7 @@ mod discover;
 mod draft_sync;
 mod erase;
 mod feed;
+mod folders;
 mod holds;
 mod identities;
 mod limits;

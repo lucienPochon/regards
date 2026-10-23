@@ -1119,6 +1119,124 @@ async fn live_a_burst_of_new_mail_all_arrives_by_push_and_is_told_once() {
 
 #[tokio::test]
 #[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_folders_are_made_renamed_deleted_and_trash_emptied() {
+    use regards_ipc::ClientError;
+    use regards_ipc::protocol::{MailboxCreateParams, MailboxRef, MailboxRenameParams, MailboxSummary, codes};
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let _ = seed.create_mailbox(b"Trash").await;
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
+    let create = |parent_id: Option<i64>, name: &str| MailboxCreateParams {
+        account_id: account.id.clone(),
+        parent_id,
+        name: name.into(),
+    };
+    let refused = |result: Result<Value, ClientError>| match result {
+        Err(ClientError::Rpc(error)) => error.code,
+        other => panic!("expected a refusal, got {other:?}"),
+    };
+
+    // A folder, and one inside it with mail.
+    let made: MailboxSummary = desktop
+        .call(methods::MAILBOX_CREATE, create(None, "Receipts"))
+        .await
+        .unwrap();
+    assert_eq!(made.name, "Receipts");
+    let inner: MailboxSummary = desktop
+        .call(methods::MAILBOX_CREATE, create(Some(made.id), "2026"))
+        .await
+        .unwrap();
+    let delimiter = inner.delimiter.unwrap_or('/');
+    assert_eq!(inner.name, format!("Receipts{delimiter}2026"));
+    let again = desktop
+        .call::<_, Value>(methods::MAILBOX_CREATE, create(None, "receipts"))
+        .await;
+    assert_eq!(refused(again), codes::CONFLICT);
+    seed.append(
+        format!("Receipts{delimiter}2026").as_bytes(),
+        &[],
+        &message(1, "Order", "shop@example.test"),
+    )
+    .await
+    .unwrap();
+    sync(&mut desktop, &account.id).await;
+    assert_eq!(messages(&mut desktop, inner.id).await.messages.len(), 1);
+
+    // Renamed: the same folders, their mail kept, the one inside follows.
+    let renamed: MailboxSummary = desktop
+        .call(
+            methods::MAILBOX_RENAME,
+            MailboxRenameParams {
+                mailbox_id: made.id,
+                name: "Bills".into(),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!((renamed.id, renamed.name.as_str()), (made.id, "Bills"));
+    let listed = folders(&mut desktop, &account.id).await.mailboxes;
+    let moved = listed.iter().find(|m| m.id == inner.id).expect("kept its id");
+    assert_eq!(moved.name, format!("Bills{delimiter}2026"));
+    assert_eq!(messages(&mut desktop, inner.id).await.messages.len(), 1);
+    let inbox_rename = desktop
+        .call::<_, Value>(
+            methods::MAILBOX_RENAME,
+            MailboxRenameParams {
+                mailbox_id: inbox,
+                name: "Mail".into(),
+            },
+        )
+        .await;
+    assert_eq!(refused(inbox_rename), codes::CONFLICT, "role folders stay");
+
+    // Deleted with what is inside, here and on the server.
+    let _: Value = desktop
+        .call(methods::MAILBOX_DELETE, MailboxRef { mailbox_id: made.id })
+        .await
+        .unwrap();
+    let names: Vec<String> = folders(&mut desktop, &account.id)
+        .await
+        .mailboxes
+        .into_iter()
+        .map(|m| m.name)
+        .collect();
+    assert!(!names.iter().any(|name| name.starts_with("Bills")), "{names:?}");
+    assert!(seed.select(b"Bills").await.is_err(), "gone on the server");
+
+    // Trash emptied for good; only Trash and Junk can be.
+    for n in 1..=3 {
+        seed.append(b"Trash", &[], &message(n, &format!("Old {n}"), "ada@example.test"))
+            .await
+            .unwrap();
+    }
+    sync(&mut desktop, &account.id).await;
+    let trash = folders(&mut desktop, &account.id)
+        .await
+        .mailboxes
+        .into_iter()
+        .find(|m| m.role == Some(Role::Trash))
+        .unwrap()
+        .id;
+    let emptied: DeleteResult = desktop
+        .call(methods::MAILBOX_EMPTY, MailboxRef { mailbox_id: trash })
+        .await
+        .unwrap();
+    assert_eq!(emptied.deleted, 3);
+    assert!(messages(&mut desktop, trash).await.messages.is_empty());
+    server_count_becomes(&mut seed, b"Trash", 0).await;
+    let inbox_empty = desktop
+        .call::<_, Value>(methods::MAILBOX_EMPTY, MailboxRef { mailbox_id: inbox })
+        .await;
+    assert_eq!(refused(inbox_empty), codes::CONFLICT);
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
 async fn live_actions_taken_offline_reach_the_server_once_it_is_back() {
     let live = live();
     let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)

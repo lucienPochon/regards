@@ -2,7 +2,8 @@
 
 use crate::{
     State, access, accounts, actions, agents, assistant, attachments, audit, compose, context, discover, draft_sync,
-    erase, holds, identities, mail, notes, notices, oauth, people, prefetch, signatures, smart, templates, voice,
+    erase, folders, holds, identities, mail, notes, notices, oauth, people, prefetch, signatures, smart, templates,
+    voice,
 };
 use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
@@ -302,6 +303,22 @@ impl Session {
             methods::ACCOUNT_UPDATE => {
                 self.require_ui()?;
                 accounts::update(&self.state, params(request)?).await
+            }
+            methods::MAILBOX_CREATE => {
+                self.require_ui()?;
+                folders::create(&self.state, params(request)?).await
+            }
+            methods::MAILBOX_RENAME => {
+                self.require_ui()?;
+                folders::rename(&self.state, params(request)?).await
+            }
+            methods::MAILBOX_DELETE => {
+                self.require_ui()?;
+                folders::delete(&self.state, params(request)?).await
+            }
+            methods::MAILBOX_EMPTY => {
+                self.require_ui()?;
+                folders::empty(&self.state, params(request)?).await
             }
             methods::ACCOUNT_SET_AUTO_COPY => {
                 self.require_ui()?;
