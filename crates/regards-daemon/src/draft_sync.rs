@@ -211,6 +211,7 @@ pub(crate) async fn adopt(state: &State, params: MessageRef) -> Result<Value, Rp
                 references: original.references,
                 replying_to: None,
                 identity_id: identity.map(|identity| identity.id),
+                html: None,
             };
             let id = draft_sync::adopt(tx, &account.id, &content, (folder.id, uid, &message_id), now)?;
             attach(tx, id, &files)?;

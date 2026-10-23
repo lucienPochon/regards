@@ -200,6 +200,7 @@ export function MessageList({
   canCompose,
   onMarkAllRead,
   onEmpty,
+  showDone,
   feed,
   mode,
   openId,
@@ -228,6 +229,8 @@ export function MessageList({
   onMarkAllRead?: () => void;
   /** Trash and Junk: delete all of it for good (after asking). */
   onEmpty?: { label: string; run: () => void };
+  /** The inbox by date: its Done mail shown among it, or not (Ctrl+E). */
+  showDone?: { on: boolean; toggle: () => void };
   feed: MessageFeed;
   /** One line per message beside nothing ("single"), or three beside the reading pane ("split"). */
   mode: "single" | "split";
@@ -462,6 +465,7 @@ export function MessageList({
           item.id === openId && picked.size === 0 ? "open" : "",
           item.id === focus ? "cursor" : "",
           isPicked ? "picked" : "",
+          item.done ? "done-row" : "",
           screen ? "screening" : "",
         ].join(" ")}
         onMouseEnter={() => {
@@ -589,6 +593,18 @@ export function MessageList({
         {onEmpty && items.length > 0 && (
           <button type="button" className="list-empty-btn" onClick={onEmpty.run}>
             {onEmpty.label}
+          </button>
+        )}
+        {showDone && (
+          <button
+            type="button"
+            className="icon-btn"
+            title={`${showDone.on ? "Hide" : "Show"} Done mail (${MOD_KEY}+E)`}
+            aria-label="Show Done mail"
+            aria-pressed={showDone.on}
+            onClick={showDone.toggle}
+          >
+            <Icon name="check" size={17} />
           </button>
         )}
         <button type="button" className="icon-btn" title={`Search (${MOD_KEY}+F)`} aria-label="Search" onClick={() => search.onQuery("")}>
@@ -1067,7 +1083,8 @@ const TIPS: { icon: IconName; term: string; example: string; text: string }[] = 
   { icon: "text", term: "subject:", example: "subject:invoice", text: "Words in the subject" },
   { icon: "folder", term: "in:", example: "in:sent", text: "In one folder; in:anywhere adds Trash and Junk" },
   { icon: "paperclip", term: "has:attachment ", example: "has:attachment", text: "With files attached" },
-  { icon: "mail", term: "is:unread ", example: "is:unread", text: "Unread, read or flagged" },
+  { icon: "mail", term: "is:unread ", example: "is:unread", text: "Unread, read, flagged or pinned (is:pinned)" },
+  { icon: "clock", term: "last week ", example: "yesterday · last 3 days", text: "Today, this week, last month… in English or French" },
   { icon: "calendar", term: "after:", example: "after:2026-09-01", text: "After or before a day" },
   { icon: "quote", term: '"', example: '"exact words" -word', text: "A phrase as written; leave a word out" },
 ];

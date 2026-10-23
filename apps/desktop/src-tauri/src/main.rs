@@ -32,14 +32,14 @@ use regards_ipc::protocol::{
     AgentAccess, AgentAccessParams, AgentActivityParams, AgentActivityResult, AgentSendParams, AsideParams,
     AttachmentFiles, AttachmentPreview, AttachmentRef, AttachmentSaveAllParams, AttachmentSaveParams, ClientKind,
     ConnectionSecurity, ConversationIdsResult, DeleteResult, DiscoverParams, DiscoverResult, DraftAttachFileParams,
-    DraftAttachImageParams, DraftCreateParams, DraftDetachParams, DraftImageAttached, DraftImagesResult,
-    DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams,
-    DraftUpdateParams, DraftView, ExplainResult, HoldApproveParams, HoldListParams, HoldListResult, HoldRef, HoldView,
-    IdentityListResult, IdentityRef, IdentitySaveParams, IdentitySetSignatureParams, IdentitySetVoiceParams,
-    IdentityView, MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams,
-    MessageListResult, MessageRef, MoveParams, MoveResult, NoteAddParams, NoteAddResult, NoteListParams,
-    NoteListResult, NoteRef, NoteRemoved, NoteSetEnabledParams, NoteSettings, NoteUpdateParams, NoteView,
-    NotesForgotten, OauthFlowRef, OauthProvidersResult, OauthStartParams, OauthStartResult, OutboxListResult,
+    DraftAttachImageParams, DraftCreateParams, DraftDetachParams, DraftForwardParams, DraftImageAttached,
+    DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult,
+    DraftSetFromParams, DraftUpdateParams, DraftView, ExplainResult, HoldApproveParams, HoldListParams, HoldListResult,
+    HoldRef, HoldView, IdentityListResult, IdentityRef, IdentitySaveParams, IdentitySetSignatureParams,
+    IdentitySetVoiceParams, IdentityView, MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds,
+    MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult, NoteAddParams, NoteAddResult,
+    NoteListParams, NoteListResult, NoteRef, NoteRemoved, NoteSetEnabledParams, NoteSettings, NoteUpdateParams,
+    NoteView, NotesForgotten, OauthFlowRef, OauthProvidersResult, OauthStartParams, OauthStartResult, OutboxListResult,
     OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams, SavedSearchListResult,
     SavedSearchOrderParams, SavedSearchRef, SavedSearchSaveParams, SavedSearchView, Screening, ScreeningParams,
     SearchParams, SearchResult, Section, SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams,
@@ -1185,21 +1185,44 @@ async fn draft_create(bridge: State<'_, Bridge>, account_id: String) -> Result<D
         .map_err(describe)
 }
 
-/// A reply (or reply all), addressed and quoted by the daemon.
+/// A reply (or reply all), addressed and quoted by the daemon; its "wrote:"
+/// line in local time (`utc_offset_minutes`).
 #[tauri::command]
-async fn draft_reply(bridge: State<'_, Bridge>, message_id: i64, all: bool) -> Result<DraftView, String> {
+async fn draft_reply(
+    bridge: State<'_, Bridge>,
+    message_id: i64,
+    all: bool,
+    utc_offset_minutes: Option<i32>,
+) -> Result<DraftView, String> {
     let mut client = bridge.connect().await?.client;
     client
-        .call(methods::DRAFT_REPLY, DraftReplyParams { message_id, all })
+        .call(
+            methods::DRAFT_REPLY,
+            DraftReplyParams {
+                message_id,
+                all,
+                utc_offset_minutes,
+            },
+        )
         .await
         .map_err(describe)
 }
 
 #[tauri::command]
-async fn draft_forward(bridge: State<'_, Bridge>, message_id: i64) -> Result<DraftView, String> {
+async fn draft_forward(
+    bridge: State<'_, Bridge>,
+    message_id: i64,
+    utc_offset_minutes: Option<i32>,
+) -> Result<DraftView, String> {
     let mut client = bridge.connect().await?.client;
     client
-        .call(methods::DRAFT_FORWARD, MessageRef { id: message_id })
+        .call(
+            methods::DRAFT_FORWARD,
+            DraftForwardParams {
+                id: message_id,
+                utc_offset_minutes,
+            },
+        )
         .await
         .map_err(describe)
 }

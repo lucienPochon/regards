@@ -164,6 +164,7 @@ function targetOf(items: ListItem[]): Target {
     snoozed: items.length > 0 && items.every((item) => item.snoozed_until !== null),
     reminding: items.length > 0 && items.every((item) => item.remind_at !== null),
     reminded: items.some((item) => item.reminded),
+    done: items.length > 0 && items.every((item) => item.done === true),
     // Rows stand for their conversations.
     conversation: true,
   };
@@ -352,6 +353,10 @@ export function App() {
     [layout.inboxView, inInbox, unified, accountInbox],
   );
   const smartOn = smartScope !== null && search === null;
+  // Show Done (Ctrl+E): the inbox by date with its Done mail mixed in, greyed.
+  const [showDone, setShowDone] = useState(false);
+  const inboxByDate = (inInbox || accountInbox !== null) && layout.inboxView === "date" && search === null;
+  const doneShown = showDone && inboxByDate;
   // The inbox as cards: unread mail by kind, then what has been read.
   const cardScope = useMemo(
     () => (layout.inboxView !== "cards" ? null : inInbox ? unified : accountInbox ? [accountInbox] : null),
@@ -373,8 +378,8 @@ export function App() {
           ]
         : cardScope
           ? inboxSources(cardScope, true)
-          : sourcesFor(view.kind === "role" ? unified : accounts, view)),
-    [found.sources, smartScope, cardScope, accounts, unified, view, ungroupNotifications, ungroupNewsletters],
+          : sourcesFor(view.kind === "role" ? unified : accounts, view, doneShown)),
+    [found.sources, smartScope, cardScope, accounts, unified, view, ungroupNotifications, ungroupNewsletters, doneShown],
   );
   const listed = useFeed(sources);
   // The last results stay while the next ones come, so typing doesn't flash the list.
@@ -711,10 +716,11 @@ export function App() {
     [pickTime],
   );
   const junkFolder = useCallback((accountId: string) => folderOf(accountId, "junk"), [folderOf]);
+  const inboxFolder = useCallback((accountId: string) => folderOf(accountId, "inbox"), [folderOf]);
 
   const host = useMemo<ActionHost>(
-    () => ({ compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder, junkFolder }),
-    [compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder, junkFolder],
+    () => ({ compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder, junkFolder, inboxFolder }),
+    [compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder, junkFolder, inboxFolder],
   );
   const actionsForItems = useCallback((list: ListItem[]) => messageActions(targetOf(list), host), [host]);
   const actionsFor = useCallback((target: Target) => messageActions(target, host), [host]);
@@ -1178,7 +1184,7 @@ export function App() {
     const entries: MenuEntry[] = [];
     if (actions) {
       for (const action of choose(actions, ...PALETTE_ACTIONS)) {
-        const done = action.id === "archive";
+        const done = action.id === "archive" && action.label === "Archive";
         entries.push({
           label: done ? "Done (archive)" : action.label,
           icon: done ? "check" : action.icon,
@@ -1265,6 +1271,7 @@ export function App() {
     },
     "Mod+q": quit,
     "Mod+Shift+U": newFolderHere,
+    ...(inboxByDate ? { "Mod+e": () => setShowDone((now) => !now) } : {}),
     "/": toggleSidebar,
     ...(standardKeys
       ? {
@@ -1643,6 +1650,7 @@ export function App() {
         canCompose={composeFrom !== null}
         onMarkAllRead={readTargets().length > 0 ? markAllHere : undefined}
         onEmpty={emptyRole(view) ? { label: `Empty ${ROLE_LABELS[emptyRole(view) ?? "trash"]}`, run: () => emptyHere(view) } : undefined}
+        showDone={inboxByDate ? { on: showDone, toggle: () => setShowDone((now) => !now) } : undefined}
         feed={shownFeed}
         mode={layout.mode}
         openId={openItem?.id ?? null}

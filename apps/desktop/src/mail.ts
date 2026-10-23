@@ -70,6 +70,8 @@ export interface Source {
   role: Role | null;
   /** Without a role of its own: the role of the folder each message is in. */
   roleOf?: (mailboxId: number) => Role | null;
+  /** Show Done: whether a message of this inbox's list is Done mail (in the Archive) listed among it. */
+  isDone?: (mailboxId: number) => boolean;
   fetch: (before: MessageCursor | null, limit: number | null) => Promise<MessageListResult>;
 }
 
@@ -77,7 +79,7 @@ export interface Source {
  * What a view reads from: one folder, the folder with that role in every
  * account, or every account's pinned, snoozed or set-aside messages.
  */
-export function sourcesFor(accounts: AccountMail[], view: View): Source[] {
+export function sourcesFor(accounts: AccountMail[], view: View, withDone = false): Source[] {
   if (view.kind === "section") {
     const { inbox } = view;
     return sectionSources(inbox ? accounts.filter((entry) => entry.account.id === inbox.accountId) : accounts, view.section);
@@ -100,7 +102,18 @@ export function sourcesFor(accounts: AccountMail[], view: View): Source[] {
       const wanted =
         (view.kind === "role" && mailbox.role === view.role) ||
         (view.kind === "mailbox" && mailbox.id === view.mailboxId);
-      if (wanted) {
+      if (wanted && withDone && mailbox.role === "inbox") {
+        // Show Done: the account's Done mail by date among the inbox, each row in its own folder.
+        const done = new Set(mailboxes.filter((m) => m.role === "archive" || m.role === "all").map((m) => m.id));
+        sources.push({
+          key: `mailbox:${mailbox.id}:done`,
+          accountId: account.id,
+          mailboxId: mailbox.id,
+          role: mailbox.role,
+          isDone: (id) => done.has(id),
+          fetch: (before, limit) => listMessages(mailbox.id, before, limit, null, null, true),
+        });
+      } else if (wanted) {
         sources.push({
           key: `mailbox:${mailbox.id}`,
           accountId: account.id,
@@ -312,6 +325,8 @@ export interface ListItem extends MessageSummary {
   mailboxId: number;
   accountId: string;
   role: Role | null;
+  /** Done mail shown in the inbox (Show Done): greyed, and Done takes it back. */
+  done?: boolean;
 }
 
 interface Feed {
@@ -432,6 +447,10 @@ export function useFeed(sources: Source[]): MessageFeed {
     for (const feed of state.feeds) {
       for (const message of feed.messages) {
         if (limit && newer(message, limit) > 0) continue;
+        if (feed.source.isDone?.(message.mailbox_id)) {
+          items.push({ ...message, mailboxId: message.mailbox_id, accountId: feed.source.accountId, role: "archive", done: true });
+          continue;
+        }
         items.push({
           ...message,
           mailboxId: feed.source.mailboxId ?? message.mailbox_id,

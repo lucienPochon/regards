@@ -9,9 +9,10 @@ use regards_core::executor::Executor;
 use regards_core::headers::{self, Person};
 use regards_ipc::protocol::{
     DraftAttachFileParams, DraftAttachImageParams, DraftAttachment, DraftCheckResult, DraftCreateParams,
-    DraftDetachParams, DraftImage, DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams,
-    DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView, MessageRef, OutboxEntryView,
-    OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxState, OutboxUndoResult, RpcError, codes,
+    DraftDetachParams, DraftForwardParams, DraftImage, DraftImagesResult, DraftListParams, DraftListResult, DraftRef,
+    DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
+    OutboxEntryView, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxState, OutboxUndoResult, RpcError,
+    codes,
 };
 use regards_store::drafts::{self, Content, Draft, Edit};
 use regards_store::identities::{self, Identity};
@@ -122,20 +123,27 @@ pub(crate) async fn reply_with(state: &State, params: DraftReplyParams, written:
         &me,
         params.all,
     );
+    let offset = params
+        .utc_offset_minutes
+        .filter(|offset| (-14 * 60..=14 * 60).contains(offset));
+    let above = format!("{written}{}", compose::signature_block(&identity.signature));
+    // Formatted mail is quoted formatted; the plain text goes with it.
+    let html = regards_core::html::quotable(&source)
+        .map(|quoted| compose::quote_html(&above, &quoted, original.from.as_ref(), original.date, offset));
     let content = Content {
         to,
         cc,
         bcc: Vec::new(),
         subject: compose::reply_subject(&original.subject),
         body: format!(
-            "{written}{}{}",
-            compose::signature_block(&identity.signature),
-            compose::quote(&text, original.from.as_ref(), original.date)
+            "{above}{}",
+            compose::quote_at(&text, original.from.as_ref(), original.date, offset)
         ),
         in_reply_to: original.message_id.clone(),
         references: compose::reply_references(&original.references, original.message_id.as_deref()),
         replying_to: Some(message.id),
         identity_id: stored(&identity),
+        html,
     };
     store_new(state, account.id, content).await
 }
@@ -189,7 +197,10 @@ pub(crate) async fn unsubscribe_draft(
 }
 
 /// A forward: the original's text and headers below, nobody addressed yet.
-pub(crate) async fn forward(state: &State, params: MessageRef) -> Result<Value, RpcError> {
+pub(crate) async fn forward(state: &State, params: DraftForwardParams) -> Result<Value, RpcError> {
+    let offset = params
+        .utc_offset_minutes
+        .filter(|offset| (-14 * 60..=14 * 60).contains(offset));
     let (message, source) = crate::mail::load(state, params.id).await?;
     let mailbox_id = message.mailbox_id;
     let account_id = state
@@ -199,14 +210,16 @@ pub(crate) async fn forward(state: &State, params: MessageRef) -> Result<Value, 
         .map_err(crate::session::internal)?
         .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "the message's account no longer exists"))?;
     let original = headers::parse(&source);
+    let formatted = regards_core::html::quotable(&source);
     // The original's files go too.
     let (text, files) = text_and_files(state, source).await?;
-    let forwarded = compose::forwarded(
+    let forwarded = compose::forwarded_at(
         &text,
         original.from.as_ref(),
         &original.to,
         &original.subject,
         original.date,
+        offset,
     );
     let subject = compose::forward_subject(&original.subject);
     let now = now_ms();
@@ -216,10 +229,24 @@ pub(crate) async fn forward(state: &State, params: MessageRef) -> Result<Value, 
             let account =
                 accounts::get(tx, &account_id)?.ok_or_else(|| StoreError::Conflict("no such account".into()))?;
             let identity = identity_of(tx, &account, None)?;
+            let above = compose::signature_block(&identity.signature);
+            // Formatted mail is forwarded formatted; the plain text goes with it.
+            let html = formatted.map(|original_html| {
+                compose::forwarded_html(
+                    &above,
+                    &original_html,
+                    original.from.as_ref(),
+                    &original.to,
+                    &original.subject,
+                    original.date,
+                    offset,
+                )
+            });
             let content = Content {
                 subject,
-                body: format!("{}{forwarded}", compose::signature_block(&identity.signature)),
+                body: format!("{above}{forwarded}"),
                 identity_id: stored(&identity),
+                html,
                 ..Content::default()
             };
             let id = drafts::create(tx, &account_id, &content, now)?;
