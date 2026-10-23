@@ -5653,6 +5653,54 @@ button.sender-row:hover:not(:disabled) {
   margin-top: 8px;
 }
 
+/* A name asked for: a new folder's, or a folder's new one. */
+.name-dialog {
+  display: grid;
+  gap: 12px;
+  width: min(420px, calc(100vw - 32px));
+}
+
+.name-dialog h2 {
+  margin: 0;
+}
+
+.name-field {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Trash and Junk: Empty, beside the list's tools. */
+.list-empty-btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 7px;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.list-empty-btn:hover {
+  background: var(--hover);
+}
+
+/* The folder panel: a new folder at an account's top. */
+.panel-new {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+.panel-new:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
 .form-status {
   min-height: 1.4em;
   color: var(--muted);

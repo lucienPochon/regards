@@ -2,12 +2,17 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { type CSSProperties, type KeyboardEvent, type PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  type MailboxSummary,
   type MarkResult,
   type MessageCursor,
   type MoveResult,
   type Person,
   type Role,
   archiveMessages,
+  createFolder,
+  deleteFolder,
+  emptyFolder,
+  renameFolder,
   getMessage,
   getThread,
   markAllRead,
@@ -45,6 +50,7 @@ import {
   type ListItem,
   type MessageFeed,
   inboxSources,
+  ALL_AT_ONCE,
   allOf,
   newer,
   sectionSources,
@@ -74,6 +80,7 @@ import { Settings, type SettingsTab } from "./Settings";
 import { AgentsMenu } from "./AgentsMenu";
 import { ConnectDialog, type ConnectId } from "./ConnectDialog";
 import { ShortcutHelp } from "./ShortcutHelp";
+import { NameDialog, type NameRequest } from "./NameDialog";
 import { type Template, listTemplates, saveTemplate } from "./templates";
 import { type AssistantJob, AssistantDialog, useAssistantKind } from "./AssistantDialog";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
@@ -95,6 +102,7 @@ import {
   type View,
   depth,
   leafName,
+  sameView,
   sortFolders,
   viewKey,
 } from "./views";
@@ -517,6 +525,8 @@ export function App() {
     (request: ConfirmRequest) => new Promise<boolean>((resolve) => setAsking({ request, resolve })),
     [],
   );
+  // A name asked for: a new folder's, or a folder's new one.
+  const [naming, setNaming] = useState<NameRequest | null>(null);
   const folderOf = useCallback(
     (accountId: string, role: string) =>
       accounts.find((entry) => entry.account.id === accountId)?.mailboxes.find((m) => m.role === role && m.selectable)?.id ??
@@ -865,6 +875,124 @@ export function App() {
     if (index !== -1 && next) setOpen(next);
   };
 
+  // Folders (#198): made, renamed and deleted on the server; Trash and Junk emptied.
+  const mailboxOf = (target: View) =>
+    target.kind === "mailbox"
+      ? (accounts.find((entry) => entry.account.id === target.accountId)?.mailboxes.find((m) => m.id === target.mailboxId) ?? null)
+      : null;
+  const howMany = (count: number) =>
+    count >= ALL_AT_ONCE ? `More than ${ALL_AT_ONCE} messages` : count === 1 ? "1 message" : `${count} messages`;
+  /** A new folder in an account, inside `parent` or at its top; opened once made. */
+  const newFolder = (accountId: string, parent: MailboxSummary | null) =>
+    setNaming({
+      title: parent ? `New folder in ${leafName(parent)}` : "New folder",
+      label: "Folder name",
+      value: "",
+      confirm: "Create",
+      onSave: (name) =>
+        createFolder(accountId, parent?.id ?? null, name).then((made) => changeView({ kind: "mailbox", mailboxId: made.id, accountId })),
+    });
+  /** Ctrl+Shift+U: a new folder where one is: inside the open folder, else at the top of its account. */
+  const newFolderHere = () => {
+    const accountId = view.kind === "mailbox" ? view.accountId : accounts[0]?.account.id;
+    const here = mailboxOf(view);
+    if (accountId) newFolder(accountId, here && !here.role ? here : null);
+  };
+  /** The folders inside `folder`, at any depth. */
+  const foldersIn = (accountId: string, folder: MailboxSummary) => {
+    const delimiter = folder.delimiter;
+    if (!delimiter) return [];
+    const mailboxes = accounts.find((entry) => entry.account.id === accountId)?.mailboxes ?? [];
+    return mailboxes.filter((m) => m.name.startsWith(folder.name + delimiter));
+  };
+  const deleteFolderAsked = (accountId: string, folder: MailboxSummary) => {
+    const inside = foldersIn(accountId, folder);
+    const gone = [folder, ...inside];
+    const views = gone.map((m): View => ({ kind: "mailbox", mailboxId: m.id, accountId }));
+    // Counted first, so the question says how much mail goes.
+    allOf(views.flatMap((target) => sourcesFor(accounts, target)))
+      .then(async (list) => {
+        const what =
+          inside.length === 0
+            ? `“${leafName(folder)}”`
+            : `“${leafName(folder)}” and the ${inside.length === 1 ? "folder" : `${inside.length} folders`} inside it`;
+        const ok = await confirm({
+          title: `Delete “${leafName(folder)}”?`,
+          body: `${what}, with ${list.length === 0 ? "no mail" : howMany(list.length).toLowerCase()}, ${inside.length === 0 ? "is" : "are"} deleted on the server. This cannot be undone.`,
+          confirm: "Delete folder",
+          danger: true,
+        });
+        if (!ok) return;
+        await deleteFolder(folder.id);
+        for (const target of views) {
+          sidebarChanges.unstar(target);
+          sidebarChanges.forget(target);
+        }
+        if (views.some((target) => sameView(target, view))) changeView(INBOX);
+      })
+      .catch(failed);
+  };
+  /** The Trash or Junk shown, of one account or all: what it holds deleted for good, after asking. */
+  const emptyRole = (target: View): "trash" | "junk" | null => {
+    const role = target.kind === "role" ? target.role : (mailboxOf(target)?.role ?? null);
+    return role === "trash" || role === "junk" ? role : null;
+  };
+  const emptyHere = (target: View) => {
+    const role = emptyRole(target);
+    if (!role) return;
+    const label = ROLE_LABELS[role];
+    const sources = sourcesFor(accounts, target);
+    allOf(sources)
+      .then(async (list) => {
+        if (list.length === 0) {
+          setSaid(`${label} is empty`);
+          return;
+        }
+        const ok = await confirm({
+          title: `Empty ${label}?`,
+          body: `${howMany(list.length)} ${list.length === 1 ? "is" : "are"} deleted for good on the server. This cannot be undone.`,
+          confirm: `Empty ${label}`,
+          danger: true,
+        });
+        if (!ok) return;
+        const results = await Promise.all(sources.flatMap((source) => (source.mailboxId === null ? [] : [emptyFolder(source.mailboxId)])));
+        moved(
+          list.map((item) => item.id),
+          null,
+        );
+        const deleted = results.reduce((sum, result) => sum + result.deleted, 0);
+        setSaid(deleted === 1 ? "Deleted 1 message for good" : `Deleted ${deleted} messages for good`);
+      })
+      .catch(failed);
+  };
+  /** A folder's own menu: in the sidebar and the folder panel. */
+  const folderMenu = (target: View): MenuEntry[] => {
+    const role = emptyRole(target);
+    if (role) return [{ label: `Empty ${ROLE_LABELS[role]}…`, icon: "trash", danger: true, onSelect: () => emptyHere(target) }];
+    const folder = mailboxOf(target);
+    if (!folder || target.kind !== "mailbox") return [];
+    const { accountId } = target;
+    const entries: MenuEntry[] = [{ label: "New folder inside…", icon: "folder", onSelect: () => newFolder(accountId, folder) }];
+    if (!folder.role) {
+      entries.push(
+        {
+          label: "Rename…",
+          icon: "compose",
+          onSelect: () =>
+            setNaming({
+              title: `Rename “${leafName(folder)}”`,
+              label: "Folder name",
+              value: leafName(folder),
+              confirm: "Rename",
+              onSave: (name) => renameFolder(folder.id, name),
+            }),
+        },
+        { label: "Delete folder…", icon: "trash", danger: true, onSelect: () => deleteFolderAsked(accountId, folder) },
+      );
+    }
+    return entries;
+  };
+
   /** Messages dropped on a sidebar folder: filed there, or marked as the folder says. */
   const dropOn = (target: View, payload: DragPayload) => {
     const { ids } = payload;
@@ -1021,6 +1149,7 @@ export function App() {
       setSearch((now) => now ?? { query: "", accountId: null });
     },
     "Mod+q": quit,
+    "Mod+Shift+U": newFolderHere,
     "/": toggleSidebar,
     ...(overlay ? { Escape: () => setOverlay(false) } : {}),
   });
@@ -1331,6 +1460,7 @@ export function App() {
         onCompose={writeNew}
         canCompose={composeFrom !== null}
         onMarkAllRead={readTargets().length > 0 ? markAllHere : undefined}
+        onEmpty={emptyRole(view) ? { label: `Empty ${ROLE_LABELS[emptyRole(view) ?? "trash"]}`, run: () => emptyHere(view) } : undefined}
         feed={shownFeed}
         mode={layout.mode}
         openId={openItem?.id ?? null}
@@ -1492,6 +1622,8 @@ export function App() {
     changes: sidebarChanges,
     onMenu: setMenu,
     onDrop: dropOn,
+    folderMenu,
+    onNewFolder: (accountId: string) => newFolder(accountId, null),
   };
 
   return (
@@ -1698,6 +1830,7 @@ export function App() {
           }}
         />
       )}
+      {naming && <NameDialog request={naming} onClose={() => setNaming(null)} />}
       {menu && <Menu request={menu} onClose={() => setMenu(null)} />}
       {chooser && (
         <ViewChooser

@@ -7,7 +7,7 @@ import type { AccountMail, MailState } from "./mail";
 import { type Anchor, type MenuEntry, type MenuRequest, anchorOf } from "./Menu";
 import type { SidebarChanges, SidebarPrefs } from "./sidebar-prefs";
 import { accountColour, accountLabel, usePrefs } from "./prefs";
-import { useShortcuts } from "./shortcuts";
+import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { MARKED_ICONS, MARKED_LABELS, ROLE_ICONS, ROLE_LABELS, type View, depth, leafName, sameView, viewKey } from "./views";
 import { useDialogFocus } from "./dialogFocus";
 
@@ -70,6 +70,8 @@ export function Sidebar({
   changes,
   onMenu,
   onDrop,
+  folderMenu,
+  onNewFolder,
 }: {
   mail: MailState;
   outbox: OutboxEntry[];
@@ -94,6 +96,10 @@ export function Sidebar({
   changes: SidebarChanges;
   onMenu: (request: MenuRequest) => void;
   onDrop: (view: View, payload: DragPayload) => void;
+  /** What can be done to a folder itself (new inside, rename, delete, empty), first in its menu. */
+  folderMenu?: (view: View) => MenuEntry[];
+  /** A new folder at the top of an account. */
+  onNewFolder?: (accountId: string) => void;
 }) {
   const [open, setOpen] = useState<Set<Role>>(() => new Set());
   const [panel, setPanel] = useState(false);
@@ -159,10 +165,12 @@ export function Sidebar({
         }
       : {};
 
-  const rowMenu = (event: MouseEvent, entries: MenuEntry[]) => {
-    if (entries.length === 0) return;
+  const rowMenu = (event: MouseEvent, entries: MenuEntry[], target: View) => {
+    const own = folderMenu?.(target) ?? [];
+    const all: MenuEntry[] = own.length > 0 && entries.length > 0 ? [...own, "separator", ...entries] : [...own, ...entries];
+    if (all.length === 0) return;
     event.preventDefault();
-    onMenu({ anchor: { x: event.clientX, y: event.clientY }, entries, label: "Folder" });
+    onMenu({ anchor: { x: event.clientX, y: event.clientY }, entries: all, label: "Folder" });
   };
 
   const item = (
@@ -203,7 +211,7 @@ export function Sidebar({
           aria-current={active ? "page" : undefined}
           title={expanded ? undefined : row.label}
           onClick={() => go(row.view)}
-          onContextMenu={(event) => rowMenu(event, options.menu ?? [])}
+          onContextMenu={(event) => rowMenu(event, options.menu ?? [], row.view)}
           {...dragProps(row.view)}
         >
           <Icon name={row.icon} size={19} />
@@ -403,6 +411,9 @@ export function Sidebar({
             go(target);
           }}
           onClose={() => setPanel(false)}
+          onMenu={onMenu}
+          folderMenu={folderMenu}
+          onNewFolder={onNewFolder}
         />
       )}
     </nav>
@@ -420,6 +431,9 @@ function FolderPanel({
   changes,
   onOpen,
   onClose,
+  onMenu,
+  folderMenu,
+  onNewFolder,
 }: {
   accounts: AccountMail[];
   view: View;
@@ -427,6 +441,9 @@ function FolderPanel({
   changes: SidebarChanges;
   onOpen: (view: View) => void;
   onClose: () => void;
+  onMenu: (request: MenuRequest) => void;
+  folderMenu?: (view: View) => MenuEntry[];
+  onNewFolder?: (accountId: string) => void;
 }) {
   useShortcuts({ Escape: onClose }, { modal: true });
   const appPrefs = usePrefs();
@@ -454,7 +471,16 @@ function FolderPanel({
   const row = (target: View, icon: IconName, label: string, indent = 0) => {
     const on = inSidebar(target);
     return (
-      <li key={viewKey(target)} className={sameView(view, target) ? "panel-row active" : "panel-row"}>
+      <li
+        key={viewKey(target)}
+        className={sameView(view, target) ? "panel-row active" : "panel-row"}
+        onContextMenu={(event) => {
+          const entries = folderMenu?.(target) ?? [];
+          if (entries.length === 0) return;
+          event.preventDefault();
+          onMenu({ anchor: { x: event.clientX, y: event.clientY }, entries, label: "Folder" });
+        }}
+      >
         <button
           type="button"
           className={indent ? `panel-open depth-${Math.min(indent, 4)}` : "panel-open"}
@@ -499,6 +525,17 @@ function FolderPanel({
                   colour={accountColour(appPrefs, account.account.id)}
                 />
                 <span className="label">{nameOf(account.account)}</span>
+                {onNewFolder && (
+                  <button
+                    type="button"
+                    className="panel-new"
+                    title={`New folder in ${account.account.email} (${MOD_KEY}+Shift+U)`}
+                    aria-label={`New folder in ${account.account.email}`}
+                    onClick={() => onNewFolder(account.account.id)}
+                  >
+                    <Icon name="plus" size={14} />
+                  </button>
+                )}
               </h3>
               <ul>
                 {tree(account.mailboxes).map((mailbox) =>
@@ -518,7 +555,8 @@ function FolderPanel({
           ))}
         </div>
         <p className="panel-hint">
-          Hold <strong>Ctrl</strong> and click to add several folders to the sidebar.
+          Hold <strong>Ctrl</strong> and click to add several folders to the sidebar. Right-click a folder to rename or
+          delete it.
         </p>
       </aside>
     </>
