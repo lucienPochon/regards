@@ -97,6 +97,10 @@ pub mod methods {
     pub const MESSAGE_MARK_ALL_READ: &str = "message.mark_all_read";
     /// The conversation a message belongs to, across folders. `ui` only for now.
     pub const THREAD_GET: &str = "thread.get";
+    /// Each message with the others of its conversation in the same folder:
+    /// what an action on a conversation's row (archive, trash, move, mark
+    /// read) covers. `ui` only, as `thread.get`.
+    pub const MESSAGE_CONVERSATION_IDS: &str = "message.conversation_ids";
     /// Mark messages read or unread, flagged or not. Applied at once, sent to the
     /// server by the operation queue (ADR-0010). `ui` only for now.
     pub const MESSAGE_SET_FLAGS: &str = "message.set_flags";
@@ -1150,6 +1154,14 @@ pub struct ThreadView {
 /// Parameters of [`methods::MESSAGE_ARCHIVE`] and [`methods::MESSAGE_TRASH`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageIds {
+    pub ids: Vec<i64>,
+}
+
+/// The result of [`methods::MESSAGE_CONVERSATION_IDS`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConversationIdsResult {
+    /// The ones asked for first, in their order; the rest of each
+    /// conversation newest first; each once.
     pub ids: Vec<i64>,
 }
 

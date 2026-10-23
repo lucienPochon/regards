@@ -774,6 +774,13 @@ impl Session {
                 self.allow_account(Access::Read, &params.account_id).await?;
                 mail::view(&self.state, params).await
             }
+            methods::MESSAGE_CONVERSATION_IDS => {
+                let params: MessageIds = params(request)?;
+                if !self.is_ui() {
+                    self.allow_targets(Access::Read, &params.ids).await?;
+                }
+                mail::conversation_ids(&self.state, params).await
+            }
             methods::THREAD_GET => {
                 let params: MessageRef = params(request)?;
                 self.allow_message(Access::Read, params.id).await?;

@@ -456,6 +456,17 @@ export interface MoveResult {
   undo: UndoInfo | null;
 }
 
+/**
+ * Each message with the rest of its conversation in the same folder (not
+ * deleted): what an action on a conversation's row covers. Archive, trash,
+ * move and mark read these, so a Done leaves nothing of the conversation
+ * behind. The ones given come first, each once. Not for an action on one
+ * message of a conversation (a card's ⋯ in the reading pane).
+ */
+export function conversationIds(ids: number[]): Promise<number[]> {
+  return invoke<number[]>("message_conversation_ids", { ids });
+}
+
 export function archiveMessages(ids: number[]): Promise<MoveResult> {
   return invoke<MoveResult>("message_archive", { ids });
 }

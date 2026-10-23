@@ -1277,6 +1277,18 @@ function handle(cmd: string, args: Args): unknown {
         attachments: message.attachments,
       };
     }
+    case "message_conversation_ids": {
+      const all: number[] = [];
+      for (const id of args.ids as number[]) {
+        const message = byId(id);
+        const conversation = messages
+          .filter((m) => m.id === id || (m.thread === message.thread && m.mailboxId === message.mailboxId))
+          .sort((a, b) => b.received_at - a.received_at || b.id - a.id)
+          .map((m) => m.id);
+        for (const found of [id, ...conversation]) if (!all.includes(found)) all.push(found);
+      }
+      return all;
+    }
     case "thread_get": {
       const message = byId(args.id as number);
       return {
