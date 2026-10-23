@@ -40,5 +40,10 @@ getrandom.workspace = true
 open = "5.4"
 tokio.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+# A click on a notification opens what it is about; the plugin can't tell of
+# clicks. The version the plugin already uses (0.8.1, 2026-07-17).
+tauri-winrt-notification = "=0.8.1"
+
 [lints]
 workspace = true

@@ -28,12 +28,12 @@ use regards_core::paths::DataDirs;
 use regards_core::secret::Secret;
 use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, AccountUpdateParams, AgentAccess,
-    AgentAccessParams, AgentActivityParams, AgentActivityResult, AgentSendParams, AsideParams, AttachmentFiles,
-    AttachmentPreview, AttachmentRef, AttachmentSaveAllParams, AttachmentSaveParams, ClientKind, ConnectionSecurity,
-    DeleteResult, DiscoverParams, DiscoverResult, DraftAttachFileParams, DraftAttachImageParams, DraftCreateParams,
-    DraftDetachParams, DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult, DraftRef,
-    DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
+    AccountAddParams, AccountLoginParams, AccountRef, AccountRemoveParams, AccountSummary, AccountUpdateParams,
+    AgentAccess, AgentAccessParams, AgentActivityParams, AgentActivityResult, AgentSendParams, AsideParams,
+    AttachmentFiles, AttachmentPreview, AttachmentRef, AttachmentSaveAllParams, AttachmentSaveParams, ClientKind,
+    ConnectionSecurity, DeleteResult, DiscoverParams, DiscoverResult, DraftAttachFileParams, DraftAttachImageParams,
+    DraftCreateParams, DraftDetachParams, DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult,
+    DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
     ExplainResult, HoldApproveParams, HoldListParams, HoldListResult, HoldRef, HoldView, IdentityListResult,
     IdentityRef, IdentitySaveParams, IdentitySetSignatureParams, IdentitySetVoiceParams, IdentityView,
     MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult,
@@ -565,6 +565,47 @@ async fn account_update(bridge: State<'_, Bridge>, id: String, display_name: Str
         .call(methods::ACCOUNT_UPDATE, AccountUpdateParams { id, display_name })
         .await
         .map_err(describe)
+}
+
+/// A password account's new sign-in, as the UI sends it. `None` password: keep it.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LoginInput {
+    id: String,
+    username: Option<String>,
+    password: Option<Secret>,
+    imap_host: String,
+    imap_port: u16,
+    smtp_host: String,
+    smtp_port: u16,
+    smtp_security: ConnectionSecurity,
+}
+
+/// Change a password account's user name, password or servers; the daemon
+/// checks them with the IMAP server first.
+#[tauri::command]
+async fn account_set_login(bridge: State<'_, Bridge>, input: LoginInput) -> Result<AccountSummary, String> {
+    let smtp_host = match input.smtp_host.trim() {
+        "" => input.imap_host.clone(),
+        host => host.to_owned(),
+    };
+    let params = AccountLoginParams {
+        id: input.id,
+        username: input.username,
+        password: input.password,
+        imap: ServerSettings {
+            host: input.imap_host,
+            port: input.imap_port,
+            security: ConnectionSecurity::Tls,
+        },
+        smtp: ServerSettings {
+            host: smtp_host,
+            port: input.smtp_port,
+            security: input.smtp_security,
+        },
+    };
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::ACCOUNT_SET_LOGIN, params).await.map_err(describe)
 }
 
 /// The providers this version can sign in with (ADR-0018); others use a password.
@@ -1789,6 +1830,7 @@ fn main() {
             agent_apps::agent_apps_found,
             command_line::command_line,
             account_update,
+            account_set_login,
             people_suggest,
             people_forget,
             compose_window::composer_window,

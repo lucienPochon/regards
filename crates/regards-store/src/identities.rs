@@ -137,6 +137,16 @@ pub fn set_signature(tx: &Transaction<'_>, id: i64, signature_id: Option<i64>) -
     )? == 1)
 }
 
+/// How many identities other than `except` have `signature_id` as their default.
+pub fn sharing_signature(conn: &Connection, signature_id: i64, except: i64) -> Result<usize, StoreError> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM identities WHERE signature_id = ?1 AND id != ?2",
+        params![signature_id, except],
+        |row| row.get(0),
+    )?;
+    Ok(usize::try_from(count).unwrap_or(usize::MAX))
+}
+
 fn signature_exists(conn: &Connection, signature_id: Option<i64>) -> Result<(), StoreError> {
     let Some(id) = signature_id else { return Ok(()) };
     let exists: bool = conn.query_row("SELECT EXISTS (SELECT 1 FROM signatures WHERE id = ?1)", [id], |row| {

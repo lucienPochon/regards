@@ -65,13 +65,24 @@ pub(crate) async fn save(state: &State, params: IdentitySaveParams) -> Result<Va
                 Asked::Text(text) if text.trim().is_empty() => None,
                 Asked::Text(text) => Some(match signatures::with_body(tx, &text)? {
                     Some(found) => found.id,
-                    None => {
-                        let named = signatures::Fields {
-                            name: fields.email.clone(),
-                            body: text,
-                        };
-                        signatures::add(tx, &named, now)?
-                    }
+                    None => match own_signature(tx, id, &account_id)? {
+                        // Its own signature's text changed: that one, edited, not a new copy each time.
+                        Some(own) => {
+                            let edited = signatures::Fields {
+                                name: own.name,
+                                body: text,
+                            };
+                            signatures::update(tx, own.id, &edited, now)?;
+                            own.id
+                        }
+                        None => {
+                            let named = signatures::Fields {
+                                name: fields.email.clone(),
+                                body: text,
+                            };
+                            signatures::add(tx, &named, now)?
+                        }
+                    },
                 }),
             };
             let id = match id {
@@ -118,6 +129,25 @@ pub(crate) async fn make_default(state: &State, params: IdentityRef) -> Result<V
         return Err(RpcError::new(codes::NOT_FOUND, "no such identity"));
     }
     Ok(json!({ "default": true }))
+}
+
+/// The signature an existing identity of `account_id` has as its default,
+/// if no other identity has it too: editing its text edits that signature.
+fn own_signature(
+    conn: &rusqlite::Connection,
+    id: Option<i64>,
+    account_id: &str,
+) -> Result<Option<signatures::Signature>, StoreError> {
+    let Some(identity) = id.map(|id| identities::get(conn, id)).transpose()?.flatten() else {
+        return Ok(None);
+    };
+    let Some(signature_id) = identity.signature_id.filter(|_| identity.account_id == account_id) else {
+        return Ok(None);
+    };
+    if identities::sharing_signature(conn, signature_id, identity.id)? > 0 {
+        return Ok(None);
+    }
+    signatures::get(conn, signature_id)
 }
 
 fn check(fields: &Fields, asked: &Asked) -> Result<(), RpcError> {
