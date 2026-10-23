@@ -24,10 +24,16 @@ const MAX_INLINE_IMAGE: usize = 2 * 1024 * 1024;
 /// At most this much inline image data per message.
 const MAX_INLINE_TOTAL: usize = 10 * 1024 * 1024;
 
-/// Base styles: mail is designed for a light background, whatever the app theme.
+/// Base styles: mail is designed for a light background, whatever the app
+/// theme (the desktop darkens the whole page when asked). The folded quoted
+/// history ([`fold_quotes`]) shows as a small "•••" pill.
 const FRAME_STYLE: &str = "html{color-scheme:light}body{margin:0;padding:16px;\
     font:15px/1.5 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#1d1d1b;\
-    background:#fff;overflow-wrap:anywhere}img{max-width:100%;height:auto}";
+    background:#fff;overflow-wrap:anywhere}img{max-width:100%;height:auto}\
+    details.regards-quote>summary{list-style:none;display:inline-block;margin:8px 0;padding:0 9px;\
+    border-radius:9px;background:#e9eae8;color:#5c605d;font-size:13px;line-height:19px;cursor:pointer}\
+    details.regards-quote>summary::-webkit-details-marker{display:none}\
+    details.regards-quote[open]>summary{margin-bottom:4px}";
 
 /// The hidden frame that rewritten links open in (see the module docs).
 pub const LINK_TARGET: &str = "regards-links";
@@ -86,6 +92,7 @@ pub fn render_with(raw: &[u8], allow_remote: bool, links: Option<&str>, clean_li
     }
 
     let (body, blocked_remote) = sanitize(html, allow_remote, &inline, links, clean_links);
+    let body = fold_quotes(&body);
     // The message's own <base> and frames were removed; these are ours.
     let html = if links.is_some() {
         document(
@@ -233,8 +240,12 @@ pub fn sanitize(
             "lang",
             "title",
             "background",
+            // Kept only where they mark quoted history (QUOTE_IDS), for fold_quotes.
+            "id",
         ])
         .add_tag_attributes("font", ["face", "size", "color"])
+        // `type="cite"` marks quoted history (Apple Mail, Thunderbird).
+        .add_tag_attributes("blockquote", ["type"])
         .rm_clean_content_tags(["style"])
         .add_url_schemes(["cid", "data"])
         .url_relative(UrlRelative::Deny)
@@ -286,6 +297,8 @@ pub fn sanitize(
                     }
                     lower.starts_with("mailto:").then(|| value.into())
                 }
+                "id" => QUOTE_IDS.contains(&value).then(|| value.into()),
+                "type" if element == "blockquote" => (lower == "cite").then(|| value.into()),
                 _ => Some(value.into()),
             }
         })
@@ -293,6 +306,180 @@ pub fn sanitize(
         .to_string();
     let count = blocked.load(Ordering::Relaxed);
     (clean, count)
+}
+
+/// Classes mail clients put on the quoted history of a reply (Gmail, Yahoo,
+/// Proton; Thunderbird's "… wrote:" line before its quote).
+const QUOTE_CLASSES: &[&str] = &["gmail_quote", "yahoo_quoted", "protonmail_quote", "moz-cite-prefix"];
+/// Where Outlook starts the quoted history: everything after it is quoted.
+const QUOTE_IDS: &[&str] = &["divRplyFwdMsg", "appendonsend"];
+/// How a forwarded message begins, in the languages mail clients write it
+/// in: that is what was sent, not history, and stays open.
+const FORWARDED: &[&str] = &[
+    "forwarded message",
+    "message transféré",
+    "weitergeleitete nachricht",
+    "mensaje reenviado",
+    "messaggio inoltrato",
+    // Outlook's header of a forward.
+    "subject: fw:",
+    "subject: fwd:",
+    "objet : tr :",
+    "objet : tr:",
+    "betreff: wg:",
+];
+
+/// The quoted history at the end of a reply, folded behind "•••" (a
+/// `<details>`, so it opens without a script). Only when something was
+/// written above it and nothing below (not a reply written between quotes),
+/// and not a forward. `html` is the sanitiser's output: tags well formed,
+/// attributes in double quotes.
+fn fold_quotes(html: &str) -> String {
+    let Some((start, end)) = quoted_history(html) else {
+        return html.to_owned();
+    };
+    let quote = &html[start..end];
+    let opening = visible_text(quote)
+        .split_whitespace()
+        .take(80)
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    if !has_text(&html[..start]) || has_text(&html[end..]) || FORWARDED.iter().any(|f| opening.contains(f)) {
+        return html.to_owned();
+    }
+    format!(
+        "{}<details class=\"regards-quote\"><summary title=\"Show the quoted text\" aria-label=\"Show the quoted text\">\
+         •••</summary>{quote}</details>{}",
+        &html[..start],
+        &html[end..]
+    )
+}
+
+/// Where the first quoted history starts and ends.
+fn quoted_history(html: &str) -> Option<(usize, usize)> {
+    let mut at = 0;
+    while let Some(found) = html[at..].find('<') {
+        let start = at + found;
+        let tag = start_tag(html, start)?;
+        at = start + tag.len;
+        let Some(name) = tag.name else { continue };
+        let class = attribute(tag.text, "class");
+        let classed = class.is_some_and(|class| class.split_whitespace().any(|c| QUOTE_CLASSES.contains(&c)));
+        let cited = name == "blockquote" && attribute(tag.text, "type") == Some("cite");
+        if attribute(tag.text, "id").is_some_and(|id| QUOTE_IDS.contains(&id)) {
+            // Outlook: from here to the end.
+            return Some((start, html.len()));
+        }
+        if !(classed || cited) {
+            continue;
+        }
+        let mut end = element_end(html, start + tag.len, name)?;
+        // Thunderbird: the "… wrote:" line, then the quote itself.
+        if class.is_some_and(|class| class.split_whitespace().any(|c| c == "moz-cite-prefix")) {
+            let next = end + (html.len() - end - html[end..].trim_start().len());
+            if html[next..].starts_with("<blockquote") {
+                let quote = start_tag(html, next)?;
+                end = element_end(html, next + quote.len, "blockquote")?;
+            }
+        }
+        return Some((start, end));
+    }
+    None
+}
+
+struct StartTag<'a> {
+    /// `None` for end tags, comments and the like.
+    name: Option<&'a str>,
+    /// The whole tag, `<` to `>`.
+    text: &'a str,
+    len: usize,
+}
+
+/// The tag at `start` (a `<`), read up to its `>` outside quotes.
+fn start_tag(html: &str, start: usize) -> Option<StartTag<'_>> {
+    let rest = &html[start..];
+    let mut quoted = false;
+    let close = rest.char_indices().skip(1).find_map(|(i, c)| match c {
+        '"' => {
+            quoted = !quoted;
+            None
+        }
+        '>' if !quoted => Some(i),
+        _ => None,
+    })?;
+    let text = &rest[..=close];
+    let name_end = text[1..]
+        .find(|c: char| !c.is_ascii_alphanumeric())
+        .map_or(text.len(), |i| i + 1);
+    let name = &text[1..name_end];
+    Some(StartTag {
+        name: (!name.is_empty() && name.as_bytes()[0].is_ascii_alphabetic()).then_some(name),
+        text,
+        len: text.len(),
+    })
+}
+
+/// An attribute's value in a start tag, as the sanitiser writes them.
+fn attribute<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+    let marker = format!(" {name}=\"");
+    let from = tag.find(&marker)? + marker.len();
+    let to = tag[from..].find('"')? + from;
+    Some(&tag[from..to])
+}
+
+/// Just after the end tag that closes the `name` element whose content starts at `from`.
+fn element_end(html: &str, from: usize, name: &str) -> Option<usize> {
+    let (open, close) = (format!("<{name}"), format!("</{name}>"));
+    let mut depth = 1;
+    let mut at = from;
+    loop {
+        let next_close = html[at..].find(&close)? + at;
+        // Other elements of the same name opened before it.
+        let mut scan = at;
+        while let Some(found) = html[scan..next_close].find(&open) {
+            let begin = scan + found;
+            let after = html.as_bytes().get(begin + open.len()).copied();
+            if matches!(after, Some(b' ' | b'>' | b'/')) {
+                depth += 1;
+            }
+            scan = begin + open.len();
+        }
+        depth -= 1;
+        at = next_close + close.len();
+        if depth == 0 {
+            return Some(at);
+        }
+    }
+}
+
+/// The text of an HTML fragment: no tags, no style sheets, no entities.
+fn visible_text(html: &str) -> String {
+    let mut text = String::new();
+    let mut rest = html;
+    while !rest.is_empty() {
+        if rest.starts_with("<style") {
+            rest = rest.find("</style>").map_or("", |end| &rest[end + 8..]);
+        } else if rest.starts_with('<') {
+            rest = rest.find('>').map_or("", |end| &rest[end + 1..]);
+        } else if rest.starts_with('&') {
+            text.push(' ');
+            rest = rest
+                .find(';')
+                .filter(|&end| end < 10)
+                .map_or(&rest[1..], |end| &rest[end + 1..]);
+        } else {
+            let c = rest.chars().next().unwrap_or(' ');
+            text.push(c);
+            rest = &rest[c.len_utf8()..];
+        }
+    }
+    text
+}
+
+/// Whether a fragment says anything: letters or digits outside its tags.
+fn has_text(html: &str) -> bool {
+    visible_text(html).chars().any(char::is_alphanumeric)
 }
 
 /// Query parameters that only say who clicked and from which campaign
@@ -597,6 +784,92 @@ mod tests {
         assert!(
             text.contains("Hello Bob") && text.contains("one") && text.contains("quoted"),
             "{text}"
+        );
+    }
+
+    /// Sanitised, then folded, as messages are shown.
+    fn folded(html: &str) -> String {
+        fold_quotes(&clean(html, false).0)
+    }
+
+    const FOLD: &str = "<details class=\"regards-quote\">";
+
+    #[test]
+    fn the_quoted_history_under_a_reply_is_folded_as_each_client_marks_it() {
+        // Gmail: its container, the "… wrote:" line and the quote, nested divs and all.
+        let gmail = folded(
+            "<div dir=\"ltr\">Sounds good</div><br><div class=\"gmail_quote gmail_quote_container\">\
+             <div dir=\"ltr\" class=\"gmail_attr\">On Mon, Ada wrote:<br></div>\
+             <blockquote class=\"gmail_quote\"><div><div>Lunch?</div></div></blockquote></div>",
+        );
+        let at = gmail.find(FOLD).expect(&gmail);
+        assert!(gmail[..at].contains("Sounds good"), "{gmail}");
+        assert!(
+            gmail[at..].contains("wrote:") && gmail[at..].contains("Lunch?"),
+            "{gmail}"
+        );
+        assert!(gmail.ends_with("</blockquote></div></details>"), "{gmail}");
+
+        // Apple Mail and Thunderbird: blockquote type="cite"; Thunderbird's line before it too.
+        let apple = folded(
+            "<div>Yes</div><div><br><blockquote type=\"cite\"><div>On 1 Oct, Ada wrote:</div><div>Lunch?</div></blockquote></div>",
+        );
+        assert!(apple.contains("<details class=\"regards-quote\"><summary"), "{apple}");
+        assert!(apple.contains("<blockquote type=\"cite\">"), "{apple}");
+        let thunderbird = folded(
+            "<p>Yes</p><div class=\"moz-cite-prefix\">On 1 Oct, Ada wrote:<br></div>\n<blockquote type=\"cite\">Lunch?</blockquote>",
+        );
+        let at = thunderbird.find(FOLD).expect(&thunderbird);
+        assert!(
+            thunderbird[at..].contains("wrote:") && thunderbird.ends_with("</blockquote></details>"),
+            "{thunderbird}"
+        );
+
+        // Outlook: everything from its marker to the end.
+        let outlook = folded(
+            "<div>Thanks</div><div id=\"appendonsend\"></div><hr><div id=\"divRplyFwdMsg\"><b>From:</b> Ada</div><div>Lunch?</div>",
+        );
+        let at = outlook.find(FOLD).expect(&outlook);
+        assert!(
+            outlook[at..].contains("From:") && outlook.ends_with("<div>Lunch?</div></details>"),
+            "{outlook}"
+        );
+    }
+
+    #[test]
+    fn quotes_stay_open_unless_they_are_history_under_a_reply() {
+        // Answered between the quotes: all of it is read together.
+        let between = folded("<p>See below</p><blockquote type=\"cite\">Lunch?</blockquote><p>Yes, at noon.</p>");
+        assert!(!between.contains(FOLD), "{between}");
+        // Nothing written above (a style sheet and spaces are not writing).
+        let only =
+            folded("<style>p{color:red}</style>&nbsp;<div class=\"gmail_quote\">On Mon, Ada wrote: Lunch?</div>");
+        assert!(!only.contains(FOLD), "{only}");
+        // A forward is what was sent.
+        let forward = folded(
+            "<div>FYI</div><div class=\"gmail_quote\"><div class=\"gmail_attr\">---------- Forwarded message ---------<br>From: Ada</div>The plan</div>",
+        );
+        assert!(!forward.contains(FOLD), "{forward}");
+        let outlook_forward = folded(
+            "<p>FYI</p><div id=\"divRplyFwdMsg\"><b>From:</b> Ada<br><b>Subject:</b>&nbsp;FW: Plans</div><div>The plan</div>",
+        );
+        assert!(!outlook_forward.contains(FOLD), "{outlook_forward}");
+        // Plain quoting with no client's mark is left alone.
+        assert!(!folded("<p>Yes</p><blockquote>Lunch?</blockquote>").contains(FOLD));
+    }
+
+    #[test]
+    fn only_quote_marks_survive_of_ids_and_types() {
+        let (html, _) = clean(
+            "<div id=\"divRplyFwdMsg\">a</div><div id=\"main\">b</div><blockquote type=\"cite\">c</blockquote>\
+             <blockquote type=\"other\">d</blockquote><ol type=\"a\"><li>e</li></ol>",
+            false,
+        );
+        assert!(html.contains("<div id=\"divRplyFwdMsg\">"), "{html}");
+        assert!(!html.contains("id=\"main\""), "{html}");
+        assert!(
+            html.contains("<blockquote type=\"cite\">c") && html.contains("<blockquote>d"),
+            "{html}"
         );
     }
 

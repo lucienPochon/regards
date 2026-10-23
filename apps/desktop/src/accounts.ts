@@ -391,9 +391,12 @@ export function getThread(id: number): Promise<{ messages: ThreadEntry[] }> {
 /**
  * Where the sandboxed reading frame loads a message's sanitised HTML from
  * (the `regards-mail` scheme, served by the desktop bridge with a strict CSP).
+ * With `dark`, the page is darkened for the dark theme: the message inverted
+ * with its hues kept and its pictures as sent, on the dark card's colour
+ * (`--bg-elev`). Load it again when the theme changes.
  */
-export function messageHtmlUrl(id: number, allowRemote: boolean): string {
-  return convertFileSrc(`message/${id}?remote=${allowRemote ? 1 : 0}`, "regards-mail");
+export function messageHtmlUrl(id: number, allowRemote: boolean, dark = false): string {
+  return convertFileSrc(`message/${id}?remote=${allowRemote ? 1 : 0}${dark ? "&dark=1" : ""}`, "regards-mail");
 }
 
 /** Mark messages read or unread, flagged or not. Applied at once; the server is told in the background. */
