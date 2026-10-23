@@ -209,7 +209,8 @@ export function MessageList({
   mode: "single" | "split";
   openId: number | null;
   picked: ReadonlySet<number>;
-  onOpen: (item: ListItem) => void;
+  /** `how`: "step" when the keyboard moved to it beside the list. */
+  onOpen: (item: ListItem, how?: "step") => void;
   onPick: (ids: Set<number>) => void;
   actionsFor: (items: ListItem[]) => Action[];
   /** The command palette, for these actions (right-click and the ⋯ buttons); `about` is the one message. */
@@ -301,7 +302,7 @@ export function MessageList({
     anchor.current = item.id;
     stepped.current = true;
     setCursor(item.id);
-    if (mode === "split") onOpen(item);
+    if (mode === "split") onOpen(item, "step");
   };
 
   // What an action applies to: the selection when the row is in it, else the row.

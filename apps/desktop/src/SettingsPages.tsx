@@ -140,6 +140,23 @@ export function GeneralPage({ accounts }: { accounts: AccountSummary[] }) {
         />
       </Option>
       <Option
+        icon="mailOpen"
+        label="Mark as read"
+        description="When a message you open is marked read. Passing messages with the arrow keys beside the list leaves them unread."
+      >
+        <Select
+          label="Mark as read"
+          value={prefs.markRead}
+          options={[
+            { id: "now", label: "When opened" },
+            { id: "2s", label: "After 2 seconds" },
+            { id: "5s", label: "After 5 seconds" },
+            { id: "never", label: "Never: I mark it myself" },
+          ]}
+          onChange={(markRead) => setPrefs({ markRead })}
+        />
+      </Option>
+      <Option
         icon="mail"
         label="Fold older messages in a conversation"
         description="Older messages show as one line each; the one you opened is shown in full."
