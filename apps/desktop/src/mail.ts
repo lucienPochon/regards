@@ -151,6 +151,26 @@ export function inboxSources(accounts: AccountMail[], seen: boolean): Source[] {
   );
 }
 
+/** At most this many messages are done at once: as many as one change may touch. */
+export const ALL_AT_ONCE = 1000;
+
+/** Every message of some sources (up to `ALL_AT_ONCE`), read page by page: a whole group, to finish it. */
+export async function allOf(sources: Source[]): Promise<ListItem[]> {
+  const items: ListItem[] = [];
+  for (const source of sources) {
+    let before: MessageCursor | null = null;
+    do {
+      const page: MessageListResult = await source.fetch(before, 200);
+      for (const message of page.messages) {
+        items.push({ ...message, mailboxId: source.mailboxId ?? message.mailbox_id, accountId: source.accountId, role: source.role });
+      }
+      before = page.next;
+    } while (before && items.length < ALL_AT_ONCE);
+    if (items.length >= ALL_AT_ONCE) break;
+  }
+  return items.sort(newer).slice(0, ALL_AT_ONCE);
+}
+
 /**
  * The newest few of some sources, merged: enough for a card or a group row
  * to show who and how many. Kept current.
@@ -477,11 +497,22 @@ export function useDrafts(): Draft[] {
 }
 
 /** What has not gone out yet. */
-export function useOutbox(): OutboxEntry[] {
+export function useOutbox(onFailed?: (entry: OutboxEntry) => void): OutboxEntry[] {
   const [entries, setEntries] = useState<OutboxEntry[]>([]);
+  // The sends known to have failed (or maybe not gone); null until the first look,
+  // so what failed before the app opened is left to the Outbox.
+  const failedBefore = useRef<Set<number> | null>(null);
+  const tell = useRef(onFailed);
+  tell.current = onFailed;
   const refresh = useCallback(() => {
     listOutbox()
-      .then((result) => setEntries(result.entries))
+      .then((result) => {
+        setEntries(result.entries);
+        const failing = result.entries.filter((entry) => entry.state === "failed" || entry.state === "uncertain");
+        const known = failedBefore.current;
+        failedBefore.current = new Set(failing.map((entry) => entry.id));
+        if (known) for (const entry of failing) if (!known.has(entry.id)) tell.current?.(entry);
+      })
       .catch(() => {});
   }, []);
   useEffect(refresh, [refresh]);

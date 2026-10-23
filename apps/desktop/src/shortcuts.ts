@@ -1,5 +1,5 @@
 import { type RefObject, useEffect, useRef } from "react";
-import { getPrefs } from "./prefs";
+import { type KeySet, getPrefs } from "./prefs";
 
 /**
  * Keyboard shortcuts. Each component that offers some registers a layer; the
@@ -8,7 +8,8 @@ import { getPrefs } from "./prefs";
  *
  * Key names: a letter as typed ("j"), "Shift+U" for capitals, symbols as
  * typed ("#", "?"), named keys ("Escape", "ArrowDown", "Delete") and
- * "Mod+z" for Ctrl+Z (Cmd+Z on macOS).
+ * "Mod+z" for Ctrl+Z (Cmd+Z on macOS). A digit key also answers to its
+ * place on the keyboard: "Shift+1" and "Mod+Alt+1", whatever it types.
  *
  * Keys typed into a field are left alone, and so are combinations with Alt or
  * with Ctrl/Cmd other than our own "Mod+" ones. With single-key shortcuts off
@@ -43,12 +44,14 @@ export function useShortcuts(shortcuts: Shortcuts, options: { modal?: boolean } 
 
 function onKeyDown(event: KeyboardEvent) {
   if (event.defaultPrevented || event.isComposing || typing(event.target)) return;
-  const name = keyName(event);
-  if (!name) return;
-  if (characterKey(name) && !getPrefs().singleKeys) return;
+  const singleKeys = getPrefs().singleKeys;
+  const names = [keyName(event), placeName(event)].filter(
+    (name): name is string => name !== null && (singleKeys || !characterKey(name)),
+  );
+  if (names.length === 0) return;
   for (let index = layers.length - 1; index >= 0; index--) {
     const layer = layers[index];
-    const action = layer.keys.current[name];
+    const action = names.map((name) => layer.keys.current[name]).find(Boolean);
     if (action) {
       event.preventDefault();
       action();
@@ -80,13 +83,70 @@ export function keyName(event: KeyboardEvent): string | null {
   return mod ? `Mod+${key}` : key;
 }
 
+/**
+ * A digit key by its place, not what it types: Shift+1 is "!" on an American
+ * keyboard, "+" on a Swiss one and "1" on a French one, and Ctrl+Alt+3 is
+ * AltGr+3 ("#") on Windows.
+ */
+export function placeName(event: KeyboardEvent): string | null {
+  const digit = /^Digit(\d)$/.exec(event.code)?.[1];
+  if (!digit) return null;
+  const mod = isMac ? event.metaKey : event.ctrlKey;
+  const foreign = isMac ? event.ctrlKey : event.metaKey;
+  if (foreign) return null;
+  if (mod && event.altKey && !event.shiftKey) return `Mod+Alt+${digit}`;
+  if (event.shiftKey && !mod && !event.altKey) return `Shift+${digit}`;
+  return null;
+}
+
+/** A key name as shown to people: "Mod" is Ctrl, or ⌘ on macOS. */
+export const keyText = (name: string) => name.replace(/^Mod\+/, `${MOD_KEY}+`);
+
 function typing(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
-/** For the help panel. */
-export const SHORTCUTS: { keys: string; action: string }[] = [
+/** For the help panel: the shortcuts of each key set. */
+export function shortcutList(set: KeySet): { keys: string; action: string }[] {
+  return set === "classic" ? CLASSIC : STANDARD;
+}
+
+const STANDARD: { keys: string; action: string }[] = [
+  { keys: `${MOD_KEY}+K`, action: "Commands: everything, by name" },
+  { keys: "j / ↓ / →", action: "Next message" },
+  { keys: "k / ↑ / ←", action: "Previous message" },
+  { keys: "Enter", action: "Open the highlighted message" },
+  { keys: "Esc", action: "Back to the list, or close the message" },
+  { keys: `/ or ${MOD_KEY}+/`, action: "Show or fold the sidebar" },
+  { keys: `${MOD_KEY}+F`, action: "Search the list" },
+  { keys: "e", action: "Done (archive)" },
+  { keys: "Delete / Backspace", action: "Delete (in Trash or Junk: for good, after confirming)" },
+  { keys: "i", action: "Flag or unflag" },
+  { keys: "d", action: "Pin or unpin" },
+  { keys: "s", action: "Snooze, or bring back a snoozed message" },
+  { keys: "g", action: "Set aside, or bring back to the inbox" },
+  { keys: "u", action: "Mark read or unread" },
+  { keys: "Shift+1", action: "Mark as junk" },
+  { keys: `${MOD_KEY}+Shift+M`, action: "Move to a folder" },
+  { keys: "p", action: "Print the open message" },
+  { keys: "x", action: "Select or unselect the open message" },
+  { keys: `${MOD_KEY}+A`, action: "Select every message in the list" },
+  { keys: "z", action: "Undo, while the undo bar shows (also undo send)" },
+  { keys: "c", action: "New message" },
+  { keys: "Shift+R / r / f", action: "Reply, reply all, forward" },
+  { keys: "Shift+O / o", action: "Open every message of the conversation, or fold the older ones" },
+  { keys: `${MOD_KEY}+G / ${MOD_KEY}+D / ${MOD_KEY}+S`, action: "Go to Set aside, Pinned, Snoozed" },
+  { keys: `${MOD_KEY}+Shift+G`, action: "Go to a folder" },
+  { keys: `${MOD_KEY}+Alt+1 / 2 / 3`, action: "Inbox by priority, by category, by date" },
+  { keys: `${MOD_KEY}+R`, action: "Check for new mail" },
+  { keys: `${MOD_KEY}+Enter`, action: "Send, in the composer" },
+  { keys: `${MOD_KEY}+Shift+T`, action: "Insert a template, in the composer" },
+  { keys: `${MOD_KEY}+,`, action: "Settings" },
+  { keys: "?", action: "Show or hide these shortcuts" },
+];
+
+const CLASSIC: { keys: string; action: string }[] = [
   { keys: `${MOD_KEY}+K`, action: "Commands: everything, by name" },
   { keys: "j / ↓", action: "Next message" },
   { keys: "k / ↑", action: "Previous message" },

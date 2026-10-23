@@ -213,13 +213,26 @@ async fn run(state: &State, account_id: &str) -> Result<Summary, SyncError> {
 }
 
 async fn sync_with(state: &State, session: &mut Session, account_id: &str) -> Result<Summary, SyncError> {
+    sync_other_folders(state, session, account_id, None).await
+}
+
+/// The folder list and every folder but `except` (the inbox push waits on; `None`: all),
+/// on the push connection, so mail that lands elsewhere shows without a
+/// restart: Sent from another device, folders filled by server rules, flags
+/// changed in webmail. The caller selects its folder again afterwards.
+pub(crate) async fn sync_other_folders(
+    state: &State,
+    session: &mut Session,
+    account_id: &str,
+    except: Option<i64>,
+) -> Result<Summary, SyncError> {
     let mut summary = Summary {
         mailboxes: sync_mailbox_list(state, session, account_id).await?,
         ..Summary::default()
     };
     let id = account_id.to_owned();
     let mailboxes = state.store.read(move |conn| mailboxes::list(conn, &id)).await?;
-    for mailbox in mailboxes.into_iter().filter(|m| m.selectable) {
+    for mailbox in mailboxes.into_iter().filter(|m| m.selectable && Some(m.id) != except) {
         let changes = sync_mailbox(state, session, &mailbox).await?;
         summary.messages_added += changes.messages_added;
         summary.flag_changes += changes.flag_changes;

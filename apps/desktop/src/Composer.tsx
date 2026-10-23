@@ -16,6 +16,7 @@ import {
   formatRecipients,
   getDraft,
   invalidAddresses,
+  isUntouched,
   parseRecipients,
   saveDraft,
   sendDraft,
@@ -23,6 +24,7 @@ import {
   setDraftFrom,
   swapSignatureHtml,
   textToHtml,
+  touchDraft,
 } from "./compose";
 import { listAccounts } from "./accounts";
 import { type Identity, listIdentities } from "./identities";
@@ -53,9 +55,11 @@ const AUTOSAVE_MS = 800;
 /**
  * Write a message: across the whole content area ("full"), or in a panel
  * over the conversation when replying ("panel"). Everything is saved to the
- * draft as you type; closing keeps the draft, the bin deletes it, Send queues
- * it with a few seconds to undo, and Send later picks a time. The bell asks
- * to be reminded if nobody replies by a time.
+ * draft as you type; closing keeps the draft (one just started and left as
+ * it came is deleted), the bin deletes it, Send queues it with a few seconds
+ * to undo (with Ctrl+Shift+Enter, and files the conversation as Done), and
+ * Send later picks a time. The bell asks to be reminded if nobody replies
+ * by a time.
  */
 export function Composer({
   draftId,
@@ -115,6 +119,8 @@ export function Composer({
   /** Files are dragged over the window: dropped, they are attached. */
   const [dragging, setDragging] = useState(false);
   const saved = useRef<string>("");
+  /** The fields as the draft came: closed unchanged, a draft just started is not kept. */
+  const initialFields = useRef<string>("");
   /** The editor, to put images in. */
   const editor = useRef<Editor | null>(null);
   const keepEditor = useCallback((instance: Editor) => {
@@ -124,6 +130,8 @@ export function Composer({
   const toField = useRef<HTMLInputElement>(null);
   const ccField = useRef<HTMLInputElement>(null);
   const bccField = useRef<HTMLInputElement>(null);
+  const subjectField = useRef<HTMLInputElement>(null);
+  const fromButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     let current = true;
@@ -142,6 +150,7 @@ export function Composer({
           html,
         };
         saved.current = JSON.stringify(initial);
+        initialFields.current = saved.current;
         setDraft(loaded);
         setFields(initial);
         setCopies(loaded.cc.length + loaded.bcc.length > 0);
@@ -196,6 +205,7 @@ export function Composer({
     // Of this account, or another, where the draft then goes.
     const next = [...identities, ...everyone.flat()].find((identity) => identity.id === identityId);
     if (!next) return;
+    touchDraft(draft.id);
     setError(null);
     try {
       const old = currentSignature();
@@ -288,9 +298,18 @@ export function Composer({
   }, [fields, flush]);
 
   const close = useCallback(async () => {
+    // Started here and closed as it came (Esc after Reply): nothing to keep,
+    // nor to put in the server's Drafts.
+    if (draft && isUntouched(draft.id) && fields && JSON.stringify(fields) === initialFields.current) {
+      window.clearTimeout(timer.current);
+      touchDraft(draft.id);
+      await deleteDraft(draft.id).catch(() => undefined);
+      onClose();
+      return;
+    }
     await flush();
     onClose();
-  }, [flush, onClose]);
+  }, [draft, fields, flush, onClose]);
   useEffect(() => {
     if (saveRef) saveRef.current = flush;
   }, [flush, saveRef]);
@@ -347,12 +366,14 @@ export function Composer({
     return false;
   };
 
-  const send = async (sendAt: number | null = null) => {
+  /** Send now or at `sendAt`; with `done`, the conversation it answers is filed as Done too. */
+  const send = async (sendAt: number | null = null, done = false) => {
     if (!draft || !checked()) return;
     setBusy(true);
     try {
       if (!(await flush()) || !(await confirmed())) return;
-      onQueued(await sendDraft(draft.id, getPrefs().undoSeconds, sendAt, remindAt));
+      const queued = await sendDraft(draft.id, getPrefs().undoSeconds, sendAt, remindAt);
+      onQueued(done ? { ...queued, done } : queued);
     } catch (failure) {
       setError(String(failure));
     } finally {
@@ -402,6 +423,7 @@ export function Composer({
     setError(null);
     try {
       const updated = await attachFiles(draft.id);
+      touchDraft(draft.id);
       if (updated) setDraft(updated);
     } catch (failure) {
       setError(String(failure));
@@ -430,6 +452,7 @@ export function Composer({
         attachDropped(openDraft, dropped.id, inline)
           .then(async ({ draft: updated, refused }) => {
             if (updated) {
+              touchDraft(openDraft);
               setDraft(updated);
               if (inline && editor.current) {
                 const shown = new Set(
@@ -462,6 +485,7 @@ export function Composer({
           const data = await fileBase64(file);
           const name = file.name || `image.${file.type.split("/")[1]}`;
           const stored = await attachImage(draft.id, { name, mime: file.type, data });
+          touchDraft(draft.id);
           setDraft(stored.draft);
           if (editor.current) insertImage(editor.current, { content_id: stored.content_id, mime: file.type, data });
         } catch (failure) {
@@ -475,6 +499,7 @@ export function Composer({
   const detach = async (attachmentId: number) => {
     if (!draft) return;
     try {
+      touchDraft(draft.id);
       setDraft(await detachFile(draft.id, attachmentId));
     } catch (failure) {
       setError(String(failure));
@@ -492,13 +517,35 @@ export function Composer({
     }
   };
 
+  /** Cc and Bcc, shown first if they were not. */
+  const copyField = (field: MutableRefObject<HTMLInputElement | null>) => {
+    if (copies) return field.current?.focus();
+    setCopies(true);
+    window.requestAnimationFrame(() => field.current?.focus());
+  };
+
+  // Spark's composer keys, with Ctrl on Windows and Linux: 1–6 go to From,
+  // Subject, To, Cc, Bcc and the text; Shift+A attaches; Shift+\ deletes the
+  // draft; Enter sends, Shift+Enter sends and files the conversation as Done.
   const keys = (event: KeyboardEvent) => {
     // The editor handles its own keys (Cmd/Ctrl+Enter sends from there too).
-    if (event.defaultPrevented) return;
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      void send();
-    }
+    if (event.defaultPrevented || !(event.metaKey || event.ctrlKey) || event.altKey) return;
+    const field: Record<string, () => void> = {
+      Digit1: () => fromButton.current?.focus(),
+      Digit2: () => subjectField.current?.focus(),
+      Digit3: () => toField.current?.focus(),
+      Digit4: () => copyField(ccField),
+      Digit5: () => copyField(bccField),
+      Digit6: () => editor.current?.commands.focus(),
+    };
+    let run: (() => void) | undefined;
+    if (event.key === "Enter") run = () => void send(null, event.shiftKey);
+    else if (event.shiftKey && event.key.toLowerCase() === "a") run = () => void attach();
+    else if (event.shiftKey && event.code === "Backslash") run = () => void discard();
+    else if (!event.shiftKey) run = field[event.code];
+    if (!run) return;
+    event.preventDefault();
+    run();
   };
 
   // Escape closes, even from the text: the editor would otherwise take it (to select the
@@ -591,6 +638,7 @@ export function Composer({
       )}
       {draft && (
         <button
+          ref={fromButton}
           type="button"
           className="composer-from-button"
           aria-haspopup="menu"
@@ -661,7 +709,7 @@ export function Composer({
           <button
             type="button"
             className="icon-btn"
-            title="Close (Esc). The draft is kept."
+            title="Close (Esc). The draft is kept, once something is written in it."
             aria-label="Close"
             onClick={() => void close()}
           >
@@ -682,6 +730,7 @@ export function Composer({
           )}
           <fieldset className="composer-fields" disabled={locked}>
             <input
+              ref={subjectField}
               className="subject-field"
               value={fields.subject}
               onChange={change("subject")}
@@ -741,7 +790,7 @@ export function Composer({
                   setError(null);
                   setFields((current) => (current ? { ...current, html } : current));
                 }}
-                onSend={() => void send()}
+                onSend={(done) => void send(null, done)}
                 onImages={(pasted) => void pasteImages(pasted)}
                 onEditor={keepEditor}
                 disabled={locked}

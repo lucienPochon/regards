@@ -320,6 +320,10 @@ impl Session {
                 self.require_ui()?;
                 folders::empty(&self.state, params(request)?).await
             }
+            methods::ACCOUNT_SET_LOGIN => {
+                self.require_ui()?;
+                accounts::set_login(&self.state, params(request)?).await
+            }
             methods::ACCOUNT_SET_AUTO_COPY => {
                 self.require_ui()?;
                 accounts::set_auto_copy(&self.state, params(request)?).await

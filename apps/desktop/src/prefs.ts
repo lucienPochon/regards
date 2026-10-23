@@ -15,6 +15,8 @@ export interface Prefs {
   undoSeconds: number;
   /** In a conversation, show the older messages folded to one line. */
   collapseOlder: boolean;
+  /** When an opened message is marked read: at once, after a few seconds, or only by hand. */
+  markRead: MarkRead;
   /** Load images from the web in every message, without asking each time. */
   remoteImages: boolean;
   /** Rows of the list when it fills the window. */
@@ -54,6 +56,8 @@ export interface Prefs {
    * key cannot archive or delete mail (WCAG 2.1.4).
    */
   singleKeys: boolean;
+  /** Which keys do what (Settings › Shortcuts): the standard set, or the earlier Regards one. */
+  keySet: KeySet;
   /** The unread counts beside the folders. */
   sidebarCounts: boolean;
   /** The Agents button at the foot of the sidebar: recipes and the agents on this computer. */
@@ -64,11 +68,29 @@ export interface Prefs {
   reminderPresets: PresetPrefs;
 }
 
+/**
+ * "standard": the keys desktop mail apps commonly share (E done, S snooze,
+ * R reply all, Shift+R reply). "classic": the keys of earlier Regards versions.
+ */
+export type KeySet = "standard" | "classic";
+
+export type MarkRead = "now" | "2s" | "5s" | "never";
+
+/** How long an opened message stays open before it is marked read; null: never. */
+export const MARK_READ_AFTER: Record<MarkRead, number | null> = { now: 0, "2s": 2000, "5s": 5000, never: null };
+
+/**
+ * Passing a message with the keyboard (j/k beside the list) is not reading
+ * it: marked read only once it stays open this long.
+ */
+export const STEP_DWELL = 1000;
+
 export const DEFAULT_PREFS: Prefs = {
   afterMove: "next",
   pinnedArchive: "keep",
   undoSeconds: 10,
   collapseOlder: true,
+  markRead: "now",
   remoteImages: false,
   density: "comfortable",
   avatars: "everywhere",
@@ -87,6 +109,7 @@ export const DEFAULT_PREFS: Prefs = {
   suggestPeople: true,
   zoom: 1,
   singleKeys: true,
+  keySet: "standard",
   sidebarCounts: true,
   agentsButton: true,
   snoozePresets: {},

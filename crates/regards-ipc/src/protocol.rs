@@ -40,6 +40,9 @@ pub mod methods {
     pub const ACCOUNT_REMOVE: &str = "account.remove";
     /// Rename an account; the name it sends with follows if it was the same. `ui` only.
     pub const ACCOUNT_UPDATE: &str = "account.update";
+    /// A password account's new sign-in (user name, password, servers),
+    /// checked with its IMAP server before it is kept. `ui` only.
+    pub const ACCOUNT_SET_LOGIN: &str = "account.set_login";
     /// A copy (Cc or Bcc to an address) every new draft of an account gets,
     /// or none. `ui` only.
     pub const ACCOUNT_SET_AUTO_COPY: &str = "account.set_auto_copy";
@@ -560,6 +563,20 @@ pub struct AccountUpdateParams {
     pub id: String,
     /// Empty: the address.
     pub display_name: String,
+}
+
+/// Parameters of [`methods::ACCOUNT_SET_LOGIN`]. `Debug` redacts the password.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountLoginParams {
+    pub id: String,
+    /// `None` or empty: the address.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    /// `None`: the password it has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<Secret>,
+    pub imap: ServerSettings,
+    pub smtp: ServerSettings,
 }
 
 /// An account as clients see it: no secrets, no credential-store keys.

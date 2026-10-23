@@ -38,7 +38,7 @@ static LINK_TOKEN: LazyLock<Option<String>> = LazyLock::new(|| {
 
 #[derive(Debug, PartialEq, Eq)]
 enum Route {
-    Message { id: i64, allow_remote: bool },
+    Message { id: i64, allow_remote: bool, dark: bool },
     Open(Url),
 }
 
@@ -48,7 +48,7 @@ pub(crate) fn handle(ctx: UriSchemeContext<'_, Wry>, request: Request<Vec<u8>>, 
     }
     let token = LINK_TOKEN.as_deref();
     match route(&request, token) {
-        Some(Route::Message { id, allow_remote }) => {
+        Some(Route::Message { id, allow_remote, dark }) => {
             let opener = token.and(origin(&request)).map(|origin| format!("{origin}/open"));
             let link_prefix = opener
                 .as_ref()
@@ -75,7 +75,7 @@ pub(crate) fn handle(ctx: UriSchemeContext<'_, Wry>, request: Request<Vec<u8>>, 
                 let nonce = nonce();
                 responder.respond(match result {
                     Ok(rendered) => page(
-                        measured(rendered.html, nonce.as_deref()),
+                        darkened(measured(rendered.html, nonce.as_deref()), dark),
                         &csp(allow_remote, opener.as_deref(), nonce.as_deref()),
                     ),
                     Err(error) => text(StatusCode::BAD_GATEWAY, &error),
@@ -98,17 +98,19 @@ fn route(request: &Request<Vec<u8>>, token: Option<&str>) -> Option<Route> {
     if let Some(query) = raw.strip_prefix("/open?") {
         return open_target(query, token?).map(Route::Open);
     }
-    let (id, allow_remote) = parse_message(raw)?;
-    Some(Route::Message { id, allow_remote })
+    let (id, allow_remote, dark) = parse_message(raw)?;
+    Some(Route::Message { id, allow_remote, dark })
 }
 
-/// `/message/<id>` with an optional `remote=1`; the path may arrive percent-encoded.
-fn parse_message(raw: &str) -> Option<(i64, bool)> {
+/// `/message/<id>` with an optional `remote=1` and `dark=1`; the path may
+/// arrive percent-encoded.
+fn parse_message(raw: &str) -> Option<(i64, bool, bool)> {
     let decoded = percent_decode(raw)?;
     let (path, query) = decoded.split_once('?').unwrap_or((&decoded, ""));
     let id = path.trim_start_matches('/').strip_prefix("message/")?.parse().ok()?;
     let allow_remote = query.split('&').any(|pair| pair == "remote=1");
-    Some((id, allow_remote))
+    let dark = query.split('&').any(|pair| pair == "dark=1");
+    Some((id, allow_remote, dark))
 }
 
 /// The web page an `/open` link names, if the link is one of ours.
@@ -190,6 +192,24 @@ fn measured(html: String, nonce: Option<&str>) -> String {
     }
 }
 
+/// The page for the app's dark theme: the message inverted, its hues turned
+/// back so colours stay recognisable, and pictures inverted again so they
+/// look as sent. Its white page becomes the dark reading card (`--bg-elev`).
+const DARK: &str = "<style>html{color-scheme:dark;background:#1f2221}\
+body{filter:invert(1) hue-rotate(180deg);background:#e0ddde}\
+img,video,picture,canvas,[style*=\"background-image\"],[background]{filter:invert(1) hue-rotate(180deg)}</style>";
+
+/// The message's page with [`DARK`] last in its head, when `dark`.
+fn darkened(html: String, dark: bool) -> String {
+    if !dark {
+        return html;
+    }
+    match html.to_ascii_lowercase().find("</head>") {
+        Some(at) => format!("{}{DARK}{}", &html[..at], &html[at..]),
+        None => format!("{DARK}{html}"),
+    }
+}
+
 /// No scripts but ours (`nonce`), no plugins, no forms, no base changes;
 /// inline styles allowed; images and fonts only embedded, unless the reader
 /// allowed remote ones. The only frame is the hidden link frame, and it may
@@ -246,7 +266,7 @@ mod tests {
 
     fn message(uri: &str) -> Option<(i64, bool)> {
         match route(&request(uri), Some("k")) {
-            Some(Route::Message { id, allow_remote }) => Some((id, allow_remote)),
+            Some(Route::Message { id, allow_remote, .. }) => Some((id, allow_remote)),
             _ => None,
         }
     }
@@ -346,6 +366,24 @@ mod tests {
             framed.contains("frame-src http://regards-mail.localhost/open;"),
             "{framed}"
         );
+    }
+
+    #[test]
+    fn the_dark_theme_gets_a_darkened_page_when_asked() {
+        let dark = |uri: &str| matches!(route(&request(uri), Some("k")), Some(Route::Message { dark: true, .. }));
+        assert!(dark("http://regards-mail.localhost/message/42?remote=0&dark=1"));
+        assert!(dark("regards-mail://localhost/message%2F42%3Fdark%3D1"));
+        assert!(!dark("regards-mail://localhost/message/42?remote=1"));
+        let page = darkened(
+            "<html><head><style>a{}</style></head><body>Hi</body></html>".into(),
+            true,
+        );
+        assert!(
+            page.contains("<style>a{}</style><style>html{color-scheme:dark"),
+            "{page}"
+        );
+        assert!(page.ends_with("</style></head><body>Hi</body></html>"), "{page}");
+        assert_eq!(darkened("<p>Hi</p>".into(), false), "<p>Hi</p>");
     }
 
     #[test]

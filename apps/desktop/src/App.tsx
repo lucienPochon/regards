@@ -26,6 +26,7 @@ import { Composer } from "./Composer";
 import {
   type Draft,
   type Dropped,
+  type OutboxEntry,
   type Queued,
   type SentElsewhere,
   attachDropped,
@@ -40,11 +41,12 @@ import {
 import { Confirm, type ConfirmRequest } from "./Confirm";
 import { DraftsList } from "./DraftsList";
 import { Icon, type IconName } from "./icons";
-import { LIST_MAX, LIST_MIN, clampList, useLayout } from "./layout";
+import { type Layout, LIST_MAX, LIST_MIN, clampList, useLayout } from "./layout";
 import {
   type ListItem,
   type MessageFeed,
   inboxSources,
+  allOf,
   newer,
   sectionSources,
   sourcesFor,
@@ -180,13 +182,18 @@ export function App() {
   const { check, recheck } = useService();
   const mail = useMail();
   const drafts = useDrafts();
-  const outbox = useOutbox();
+  // A send that failed, or may not have gone: said here too, since the system's
+  // notification stays quiet while this window is in front.
+  const [unsent, setUnsent] = useState<OutboxEntry | null>(null);
+  const outbox = useOutbox(setUnsent);
   const [layout, setLayout] = useLayout();
   const [prefs, sidebarChanges] = useSidebarPrefs();
   const [overlay, setOverlay] = useState(false);
 
   const [view, setView] = useState<View>(INBOX);
   const [open, setOpen] = useState<ListItem | null>(null);
+  // Opened by stepping through the list with the keyboard: read only if one stays on it.
+  const [openedByStep, setOpenedByStep] = useState(false);
   const [picked, setPicked] = useState<Set<number>>(() => new Set());
   // The draft being written; its account and the message it answers, once known.
   const [composer, setComposer] = useState<{
@@ -246,6 +253,7 @@ export function App() {
   const accounts = useMemo(() => (mail.state === "ready" ? mail.accounts : []), [mail]);
   const ownAddresses = useMemo(() => new Set(accounts.map((entry) => entry.account.email.toLowerCase())), [accounts]);
   const appPrefs = usePrefs();
+  const standardKeys = appPrefs.keySet === "standard";
   // Settings › Accessibility: the whole window larger or smaller.
   useEffect(() => {
     document.documentElement.style.setProperty("zoom", appPrefs.zoom === 1 ? "" : String(appPrefs.zoom));
@@ -469,6 +477,8 @@ export function App() {
   }, [said]);
 
   const failed = useCallback((error: unknown) => setNotice(String(error)), []);
+  // Shown while it is still failed: sent again or edited, it goes.
+  const unsentNow = unsent && outbox.find((entry) => entry.id === unsent.id && (entry.state === "failed" || entry.state === "uncertain"));
   /** Replies and forwards open in a panel over the conversation; new messages take the whole pane. */
   const startDraft = useCallback(
     (start: Promise<Draft>, mode: "full" | "panel") => {
@@ -500,10 +510,13 @@ export function App() {
       () => {},
     );
   }, []);
-  /** A message has gone to the Outbox: remember its account, and with doneAfterReply, file the conversation it answers. */
-  const sentFrom = (sent: { accountId?: string; replyingTo?: number | null } | null) => {
+  /**
+   * A message has gone to the Outbox: remember its account, and with Send and
+   * Done (`done`) or doneAfterReply, file the conversation it answers.
+   */
+  const sentFrom = (sent: { accountId?: string; replyingTo?: number | null } | null, done = false) => {
     if (sent?.accountId) setPrefs({ lastFrom: sent.accountId });
-    if (!sent?.replyingTo || !getPrefs().doneAfterReply) return;
+    if (!sent?.replyingTo || !(done || getPrefs().doneAfterReply)) return;
     getThread(sent.replyingTo)
       .then(({ messages }) => {
         const ids = messages.filter((entry) => entry.mailbox_role === "inbox").map((entry) => entry.message.id);
@@ -769,7 +782,7 @@ export function App() {
   // A message sent from a window of its own: its undo is shown here.
   const sentElsewhere = useRef<(sent: SentElsewhere) => void>(() => {});
   sentElsewhere.current = (sent) => {
-    sentFrom(sent);
+    sentFrom(sent, sent.queued.done);
     setQueued(sent.queued);
   };
   useEffect(() => {
@@ -908,6 +921,31 @@ export function App() {
     }
   };
 
+  /** Every folder of every account, to pick one by typing its name. */
+  const goToFolder = () =>
+    setMenu({
+      anchor: { x: 0, y: 0 },
+      variant: "palette",
+      title: "Go to folder",
+      label: "Go to folder",
+      filter: "Type a folder name",
+      entries: accounts.flatMap((entry) =>
+        sortFolders(entry.mailboxes.filter((m) => m.selectable)).map((mailbox) => ({
+          label: leafName(mailbox),
+          icon: mailbox.role ? ROLE_ICONS[mailbox.role] : "folder",
+          depth: depth(mailbox),
+          detail: accounts.length > 1 ? entry.account.email : undefined,
+          onSelect: () => changeView({ kind: "mailbox", mailboxId: mailbox.id, accountId: entry.account.id }),
+        })),
+      ),
+    });
+
+  /** The inbox, shown by priority, by category or by date. */
+  const inboxBy = (inboxView: Layout["inboxView"]) => {
+    setLayout({ inboxView });
+    changeView(INBOX);
+  };
+
   /**
    * The command palette: the actions on what it was opened for (a row, the
    * selection, a conversation or one message), then going places and the app's own commands.
@@ -934,27 +972,7 @@ export function App() {
     go({ kind: "drafts" }, "Drafts", "draft");
     for (const role of ["sent", "archive", "junk", "trash"] as const) go({ kind: "role", role }, ROLE_LABELS[role], ROLE_ICONS[role]);
     go({ kind: "outbox" }, "Outbox", "outbox");
-    entries.push({
-      label: "Go to folder…",
-      icon: "folder",
-      onSelect: () =>
-        setMenu({
-          anchor: { x: 0, y: 0 },
-          variant: "palette",
-          title: "Go to folder",
-          label: "Go to folder",
-          filter: "Type a folder name",
-          entries: accounts.flatMap((entry) =>
-            sortFolders(entry.mailboxes.filter((m) => m.selectable)).map((mailbox) => ({
-              label: leafName(mailbox),
-              icon: mailbox.role ? ROLE_ICONS[mailbox.role] : "folder",
-              depth: depth(mailbox),
-              detail: accounts.length > 1 ? entry.account.email : undefined,
-              onSelect: () => changeView({ kind: "mailbox", mailboxId: mailbox.id, accountId: entry.account.id }),
-            })),
-          ),
-        }),
-    });
+    entries.push({ label: "Go to folder…", icon: "folder", keys: standardKeys ? "Mod+Shift+G" : undefined, onSelect: goToFolder });
     entries.push("separator");
     if (readTargets().length > 0) entries.push({ label: "Mark everything here read", icon: "mailOpen", onSelect: markAllHere });
     entries.push(
@@ -968,7 +986,7 @@ export function App() {
           setSearch({ query: "", accountId: null });
         },
       },
-      { label: "Check for new mail", icon: "refresh", onSelect: syncNow },
+      { label: "Check for new mail", icon: "refresh", keys: standardKeys ? "Mod+r" : undefined, onSelect: syncNow },
       { label: layout.locked ? "Fold the sidebar" : "Show the sidebar", icon: "sidebar", keys: "/", onSelect: toggleSidebar },
       // Back beside the list from here; leaving it is chosen in Settings › Appearance, not by a stray pick.
       ...(layout.mode === "single"
@@ -1021,6 +1039,19 @@ export function App() {
     },
     "Mod+q": quit,
     "/": toggleSidebar,
+    ...(standardKeys
+      ? {
+          "Mod+g": () => changeView({ kind: "marked", mark: "aside" }),
+          "Mod+d": () => changeView({ kind: "marked", mark: "pinned" }),
+          "Mod+s": () => changeView({ kind: "marked", mark: "snoozed" }),
+          "Mod+Shift+G": goToFolder,
+          "Mod+Alt+1": () => inboxBy("smart"),
+          "Mod+Alt+2": () => inboxBy("cards"),
+          "Mod+Alt+3": () => inboxBy("date"),
+          "Mod+/": toggleSidebar,
+          "Mod+r": syncNow,
+        }
+      : {}),
     ...(overlay ? { Escape: () => setOverlay(false) } : {}),
   });
 
@@ -1194,6 +1225,15 @@ export function App() {
           })
       : undefined;
 
+  /** Done with these: archived together, one undo (as Done on a selection). */
+  const doneWith = (list: ListItem[]) => {
+    if (list.length > 0) choose(actionsForItems(list), "archive")[0]?.run(null);
+  };
+  /** Done with a whole group: every message of the section in every inbox. */
+  const doneSection = (section: Section) => () => {
+    allOf(sectionSources(scope, section)).then(doneWith, failed);
+  };
+
   // The Smart Inbox around the People list.
   const openSection = (section: Section) => () =>
     changeView({ kind: "section", section, inbox: view.kind === "mailbox" && accountInbox ? { mailboxId: view.mailboxId, accountId: view.accountId } : undefined });
@@ -1224,6 +1264,7 @@ export function App() {
             messages: notificationItems,
             newest: notificationItems[0]?.listed_at,
             onOpen: openSection("notifications"),
+            onDone: doneSection("notifications"),
           },
           {
             key: "newsletters",
@@ -1234,6 +1275,7 @@ export function App() {
             messages: newsletterItems,
             newest: newsletterItems[0]?.listed_at,
             onOpen: openSection("newsletters"),
+            onDone: doneSection("newsletters"),
           },
           {
             key: "pinned",
@@ -1323,12 +1365,14 @@ export function App() {
         mode={layout.mode}
         openId={openItem?.id ?? null}
         picked={picked}
-        onOpen={(item) => {
+        onOpen={(item, how) => {
           if (typed) rememberSearch(typed);
+          setOpenedByStep(how === "step");
           setOpen(item);
         }}
         onPick={setPicked}
         actionsFor={actionsForItems}
+        onDoneAll={role === "inbox" || view.kind === "section" ? doneWith : undefined}
         onPalette={(actions, paletteTitle, about) => palette(actions, paletteTitle, about ? [senderEntry(about)] : [])}
         empty={empty}
         onSplit={layout.mode === "single" && layout.handle ? () => setLayout({ mode: "split" }) : undefined}
@@ -1378,6 +1422,7 @@ export function App() {
     <ReadingPane
       key={openItem.id}
       item={openItem}
+      stepped={openedByStep}
       folders={folders}
       mode={layout.mode}
       actionsFor={actionsFor}
@@ -1526,7 +1571,7 @@ export function App() {
             onMode={(mode) => setComposer({ ...composer, mode })}
             onClose={() => setComposer(null)}
             onQueued={(result) => {
-              sentFrom(composer);
+              sentFrom(composer, result.done);
               setComposer(null);
               setQueued(result);
             }}
@@ -1551,6 +1596,28 @@ export function App() {
           />
         )}
         <div className="dock" aria-live="polite">
+          {unsentNow && (
+            <div className="toast error" role="alert">
+              <Icon name="alert" size={16} />
+              <span>
+                {unsentNow.state === "uncertain"
+                  ? `“${unsentNow.subject || "(no subject)"}” may not have been sent. Check before sending it again.`
+                  : `“${unsentNow.subject || "(no subject)"}” was not sent${unsentNow.last_error ? `: ${unsentNow.last_error}` : "."}`}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setUnsent(null);
+                  changeView({ kind: "outbox" });
+                }}
+              >
+                Outbox
+              </button>
+              <button type="button" onClick={() => setUnsent(null)}>
+                Dismiss
+              </button>
+            </div>
+          )}
           {notice && (
             <div className="toast error" role="alert">
               <Icon name="alert" size={16} />
@@ -1729,6 +1796,10 @@ export function App() {
           }}
           onBlocked={(result) => moved(result.moved > 0 ? [sender.messageId] : [], result)}
           onFailed={failed}
+          onHolds={() => {
+            setSenderCard(null);
+            setSettings("agents");
+          }}
         />
       )}
       {picking && (

@@ -1023,6 +1023,7 @@ async fn live_older_mail_is_fetched_in_the_background() {
     let limits = SyncLimits {
         initial_window: 3,
         backfill_batch: 2,
+        ..SyncLimits::default()
     };
     let (_temp, mut desktop, account, inbox, handle) = daemon_with_limits(&live, limits).await;
     // Appended within a second, they share an arrival time: compare them as a set.
@@ -1112,6 +1113,57 @@ async fn live_a_burst_of_new_mail_all_arrives_by_push_and_is_told_once() {
     subjects.dedup();
     assert_eq!(all, subjects.len(), "some mail was told of twice");
     assert_eq!(subjects.len(), 21);
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_mail_filed_in_other_folders_shows_while_push_waits_on_the_inbox() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let _ = seed.create_mailbox(b"Sent").await;
+    let limits = SyncLimits {
+        folders_every: Duration::from_secs(1),
+        ..SyncLimits::default()
+    };
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_limits(&live, limits).await;
+    push_becomes(&mut desktop, &account.id, true).await;
+
+    // Sent from another device, and a folder a server rule fills.
+    seed.append(b"Sent", &[], &message(1, "From the phone", "ada@example.test"))
+        .await
+        .unwrap();
+    seed.create_mailbox(b"Receipts").await.unwrap();
+    seed.append(b"Receipts", &[], &message(2, "Your order", "shop@example.test"))
+        .await
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let (sent, receipts) = loop {
+        let listed = folders(&mut desktop, &account.id).await.mailboxes;
+        let id = |name: &str| listed.iter().find(|m| m.name == name).map(|m| m.id);
+        if let (Some(sent), Some(receipts)) = (id("Sent"), id("Receipts"))
+            && messages(&mut desktop, sent).await.messages.len() == 1
+            && messages(&mut desktop, receipts).await.messages.len() == 1
+        {
+            break (sent, receipts);
+        }
+        assert!(
+            Instant::now() < deadline,
+            "other folders were not synced while push ran"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    };
+    assert_ne!(sent, receipts);
+
+    // Push still waits on the inbox afterwards.
+    seed.append(b"INBOX", &[], &message(3, "Still pushed", "bob@example.test"))
+        .await
+        .unwrap();
+    inbox_reaches(&mut desktop, inbox, 1).await;
 
     seed.logout().await;
     handle.abort();
