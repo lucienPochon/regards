@@ -68,6 +68,17 @@ pub mod methods {
     pub const ACCOUNT_RESYNC: &str = "account.resync";
     /// The mailboxes of an account and its sync state. `ui` only for now.
     pub const MAILBOX_LIST: &str = "mailbox.list";
+    /// A new folder on the server, at the top or inside another. `ui` only.
+    pub const MAILBOX_CREATE: &str = "mailbox.create";
+    /// Rename a folder (its folders inside follow); not Inbox, Sent, Drafts,
+    /// Trash, Junk or Archive. Its mail stays. `ui` only.
+    pub const MAILBOX_RENAME: &str = "mailbox.rename";
+    /// Delete a folder, its folders inside and all their mail, on the server.
+    /// Not a role folder. It cannot be undone: the app confirms. `ui` only.
+    pub const MAILBOX_DELETE: &str = "mailbox.delete";
+    /// Delete everything in Trash or Junk for good. It cannot be undone: the
+    /// app confirms. `ui` only.
+    pub const MAILBOX_EMPTY: &str = "mailbox.empty";
     /// A page of a mailbox's messages, newest first. `ui` only for now.
     pub const MESSAGE_LIST: &str = "message.list";
     /// One message with its body, downloading it if needed. `ui` only for now.
@@ -902,6 +913,30 @@ pub struct AccountRemoveParams {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AccountRef {
     pub account_id: String,
+}
+
+/// Parameters of [`methods::MAILBOX_CREATE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MailboxCreateParams {
+    pub account_id: String,
+    /// Inside this folder; `None`: at the top.
+    #[serde(default)]
+    pub parent_id: Option<i64>,
+    pub name: String,
+}
+
+/// Parameters of [`methods::MAILBOX_RENAME`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MailboxRenameParams {
+    pub mailbox_id: i64,
+    /// Its own name, not the path of the folders it is in.
+    pub name: String,
+}
+
+/// Parameters naming one folder: [`methods::MAILBOX_DELETE`], [`methods::MAILBOX_EMPTY`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MailboxRef {
+    pub mailbox_id: i64,
 }
 
 /// Where an account's sync stands.

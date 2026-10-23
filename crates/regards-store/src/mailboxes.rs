@@ -130,6 +130,17 @@ pub fn get(conn: &Connection, id: i64) -> Result<Option<Mailbox>, StoreError> {
     .transpose()
 }
 
+/// Folders renamed on the server, here too: each (id, remote name, name)
+/// takes its new path and keeps its mail and sync state, so the next
+/// reconciliation finds it rather than a new folder.
+pub fn set_paths(tx: &Transaction<'_>, paths: &[(i64, Vec<u8>, String)]) -> Result<(), StoreError> {
+    let mut statement = tx.prepare_cached("UPDATE mailboxes SET remote_name = ?2, name = ?3 WHERE id = ?1")?;
+    for (id, remote_name, name) in paths {
+        statement.execute(params![id, remote_name, name])?;
+    }
+    Ok(())
+}
+
 /// What the last message sync of a mailbox established.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SyncPoint {

@@ -36,17 +36,18 @@ use regards_ipc::protocol::{
     DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult,
     DraftSetFromParams, DraftUpdateParams, DraftView, ExplainResult, HoldApproveParams, HoldListParams, HoldListResult,
     HoldRef, HoldView, IdentityListResult, IdentityRef, IdentitySaveParams, IdentitySetSignatureParams,
-    IdentitySetVoiceParams, IdentityView, MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds,
-    MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult, NoteAddParams, NoteAddResult,
-    NoteListParams, NoteListResult, NoteRef, NoteRemoved, NoteSetEnabledParams, NoteSettings, NoteUpdateParams,
-    NoteView, NotesForgotten, OauthFlowRef, OauthProvidersResult, OauthStartParams, OauthStartResult, OutboxListResult,
-    OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams, SavedSearchListResult,
-    SavedSearchOrderParams, SavedSearchRef, SavedSearchSaveParams, SavedSearchView, Screening, ScreeningParams,
-    SearchParams, SearchResult, Section, SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams,
-    SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SignatureListResult,
-    SignatureRef, SignatureSaveParams, SignatureView, SmartOverviewResult, SnoozeParams, SyncResult,
-    TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult,
-    UnsubscribeParams, UnsubscribeResult, View, ViewParams, methods,
+    IdentitySetVoiceParams, IdentityView, MailboxCreateParams, MailboxListResult, MailboxRef, MailboxRenameParams,
+    MailboxSummary, MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult,
+    MessageRef, MoveParams, MoveResult, NoteAddParams, NoteAddResult, NoteListParams, NoteListResult, NoteRef,
+    NoteRemoved, NoteSetEnabledParams, NoteSettings, NoteUpdateParams, NoteView, NotesForgotten, OauthFlowRef,
+    OauthProvidersResult, OauthStartParams, OauthStartResult, OutboxListResult, OutboxRef, OutboxRescheduleParams,
+    OutboxUndoResult, PinParams, Principal, RemindParams, SavedSearchListResult, SavedSearchOrderParams,
+    SavedSearchRef, SavedSearchSaveParams, SavedSearchView, Screening, ScreeningParams, SearchParams, SearchResult,
+    Section, SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams, SenderSetResult,
+    ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SignatureListResult, SignatureRef,
+    SignatureSaveParams, SignatureView, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef,
+    TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, UnsubscribeParams, UnsubscribeResult, View,
+    ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -680,6 +681,59 @@ async fn mailbox_list(bridge: State<'_, Bridge>, account_id: String) -> Result<M
     let mut client = bridge.connect().await?.client;
     client
         .call(methods::MAILBOX_LIST, AccountRef { account_id })
+        .await
+        .map_err(describe)
+}
+
+/// A new folder, at the top of the account or inside `parent_id`.
+#[tauri::command]
+async fn mailbox_create(
+    bridge: State<'_, Bridge>,
+    account_id: String,
+    parent_id: Option<i64>,
+    name: String,
+) -> Result<MailboxSummary, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::MAILBOX_CREATE,
+            MailboxCreateParams {
+                account_id,
+                parent_id,
+                name,
+            },
+        )
+        .await
+        .map_err(describe)
+}
+
+/// Rename a folder (not a role folder); what is inside follows.
+#[tauri::command]
+async fn mailbox_rename(bridge: State<'_, Bridge>, mailbox_id: i64, name: String) -> Result<MailboxSummary, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MAILBOX_RENAME, MailboxRenameParams { mailbox_id, name })
+        .await
+        .map_err(describe)
+}
+
+/// Delete a folder, its folders and all their mail. No undo: the UI confirms.
+#[tauri::command]
+async fn mailbox_delete(bridge: State<'_, Bridge>, mailbox_id: i64) -> Result<(), String> {
+    let mut client = bridge.connect().await?.client;
+    let _: Value = client
+        .call(methods::MAILBOX_DELETE, MailboxRef { mailbox_id })
+        .await
+        .map_err(describe)?;
+    Ok(())
+}
+
+/// Delete everything in Trash or Junk for good. No undo: the UI confirms.
+#[tauri::command]
+async fn mailbox_empty(bridge: State<'_, Bridge>, mailbox_id: i64) -> Result<DeleteResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MAILBOX_EMPTY, MailboxRef { mailbox_id })
         .await
         .map_err(describe)
 }
@@ -1974,6 +2028,10 @@ fn main() {
             account_sync,
             account_resync,
             mailbox_list,
+            mailbox_create,
+            mailbox_rename,
+            mailbox_delete,
+            mailbox_empty,
             message_list,
             search_messages,
             search_server,
