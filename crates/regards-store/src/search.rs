@@ -465,6 +465,12 @@ fn filters(query: &Query, m: &str) -> String {
     if query.flagged {
         sql.push_str(&format!(" AND {m}.flagged = 1"));
     }
+    if query.pinned {
+        sql.push_str(&format!(
+            " AND EXISTS (SELECT 1 FROM marks k JOIN mailboxes b ON b.id = {m}.mailbox_id \
+             WHERE k.account_id = b.account_id AND k.message_id = {m}.message_id_header AND k.pinned_at IS NOT NULL)"
+        ));
+    }
     if let Some(before) = query.before {
         sql.push_str(&format!(" AND {m}.received_at < {before}"));
     }
@@ -685,6 +691,35 @@ mod tests {
             None,
             "only what the search could find"
         );
+    }
+
+    #[tokio::test]
+    async fn is_pinned_finds_what_is_pinned_in_its_account() {
+        let (_temp, store, [inbox, ..]) = store().await;
+        store
+            .write(move |tx| {
+                messages::upsert(
+                    tx,
+                    inbox,
+                    &[
+                        mail(1, "Boarding pass", person("Air", "air@example.org"), 1_000),
+                        mail(2, "Lunch", person("Bob", "bob@example.org"), 2_000),
+                    ],
+                )?;
+                let account: String =
+                    tx.query_row("SELECT account_id FROM mailboxes WHERE id = ?1", [inbox], |r| r.get(0))?;
+                crate::marks::set(
+                    tx,
+                    &account,
+                    "m1-Boarding pass@example.org",
+                    crate::marks::Mark::Pinned,
+                    Some(5),
+                )
+            })
+            .await
+            .unwrap();
+        assert_eq!(find(&store, "is:pinned").await, ["Boarding pass"]);
+        assert_eq!(find(&store, "is:pinned lunch").await, Vec::<String>::new());
     }
 
     #[tokio::test]
