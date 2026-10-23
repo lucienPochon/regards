@@ -9,10 +9,10 @@ use regards_core::smart::{Screening, Section};
 use regards_core::{body, html};
 use regards_imap::SearchTerm;
 use regards_ipc::protocol::{
-    AccountRef, ConnectionLogSettings, MessageCursor, MessageDetail, MessageHtml, MessageHtmlParams, MessageListParams,
-    MessageListResult, MessageRef, MessageSource, MessageSummary, ReadingSettings, RpcError, SearchParams,
-    SearchResult, SenderImagesParams, SenderImagesResult, ServerSearchResult, ThreadEntry, ThreadView, View,
-    ViewParams, codes,
+    AccountRef, ConnectionLogSettings, ConversationIdsResult, MessageCursor, MessageDetail, MessageHtml,
+    MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef, MessageSource, MessageSummary,
+    ReadingSettings, RpcError, SearchParams, SearchResult, SenderImagesParams, SenderImagesResult, ServerSearchResult,
+    ThreadEntry, ThreadView, View, ViewParams, codes,
 };
 use regards_store::mailboxes::Mailbox;
 use regards_store::marks::{self, Mark, Marks};
@@ -840,6 +840,18 @@ fn summary(m: Message, info: &PageInfo) -> MessageSummary {
 }
 
 /// The conversation of a message, across folders.
+/// `message.conversation_ids`: each message with the rest of its
+/// conversation in the same folder, which an action on its row covers.
+pub(crate) async fn conversation_ids(state: &State, params: MessageIds) -> Result<Value, RpcError> {
+    let ids = params.ids;
+    let all = state
+        .store
+        .read(move |conn| messages::conversation_ids(conn, &ids))
+        .await
+        .map_err(store_error)?;
+    Ok(json!(ConversationIdsResult { ids: all }))
+}
+
 pub(crate) async fn thread(state: &State, params: MessageRef) -> Result<Value, RpcError> {
     let id = params.id;
     let entries = state

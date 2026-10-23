@@ -10,12 +10,12 @@ import {
   setFlags,
   trashMessages,
 } from "./accounts";
-import { getPrefs } from "./prefs";
+import { type KeySet, getPrefs } from "./prefs";
 import { type Draft, forwardDraft, replyDraft } from "./compose";
 import type { ConfirmRequest } from "./Confirm";
 import type { IconName } from "./icons";
 import type { Anchor } from "./Menu";
-import type { Shortcuts } from "./shortcuts";
+import { type Shortcuts, keyText } from "./shortcuts";
 import { snoozeMessages } from "./snooze";
 
 /** The messages an action applies to, and what they have in common. */
@@ -93,6 +93,46 @@ export interface Action {
   run: (anchor?: Anchor | null) => void;
 }
 
+/** Each action's keys in each key set (Settings › Shortcuts). */
+const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
+  standard: {
+    reply: ["Shift+R"],
+    replyAll: ["r"],
+    forward: ["f"],
+    unread: ["u"],
+    read: ["u"],
+    flag: ["i"],
+    pin: ["d"],
+    snooze: ["s"],
+    remind: [],
+    aside: ["g"],
+    archive: ["e"],
+    move: ["Mod+Shift+M"],
+    junk: ["Shift+1"],
+    delete: ["Delete", "Backspace"],
+  },
+  classic: {
+    reply: ["r"],
+    replyAll: ["a"],
+    forward: ["f"],
+    unread: ["Shift+U"],
+    read: ["Shift+I"],
+    flag: ["s"],
+    pin: ["p"],
+    snooze: ["b"],
+    remind: ["Shift+R"],
+    aside: ["Shift+A"],
+    archive: ["e"],
+    move: ["v"],
+    junk: ["!"],
+    delete: ["#", "Delete"],
+  },
+};
+
+/** An action's name with its first key, for a tooltip. */
+export const actionTitle = (action: Action) =>
+  action.keys.length > 0 ? `${action.label} (${keyText(action.keys[0])})` : action.label;
+
 /**
  * Everything that can be done to some messages. The reading pane's toolbar,
  * the list's hover buttons, the right-click menu and the keyboard shortcuts
@@ -109,24 +149,29 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       .catch(host.failed);
   };
 
+  const keys = ACTION_KEYS[getPrefs().keySet];
+  // A key that both marks read and unread belongs to the half that shows.
+  const half = (id: "unread" | "read", shown: boolean) =>
+    shown ? keys[id] : keys[id].filter((key) => !keys[id === "read" ? "unread" : "read"].includes(key));
+
   const actions: Action[] = [];
   if (target.single !== null) {
     const id = target.single;
     actions.push(
-      { id: "reply", label: "Reply", icon: "reply", keys: ["r"], shown: true, run: () => host.compose(replyDraft(id, false)) },
-      { id: "replyAll", label: "Reply all", icon: "replyAll", keys: ["a"], shown: true, run: () => host.compose(replyDraft(id, true)) },
-      { id: "forward", label: "Forward", icon: "forward", keys: ["f"], shown: true, run: () => host.compose(forwardDraft(id)) },
+      { id: "reply", label: "Reply", icon: "reply", keys: keys.reply, shown: true, run: () => host.compose(replyDraft(id, false)) },
+      { id: "replyAll", label: "Reply all", icon: "replyAll", keys: keys.replyAll, shown: true, run: () => host.compose(replyDraft(id, true)) },
+      { id: "forward", label: "Forward", icon: "forward", keys: keys.forward, shown: true, run: () => host.compose(forwardDraft(id)) },
     );
   }
   actions.push(
     // Drawn as the row's dot: a ring on read mail, filled on unread mail.
-    { id: "unread", label: "Mark unread", icon: "circle", keys: ["Shift+U"], shown: target.seen, run: () => flags({ seen: false }) },
-    { id: "read", label: "Mark read", icon: "circleFilled", keys: ["Shift+I"], shown: !target.seen, run: () => flags({ seen: true }) },
+    { id: "unread", label: "Mark unread", icon: "circle", keys: half("unread", target.seen), shown: target.seen, run: () => flags({ seen: false }) },
+    { id: "read", label: "Mark read", icon: "circleFilled", keys: half("read", !target.seen), shown: !target.seen, run: () => flags({ seen: true }) },
     {
       id: "flag",
       label: target.flagged ? "Unflag" : "Flag",
       icon: target.flagged ? "flagFilled" : "flag",
-      keys: ["s"],
+      keys: keys.flag,
       shown: true,
       run: () => flags({ flagged: !target.flagged }),
     },
@@ -134,7 +179,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       id: "pin",
       label: target.pinned ? "Unpin" : "Pin",
       icon: target.pinned ? "pinFilled" : "pin",
-      keys: ["p"],
+      keys: keys.pin,
       shown: true,
       run: () => {
         pinMessages(ids, !target.pinned).then(host.marked).catch(host.failed);
@@ -144,7 +189,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       id: "snooze",
       label: target.snoozed ? "Unsnooze" : "Snooze…",
       icon: "clock",
-      keys: ["b"],
+      keys: keys.snooze,
       shown: true,
       run: (anchor) => {
         // Snoozed or set aside, a message leaves the inbox: as for a move, the next one opens.
@@ -162,7 +207,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       id: "remind",
       label: target.reminding ? "No reminder" : "Remind me…",
       icon: "bell",
-      keys: ["Shift+R"],
+      keys: keys.remind,
       shown: true,
       run: (anchor) => {
         if (target.reminding) {
@@ -181,7 +226,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       id: "aside",
       label: target.aside ? "Back to inbox" : "Set aside",
       icon: "aside",
-      keys: ["Shift+A"],
+      keys: keys.aside,
       shown: true,
       run: () => {
         setAside(ids, !target.aside)
@@ -195,7 +240,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       id: "archive",
       label: "Archive",
       icon: "archive",
-      keys: ["e"],
+      keys: keys.archive,
       shown: true,
       // Settings › General: archiving a pinned message can also unpin it.
       run: () =>
@@ -212,7 +257,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       id: "move",
       label: "Move to…",
       icon: "move",
-      keys: ["v"],
+      keys: keys.move,
       shown: true,
       run: (anchor) => {
         void host.pickFolder(account, target.mailboxId, anchor ?? null).then((folder) => {
@@ -227,7 +272,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
         id: "junk",
         label: "Mark as junk",
         icon: "junk",
-        keys: ["!"],
+        keys: keys.junk,
         shown: true,
         run: () => move(() => moveMessages(ids, junk)),
       });
@@ -237,7 +282,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
     id: "delete",
     label: target.disposable ? "Delete forever" : "Delete",
     icon: "trash",
-    keys: ["#", "Delete"],
+    keys: keys.delete,
     shown: true,
     danger: target.disposable,
     run: () => {
