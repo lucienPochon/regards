@@ -45,7 +45,7 @@ use regards_ipc::protocol::{
     SenderImagesParams, SenderImagesResult, SenderSetParams, SenderSetResult, ServerSearchResult, ServerSettings,
     SetFlagsParams, SetFlagsResult, SignatureListResult, SignatureRef, SignatureSaveParams, SignatureView,
     SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView,
-    ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
+    ThreadView, UndoParams, UndoResult, UnsubscribeParams, UnsubscribeResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -791,6 +791,7 @@ async fn search_messages(
     account_id: Option<String>,
     before: Option<MessageCursor>,
     limit: Option<u32>,
+    utc_offset_minutes: Option<i32>,
 ) -> Result<SearchResult, String> {
     let mut client = bridge.connect().await?.client;
     client
@@ -801,6 +802,7 @@ async fn search_messages(
                 account_id,
                 limit,
                 before,
+                utc_offset_minutes,
             },
         )
         .await
@@ -815,6 +817,7 @@ async fn search_server(
     account_id: Option<String>,
     before: Option<MessageCursor>,
     limit: Option<u32>,
+    utc_offset_minutes: Option<i32>,
 ) -> Result<ServerSearchResult, String> {
     let mut client = bridge.connect().await?.client;
     client
@@ -825,6 +828,7 @@ async fn search_server(
                 account_id,
                 limit,
                 before,
+                utc_offset_minutes,
             },
         )
         .await
@@ -1038,6 +1042,20 @@ async fn thread_get(bridge: State<'_, Bridge>, id: i64) -> Result<ThreadView, St
     let mut client = bridge.connect().await?.client;
     client
         .call(methods::THREAD_GET, MessageRef { id })
+        .await
+        .map_err(describe)
+}
+
+/// Leave the mailing list a message came from: one click, an email, or its page to open.
+#[tauri::command]
+async fn message_unsubscribe(
+    bridge: State<'_, Bridge>,
+    id: i64,
+    undo_seconds: Option<u32>,
+) -> Result<UnsubscribeResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_UNSUBSCRIBE, UnsubscribeParams { id, undo_seconds })
         .await
         .map_err(describe)
 }
@@ -1960,6 +1978,7 @@ fn main() {
             message_get,
             thread_get,
             message_conversation_ids,
+            message_unsubscribe,
             message_set_flags,
             message_mark_all_read,
             message_archive,

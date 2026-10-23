@@ -173,7 +173,13 @@ fn search_request(params: &SearchParams) -> Result<(u32, Query, Option<Cursor>),
         received_at: c.received_at,
         id: c.id,
     });
-    Ok((limit, regards_core::search::parse(&params.query), before))
+    // Relative dates ("last week") in the person's days; UTC ones without an offset.
+    let offset = params
+        .utc_offset_minutes
+        .filter(|offset| (-14 * 60..=14 * 60).contains(offset))
+        .unwrap_or(0);
+    let query = regards_core::search::parse_at(&params.query, crate::compose::now_ms(), offset);
+    Ok((limit, query, before))
 }
 
 /// [`page_info`] for rows of any accounts: marks are kept by account.
@@ -260,7 +266,8 @@ pub(crate) async fn search_server(
     scope: Option<Vec<String>>,
 ) -> Result<Value, RpcError> {
     let (limit, query, before) = search_request(&params)?;
-    if query.is_empty() {
+    // Pins are kept on this device: what is pinned is all here already.
+    if query.is_empty() || query.pinned {
         return Ok(json!(ServerSearchResult {
             messages: Vec::new(),
             next: None,
