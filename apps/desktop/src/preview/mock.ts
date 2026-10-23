@@ -1337,6 +1337,11 @@ function handle(cmd: string, args: Args): unknown {
       // The daemon records an undo for it too; the app shows none for its own flag changes.
       return { changed: ids.length, undo: null };
     }
+    case "message_unsubscribe": {
+      // In the preview every message takes one click.
+      byId(args.id as number);
+      return { kind: "done" };
+    }
     case "message_archive": {
       // Done with a reminder shown from another folder: it leaves the inbox and stays filed.
       const ids = args.ids as number[];
@@ -1797,5 +1802,8 @@ mockIPC(
   (path: string) => {
     const id = Number(path.match(/message\/(\d+)/)?.[1]);
     const html = messages.find((m) => m.id === id)?.html ?? "";
-    return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+    // As the desktop darkens it (`dark=1`), roughly: inverted with its hues kept, pictures as sent.
+    const dark =
+      "<style>html{background:#fff;filter:invert(0.88) hue-rotate(180deg)}img,picture,video,[style*=background-image]{filter:invert(1) hue-rotate(180deg)}</style>";
+    return `data:text/html;charset=utf-8,${encodeURIComponent(path.includes("dark=1") ? dark + html : html)}`;
   };

@@ -8,10 +8,12 @@ import type { MessageCursor, MessageSummary } from "./accounts";
  *   as the start of a word, so results come while typing.
  * - `"a phrase"` matches as written; `-word` leaves out.
  * - `from:` `to:` `subject:` look in one place (`from:"Lena Müller"`).
- * - `has:attachment`, `is:unread` `is:read` `is:flagged`.
+ * - `has:attachment`, `is:unread` `is:read` `is:flagged` `is:pinned`.
  * - `in:<folder>` by name or role (`in:sent`); Trash and Junk are left out
  *   unless named, or with `in:anywhere`.
- * - `before:` / `after:` `YYYY-MM-DD`.
+ * - `before:` / `after:` `YYYY-MM-DD`; and Spark's "today", "yesterday",
+ *   "this week", "last week", "this month", "last month", "last 3 days"
+ *   (weeks, months), in English or French, in this computer's days.
  *
  * Accents need not be typed: "zurich" finds "Zürich". A message's whole text
  * is searched once it was opened on this device, its start before.
@@ -45,12 +47,16 @@ export interface SearchOptions {
   limit?: number | null;
 }
 
+/** This computer's time minus UTC, in minutes, for relative dates. */
+const localOffset = () => -new Date().getTimezoneOffset();
+
 export const searchMessages = (query: string, options: SearchOptions = {}) =>
   invoke<SearchResult>("search_messages", {
     query,
     accountId: options.accountId ?? null,
     before: options.before ?? null,
     limit: options.limit ?? null,
+    utcOffsetMinutes: localOffset(),
   });
 
 export interface ServerSearchResult {
@@ -81,6 +87,7 @@ export const searchServer = (query: string, options: SearchOptions = {}) =>
     accountId: options.accountId ?? null,
     before: options.before ?? null,
     limit: options.limit ?? null,
+    utcOffsetMinutes: localOffset(),
   });
 
 /**
