@@ -333,6 +333,9 @@ export interface MessageListResult {
  * A page of a folder. In the inbox, of one Smart Inbox section (see
  * smart.ts) when `section` is given, and only read (`true`) or unread
  * (`false`) mail when `seen` is: the card view's cards.
+ * With `withDone`, the inbox (with neither) also lists the account's Done
+ * mail by date, as Spark's Show Done (Ctrl+E): those rows have the
+ * Archive's (or All Mail's) `mailbox_id`; show them as done, greyed.
  */
 export function listMessages(
   mailboxId: number,
@@ -340,8 +343,9 @@ export function listMessages(
   limit: number | null = null,
   section: string | null = null,
   seen: boolean | null = null,
+  withDone = false,
 ): Promise<MessageListResult> {
-  return invoke<MessageListResult>("message_list", { mailboxId, before, limit, section, seen });
+  return invoke<MessageListResult>("message_list", { mailboxId, before, limit, section, seen, withDone });
 }
 
 /**

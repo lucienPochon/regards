@@ -972,6 +972,12 @@ pub struct MessageListParams {
     /// card view shows it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seen: Option<bool>,
+    /// In the inbox, without `section` or `seen`: the account's Done mail too
+    /// (its Archive, or All Mail without what is in the inbox), by date among
+    /// the rest, as Spark's "Show Done" does. Those rows have the Archive's
+    /// (or All Mail's) `mailbox_id`: the app shows them as done.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub with_done: bool,
 }
 
 /// Parameters of [`methods::SEARCH`].
