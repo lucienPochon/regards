@@ -373,16 +373,52 @@ pub fn set_blob(tx: &Transaction<'_>, id: i64, hash: &str) -> Result<(), StoreEr
 /// on their way into it, are separate so that each walks its own index: with
 /// an OR, a 100k-message folder took 55 ms per page instead of well under 1.
 fn list_sql() -> String {
+    list_sql_where("")
+}
+
+/// [`list_sql`], each half with `extra` conditions on `messages`.
+fn list_sql_where(extra: &str) -> String {
     format!(
         "SELECT * FROM (SELECT {COLUMNS} FROM messages \
-             WHERE mailbox_id = ?1 AND moving_to IS NULL AND deleted = 0 AND (received_at, id) < (?2, ?3) \
+             WHERE mailbox_id = ?1 AND moving_to IS NULL AND deleted = 0 AND (received_at, id) < (?2, ?3) {extra} \
              ORDER BY received_at DESC, id DESC LIMIT ?4) \
          UNION ALL \
          SELECT * FROM (SELECT {COLUMNS} FROM messages \
-             WHERE moving_to = ?1 AND deleted = 0 AND (received_at, id) < (?2, ?3) \
+             WHERE moving_to = ?1 AND deleted = 0 AND (received_at, id) < (?2, ?3) {extra} \
              ORDER BY received_at DESC, id DESC LIMIT ?4) \
          ORDER BY received_at DESC, id DESC LIMIT ?4"
     )
+}
+
+/// A page of what was filed as Done in `done` (an account's Archive, or its
+/// All Mail), for the inbox's "Show Done", newest first and older than
+/// `before`. With `inbox`, copies that are in the inbox too are left out:
+/// All Mail holds those as well. As [`list`] otherwise.
+pub fn done_page(
+    conn: &Connection,
+    done: i64,
+    inbox: Option<i64>,
+    limit: u32,
+    before: Option<Cursor>,
+) -> Result<Vec<Message>, StoreError> {
+    let (received_at, id) = before.map_or((i64::MAX, i64::MAX), |c| (c.received_at, c.id));
+    let rows = match inbox {
+        None => conn
+            .prepare_cached(&list_sql())?
+            .query_map(params![done, received_at, id, limit], from_row)?
+            .map(|row| row?)
+            .collect::<Result<Vec<_>, _>>()?,
+        Some(inbox) => conn
+            .prepare_cached(&list_sql_where(
+                "AND (messages.message_id_header IS NULL OR NOT EXISTS (SELECT 1 FROM messages i \
+                 WHERE i.message_id_header = messages.message_id_header AND i.deleted = 0 \
+                 AND COALESCE(i.moving_to, i.mailbox_id) = ?5))",
+            ))?
+            .query_map(params![done, received_at, id, limit, inbox], from_row)?
+            .map(|row| row?)
+            .collect::<Result<Vec<_>, _>>()?,
+    };
+    Ok(rows)
 }
 
 /// The inbox's page query: [`list_sql`] without what account ?5 has set
@@ -910,6 +946,43 @@ mod tests {
             .unwrap();
         let left = store.read(move |c| conversation_ids(c, &[m1])).await.unwrap();
         assert_eq!(left, [m1, m3]);
+    }
+
+    #[tokio::test]
+    async fn done_mail_in_all_mail_leaves_out_what_is_in_the_inbox_too() {
+        let (_temp, store, inbox) = store_with_inbox().await;
+        let all = store
+            .write(move |tx| {
+                let account: String =
+                    tx.query_row("SELECT account_id FROM mailboxes WHERE id = ?1", [inbox], |r| r.get(0))?;
+                tx.execute(
+                    "INSERT INTO mailboxes (account_id, remote_name, name, delimiter, role, selectable, attributes) \
+                     VALUES (?1, CAST('[Gmail]/All Mail' AS BLOB), '[Gmail]/All Mail', '/', 'all', 1, '[]')",
+                    [&account],
+                )?;
+                let all = tx.last_insert_rowid();
+                let with_id = |uid: u32, id: &str| {
+                    let mut new = message(uid, i64::from(uid) * 1000, id);
+                    new.headers.message_id = Some(format!("{id}@x"));
+                    new
+                };
+                // "still" is in the inbox too; "done" only in All Mail.
+                upsert(tx, inbox, &[with_id(1, "still")])?;
+                upsert(tx, all, &[with_id(1, "still"), with_id(2, "done")])?;
+                Ok(all)
+            })
+            .await
+            .unwrap()
+            .value;
+        let subjects = |rows: Vec<Message>| rows.into_iter().map(|m| m.subject).collect::<Vec<_>>();
+        let done = store
+            .read(move |c| done_page(c, all, Some(inbox), 10, None))
+            .await
+            .unwrap();
+        assert_eq!(subjects(done), ["done"]);
+        // An Archive folder holds only what was filed: nothing to leave out.
+        let archive = store.read(move |c| done_page(c, all, None, 10, None)).await.unwrap();
+        assert_eq!(subjects(archive), ["done", "still"]);
     }
 
     #[tokio::test]

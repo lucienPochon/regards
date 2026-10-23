@@ -115,6 +115,7 @@ async fn messages(desktop: &mut Client, mailbox_id: i64) -> MessageListResult {
                 before: None,
                 section: None,
                 seen: None,
+                with_done: false,
             },
         )
         .await
@@ -305,6 +306,7 @@ async fn live_sync_follows_new_flagged_expunged_and_reset_mailboxes() {
                 before: None,
                 section: None,
                 seen: None,
+                with_done: false,
             },
         )
         .await
@@ -319,6 +321,7 @@ async fn live_sync_follows_new_flagged_expunged_and_reset_mailboxes() {
                 before: first.next,
                 section: None,
                 seen: None,
+                with_done: false,
             },
         )
         .await
@@ -1377,6 +1380,92 @@ async fn live_folders_are_made_renamed_deleted_and_trash_emptied() {
 
 #[tokio::test]
 #[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_formatted_mail_is_quoted_and_forwarded_formatted_in_local_time() {
+    use regards_ipc::protocol::DraftForwardParams;
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    // Thursday 2026-10-22, 13:00 UTC.
+    let formatted = format!(
+        "From: Ada <ada@example.test>\r\nTo: {}@example.test\r\nSubject: Plans\r\n\
+         Date: Thu, 22 Oct 2026 13:00:00 +0000\r\nMessage-ID: <plans@example.test>\r\n\
+         Content-Type: text/html; charset=utf-8\r\n\r\n<p>Lunch on <b>Friday</b>?</p><img src=\"https://t.test/p.gif\">\r\n",
+        live.user
+    );
+    seed.append(b"INBOX", &[], formatted.as_bytes()).await.unwrap();
+    seed.append(b"INBOX", &[], &message(2, "Plain", "bob@example.test"))
+        .await
+        .unwrap();
+    let (_temp, mut desktop, _account, inbox, handle) = daemon_with_account(&live).await;
+    let ids: Vec<(String, i64)> = messages(&mut desktop, inbox)
+        .await
+        .messages
+        .into_iter()
+        .map(|m| (m.subject, m.id))
+        .collect();
+    let id = |subject: &str| ids.iter().find(|(s, _)| s == subject).unwrap().1;
+    let zurich = Some(120);
+
+    let reply: DraftView = desktop
+        .call(
+            methods::DRAFT_REPLY,
+            DraftReplyParams {
+                message_id: id("Plans"),
+                all: false,
+                utc_offset_minutes: zurich,
+            },
+        )
+        .await
+        .unwrap();
+    let html = reply.html.expect("a formatted reply");
+    assert!(
+        html.contains("<p>On 2026-10-22 15:00, Ada wrote:</p><blockquote type=\"cite\">"),
+        "{html}"
+    );
+    assert!(html.contains("<b>Friday</b>") && !html.contains("<img"), "{html}");
+    assert!(
+        reply.body.contains("> Lunch on Friday?"),
+        "the plain text goes too: {}",
+        reply.body
+    );
+
+    let forward: DraftView = desktop
+        .call(
+            methods::DRAFT_FORWARD,
+            DraftForwardParams {
+                id: id("Plans"),
+                utc_offset_minutes: zurich,
+            },
+        )
+        .await
+        .unwrap();
+    let html = forward.html.expect("a formatted forward");
+    assert!(
+        html.contains("Date: 2026-10-22 15:00") && html.contains("<b>Friday</b>"),
+        "{html}"
+    );
+
+    // Plain mail is quoted as text, as before.
+    let plain: DraftView = desktop
+        .call(
+            methods::DRAFT_REPLY,
+            DraftReplyParams {
+                message_id: id("Plain"),
+                all: false,
+                utc_offset_minutes: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(plain.html, None);
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
 async fn live_actions_taken_offline_reach_the_server_once_it_is_back() {
     let live = live();
     let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
@@ -1540,6 +1629,7 @@ async fn live_a_reply_can_be_undone_then_goes_out_once_and_lands_in_sent() {
             DraftReplyParams {
                 message_id: original,
                 all: false,
+                utc_offset_minutes: None,
             },
         )
         .await
@@ -2308,6 +2398,7 @@ async fn live_a_reply_goes_out_from_the_address_it_was_written_to() {
             DraftReplyParams {
                 message_id: id,
                 all: true,
+                utc_offset_minutes: None,
             },
         )
         .await
@@ -2387,6 +2478,7 @@ async fn live_the_smart_inbox_sorts_by_section_and_follows_corrections() {
                 before: None,
                 section: Some(Section::Newsletters),
                 seen: None,
+                with_done: false,
             },
         )
         .await
@@ -2545,6 +2637,7 @@ async fn live_new_senders_can_be_held_accepted_or_blocked() {
         before: None,
         section: Some(section),
         seen: None,
+        with_done: false,
     };
 
     // Held: new senders are out of the inbox, in their own section.
@@ -3063,6 +3156,7 @@ async fn live_agents_organise_mail_and_the_app_undoes_it() {
                 before: None,
                 section: None,
                 seen: None,
+                with_done: false,
             },
         )
         .await
@@ -3267,6 +3361,7 @@ async fn live_bulk_changes_and_deleting_for_good_wait_for_the_person() {
                 before: None,
                 section: None,
                 seen: None,
+                with_done: false,
             },
         )
         .await
@@ -3414,6 +3509,7 @@ async fn live_mail_that_gives_orders_moves_nothing() {
                 before: None,
                 section: None,
                 seen: None,
+                with_done: false,
             },
         )
         .await

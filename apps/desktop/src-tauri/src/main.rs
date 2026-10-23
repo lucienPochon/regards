@@ -32,20 +32,22 @@ use regards_ipc::protocol::{
     AgentAccess, AgentAccessParams, AgentActivityParams, AgentActivityResult, AgentSendParams, AsideParams,
     AttachmentFiles, AttachmentPreview, AttachmentRef, AttachmentSaveAllParams, AttachmentSaveParams, ClientKind,
     ConnectionSecurity, ConversationIdsResult, DeleteResult, DiscoverParams, DiscoverResult, DraftAttachFileParams,
-    DraftAttachImageParams, DraftCreateParams, DraftDetachParams, DraftImageAttached, DraftImagesResult,
-    DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams,
-    DraftUpdateParams, DraftView, ExplainResult, HoldApproveParams, HoldListParams, HoldListResult, HoldRef, HoldView,
-    IdentityListResult, IdentityRef, IdentitySaveParams, IdentitySetSignatureParams, IdentitySetVoiceParams,
-    IdentityView, MailboxCreateParams, MailboxListResult, MailboxRef, MailboxRenameParams, MailboxSummary, MarkResult,
-    MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult,
-    NoteAddParams, NoteAddResult, NoteListParams, NoteListResult, NoteRef, NoteRemoved, NoteSetEnabledParams,
-    NoteSettings, NoteUpdateParams, NoteView, NotesForgotten, OauthFlowRef, OauthProvidersResult, OauthStartParams,
-    OauthStartResult, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal,
-    RemindParams, Screening, ScreeningParams, SearchParams, SearchResult, Section, SenderBlockParams,
-    SenderImagesParams, SenderImagesResult, SenderSetParams, SenderSetResult, ServerSearchResult, ServerSettings,
-    SetFlagsParams, SetFlagsResult, SignatureListResult, SignatureRef, SignatureSaveParams, SignatureView,
-    SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView,
-    ThreadView, UndoParams, UndoResult, UnsubscribeParams, UnsubscribeResult, View, ViewParams, methods,
+    DraftAttachImageParams, DraftCreateParams, DraftDetachParams, DraftForwardParams, DraftImageAttached,
+    DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult,
+    DraftSetFromParams, DraftUpdateParams, DraftView, ExplainResult, HoldApproveParams, HoldListParams, HoldListResult,
+    HoldRef, HoldView, IdentityListResult, IdentityRef, IdentitySaveParams, IdentitySetSignatureParams,
+    IdentitySetVoiceParams, IdentityView, MailboxCreateParams, MailboxListResult, MailboxRef, MailboxRenameParams,
+    MailboxSummary, MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult,
+    MessageRef, MoveParams, MoveResult, NoteAddParams, NoteAddResult, NoteListParams, NoteListResult, NoteRef,
+    NoteRemoved, NoteSetEnabledParams, NoteSettings, NoteUpdateParams, NoteView, NotesForgotten, OauthFlowRef,
+    OauthProvidersResult, OauthStartParams, OauthStartResult, OutboxListResult, OutboxRef, OutboxRescheduleParams,
+    OutboxUndoResult, PinParams, Principal, RemindParams, SavedSearchListResult, SavedSearchOrderParams,
+    SavedSearchRef, SavedSearchSaveParams, SavedSearchView, Screening, ScreeningParams, SearchParams, SearchResult,
+    Section, SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams, SenderSetResult,
+    ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SignatureListResult, SignatureRef,
+    SignatureSaveParams, SignatureView, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef,
+    TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, UnsubscribeParams, UnsubscribeResult, View,
+    ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -766,6 +768,7 @@ async fn message_list(
     limit: Option<u32>,
     section: Option<Section>,
     seen: Option<bool>,
+    with_done: Option<bool>,
 ) -> Result<MessageListResult, String> {
     let mut client = bridge.connect().await?.client;
     client
@@ -777,6 +780,7 @@ async fn message_list(
                 before,
                 section,
                 seen,
+                with_done: with_done.unwrap_or(false),
             },
         )
         .await
@@ -1235,21 +1239,44 @@ async fn draft_create(bridge: State<'_, Bridge>, account_id: String) -> Result<D
         .map_err(describe)
 }
 
-/// A reply (or reply all), addressed and quoted by the daemon.
+/// A reply (or reply all), addressed and quoted by the daemon; its "wrote:"
+/// line in local time (`utc_offset_minutes`).
 #[tauri::command]
-async fn draft_reply(bridge: State<'_, Bridge>, message_id: i64, all: bool) -> Result<DraftView, String> {
+async fn draft_reply(
+    bridge: State<'_, Bridge>,
+    message_id: i64,
+    all: bool,
+    utc_offset_minutes: Option<i32>,
+) -> Result<DraftView, String> {
     let mut client = bridge.connect().await?.client;
     client
-        .call(methods::DRAFT_REPLY, DraftReplyParams { message_id, all })
+        .call(
+            methods::DRAFT_REPLY,
+            DraftReplyParams {
+                message_id,
+                all,
+                utc_offset_minutes,
+            },
+        )
         .await
         .map_err(describe)
 }
 
 #[tauri::command]
-async fn draft_forward(bridge: State<'_, Bridge>, message_id: i64) -> Result<DraftView, String> {
+async fn draft_forward(
+    bridge: State<'_, Bridge>,
+    message_id: i64,
+    utc_offset_minutes: Option<i32>,
+) -> Result<DraftView, String> {
     let mut client = bridge.connect().await?.client;
     client
-        .call(methods::DRAFT_FORWARD, MessageRef { id: message_id })
+        .call(
+            methods::DRAFT_FORWARD,
+            DraftForwardParams {
+                id: message_id,
+                utc_offset_minutes,
+            },
+        )
         .await
         .map_err(describe)
 }
@@ -1389,6 +1416,47 @@ async fn draft_adopt(bridge: State<'_, Bridge>, message_id: i64) -> Result<Draft
         .call(methods::DRAFT_ADOPT, MessageRef { id: message_id })
         .await
         .map_err(describe)
+}
+
+/// Saved searches (Smart Folders), in the sidebar's order.
+#[tauri::command]
+async fn saved_search_list(bridge: State<'_, Bridge>) -> Result<SavedSearchListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::SAVED_SEARCH_LIST, Value::Null)
+        .await
+        .map_err(describe)
+}
+
+/// Keep a search by name (no `id`), or change one.
+#[tauri::command]
+async fn saved_search_save(
+    bridge: State<'_, Bridge>,
+    search: SavedSearchSaveParams,
+) -> Result<SavedSearchView, String> {
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::SAVED_SEARCH_SAVE, search).await.map_err(describe)
+}
+
+/// Put saved searches in this order.
+#[tauri::command]
+async fn saved_search_reorder(bridge: State<'_, Bridge>, ids: Vec<i64>) -> Result<SavedSearchListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::SAVED_SEARCH_REORDER, SavedSearchOrderParams { ids })
+        .await
+        .map_err(describe)
+}
+
+/// Forget a saved search; its mail stays.
+#[tauri::command]
+async fn saved_search_remove(bridge: State<'_, Bridge>, id: i64) -> Result<(), String> {
+    let mut client = bridge.connect().await?.client;
+    let _: Value = client
+        .call(methods::SAVED_SEARCH_REMOVE, SavedSearchRef { id })
+        .await
+        .map_err(describe)?;
+    Ok(())
 }
 
 /// Templates: text to start a message with, by name.
@@ -2011,6 +2079,10 @@ fn main() {
             identity_list,
             draft_elsewhere,
             draft_adopt,
+            saved_search_list,
+            saved_search_save,
+            saved_search_reorder,
+            saved_search_remove,
             template_list,
             template_save,
             template_remove,

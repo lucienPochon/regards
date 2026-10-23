@@ -714,6 +714,20 @@ function TemplatesTab() {
         Start a message from one with the templates button in the composer, or {MOD_KEY}+Shift+T. The same list also keeps
         what you have written as a new template.
       </p>
+      <div className="template-hint">
+        <strong>Filled in when the template is used</strong>
+        <ul>
+          <li>
+            <code>{"{{name}}"}</code> <code>{"{{first name}}"}</code> <code>{"{{last name}}"}</code>: the first person it is to
+          </li>
+          <li>
+            <code>{"{{my name}}"}</code> <code>{"{{my first name}}"}</code>: you, as the address it is sent from
+          </li>
+          <li>
+            <code>[[a blank]]</code>: left for you to fill in; sending asks first if one is still there
+          </li>
+        </ul>
+      </div>
       <TemplatesEditor />
     </>
   );

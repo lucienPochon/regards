@@ -1371,9 +1371,79 @@ button.link:hover {
   font-weight: 600;
 }
 
+/* Saved searches: a coloured dot on the glass when one is chosen. */
+.side-saved .side-item {
+  position: relative;
+}
+
+.saved-dot {
+  position: absolute;
+  top: 9px;
+  left: 26px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--rail);
+}
+
+.search-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.search-save:hover {
+  background: var(--hover);
+}
+
 .side-foot {
   flex: none;
   padding: 8px 0 16px;
+}
+
+/* Offline, or a sync problem: what it means, at the foot; a click tries again. */
+.side-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: calc(100% - 16px);
+  margin: 0 8px 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--rail-hover);
+  color: var(--rail-strong);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.side-status > .icon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--warm);
+}
+
+.side-status > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.side-status span span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--rail-dim);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.rail-status {
+  color: var(--warm);
 }
 
 /* All folders: a second dark panel beside the sidebar, over the mail */
@@ -2197,6 +2267,11 @@ button.list-title:hover {
 
 .row {
   position: relative;
+}
+
+/* Show Done: Done mail among the inbox, quieter than the rest. */
+.row.done-row .row-main {
+  opacity: 0.55;
 }
 
 .rows.tall .row:not(.open):not(.picked):hover,
@@ -6110,6 +6185,54 @@ button.sender-row:hover:not(:disabled) {
   margin-top: 8px;
 }
 
+/* A name asked for: a new folder's, or a folder's new one. */
+.name-dialog {
+  display: grid;
+  gap: 12px;
+  width: min(420px, calc(100vw - 32px));
+}
+
+.name-dialog h2 {
+  margin: 0;
+}
+
+.name-field {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Trash and Junk: Empty, beside the list's tools. */
+.list-empty-btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 7px;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.list-empty-btn:hover {
+  background: var(--hover);
+}
+
+/* The folder panel: a new folder at an account's top. */
+.panel-new {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+.panel-new:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
 .form-status {
   min-height: 1.4em;
   color: var(--muted);
@@ -6405,6 +6528,30 @@ button.sender-row:hover:not(:disabled) {
 
 .login-form {
   margin-top: 4px;
+}
+
+/* Settings › Templates: what a template fills in by itself. */
+.template-hint {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--notice);
+  font-size: 13px;
+}
+
+.template-hint ul {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.template-hint code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--chip);
+  font-size: 12px;
 }
 
 .subpage-head {
