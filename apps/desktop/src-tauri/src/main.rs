@@ -1762,6 +1762,15 @@ fn main() {
         ))
         // Used from Rust only, as above.
         .plugin(tauri_plugin_notification::init())
+        // The main window's size, place and maximised state, put back when it is
+        // first shown (background::show). Composer windows are not kept.
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(background::WINDOW_STATE)
+                .with_filter(|label| label == "main")
+                .skip_initial_state("main")
+                .build(),
+        )
         .manage(notify::Notifier::default())
         .manage(Bridge::new())
         .manage(links::Pending::default())
