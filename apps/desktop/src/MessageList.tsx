@@ -106,6 +106,8 @@ export interface SearchControls {
   suggestion: string | null;
   /** Asking the servers, for words in mail not opened here. */
   server: ServerSearch;
+  /** Keep this search by name, in the sidebar. */
+  onSave?: () => void;
 }
 
 export interface ServerSearch {
@@ -679,6 +681,12 @@ export function MessageList({
                   {items.length}
                   {feed.more ? "+" : ""} {items.length === 1 && !feed.more ? "result" : "results"}
                 </span>
+                {search.onSave && query && (
+                  <button type="button" className="search-save" title="Keep this search in the sidebar" onClick={search.onSave}>
+                    <Icon name="star" size={13} />
+                    Save this search
+                  </button>
+                )}
                 {search.indexing > 0 && (
                   <span className="search-indexing">
                     Still indexing: recent mail may be missing.

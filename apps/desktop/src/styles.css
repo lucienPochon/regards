@@ -1371,6 +1371,37 @@ button.link:hover {
   font-weight: 600;
 }
 
+/* Saved searches: a coloured dot on the glass when one is chosen. */
+.side-saved .side-item {
+  position: relative;
+}
+
+.saved-dot {
+  position: absolute;
+  top: 9px;
+  left: 26px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--rail);
+}
+
+.search-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.search-save:hover {
+  background: var(--hover);
+}
+
 .side-foot {
   flex: none;
   padding: 8px 0 16px;
@@ -6147,6 +6178,54 @@ button.sender-row:hover:not(:disabled) {
 
 .account-form details label {
   margin-top: 8px;
+}
+
+/* A name asked for: a new folder's, or a folder's new one. */
+.name-dialog {
+  display: grid;
+  gap: 12px;
+  width: min(420px, calc(100vw - 32px));
+}
+
+.name-dialog h2 {
+  margin: 0;
+}
+
+.name-field {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Trash and Junk: Empty, beside the list's tools. */
+.list-empty-btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 7px;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.list-empty-btn:hover {
+  background: var(--hover);
+}
+
+/* The folder panel: a new folder at an account's top. */
+.panel-new {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+.panel-new:hover {
+  background: var(--hover);
+  color: var(--text);
 }
 
 .form-status {
