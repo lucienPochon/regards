@@ -166,7 +166,7 @@ export function Settings({
           {tab === "appearance" && <AppearancePage layout={layout} onLayout={onLayout} accounts={accounts} />}
           {tab === "notifications" && <NotificationsPage accounts={accounts} />}
           {tab === "scheduling" && <SchedulingPage />}
-          {tab === "composer" && <ComposerPage accounts={accounts} onAccounts={() => onTab("accounts")} />}
+          {tab === "composer" && <ComposerPage accounts={accounts} confirm={confirm} onAccounts={() => onTab("accounts")} />}
           {tab === "accessibility" && <AccessibilityPage />}
           {tab === "shortcuts" && <ShortcutsTab />}
           {tab === "support" && <SupportPage service={service} onRecheck={onRecheck} accounts={accounts} confirm={confirm} />}
@@ -443,7 +443,7 @@ function AccountName({ account }: { account: AccountSummary }) {
             ? "Saving…"
             : state === "saved"
               ? "Saved."
-              : "Who your mail is from. An address with a name of its own (Addresses & signatures) keeps it. Empty: the address.")}
+              : "Who your mail is from. An address with a name of its own (Addresses) keeps it. Empty: the address.")}
       </span>
     </label>
   );
@@ -530,7 +530,7 @@ function AccountRow({
           Sync now
         </button>
         <button type="button" className="btn small" aria-expanded={addresses} onClick={() => setAddresses(!addresses)}>
-          Addresses &amp; signatures
+          Addresses
         </button>
         <button type="button" className="btn small" aria-expanded={options} onClick={() => setOptions(!options)}>
           Details

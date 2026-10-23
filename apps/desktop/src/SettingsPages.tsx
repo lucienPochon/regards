@@ -32,6 +32,7 @@ import type { ServiceCheck } from "./mail";
 import { ACCOUNT_COLOURS, COLOUR_NAMES, type Prefs, ZOOMS, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
 import { MOD_KEY } from "./shortcuts";
 import { LinkRow, Option, Select, SubPageHead, Toggle } from "./SettingsControls";
+import { SignaturesPage } from "./SignaturesPage";
 import { senderImages, setSenderImages } from "./smart";
 import { exportDiagnostics, setConnectionLog, setDetailedLogs, supportSettings } from "./support";
 import { type PresetDef, type PresetPrefs, REMINDER_PRESETS, SEND_PRESETS, SNOOZE_PRESETS } from "./snooze";
@@ -931,8 +932,18 @@ function AutoCopyRow({ account, label }: { account: AccountSummary; label: strin
   );
 }
 
-export function ComposerPage({ accounts, onAccounts }: { accounts: AccountSummary[]; onAccounts: () => void }) {
+export function ComposerPage({
+  accounts,
+  confirm,
+  onAccounts,
+}: {
+  accounts: AccountSummary[];
+  confirm: (request: ConfirmRequest) => Promise<boolean>;
+  onAccounts: () => void;
+}) {
   const prefs = usePrefs();
+  const [signatures, setSignatures] = useState(false);
+  if (signatures) return <SignaturesPage accounts={accounts} confirm={confirm} onBack={() => setSignatures(false)} />;
   return (
     <>
       <h3>Composer</h3>
@@ -979,12 +990,8 @@ export function ComposerPage({ accounts, onAccounts }: { accounts: AccountSummar
       >
         <Toggle label="Suggest people as you type" on={prefs.suggestPeople} onChange={(suggestPeople) => setPrefs({ suggestPeople })} />
       </Option>
-      <LinkRow
-        icon="user"
-        label="Addresses and signatures"
-        detail="Send as an alias, and the signature each address adds"
-        onOpen={onAccounts}
-      />
+      <LinkRow icon="text" label="Signatures" detail="Which one each address adds, and every signature" onOpen={() => setSignatures(true)} />
+      <LinkRow icon="user" label="Addresses" detail="Send as an alias: in Accounts" onOpen={onAccounts} />
       <h4 className="settings-subhead">Always copy</h4>
       {accounts.map((account) => (
         <AutoCopyRow key={account.id} account={account} label={accounts.length > 1 ? accountLabel(prefs, account) : null} />
