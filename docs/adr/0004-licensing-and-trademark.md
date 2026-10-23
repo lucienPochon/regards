@@ -13,7 +13,7 @@
   - code we would run as a service: relay, sync and hosted-AI gateway (ADR-0011, ADR-0014)
 - **Dependency licences:** all planned dependencies are permissive. Licences were checked on crates.io on 2026-10-18 for tauri, tokio, async-imap, imap-codec, imap-next, lettre, mail-parser, mail-builder, rusqlite, tantivy, keyring, oauth2, axum, rustls and ort. All are MIT, Apache-2.0 or similar.
 
-## Decision (proposed)
+## Decision
 
 1. **Client, core, CLI, MCP server and shared crates: `Apache-2.0 OR MIT`** (dual licence, the Rust ecosystem convention).
    - Maximum adoption and contributor friendliness.
