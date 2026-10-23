@@ -1729,6 +1729,10 @@ export function App() {
           }}
           onBlocked={(result) => moved(result.moved > 0 ? [sender.messageId] : [], result)}
           onFailed={failed}
+          onHolds={() => {
+            setSenderCard(null);
+            setSettings("agents");
+          }}
         />
       )}
       {picking && (
