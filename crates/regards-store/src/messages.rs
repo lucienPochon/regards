@@ -356,20 +356,42 @@ pub fn set_blob(tx: &Transaction<'_>, id: i64, hash: &str) -> Result<(), StoreEr
     Ok(())
 }
 
+/// Listed only when it is the newest message of its conversation in the
+/// folder (?1): a conversation is one row, as in Spark. One on its way into
+/// the folder counts as there. With `seen`, only newer messages of that kind
+/// count, so an unread page shows a conversation's newest unread message.
+/// Each look walks `messages_by_thread`.
+fn newest_in_folder(seen: Option<bool>) -> String {
+    let seen = match seen {
+        Some(true) => " AND n.seen = 1",
+        Some(false) => " AND n.seen = 0",
+        None => "",
+    };
+    format!(
+        "(messages.thread_id IS NULL OR NOT EXISTS (SELECT 1 FROM messages n \
+         WHERE n.thread_id = messages.thread_id AND n.deleted = 0{seen} \
+         AND COALESCE(n.moving_to, n.mailbox_id) = ?1 \
+         AND (n.received_at, n.id) > (messages.received_at, messages.id)))"
+    )
+}
+
 /// The page query of [`list`]. A message being moved shows in its target
 /// folder at once; one marked deleted (being deleted for good, or by another
-/// client) is not shown. The two halves, the folder's own messages and those
-/// on their way into it, are separate so that each walks its own index: with
-/// an OR, a 100k-message folder took 55 ms per page instead of well under 1.
+/// client) is not shown; a conversation shows as its newest message
+/// ([`newest_in_folder`]). The two halves, the folder's own messages and
+/// those on their way into it, are separate so that each walks its own
+/// index: with an OR, a 100k-message folder took 55 ms per page instead of
+/// well under 1.
 fn list_sql() -> String {
+    let newest = newest_in_folder(None);
     format!(
         "SELECT * FROM (SELECT {COLUMNS} FROM messages \
              WHERE mailbox_id = ?1 AND moving_to IS NULL AND deleted = 0 AND (received_at, id) < (?2, ?3) \
-             ORDER BY received_at DESC, id DESC LIMIT ?4) \
+             AND {newest} ORDER BY received_at DESC, id DESC LIMIT ?4) \
          UNION ALL \
          SELECT * FROM (SELECT {COLUMNS} FROM messages \
              WHERE moving_to = ?1 AND deleted = 0 AND (received_at, id) < (?2, ?3) \
-             ORDER BY received_at DESC, id DESC LIMIT ?4) \
+             AND {newest} ORDER BY received_at DESC, id DESC LIMIT ?4) \
          ORDER BY received_at DESC, id DESC LIMIT ?4"
     )
 }
@@ -406,14 +428,17 @@ fn inbox_sql(sections: &Sections<'_>) -> String {
         Some(false) => only.push_str(" AND messages.seen = 0"),
         None => {}
     }
+    // One row per conversation: also when its newest is parked, so a snoozed
+    // or set-aside conversation leaves the inbox whole.
+    let newest = newest_in_folder(sections.seen);
     format!(
         "SELECT * FROM (SELECT {COLUMNS}, received_at AS listed_at FROM messages \
              WHERE mailbox_id = ?1 AND moving_to IS NULL AND deleted = 0 AND (received_at, id) < (?2, ?3) {only} \
-             AND {PLAIN} ORDER BY received_at DESC, id DESC LIMIT ?4) \
+             AND {PLAIN} AND {newest} ORDER BY received_at DESC, id DESC LIMIT ?4) \
          UNION ALL \
          SELECT * FROM (SELECT {COLUMNS}, received_at AS listed_at FROM messages \
              WHERE moving_to = ?1 AND deleted = 0 AND (received_at, id) < (?2, ?3) {only} \
-             AND {PLAIN} ORDER BY received_at DESC, id DESC LIMIT ?4) \
+             AND {PLAIN} AND {newest} ORDER BY received_at DESC, id DESC LIMIT ?4) \
          UNION ALL \
          SELECT * FROM (SELECT {COLUMNS}, k.surfaced_at AS listed_at FROM marks k \
              JOIN messages ON messages.id = ( \
@@ -827,6 +852,71 @@ mod tests {
                 ..Headers::default()
             },
         }
+    }
+
+    #[tokio::test]
+    async fn a_conversation_is_one_row_its_newest_message() {
+        use crate::marks::{self, Mark};
+        let (_temp, store, inbox) = store_with_inbox().await;
+        let batch: Vec<NewMessage> = (1..=3)
+            .map(|uid| {
+                let mut new = message(uid, i64::from(uid) * 1000, &format!("m{uid}"));
+                new.headers.message_id = Some(format!("m{uid}@x"));
+                // 2 answers 1 (and is read); 3 is a conversation of its own.
+                if uid == 2 {
+                    new.headers.in_reply_to = vec!["m1@x".into()];
+                    new.headers.references = vec!["m1@x".into()];
+                    new.flags.seen = true;
+                }
+                new
+            })
+            .collect();
+        let account = store
+            .write(move |tx| {
+                upsert(tx, inbox, &batch)?;
+                Ok(
+                    tx.query_row("SELECT account_id FROM mailboxes WHERE id = ?1", [inbox], |r| {
+                        r.get::<_, String>(0)
+                    })?,
+                )
+            })
+            .await
+            .unwrap()
+            .value;
+        let subjects = |rows: Vec<Message>| rows.into_iter().map(|m| m.subject).collect::<Vec<_>>();
+
+        let listed = store.read(move |c| list(c, inbox, 10, None)).await.unwrap();
+        assert_eq!(subjects(listed), ["m3", "m2"], "m1 is in m2's row");
+        let a = account.clone();
+        let page = store
+            .read(move |c| inbox_page(c, inbox, 10, None, &a, 0, &Sections::default()))
+            .await
+            .unwrap();
+        assert_eq!(subjects(page), ["m3", "m2"]);
+        // Unread only: the conversation's newest unread message.
+        let a = account.clone();
+        let unread = Sections {
+            seen: Some(false),
+            ..Sections::default()
+        };
+        let page = store
+            .read(move |c| inbox_page(c, inbox, 10, None, &a, 0, &unread))
+            .await
+            .unwrap();
+        assert_eq!(subjects(page), ["m3", "m1"]);
+
+        // Its newest snoozed: the whole conversation leaves the inbox.
+        let a = account.clone();
+        store
+            .write(move |tx| marks::set(tx, &a, "m2@x", Mark::Snoozed, Some(i64::MAX)))
+            .await
+            .unwrap();
+        let a = account.clone();
+        let page = store
+            .read(move |c| inbox_page(c, inbox, 10, None, &a, 0, &Sections::default()))
+            .await
+            .unwrap();
+        assert_eq!(subjects(page), ["m3"]);
     }
 
     #[tokio::test]
