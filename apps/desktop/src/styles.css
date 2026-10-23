@@ -5110,6 +5110,225 @@ button.sender-row:hover:not(:disabled) {
   font-weight: 400;
 }
 
+/* Settings › Agents: your voice, notes about people. */
+.agent-section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.agent-section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.agent-section-head > .icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.agent-section-head h4 {
+  margin: 0;
+  font-size: 14.5px;
+}
+
+.agent-section-head .switch {
+  margin-left: auto;
+}
+
+.info-tip {
+  display: inline-grid;
+  color: var(--muted);
+  cursor: help;
+}
+
+.agent-section-desc {
+  margin: 6px 0 0 28px;
+  font-size: 13px;
+}
+
+.agent-section-fine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 8px 0 0 28px;
+  font-size: 12.5px;
+}
+
+.danger-link {
+  color: var(--danger);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.danger-link:hover {
+  text-decoration: underline;
+}
+
+.voice-list {
+  display: grid;
+  margin: 8px 0 0;
+  padding: 0 0 0 28px;
+  list-style: none;
+}
+
+.voice-list li {
+  border-bottom: 1px solid var(--border);
+}
+
+.voice-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+}
+
+.voice-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-left: -6px;
+  padding: 8px 6px;
+  border-radius: 8px;
+  color: var(--text);
+  text-align: left;
+}
+
+.voice-open:hover {
+  background: var(--hover);
+}
+
+.voice-open > .icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.voice-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.voice-text strong,
+.voice-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-text strong {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.voice-text span {
+  font-size: 12.5px;
+}
+
+.voice-preview {
+  color: var(--text-2);
+}
+
+.learn-btn {
+  background: var(--pill);
+  color: var(--accent);
+}
+
+.voice-ask {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--notice);
+  font-size: 13px;
+}
+
+.voice-ask-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-ask-head strong {
+  flex: 1;
+}
+
+.voice-prompt {
+  margin: 0;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--bg-elev);
+  box-shadow: inset 0 0 0 1px var(--border);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12.5px;
+  user-select: all;
+}
+
+.voice-ask-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.voice-ask-foot span {
+  flex: 1;
+  font-size: 12.5px;
+}
+
+.voice-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.voice-editor-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.voice-editor-top .muted {
+  flex: 1;
+}
+
+.voice-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.voice-editor textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.voice-count {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.voice-buttons .spacer {
+  flex: 1;
+}
+
 .agent-heading {
   margin: 22px 0 8px;
   font-size: 13px;
