@@ -38,6 +38,7 @@ mod signatures;
 mod smart;
 mod sync;
 mod templates;
+mod unsubscribe;
 mod voice;
 
 pub use oauth::OauthApp;

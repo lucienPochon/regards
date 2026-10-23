@@ -19,7 +19,7 @@ use regards_store::identities::{self, Identity};
 use regards_store::marks::{self, Mark};
 use regards_store::notices::{self, Kind, NewNotice};
 use regards_store::outbox::{self, Entry, NewEntry, State as EntryState};
-use regards_store::{StoreError, accounts, mailboxes};
+use regards_store::{StoreError, accounts, mailboxes, messages};
 use rusqlite::Transaction;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -146,6 +146,54 @@ pub(crate) async fn reply_with(state: &State, params: DraftReplyParams, written:
         html,
     };
     store_new(state, account.id, content).await
+}
+
+/// An email asking a mailing list to drop the person: to the address its
+/// `List-Unsubscribe` link names, with what the link asks it to say, from
+/// the address the list writes to (as a reply would go). No signature.
+pub(crate) async fn unsubscribe_draft(
+    state: &State,
+    message_id: i64,
+    source: &[u8],
+    mailto: regards_core::unsubscribe::Mailto,
+) -> Result<i64, RpcError> {
+    let original = headers::parse(source);
+    let written_to: Vec<String> = original
+        .to
+        .iter()
+        .chain(&original.cc)
+        .filter_map(|person| person.address.clone())
+        .collect();
+    let now = now_ms();
+    state
+        .store
+        .write(move |tx| {
+            let message =
+                messages::get(tx, message_id)?.ok_or_else(|| StoreError::Conflict("no such message".into()))?;
+            let mailbox = mailboxes::get(tx, message.mailbox_id)?
+                .ok_or_else(|| StoreError::Conflict("the folder no longer exists".into()))?;
+            let account = accounts::get(tx, &mailbox.account_id)?
+                .ok_or_else(|| StoreError::Conflict("the message's account no longer exists".into()))?;
+            let addresses: Vec<&str> = written_to.iter().map(String::as_str).collect();
+            let identity = match identities::for_addresses(tx, &account.id, &addresses)? {
+                Some(found) => found,
+                None => identity_of(tx, &account, None)?,
+            };
+            let content = Content {
+                to: vec![Person {
+                    name: None,
+                    address: Some(mailto.to),
+                }],
+                subject: mailto.subject,
+                body: mailto.body,
+                identity_id: stored(&identity),
+                ..Content::default()
+            };
+            drafts::create(tx, &account.id, &content, now)
+        })
+        .await
+        .map_err(conflict)
+        .map(|committed| committed.value)
 }
 
 /// A forward: the original's text and headers below, nobody addressed yet.

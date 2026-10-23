@@ -2,7 +2,8 @@
 
 use crate::{
     State, access, accounts, actions, agents, assistant, attachments, audit, compose, context, discover, draft_sync,
-    erase, holds, identities, mail, notes, notices, oauth, people, prefetch, signatures, smart, templates, voice,
+    erase, holds, identities, mail, notes, notices, oauth, people, prefetch, signatures, smart, templates, unsubscribe,
+    voice,
 };
 use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
@@ -764,6 +765,10 @@ impl Session {
                 let params: RemindParams = params(request)?;
                 self.allow_change(Access::Triage, &params.ids, request).await?;
                 actions::remind(&self.state, params).await
+            }
+            methods::MESSAGE_UNSUBSCRIBE => {
+                self.require_ui()?;
+                unsubscribe::unsubscribe(&self.state, params(request)?).await
             }
             methods::MESSAGE_SNOOZE => {
                 let params: SnoozeParams = params(request)?;
