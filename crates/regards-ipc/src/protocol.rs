@@ -977,7 +977,9 @@ pub struct SearchParams {
     /// also as the start of a word); `"a phrase"`, `-word`; `from:` `to:`
     /// `subject:`; `has:attachment`; `is:unread` `is:read` `is:flagged`;
     /// `in:<folder or role>` (`in:anywhere` takes in Trash and Junk, left
-    /// out otherwise); `before:` / `after:` `YYYY-MM-DD`.
+    /// out otherwise); `before:` / `after:` `YYYY-MM-DD`; `is:pinned`;
+    /// "today", "yesterday", "this week", "last week", "this month", "last
+    /// month", "last 3 days" (weeks, months), and in French.
     pub query: String,
     /// Only this account; every account when omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -987,6 +989,10 @@ pub struct SearchParams {
     pub limit: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub before: Option<MessageCursor>,
+    /// The local time's offset from UTC in minutes, for "today", "last week"
+    /// and the like; UTC days when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub utc_offset_minutes: Option<i32>,
 }
 
 /// What [`methods::SEARCH`] found.
