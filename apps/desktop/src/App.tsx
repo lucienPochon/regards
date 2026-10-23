@@ -41,7 +41,7 @@ import {
 import { Confirm, type ConfirmRequest } from "./Confirm";
 import { DraftsList } from "./DraftsList";
 import { Icon, type IconName } from "./icons";
-import { LIST_MAX, LIST_MIN, clampList, useLayout } from "./layout";
+import { type Layout, LIST_MAX, LIST_MIN, clampList, useLayout } from "./layout";
 import {
   type ListItem,
   type MessageFeed,
@@ -253,6 +253,7 @@ export function App() {
   const accounts = useMemo(() => (mail.state === "ready" ? mail.accounts : []), [mail]);
   const ownAddresses = useMemo(() => new Set(accounts.map((entry) => entry.account.email.toLowerCase())), [accounts]);
   const appPrefs = usePrefs();
+  const standardKeys = appPrefs.keySet === "standard";
   // Settings › Accessibility: the whole window larger or smaller.
   useEffect(() => {
     document.documentElement.style.setProperty("zoom", appPrefs.zoom === 1 ? "" : String(appPrefs.zoom));
@@ -917,6 +918,31 @@ export function App() {
     }
   };
 
+  /** Every folder of every account, to pick one by typing its name. */
+  const goToFolder = () =>
+    setMenu({
+      anchor: { x: 0, y: 0 },
+      variant: "palette",
+      title: "Go to folder",
+      label: "Go to folder",
+      filter: "Type a folder name",
+      entries: accounts.flatMap((entry) =>
+        sortFolders(entry.mailboxes.filter((m) => m.selectable)).map((mailbox) => ({
+          label: leafName(mailbox),
+          icon: mailbox.role ? ROLE_ICONS[mailbox.role] : "folder",
+          depth: depth(mailbox),
+          detail: accounts.length > 1 ? entry.account.email : undefined,
+          onSelect: () => changeView({ kind: "mailbox", mailboxId: mailbox.id, accountId: entry.account.id }),
+        })),
+      ),
+    });
+
+  /** The inbox, shown by priority, by category or by date. */
+  const inboxBy = (inboxView: Layout["inboxView"]) => {
+    setLayout({ inboxView });
+    changeView(INBOX);
+  };
+
   /**
    * The command palette: the actions on what it was opened for (a row, the
    * selection, a conversation or one message), then going places and the app's own commands.
@@ -943,27 +969,7 @@ export function App() {
     go({ kind: "drafts" }, "Drafts", "draft");
     for (const role of ["sent", "archive", "junk", "trash"] as const) go({ kind: "role", role }, ROLE_LABELS[role], ROLE_ICONS[role]);
     go({ kind: "outbox" }, "Outbox", "outbox");
-    entries.push({
-      label: "Go to folder…",
-      icon: "folder",
-      onSelect: () =>
-        setMenu({
-          anchor: { x: 0, y: 0 },
-          variant: "palette",
-          title: "Go to folder",
-          label: "Go to folder",
-          filter: "Type a folder name",
-          entries: accounts.flatMap((entry) =>
-            sortFolders(entry.mailboxes.filter((m) => m.selectable)).map((mailbox) => ({
-              label: leafName(mailbox),
-              icon: mailbox.role ? ROLE_ICONS[mailbox.role] : "folder",
-              depth: depth(mailbox),
-              detail: accounts.length > 1 ? entry.account.email : undefined,
-              onSelect: () => changeView({ kind: "mailbox", mailboxId: mailbox.id, accountId: entry.account.id }),
-            })),
-          ),
-        }),
-    });
+    entries.push({ label: "Go to folder…", icon: "folder", keys: standardKeys ? "Mod+Shift+G" : undefined, onSelect: goToFolder });
     entries.push("separator");
     if (readTargets().length > 0) entries.push({ label: "Mark everything here read", icon: "mailOpen", onSelect: markAllHere });
     entries.push(
@@ -977,7 +983,7 @@ export function App() {
           setSearch({ query: "", accountId: null });
         },
       },
-      { label: "Check for new mail", icon: "refresh", onSelect: syncNow },
+      { label: "Check for new mail", icon: "refresh", keys: standardKeys ? "Mod+r" : undefined, onSelect: syncNow },
       { label: layout.locked ? "Fold the sidebar" : "Show the sidebar", icon: "sidebar", keys: "/", onSelect: toggleSidebar },
       // Back beside the list from here; leaving it is chosen in Settings › Appearance, not by a stray pick.
       ...(layout.mode === "single"
@@ -1030,6 +1036,19 @@ export function App() {
     },
     "Mod+q": quit,
     "/": toggleSidebar,
+    ...(standardKeys
+      ? {
+          "Mod+g": () => changeView({ kind: "marked", mark: "aside" }),
+          "Mod+d": () => changeView({ kind: "marked", mark: "pinned" }),
+          "Mod+s": () => changeView({ kind: "marked", mark: "snoozed" }),
+          "Mod+Shift+G": goToFolder,
+          "Mod+Alt+1": () => inboxBy("smart"),
+          "Mod+Alt+2": () => inboxBy("cards"),
+          "Mod+Alt+3": () => inboxBy("date"),
+          "Mod+/": toggleSidebar,
+          "Mod+r": syncNow,
+        }
+      : {}),
     ...(overlay ? { Escape: () => setOverlay(false) } : {}),
   });
 

@@ -56,6 +56,8 @@ export interface Prefs {
    * key cannot archive or delete mail (WCAG 2.1.4).
    */
   singleKeys: boolean;
+  /** Which keys do what (Settings › Shortcuts): the standard set, or the earlier Regards one. */
+  keySet: KeySet;
   /** The unread counts beside the folders. */
   sidebarCounts: boolean;
   /** The Agents button at the foot of the sidebar: recipes and the agents on this computer. */
@@ -65,6 +67,12 @@ export interface Prefs {
   sendPresets: PresetPrefs;
   reminderPresets: PresetPrefs;
 }
+
+/**
+ * "standard": the keys desktop mail apps commonly share (E done, S snooze,
+ * R reply all, Shift+R reply). "classic": the keys of earlier Regards versions.
+ */
+export type KeySet = "standard" | "classic";
 
 export type MarkRead = "now" | "2s" | "5s" | "never";
 
@@ -101,6 +109,7 @@ export const DEFAULT_PREFS: Prefs = {
   suggestPeople: true,
   zoom: 1,
   singleKeys: true,
+  keySet: "standard",
   sidebarCounts: true,
   agentsButton: true,
   snoozePresets: {},

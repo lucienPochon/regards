@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import type { Person } from "./accounts";
-import { type Action, choose } from "./actions";
+import { type Action, actionTitle, choose } from "./actions";
 import { Avatar } from "./Avatar";
 import { dateSection, laterDate, listDate, peopleShort, personName } from "./format";
 import { Icon, type IconName } from "./icons";
@@ -342,6 +342,7 @@ export function MessageList({
     ArrowDown: () => step(1),
     k: () => step(-1),
     ArrowUp: () => step(-1),
+    ...(prefs.keySet === "standard" ? { ArrowRight: () => step(1), ArrowLeft: () => step(-1) } : {}),
     x: () => {
       const item = current();
       if (item) toggle(item);
@@ -424,7 +425,7 @@ export function MessageList({
         key={action.id}
         type="button"
         className={className}
-        title={`${action.label} (${action.keys[0]})`}
+        title={actionTitle(action)}
         aria-label={action.label}
         onClick={(event) => action.run(anchorOf(event.currentTarget, "end"))}
       >
@@ -876,7 +877,7 @@ function SelectionBar({
             key={action.id}
             type="button"
             className={action.danger ? "icon-btn danger" : "icon-btn"}
-            title={`${action.label} (${action.keys[0]})`}
+            title={actionTitle(action)}
             aria-label={action.label}
             onClick={(event) => action.run(anchorOf(event.currentTarget, "end"))}
           >

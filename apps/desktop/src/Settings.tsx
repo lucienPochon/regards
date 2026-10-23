@@ -19,9 +19,9 @@ import type { Layout } from "./layout";
 import { type Screening, setScreening } from "./smart";
 import { TemplatesEditor } from "./TemplatesEditor";
 import type { AccountMail, MailState, ServiceCheck } from "./mail";
-import { MOD_KEY, SHORTCUTS, useShortcuts } from "./shortcuts";
+import { MOD_KEY, shortcutList, useShortcuts } from "./shortcuts";
 import { ACCOUNT_COLOURS, COLOUR_NAMES, accountColour, setPrefs, usePrefs } from "./prefs";
-import { Choice, LinkRow, Option, Toggle } from "./SettingsControls";
+import { Choice, LinkRow, Option, Select, Toggle } from "./SettingsControls";
 import {
   AccessibilityPage,
   AppearancePage,
@@ -708,6 +708,21 @@ export function ShortcutsTab() {
   return (
     <>
       <h3>Keyboard shortcuts</h3>
+      <Option
+        icon="keyboard"
+        label="Keys"
+        description="Standard: E done, S snooze, R reply all, Shift+R reply, as in most desktop mail apps. Classic: the keys of earlier Regards versions."
+      >
+        <Select
+          label="Keys"
+          value={prefs.keySet}
+          options={[
+            { id: "standard", label: "Standard" },
+            { id: "classic", label: "Classic" },
+          ]}
+          onChange={(keySet) => setPrefs({ keySet })}
+        />
+      </Option>
       {!prefs.singleKeys && (
         <p className="muted settings-note">
           Single-key shortcuts are off (Settings › Accessibility): only those with {MOD_KEY}, and keys such as Escape and
@@ -715,7 +730,7 @@ export function ShortcutsTab() {
         </p>
       )}
       <dl className="shortcut-list">
-        {SHORTCUTS.map((shortcut) => (
+        {shortcutList(prefs.keySet).map((shortcut) => (
           <div key={shortcut.keys}>
             <dt>
               <kbd>{shortcut.keys}</kbd>
