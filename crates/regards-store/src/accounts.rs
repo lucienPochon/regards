@@ -270,6 +270,38 @@ pub fn rename(tx: &Transaction<'_>, id: &str, display_name: &str) -> Result<Opti
     get(tx, id)
 }
 
+/// A new sign-in for an account: its user name, servers, and what the IMAP
+/// server advertised with them. `None` if there is no such account.
+pub fn set_login(
+    tx: &Transaction<'_>,
+    id: &str,
+    username: &str,
+    imap: &Server,
+    smtp: &Server,
+    imap_capabilities: &[String],
+) -> Result<Option<Account>, StoreError> {
+    let capabilities = serde_json::to_string(imap_capabilities).expect("strings always serialize");
+    let changed = tx.execute(
+        "UPDATE accounts SET username = ?2, imap_host = ?3, imap_port = ?4, imap_security = ?5, \
+         smtp_host = ?6, smtp_port = ?7, smtp_security = ?8, imap_capabilities = ?9 WHERE id = ?1",
+        params![
+            id,
+            username,
+            imap.host,
+            imap.port,
+            security_str(imap.security),
+            smtp.host,
+            smtp.port,
+            security_str(smtp.security),
+            capabilities,
+        ],
+    )?;
+    if changed == 0 {
+        return Ok(None);
+    }
+    get(tx, id)
+}
+
 /// Set what an account allows agents to do; `false` if there is no such account.
 pub fn set_agent_access(tx: &Transaction<'_>, id: &str, access: Access) -> Result<bool, StoreError> {
     let changed = tx.execute(
@@ -469,6 +501,50 @@ mod tests {
             .write(move |tx| Ok(tx.execute("UPDATE accounts SET agent_access = 'admin' WHERE id = ?1", [&id])?))
             .await;
         assert!(refused.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_new_login_keeps_the_account_and_its_place() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&DataDirs::at(temp.path())).await.unwrap();
+        let added = store
+            .write(|tx| insert(tx, new_account("ada@example.test")))
+            .await
+            .unwrap()
+            .value;
+        let moved = Server {
+            host: "imap.new.test".into(),
+            port: 994,
+            security: Security::Tls,
+        };
+        let sending = Server {
+            host: "smtp.new.test".into(),
+            port: 465,
+            security: Security::Tls,
+        };
+        let (id, imap, smtp) = (added.id.clone(), moved.clone(), sending.clone());
+        let changed = store
+            .write(move |tx| set_login(tx, &id, "ada", &imap, &smtp, &["IMAP4rev1".into()]))
+            .await
+            .unwrap()
+            .value
+            .unwrap();
+        assert_eq!(
+            changed,
+            Account {
+                username: "ada".into(),
+                imap: moved,
+                smtp: sending.clone(),
+                imap_capabilities: vec!["IMAP4rev1".into()],
+                ..added
+            }
+        );
+        let none = store
+            .write(move |tx| set_login(tx, "nobody", "x", &sending, &sending, &[]))
+            .await
+            .unwrap()
+            .value;
+        assert_eq!(none, None);
     }
 
     #[tokio::test]

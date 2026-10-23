@@ -731,6 +731,28 @@ function handle(cmd: string, args: Args): unknown {
       return accounts.map((a) => a.account);
     case "account_add":
       throw new Error("The preview cannot sign in to a real server.");
+    case "account_set_login": {
+      const input = args.input as {
+        id: string;
+        username: string | null;
+        password: string | null;
+        imapHost: string;
+        imapPort: number;
+        smtpHost: string;
+        smtpPort: number;
+        smtpSecurity: "tls" | "starttls";
+      };
+      const owner = accounts.find((a) => a.account.id === input.id);
+      if (!owner) throw "No such account.";
+      // "wrong" stands for a password the server turns down.
+      if (input.password === "wrong") throw "The server did not accept the user name or password.";
+      const account = owner.account as unknown as Record<string, unknown>;
+      account.username = input.username?.trim() || owner.account.email;
+      account.imap = { host: input.imapHost.trim(), port: input.imapPort, security: "tls" };
+      account.smtp = { host: input.smtpHost.trim() || input.imapHost.trim(), port: input.smtpPort, security: input.smtpSecurity };
+      changed();
+      return owner.account;
+    }
     case "account_discover": {
       const domain = String(args.email ?? "").split("@")[1]?.toLowerCase() ?? "";
       if (domain === "outlook.com" || domain === "hotmail.com") {

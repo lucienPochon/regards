@@ -66,3 +66,43 @@ export function printMessage(detail: MessageDetail): void {
   });
   document.body.append(frame);
 }
+
+/** A piece of a plain-text message: words as they are, or a web address that opens. */
+export type TextPart = { text: string; url?: undefined } | { text: string; url: string };
+
+// https:// addresses, and www. ones written without it. http:// is left as
+// text: only https:// pages are opened from Regards.
+const WEB_ADDRESS = /\bhttps:\/\/[^\s<>"]+|\bwww\.[^\s<>"]+\.[^\s<>"]+/gi;
+
+/** Punctuation that ends a sentence, not the address: "see https://x.test/a." */
+function trimmed(address: string): string {
+  let end = address.length;
+  for (;;) {
+    const last = address[end - 1];
+    if (".,;:!?'\"»…".includes(last)) end--;
+    else if (")]}".includes(last)) {
+      const open = { ")": "(", "]": "[", "}": "{" }[last] as string;
+      const part = address.slice(0, end);
+      // A closing bracket the address did not open belongs to the sentence: "(at https://x.test/a)".
+      if (part.split(open).length < part.split(last).length) end--;
+      else break;
+    } else break;
+  }
+  return address.slice(0, end);
+}
+
+/** The text split into its words and its web addresses, for a plain-text message. */
+export function textParts(text: string): TextPart[] {
+  const parts: TextPart[] = [];
+  let at = 0;
+  for (const match of text.matchAll(WEB_ADDRESS)) {
+    const address = trimmed(match[0]);
+    const start = match.index ?? 0;
+    if (address.length <= "https://".length && !/^www\./i.test(address)) continue;
+    if (start > at) parts.push({ text: text.slice(at, start) });
+    parts.push({ text: address, url: /^www\./i.test(address) ? `https://${address}` : address });
+    at = start + address.length;
+  }
+  if (at < text.length) parts.push({ text: text.slice(at) });
+  return parts;
+}

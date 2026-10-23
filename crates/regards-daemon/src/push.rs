@@ -1,5 +1,6 @@
 //! Push: one long-lived connection per account waits in IMAP IDLE on the
 //! inbox, and syncs it as soon as the server reports a change (ADR-0009).
+//! Every few minutes it also syncs the other folders on that connection.
 //! Servers without IDLE are polled instead.
 
 use crate::State;
@@ -10,7 +11,7 @@ use regards_store::mailboxes;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
@@ -161,27 +162,47 @@ async fn idle_loop(
     inbox_id: i64,
     stopped: &mut watch::Receiver<bool>,
 ) -> Result<(), SyncError> {
+    let every = state.limits.folders_every;
+    let mut folders_due = Instant::now() + every;
     loop {
         let stop = {
             let mut stopped = stopped.clone();
             async move { until_stopped(&mut stopped).await }
         };
-        match session.idle(IDLE_REFRESH, stop).await? {
+        let wait = folders_due
+            .saturating_duration_since(Instant::now())
+            .clamp(Duration::from_secs(1), IDLE_REFRESH);
+        match session.idle(wait, stop).await? {
             IdleEnd::Changed if *stopped.borrow() => return Ok(()),
             IdleEnd::Changed => {
-                // From where the last sync left it, not from when push started.
-                let inbox = state
-                    .store
-                    .read(move |conn| mailboxes::get(conn, inbox_id))
-                    .await?
-                    .ok_or(SyncError::NoAccount)?;
-                let changes = sync::sync_mailbox(state, session, &inbox).await?;
+                let changes = sync::sync_mailbox(state, session, &inbox(state, inbox_id).await?).await?;
                 tracing::debug!(account = %account_id, added = changes.messages_added, "inbox updated by push");
             }
             IdleEnd::Timeout => {}
             IdleEnd::Stopped => return Ok(()),
         }
+        if Instant::now() < folders_due {
+            continue;
+        }
+        folders_due = Instant::now() + every;
+        // A sync someone asked for (Check for mail) covers them already.
+        if state.sync.get(account_id).running {
+            continue;
+        }
+        let changes = sync::sync_other_folders(state, session, account_id, Some(inbox_id)).await?;
+        tracing::debug!(account = %account_id, ?changes, "other folders synced");
+        // IDLE waits on the selected folder: the inbox again, caught up.
+        sync::sync_mailbox(state, session, &inbox(state, inbox_id).await?).await?;
     }
+}
+
+/// The inbox as the last sync left it, not as it was when push started.
+async fn inbox(state: &State, inbox_id: i64) -> Result<mailboxes::Mailbox, SyncError> {
+    state
+        .store
+        .read(move |conn| mailboxes::get(conn, inbox_id))
+        .await?
+        .ok_or(SyncError::NoAccount)
 }
 
 /// Resolves once a stop is requested (or the requester is gone).
