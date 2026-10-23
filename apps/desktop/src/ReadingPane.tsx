@@ -157,6 +157,7 @@ export function ReadingPane({
     snoozed: message.snoozed_until !== null,
     reminding: message.remind_at !== null,
     reminded: message.reminded,
+    unsubscribe: message.section === "newsletters" || message.section === "notifications" ? { from: message.from } : null,
   };
   const actions = actionsFor(target);
   const done = choose(actions, "archive")[0];
@@ -239,7 +240,7 @@ export function ReadingPane({
           )}
         </div>
         <div className="reader-tools">
-          {choose(actions, "delete", "flag", "unread", "read", "pin", "aside", "snooze").map(tool)}
+          {choose(actions, "delete", "flag", "unread", "read", "pin", "aside", "snooze", "unsubscribe").map(tool)}
           <button
             type="button"
             className="icon-btn"
