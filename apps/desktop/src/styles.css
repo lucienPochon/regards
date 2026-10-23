@@ -2269,6 +2269,11 @@ button.list-title:hover {
   position: relative;
 }
 
+/* Show Done: Done mail among the inbox, quieter than the rest. */
+.row.done-row .row-main {
+  opacity: 0.55;
+}
+
 .rows.tall .row:not(.open):not(.picked):hover,
 .rows.tall .row.cursor:not(.open):not(.picked),
 .rows.tall .row:not(.open):not(.picked):has(> .row-main:focus-visible) {
@@ -6523,6 +6528,30 @@ button.sender-row:hover:not(:disabled) {
 
 .login-form {
   margin-top: 4px;
+}
+
+/* Settings › Templates: what a template fills in by itself. */
+.template-hint {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--notice);
+  font-size: 13px;
+}
+
+.template-hint ul {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.template-hint code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--chip);
+  font-size: 12px;
 }
 
 .subpage-head {

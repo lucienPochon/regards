@@ -389,13 +389,12 @@ pub fn reply_recipients(
 
 /// The quoted original under a reply: "On <when>, <who> wrote:" and "> " lines.
 pub fn quote(text: &str, from: Option<&Person>, date: Option<i64>) -> String {
-    let who = from
-        .and_then(|p| p.name.clone().or_else(|| p.address.clone()))
-        .unwrap_or_else(|| "someone".into());
-    let intro = match date {
-        Some(ms) => format!("On {}, {who} wrote:", utc(ms)),
-        None => format!("{who} wrote:"),
-    };
+    quote_at(text, from, date, None)
+}
+
+/// [`quote`], its date in local time (`offset`: minutes from UTC; `None`: UTC).
+pub fn quote_at(text: &str, from: Option<&Person>, date: Option<i64>, offset: Option<i32>) -> String {
+    let intro = attribution(from, date, offset);
     let quoted: Vec<String> = normalise(text.trim_end())
         .lines()
         .map(|line| {
@@ -411,27 +410,158 @@ pub fn quote(text: &str, from: Option<&Person>, date: Option<i64>) -> String {
 
 /// The original under a forward, with its headers.
 pub fn forwarded(text: &str, from: Option<&Person>, to: &[Person], subject: &str, date: Option<i64>) -> String {
+    forwarded_at(text, from, to, subject, date, None)
+}
+
+/// [`forwarded`], its date in local time (`offset`: minutes from UTC; `None`: UTC).
+pub fn forwarded_at(
+    text: &str,
+    from: Option<&Person>,
+    to: &[Person],
+    subject: &str,
+    date: Option<i64>,
+    offset: Option<i32>,
+) -> String {
+    let mut block = String::from("\n\n");
+    for line in forward_header(from, to, subject, date, offset) {
+        block.push_str(&line);
+        block.push('\n');
+    }
+    block.push('\n');
+    block.push_str(&normalise(text.trim_end()));
+    block.push('\n');
+    block
+}
+
+/// "On <when>, <who> wrote:" above a quote.
+fn attribution(from: Option<&Person>, date: Option<i64>, offset: Option<i32>) -> String {
+    let who = from
+        .and_then(|p| p.name.clone().or_else(|| p.address.clone()))
+        .unwrap_or_else(|| "someone".into());
+    match date {
+        Some(ms) => format!("On {}, {who} wrote:", when(ms, offset)),
+        None => format!("{who} wrote:"),
+    }
+}
+
+/// The lines that introduce a forwarded message.
+fn forward_header(
+    from: Option<&Person>,
+    to: &[Person],
+    subject: &str,
+    date: Option<i64>,
+    offset: Option<i32>,
+) -> Vec<String> {
     let show = |p: &Person| match (&p.name, &p.address) {
         (Some(name), Some(address)) => format!("{name} <{address}>"),
         (Some(name), None) => name.clone(),
         (None, Some(address)) => address.clone(),
         (None, None) => String::new(),
     };
-    let mut block = String::from("\n\n---------- Forwarded message ----------\n");
+    let mut lines = vec!["---------- Forwarded message ----------".to_owned()];
     if let Some(from) = from {
-        block.push_str(&format!("From: {}\n", show(from)));
+        lines.push(format!("From: {}", show(from)));
     }
     if let Some(ms) = date {
-        block.push_str(&format!("Date: {}\n", utc(ms)));
+        lines.push(format!("Date: {}", when(ms, offset)));
     }
-    block.push_str(&format!("Subject: {subject}\n"));
+    lines.push(format!("Subject: {subject}"));
     if !to.is_empty() {
-        block.push_str(&format!("To: {}\n", to.iter().map(show).collect::<Vec<_>>().join(", ")));
+        lines.push(format!("To: {}", to.iter().map(show).collect::<Vec<_>>().join(", ")));
     }
-    block.push('\n');
-    block.push_str(&normalise(text.trim_end()));
-    block.push('\n');
-    block
+    lines
+}
+
+/// A time as the person reads it: local ("2026-10-22 15:00") with an
+/// offset, else UTC ("2026-10-22 13:00 UTC").
+fn when(ms: i64, offset: Option<i32>) -> String {
+    match offset {
+        Some(minutes) => {
+            let shown = utc(ms + i64::from(minutes) * 60_000);
+            shown.trim_end_matches(" UTC").to_owned()
+        }
+        None => utc(ms),
+    }
+}
+
+/// A reply's formatted version: `text` (what is written and the signature,
+/// plain) as paragraphs, then "On … wrote:" and the original's formatted
+/// text (see [`crate::html::quotable`]) in a `<blockquote type="cite">`.
+pub fn quote_html(text: &str, original: &str, from: Option<&Person>, date: Option<i64>, offset: Option<i32>) -> String {
+    format!(
+        "{}<p>{}</p><blockquote type=\"cite\">{original}</blockquote>",
+        text_to_html(text),
+        escape_html(&attribution(from, date, offset))
+    )
+}
+
+/// A forward's formatted version: `text` as paragraphs, the forwarded
+/// message's headers, then its formatted text.
+pub fn forwarded_html(
+    text: &str,
+    original: &str,
+    from: Option<&Person>,
+    to: &[Person],
+    subject: &str,
+    date: Option<i64>,
+    offset: Option<i32>,
+) -> String {
+    let header: Vec<String> = forward_header(from, to, subject, date, offset)
+        .iter()
+        .map(|line| escape_html(line))
+        .collect();
+    format!("{}<p>{}</p>{original}", text_to_html(text), header.join("<br>"))
+}
+
+/// Plain text as the composer shows it (its `textToHtml`): paragraphs split
+/// at blank lines, lines joined with `<br>`, `>` lines in a blockquote, an
+/// empty first paragraph for a blank start (or nothing).
+pub fn text_to_html(text: &str) -> String {
+    let mut blocks: Vec<String> = Vec::new();
+    let (mut paragraph, mut quote): (Vec<&str>, Vec<String>) = (Vec::new(), Vec::new());
+    let end_paragraph = |paragraph: &mut Vec<&str>, blocks: &mut Vec<String>| {
+        if !paragraph.is_empty() {
+            let lines: Vec<String> = paragraph.iter().map(|line| escape_html(line)).collect();
+            blocks.push(format!("<p>{}</p>", lines.join("<br>")));
+            paragraph.clear();
+        }
+    };
+    let end_quote = |quote: &mut Vec<String>, blocks: &mut Vec<String>| {
+        if !quote.is_empty() {
+            blocks.push(format!("<blockquote>{}</blockquote>", text_to_html(&quote.join("\n"))));
+            quote.clear();
+        }
+    };
+    let normal = normalise(text);
+    for line in normal.split('\n') {
+        if let Some(quoted) = line.strip_prefix('>') {
+            end_paragraph(&mut paragraph, &mut blocks);
+            quote.push(quoted.strip_prefix(' ').unwrap_or(quoted).to_owned());
+        } else if line.trim().is_empty() {
+            end_paragraph(&mut paragraph, &mut blocks);
+            end_quote(&mut quote, &mut blocks);
+            // A blank start is a first line to write on.
+            if blocks.is_empty() {
+                blocks.push("<p></p>".to_owned());
+            }
+        } else {
+            end_quote(&mut quote, &mut blocks);
+            paragraph.push(line);
+        }
+    }
+    end_paragraph(&mut paragraph, &mut blocks);
+    end_quote(&mut quote, &mut blocks);
+    if blocks.is_empty() {
+        return "<p></p>".to_owned();
+    }
+    blocks.concat()
+}
+
+fn escape_html(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 /// A signature as it goes into a body: after a blank line; nothing for none.
@@ -1024,5 +1154,58 @@ mod tests {
             matches!(draft.build(), Err(ComposeError::NoRecipients)),
             "but it cannot be sent so"
         );
+    }
+
+    #[test]
+    fn text_becomes_html_as_the_composer_makes_it() {
+        // The same as textToHtml in compose.ts (compose.test.ts).
+        assert_eq!(
+            text_to_html(
+                "
+
+Ada"
+            ),
+            "<p></p><p>Ada</p>"
+        );
+        assert_eq!(text_to_html(""), "<p></p>");
+        assert_eq!(
+            text_to_html(
+                "Yes!
+
+On x, Bob wrote:
+> Plans?
+> <b>Now</b>"
+            ),
+            "<p>Yes!</p><p>On x, Bob wrote:</p><blockquote><p>Plans?<br>&lt;b&gt;Now&lt;/b&gt;</p></blockquote>"
+        );
+    }
+
+    #[test]
+    fn replies_and_forwards_say_when_in_local_time_and_keep_the_formatting() {
+        let ada = person(Some("Ada"), "ada.test");
+        // 2026-10-22 13:00 UTC is 15:00 in Zurich.
+        let at = Some(1_792_674_000_000);
+        assert!(quote_at("Plans?", Some(&ada), at, Some(120)).contains("On 2026-10-22 15:00, Ada wrote:"));
+        assert!(quote("Plans?", Some(&ada), at).contains("On 2026-10-22 13:00 UTC, Ada wrote:"));
+        let html = quote_html(
+            "
+
+Ada",
+            "<p><b>Plans?</b></p>",
+            Some(&ada),
+            at,
+            Some(120),
+        );
+        assert_eq!(
+            html,
+            "<p></p><p>Ada</p><p>On 2026-10-22 15:00, Ada wrote:</p><blockquote type=\"cite\"><p><b>Plans?</b></p></blockquote>"
+        );
+        let forward = forwarded_html("", "<p>The plan</p>", Some(&ada), &[], "Plans", at, Some(-300));
+        assert!(forward.starts_with("<p></p><p>---------- Forwarded message ----------<br>From: Ada &lt;ada.test&gt;<br>Date: 2026-10-22 08:00<br>Subject: Plans</p>"), "{forward}");
+        assert!(forward.ends_with("<p>The plan</p>"));
+        assert!(forwarded_at("Hi", Some(&ada), &[], "Plans", at, Some(120)).contains(
+            "Date: 2026-10-22 15:00
+"
+        ));
     }
 }

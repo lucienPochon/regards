@@ -165,6 +165,7 @@ export function ReadingPane({
     reminding: message.remind_at !== null,
     reminded: message.reminded,
     unsubscribe: message.section === "newsletters" || message.section === "notifications" ? { from: message.from } : null,
+    done: item.done === true,
   };
   const actions = actionsFor(target);
   const done = choose(actions, "archive")[0];

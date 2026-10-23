@@ -142,6 +142,7 @@ const STANDARD: { keys: string; action: string }[] = [
   { keys: `${MOD_KEY}+R`, action: "Check for new mail" },
   { keys: `${MOD_KEY}+Enter`, action: "Send, in the composer" },
   { keys: `${MOD_KEY}+Shift+T`, action: "Insert a template, in the composer" },
+  { keys: `${MOD_KEY}+E`, action: "Show Done mail in the inbox, or hide it" },
   { keys: `${MOD_KEY}+,`, action: "Settings" },
   { keys: "?", action: "Show or hide these shortcuts" },
 ];
@@ -172,6 +173,7 @@ const CLASSIC: { keys: string; action: string }[] = [
   { keys: "Shift+O / o", action: "Open every message of the conversation, or fold the older ones" },
   { keys: `${MOD_KEY}+Enter`, action: "Send, in the composer" },
   { keys: `${MOD_KEY}+Shift+T`, action: "Insert a template, in the composer" },
+  { keys: `${MOD_KEY}+E`, action: "Show Done mail in the inbox, or hide it" },
   { keys: `${MOD_KEY}+,`, action: "Settings" },
   { keys: "?", action: "Show or hide these shortcuts" },
 ];

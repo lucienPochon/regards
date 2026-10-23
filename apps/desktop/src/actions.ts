@@ -47,6 +47,8 @@ export interface Target {
   reminded: boolean;
   /** One newsletter or notification: Unsubscribe is offered, naming who sent it. */
   unsubscribe?: { from: Person | null } | null;
+  /** All Done mail shown in the inbox (Show Done): Done takes them back to it. */
+  done?: boolean;
   /**
    * Rows of the list, or the message open in the reader: Done, Delete, Move,
    * Junk and Mark read cover the rest of each one's conversation in its
@@ -75,6 +77,8 @@ export interface ActionHost {
   junkFolder?: (accountId: string) => number | null;
   /** Leave the mailing list a message came from, after asking. */
   unsubscribe?: (id: number, from: Person | null) => void;
+  /** The account's inbox (for Back to inbox, on Done mail). */
+  inboxFolder?: (accountId: string) => number | null;
 }
 
 export type ActionId =
@@ -328,6 +332,12 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
         .catch(host.failed);
     },
   });
+  // Show Done: on Done mail, Done (E) takes it back to the inbox.
+  const inbox = target.done && target.accountId !== null ? (host.inboxFolder?.(target.accountId) ?? null) : null;
+  const archive = actions.findIndex((action) => action.id === "archive");
+  if (inbox !== null && archive !== -1) {
+    actions[archive] = { ...actions[archive], label: "Back to inbox", icon: "inbox", run: () => move(() => moveMessages(ids, inbox)) };
+  }
   return actions;
 }
 
