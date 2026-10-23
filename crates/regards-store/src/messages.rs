@@ -552,6 +552,32 @@ pub fn marked(
     Ok(messages)
 }
 
+/// Each of `ids` with the other messages of its conversation in the same
+/// folder (one on its way into a folder counts as there), not deleted: what
+/// an action on a conversation's row covers. In the order given, newest first
+/// within each conversation, each once; a message not threaded yet is alone.
+pub fn conversation_ids(conn: &Connection, ids: &[i64]) -> Result<Vec<i64>, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT m.id FROM messages s JOIN messages m ON m.thread_id = s.thread_id \
+         AND COALESCE(m.moving_to, m.mailbox_id) = COALESCE(s.moving_to, s.mailbox_id) AND m.deleted = 0 \
+         WHERE s.id = ?1 ORDER BY m.received_at DESC, m.id DESC",
+    )?;
+    let mut seen = std::collections::HashSet::new();
+    let mut all = Vec::with_capacity(ids.len());
+    for &id in ids {
+        if seen.insert(id) {
+            all.push(id);
+        }
+        for found in statement.query_map([id], |row| row.get::<_, i64>(0))? {
+            let found = found?;
+            if seen.insert(found) {
+                all.push(found);
+            }
+        }
+    }
+    Ok(all)
+}
+
 /// The messages of a conversation, oldest first, one per Message-ID (copies of
 /// one message in several folders are listed once). Deleted ones are left out.
 pub fn in_thread(conn: &Connection, thread_id: i64) -> Result<Vec<Message>, StoreError> {
@@ -838,6 +864,52 @@ mod tests {
                 ..Headers::default()
             },
         }
+    }
+
+    #[tokio::test]
+    async fn a_conversations_row_covers_its_messages_in_that_folder() {
+        let (_temp, store, mailbox) = store_with_inbox().await;
+        let batch: Vec<NewMessage> = (1..=4)
+            .map(|uid| {
+                let mut new = message(uid, i64::from(uid) * 1000, &format!("m{uid}"));
+                new.headers.message_id = Some(format!("m{uid}@x"));
+                // 2 answers 1, 3 answers 2; 4 is a conversation of its own.
+                if (2..=3).contains(&uid) {
+                    new.headers.in_reply_to = vec![format!("m{}@x", uid - 1)];
+                    new.headers.references = (1..uid).map(|n| format!("m{n}@x")).collect();
+                }
+                new
+            })
+            .collect();
+        store.write(move |tx| upsert(tx, mailbox, &batch)).await.unwrap();
+        let id = |uid: u32| {
+            store.read(move |c| {
+                Ok(c.query_row(
+                    "SELECT id FROM messages WHERE mailbox_id = ?1 AND uid = ?2",
+                    params![mailbox, uid],
+                    |r| r.get::<_, i64>(0),
+                )?)
+            })
+        };
+        let (m1, m2, m3, m4) = (
+            id(1).await.unwrap(),
+            id(2).await.unwrap(),
+            id(3).await.unwrap(),
+            id(4).await.unwrap(),
+        );
+
+        let all = store.read(move |c| conversation_ids(c, &[m3])).await.unwrap();
+        assert_eq!(all, [m3, m2, m1], "the row's message first, then the rest newest first");
+        let both = store.read(move |c| conversation_ids(c, &[m4, m1, m3])).await.unwrap();
+        assert_eq!(both, [m4, m1, m3, m2], "each once");
+
+        // One deleted (by another client, or for good) is left out.
+        store
+            .write(move |tx| Ok(tx.execute("UPDATE messages SET deleted = 1 WHERE id = ?1", [m2])?))
+            .await
+            .unwrap();
+        let left = store.read(move |c| conversation_ids(c, &[m1])).await.unwrap();
+        assert_eq!(left, [m1, m3]);
     }
 
     #[tokio::test]

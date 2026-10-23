@@ -27,6 +27,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{App, AppHandle, Manager, Wry};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_window_state::{StateFlags, WindowExt};
 
 /// Given when the app starts at login: start in the tray, with no window.
 pub(crate) const BACKGROUND_ARG: &str = "--background";
@@ -358,9 +359,22 @@ pub(crate) fn setup(app: &App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// What of the main window comes back as it was left: its size, its place
+/// and whether it was maximised; not whether it was shown (at login it isn't).
+pub(crate) const WINDOW_STATE: StateFlags = StateFlags::SIZE
+    .union(StateFlags::POSITION)
+    .union(StateFlags::MAXIMIZED);
+
+/// The window is put back as it was left when it is first shown, not when it
+/// is made: a maximised one would otherwise appear when Regards starts at login.
+static PLACED: AtomicBool = AtomicBool::new(false);
+
 /// Bring the window back (from the tray, or a second launch).
 pub(crate) fn show(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        if !PLACED.swap(true, Ordering::Relaxed) {
+            let _ = window.restore_state(WINDOW_STATE);
+        }
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
