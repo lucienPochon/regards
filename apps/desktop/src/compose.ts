@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import type { MessageSummary, Person } from "./accounts";
+import type { MessageSummary, Person, UndoInfo } from "./accounts";
 
 /** Mirrors `DraftView` in `regards-ipc`. */
 export interface Draft {
@@ -149,16 +149,26 @@ export const isUntouched = (id: number) => untouched.has(id);
 export const touchDraft = (id: number) => untouched.delete(id);
 
 export const newDraft = (accountId: string) => invoke<Draft>("draft_create", { accountId }).then(started);
+/** This computer's time minus UTC, in minutes: a reply's "On … wrote:" and a forward's "Date:" are in it. */
+const localOffset = () => -new Date().getTimezoneOffset();
+/** A reply, addressed and quoted (formatted mail formatted, in a cited blockquote). */
 export const replyDraft = (messageId: number, all: boolean) =>
-  invoke<Draft>("draft_reply", { messageId, all }).then(started);
-export const forwardDraft = (messageId: number) => invoke<Draft>("draft_forward", { messageId }).then(started);
+  invoke<Draft>("draft_reply", { messageId, all, utcOffsetMinutes: localOffset() }).then(started);
+/** A forward, with the original's files (and formatting, when it has some). */
+export const forwardDraft = (messageId: number) =>
+  invoke<Draft>("draft_forward", { messageId, utcOffsetMinutes: localOffset() }).then(started);
 export const listDrafts = () => invoke<{ drafts: Draft[] }>("draft_list");
 export const getDraft = (id: number) => invoke<Draft>("draft_get", { id });
 /** Pick files with the system dialog and attach them; `null` if cancelled. */
 export const attachFiles = (draftId: number) => invoke<Draft | null>("draft_attach_files", { draftId });
 export const detachFile = (draftId: number, attachmentId: number) =>
   invoke<Draft>("draft_detach", { draftId, attachmentId });
-export const deleteDraft = (id: number) => invoke("draft_delete", { id });
+/**
+ * Delete a draft. For a while it can be undone: `undo` goes to `applyUndo`,
+ * which makes the draft again as it was (a new id), its files too.
+ */
+export const deleteDraft = (id: number) =>
+  invoke<{ deleted: boolean; undo: UndoInfo | null }>("draft_delete", { id });
 /** Drafts written elsewhere (another device, webmail), in the server's Drafts folders. */
 export const listDraftsElsewhere = () =>
   invoke<{ messages: MessageSummary[] }>("draft_elsewhere").then((result) => result.messages);
