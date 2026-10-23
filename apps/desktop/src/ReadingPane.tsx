@@ -21,6 +21,7 @@ import { type Anchor, type MenuEntry, anchorOf } from "./Menu";
 import { getPrefs, usePrefs } from "./prefs";
 import { senderImages, setSenderImages } from "./smart";
 import { asMarkdown, printMessage } from "./messageText";
+import { useDark } from "./theme";
 import { SourceDialog } from "./SourceDialog";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 
@@ -318,6 +319,7 @@ function ThreadMessage({
   const own = useDetail(entry.message.id, given === null && expanded);
   const load = given ?? own;
   const [showText, setShowText] = useState(false);
+  const dark = useDark();
   // Settings › General: images from the web load in every message, or only when asked.
   const [allowRemote, setAllowRemote] = useState(() => getPrefs().remoteImages);
   const [details, setDetails] = useState(false);
@@ -521,15 +523,15 @@ function ThreadMessage({
               // Only our script, which says how tall the message is (its page's CSP allows no
               // other); no same-origin access, no forms, popups or navigation.
               <iframe
-                // Loaded again when the sender's images are allowed or blocked.
-                key={String(fromSender)}
+                // Loaded again when the sender's images are allowed or blocked, or the theme changes.
+                key={`${fromSender}:${dark}`}
                 ref={frame}
-                className="html-body"
+                className={dark ? "html-body dark" : "html-body"}
                 style={frameHeight === null ? undefined : { height: frameHeight }}
                 sandbox="allow-scripts"
                 referrerPolicy="no-referrer"
                 title="Message content"
-                src={messageHtmlUrl(message.id, allowRemote || fromSender === true)}
+                src={messageHtmlUrl(message.id, allowRemote || fromSender === true, dark)}
               />
             ) : (
               <pre className="text-body">{ready.text.trim() || "(no text)"}</pre>

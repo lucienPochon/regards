@@ -2884,6 +2884,11 @@ button.list-title:hover {
   background: #fff;
 }
 
+/* In the dark theme the page darkens itself, on the card's own colour. */
+.html-body.dark {
+  background: transparent;
+}
+
 .text-body {
   margin: 0;
   font: inherit;
