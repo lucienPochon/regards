@@ -36,6 +36,10 @@ const parked = (m: FixtureMessage) => m.aside === true || (m.snoozed_until ?? 0)
 const inboxPlace = (m: FixtureMessage) =>
   m.surfaced_at && (m.reminded || m.surfaced_at > m.received_at) ? m.surfaced_at : m.received_at;
 let nextId = 10_000;
+// Saved searches (Smart Folders), as the sidebar lists them.
+let savedSearches: Array<{ id: number; name: string; query: string; account_id: string | null; color: string | null }> = [
+  { id: 9_001, name: "Receipts", query: "receipt has:attachment", account_id: null, color: "#1d7a61" },
+];
 // Checking for updates: not asked yet (`?updates=on` or `off` answers it), and what a check found.
 let updateChecks: boolean | null = params.get("updates") === "on" ? true : params.get("updates") === "off" ? false : null;
 let updateFound: { version: string; url: string; published_at: string | null } | null = null;
@@ -1724,6 +1728,33 @@ function handle(cmd: string, args: Args): unknown {
       if (undo) undo.also = () => void (before ? choices.set(key, before) : choices.delete(key));
       return result;
     }
+    case "saved_search_list":
+      return { searches: savedSearches };
+    case "saved_search_save": {
+      const given = args.search as { id: number | null; name: string; query: string; account_id: string | null; color: string | null };
+      const name = given.name.trim();
+      if (!name) throw "give the saved search a name";
+      if (!given.query.trim()) throw "there is nothing to search for";
+      const saved = { ...given, id: given.id ?? nextId++, name, query: given.query.trim() };
+      const at = savedSearches.findIndex((s) => s.id === saved.id);
+      if (at >= 0) savedSearches[at] = saved;
+      else savedSearches.push(saved);
+      changed();
+      return saved;
+    }
+    case "saved_search_reorder": {
+      const ids = args.ids as number[];
+      savedSearches = [
+        ...ids.map((id) => savedSearches.find((s) => s.id === id)).filter((s) => s !== undefined),
+        ...savedSearches.filter((s) => !ids.includes(s.id)),
+      ];
+      changed();
+      return { searches: savedSearches };
+    }
+    case "saved_search_remove":
+      savedSearches = savedSearches.filter((s) => s.id !== args.id);
+      changed();
+      return null;
     case "template_list":
       return { templates: [...templates].sort((a, b) => a.name.localeCompare(b.name)) };
     case "template_save": {

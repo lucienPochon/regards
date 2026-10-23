@@ -148,6 +148,8 @@ function targetOf(items: ListItem[]): Target {
     reminding: items.length > 0 && items.every((item) => item.remind_at !== null),
     reminded: items.some((item) => item.reminded),
     done: items.length > 0 && items.every((item) => item.done === true),
+    // Rows stand for their conversations.
+    conversation: true,
   };
 }
 

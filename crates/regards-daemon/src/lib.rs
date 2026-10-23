@@ -30,6 +30,7 @@ mod people;
 mod prefetch;
 mod push;
 mod queue;
+mod saved;
 mod scheduler;
 mod search;
 mod sender;

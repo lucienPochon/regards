@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
-const { insertTemplateHtml, swapSignatureHtml, textToHtml } = await import("./compose");
+const { fillPlaceholders, insertTemplateHtml, swapSignatureHtml, textToHtml } = await import("./compose");
 
 describe("templates in a draft", () => {
   it("go where one writes: above the signature, in place of the empty first line", () => {
@@ -41,5 +41,29 @@ describe("signatures in a formatted draft", () => {
 
   it("starts a new message with room above the signature", () => {
     expect(textToHtml("\n\nAda")).toBe("<p></p><p>Ada</p>");
+  });
+});
+
+describe("template placeholders", () => {
+  const names = { to: "Lena Müller", me: "Ada Lovelace" };
+
+  it("take the first recipient's names and the sender's", () => {
+    expect(fillPlaceholders("Dear {{First Name}}, from {{my first name}} ({{ my name }})", names)).toBe(
+      "Dear Lena, from Ada (Ada Lovelace)",
+    );
+    expect(fillPlaceholders("{{name}} {{last name}}", names)).toBe("Lena Müller Müller");
+  });
+
+  it("stay for the send check to ask about when there is nothing to fill them", () => {
+    expect(fillPlaceholders("Hi {{name}}, [[date]] {{order}}", { to: null, me: null })).toBe(
+      "Hi {{name}}, [[date]] {{order}}",
+    );
+    expect(fillPlaceholders("{{last name}}", { to: "Lena", me: null })).toBe("{{last name}}");
+  });
+
+  it("are escaped in formatted text", () => {
+    expect(fillPlaceholders("<p>Hi {{name}}</p>", { to: "Bob <& Co>", me: null }, true)).toBe(
+      "<p>Hi Bob &lt;&amp; Co&gt;</p>",
+    );
   });
 });

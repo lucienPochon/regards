@@ -270,6 +270,37 @@ export function insertTemplateHtml(html: string, template: { body: string; html:
   return insert + rest;
 }
 
+/**
+ * A template's name placeholders filled in, as Spark's templates do:
+ * `{{name}}`, `{{first name}}` and `{{last name}}` from the first recipient,
+ * `{{my name}}` and `{{my first name}}` from whom it is sent as. Case and
+ * spaces inside the braces do not matter. One with no name to fill it (a
+ * recipient known only by address), any other `{{…}}`, and `[[blanks]]`
+ * stay as they are: the send check asks about them. With `html`, what goes
+ * in is escaped.
+ */
+export function fillPlaceholders(
+  text: string,
+  names: { to: string | null; me: string | null },
+  html = false,
+): string {
+  const words = (name: string | null) => (name ?? "").trim().split(/\s+/).filter(Boolean);
+  const [to, me] = [words(names.to), words(names.me)];
+  const values: Record<string, string | undefined> = {
+    name: to.join(" ") || undefined,
+    firstname: to[0],
+    lastname: to.length > 1 ? to[to.length - 1] : undefined,
+    myname: me.join(" ") || undefined,
+    myfirstname: me[0],
+  };
+  const escape = (value: string) =>
+    html ? value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") : value;
+  return text.replace(/\{\{([^{}\n]{1,40})\}\}/g, (whole, inside: string) => {
+    const value = values[inside.toLowerCase().replace(/\s+/g, "")];
+    return value === undefined ? whole : escape(value);
+  });
+}
+
 export function textToHtml(text: string): string {
   const escape = (line: string) =>
     line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

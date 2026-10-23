@@ -2,15 +2,17 @@
 
 Regards is a local-first, open-source email client for **Windows, macOS and Linux**. It offers a calm, sectioned inbox, done / pin / set aside, snooze, reminders, send later, undo everywhere, and a safe interface for AI agents. It is built with a Rust core, Tauri 2 and React.
 
-> **Status: pre-alpha (Phase 1, sync).** You can read and organise mail, but not write it yet. What works today:
-> - **Accounts:** IMAP with a password (sign-in checked, password in the OS credential store). OAuth comes later.
-> - **Sync:** folders and messages, newest first and then older mail in the background. New mail arrives by push (IMAP IDLE) in under a second against Dovecot, and QRESYNC is used where the server has it.
-> - **Reading:** HTML mail in a sandboxed frame, with remote images blocked until you allow them; links open in your browser.
-> - **Conversations** across folders.
-> - **Actions:** read/unread, flag, archive, delete, move and delete for good. They show at once, work offline, and moves can be undone.
-> - **Keyboard shortcuts:** press `?` in the app.
+> **Status: pre-alpha.** It reads, sorts and sends mail every day, but has no signed installers or live tests on real providers yet. What works today:
+> - **Accounts:** any IMAP host with a password or app password (kept in the OS credential store), changed in place when it rotates; Microsoft and Google sign-in (OAuth) in builds made with their client ids ([docs/oauth-setup.md](docs/oauth-setup.md)).
+> - **Sync:** every folder, newest first and then older mail in the background. New inbox mail arrives by push (IMAP IDLE); the other folders follow within minutes.
+> - **The inbox:** by priority, by category or by date; new senders screened; done, pin, set aside, snooze and reminders, all with undo; one row per message for now (conversations open whole).
+> - **Reading:** HTML mail in a sandboxed frame with remote images blocked until you allow them, quoted history folded, a dark page in the dark theme; conversations across folders.
+> - **Writing:** formatted text, attachments and pasted images, signatures and templates, send later and undo send, from any of your addresses; mail waits in the Outbox when offline.
+> - **Search** of everything on this device and on the servers.
+> - **Agents:** the `regards` CLI and an MCP server, with per-account access, approvals and an activity log with undo ([docs/agents.md](docs/agents.md)).
+> - **Desktop:** notifications, a taskbar badge, background mode in the tray, `mailto:` links. Press `?` in the app for the keys.
 >
-> Not yet: writing and sending, search, the smart inbox, snooze and send later. See the [plan](docs/research/03-independent-implementation-plan.md).
+> Coming: sending while the computer is off (1.1, [ADR-0019](docs/adr/0019-send-while-off-in-1-1.md)). See the [plan](docs/research/03-independent-implementation-plan.md).
 
 ## How it is built
 
@@ -86,7 +88,7 @@ REGARDS_DEV_EXTRA_CA=/path/to/ca.pem REGARDS_DATA_DIR=/tmp/regards-dev npm run t
 
 Release builds ignore `REGARDS_DEV_EXTRA_CA`.
 
-**The desktop app owns the daemon it uses.** Only a daemon the app started itself can give it desktop access ([ADR-0006](docs/adr/0006-local-ipc-and-security.md)). When the app finds a daemon started some other way, for example by `regards daemon run`, it replaces it with its own. When the app quits, it stops its daemon.
+**The desktop app owns the daemon it uses.** Only a daemon the app started itself can give it desktop access ([ADR-0006](docs/adr/0006-local-ipc-and-security.md)). When the app finds a daemon started some other way, for example by `regards daemon run`, it replaces it with its own. Closing the window leaves Regards in the tray (background mode, on by default), so mail keeps arriving and scheduled mail goes out; Quit stops the app and its daemon.
 
 During development, point Regards at a throwaway data directory so it never touches real data:
 

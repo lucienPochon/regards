@@ -218,6 +218,14 @@ pub mod methods {
     /// Pick up a draft written elsewhere: it becomes a draft here, kept in step.
     pub const DRAFT_ADOPT: &str = "draft.adopt";
     /// Templates: text to start a message with, kept on this device. `ui` only.
+    /// Saved searches (Smart Folders), in the sidebar's order. `ui` only.
+    pub const SAVED_SEARCH_LIST: &str = "saved_search.list";
+    /// Keep a search by name (no `id`), or change one. `ui` only.
+    pub const SAVED_SEARCH_SAVE: &str = "saved_search.save";
+    /// Put saved searches in this order. `ui` only.
+    pub const SAVED_SEARCH_REORDER: &str = "saved_search.reorder";
+    /// Forget a saved search; its mail stays. `ui` only.
+    pub const SAVED_SEARCH_REMOVE: &str = "saved_search.remove";
     pub const TEMPLATE_LIST: &str = "template.list";
     /// Add a template (without `id`) or change one.
     pub const TEMPLATE_SAVE: &str = "template.save";
@@ -978,6 +986,12 @@ pub struct MessageListParams {
     /// card view shows it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seen: Option<bool>,
+    /// In the inbox, without `section` or `seen`: the account's Done mail too
+    /// (its Archive, or All Mail without what is in the inbox), by date among
+    /// the rest, as Spark's "Show Done" does. Those rows have the Archive's
+    /// (or All Mail's) `mailbox_id`: the app shows them as done.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub with_done: bool,
 }
 
 /// Parameters of [`methods::SEARCH`].
@@ -1810,6 +1824,54 @@ pub struct AgentContext {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voice: Option<String>,
     pub people: Vec<PersonMemory>,
+}
+
+/// A saved search (Spark's Smart Folder): opening it runs `query` again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedSearchView {
+    pub id: i64,
+    pub name: String,
+    /// What was typed, as [`SearchParams::query`].
+    pub query: String,
+    /// Only this account; `None`: every account.
+    #[serde(default)]
+    pub account_id: Option<String>,
+    /// `#rrggbb`, or none.
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+/// Result of [`methods::SAVED_SEARCH_LIST`]: in the sidebar's order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedSearchListResult {
+    pub searches: Vec<SavedSearchView>,
+}
+
+/// Parameters of [`methods::SAVED_SEARCH_SAVE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedSearchSaveParams {
+    /// `None`: a new one, last in the order.
+    #[serde(default)]
+    pub id: Option<i64>,
+    pub name: String,
+    pub query: String,
+    #[serde(default)]
+    pub account_id: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+/// Parameters of [`methods::SAVED_SEARCH_REMOVE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedSearchRef {
+    pub id: i64,
+}
+
+/// Parameters of [`methods::SAVED_SEARCH_REORDER`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedSearchOrderParams {
+    /// First to last; any left out keep their order after these.
+    pub ids: Vec<i64>,
 }
 
 /// A template.
