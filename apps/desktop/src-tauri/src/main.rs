@@ -40,12 +40,13 @@ use regards_ipc::protocol::{
     MessageListResult, MessageRef, MoveParams, MoveResult, NoteAddParams, NoteAddResult, NoteListParams,
     NoteListResult, NoteRef, NoteRemoved, NoteSetEnabledParams, NoteSettings, NoteUpdateParams, NoteView,
     NotesForgotten, OauthFlowRef, OauthProvidersResult, OauthStartParams, OauthStartResult, OutboxListResult,
-    OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams, Screening,
-    ScreeningParams, SearchParams, SearchResult, Section, SenderBlockParams, SenderImagesParams, SenderImagesResult,
-    SenderSetParams, SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult,
-    SignatureListResult, SignatureRef, SignatureSaveParams, SignatureView, SmartOverviewResult, SnoozeParams,
-    SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult,
-    View, ViewParams, methods,
+    OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams, SavedSearchListResult,
+    SavedSearchOrderParams, SavedSearchRef, SavedSearchSaveParams, SavedSearchView, Screening, ScreeningParams,
+    SearchParams, SearchResult, Section, SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams,
+    SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SignatureListResult,
+    SignatureRef, SignatureSaveParams, SignatureView, SmartOverviewResult, SnoozeParams, SyncResult,
+    TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, View,
+    ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -1320,6 +1321,47 @@ async fn draft_adopt(bridge: State<'_, Bridge>, message_id: i64) -> Result<Draft
         .map_err(describe)
 }
 
+/// Saved searches (Smart Folders), in the sidebar's order.
+#[tauri::command]
+async fn saved_search_list(bridge: State<'_, Bridge>) -> Result<SavedSearchListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::SAVED_SEARCH_LIST, Value::Null)
+        .await
+        .map_err(describe)
+}
+
+/// Keep a search by name (no `id`), or change one.
+#[tauri::command]
+async fn saved_search_save(
+    bridge: State<'_, Bridge>,
+    search: SavedSearchSaveParams,
+) -> Result<SavedSearchView, String> {
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::SAVED_SEARCH_SAVE, search).await.map_err(describe)
+}
+
+/// Put saved searches in this order.
+#[tauri::command]
+async fn saved_search_reorder(bridge: State<'_, Bridge>, ids: Vec<i64>) -> Result<SavedSearchListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::SAVED_SEARCH_REORDER, SavedSearchOrderParams { ids })
+        .await
+        .map_err(describe)
+}
+
+/// Forget a saved search; its mail stays.
+#[tauri::command]
+async fn saved_search_remove(bridge: State<'_, Bridge>, id: i64) -> Result<(), String> {
+    let mut client = bridge.connect().await?.client;
+    let _: Value = client
+        .call(methods::SAVED_SEARCH_REMOVE, SavedSearchRef { id })
+        .await
+        .map_err(describe)?;
+    Ok(())
+}
+
 /// Templates: text to start a message with, by name.
 #[tauri::command]
 async fn template_list(bridge: State<'_, Bridge>) -> Result<TemplateListResult, String> {
@@ -1935,6 +1977,10 @@ fn main() {
             identity_list,
             draft_elsewhere,
             draft_adopt,
+            saved_search_list,
+            saved_search_save,
+            saved_search_reorder,
+            saved_search_remove,
             template_list,
             template_save,
             template_remove,
