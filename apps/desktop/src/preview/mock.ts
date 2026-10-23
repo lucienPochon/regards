@@ -1334,6 +1334,11 @@ function handle(cmd: string, args: Args): unknown {
       // The daemon records an undo for it too; the app shows none for its own flag changes.
       return { changed: ids.length, undo: null };
     }
+    case "message_unsubscribe": {
+      // In the preview every message takes one click.
+      byId(args.id as number);
+      return { kind: "done" };
+    }
     case "message_archive": {
       // Done with a reminder shown from another folder: it leaves the inbox and stays filed.
       const ids = args.ids as number[];

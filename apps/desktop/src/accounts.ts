@@ -467,6 +467,28 @@ export function conversationIds(ids: number[]): Promise<number[]> {
   return invoke<number[]>("message_conversation_ids", { ids });
 }
 
+/**
+ * What unsubscribing did: the sender took a one-click request (`done`); an
+ * email asking to leave is in the Outbox, undoable as a send (`sent`, its
+ * `queued` as `sendDraft` gives it); or the list's page is to be opened in
+ * the browser to finish there (`web`, always `https://`, through `openUrl`).
+ */
+export type UnsubscribeResult =
+  | { kind: "done" }
+  | { kind: "sent"; queued: { outbox_id: number; undo_until: number; send_at: number | null } }
+  | { kind: "web"; url: string };
+
+/**
+ * Leave the mailing list a message came from (its `List-Unsubscribe`
+ * header): one click where the sender takes one, else an email to the
+ * list's address (from the address it writes to), else its page. Throws
+ * when the message gives no way; newsletters and notifications usually do.
+ * It acts outside the app: ask first, naming the sender.
+ */
+export function unsubscribe(id: number, undoSeconds: number | null = null): Promise<UnsubscribeResult> {
+  return invoke<UnsubscribeResult>("message_unsubscribe", { id, undoSeconds });
+}
+
 export function archiveMessages(ids: number[]): Promise<MoveResult> {
   return invoke<MoveResult>("message_archive", { ids });
 }
