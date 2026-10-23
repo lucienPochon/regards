@@ -265,6 +265,17 @@ pub fn uids(conn: &Connection, mailbox_id: i64) -> Result<Vec<u32>, StoreError> 
     Ok(uids)
 }
 
+/// UIDs of what a mailbox shows: not deleted, not on its way out. Ascending.
+pub fn shown_uids(conn: &Connection, mailbox_id: i64) -> Result<Vec<u32>, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT uid FROM messages WHERE mailbox_id = ?1 AND deleted = 0 AND moving_to IS NULL ORDER BY uid",
+    )?;
+    let uids = statement
+        .query_map([mailbox_id], |row| row.get(0))?
+        .collect::<Result<Vec<u32>, _>>()?;
+    Ok(uids)
+}
+
 /// Remove the given UIDs; returns how many were removed.
 pub fn delete_uids(tx: &Transaction<'_>, mailbox_id: i64, uids: &[u32]) -> Result<usize, StoreError> {
     let mut statement = tx.prepare_cached("DELETE FROM messages WHERE mailbox_id = ?1 AND uid = ?2")?;
