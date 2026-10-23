@@ -43,6 +43,8 @@ export interface Target {
   reminding: boolean;
   /** Some are reminders that came due, shown in the inbox. */
   reminded: boolean;
+  /** All Done mail shown in the inbox (Show Done): Done takes them back to it. */
+  done?: boolean;
 }
 
 /** What actions need from the app around them. */
@@ -63,6 +65,8 @@ export interface ActionHost {
   pickReminder: (anchor: Anchor | null) => Promise<number | null>;
   /** The account's Junk folder, if it has one (for Mark as junk). */
   junkFolder?: (accountId: string) => number | null;
+  /** The account's inbox (for Back to inbox, on Done mail). */
+  inboxFolder?: (accountId: string) => number | null;
 }
 
 export type ActionId =
@@ -305,6 +309,12 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
         });
     },
   });
+  // Show Done: on Done mail, Done (E) takes it back to the inbox.
+  const inbox = target.done && target.accountId !== null ? (host.inboxFolder?.(target.accountId) ?? null) : null;
+  const archive = actions.findIndex((action) => action.id === "archive");
+  if (inbox !== null && archive !== -1) {
+    actions[archive] = { ...actions[archive], label: "Back to inbox", icon: "inbox", run: () => move(() => moveMessages(ids, inbox)) };
+  }
   return actions;
 }
 

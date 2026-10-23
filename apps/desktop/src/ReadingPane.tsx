@@ -158,6 +158,7 @@ export function ReadingPane({
     snoozed: message.snoozed_until !== null,
     reminding: message.remind_at !== null,
     reminded: message.reminded,
+    done: item.done === true,
   };
   const actions = actionsFor(target);
   const done = choose(actions, "archive")[0];

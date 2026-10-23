@@ -197,6 +197,7 @@ export function MessageList({
   onCompose,
   canCompose,
   onMarkAllRead,
+  showDone,
   feed,
   mode,
   openId,
@@ -223,6 +224,8 @@ export function MessageList({
   canCompose: boolean;
   /** Every unread message of this folder or section, read (with Undo); absent where it means nothing. */
   onMarkAllRead?: () => void;
+  /** The inbox by date: its Done mail shown among it, or not (Ctrl+E). */
+  showDone?: { on: boolean; toggle: () => void };
   feed: MessageFeed;
   /** One line per message beside nothing ("single"), or three beside the reading pane ("split"). */
   mode: "single" | "split";
@@ -457,6 +460,7 @@ export function MessageList({
           item.id === openId && picked.size === 0 ? "open" : "",
           item.id === focus ? "cursor" : "",
           isPicked ? "picked" : "",
+          item.done ? "done-row" : "",
           screen ? "screening" : "",
         ].join(" ")}
         onMouseEnter={() => {
@@ -581,6 +585,18 @@ export function MessageList({
       />
     ) : (
       <ListHeader title={title} subtitle={subtitle} onTitle={onTitle} onBack={onBack}>
+        {showDone && (
+          <button
+            type="button"
+            className="icon-btn"
+            title={`${showDone.on ? "Hide" : "Show"} Done mail (${MOD_KEY}+E)`}
+            aria-label="Show Done mail"
+            aria-pressed={showDone.on}
+            onClick={showDone.toggle}
+          >
+            <Icon name="check" size={17} />
+          </button>
+        )}
         <button type="button" className="icon-btn" title={`Search (${MOD_KEY}+F)`} aria-label="Search" onClick={() => search.onQuery("")}>
           <Icon name="search" size={17} />
         </button>

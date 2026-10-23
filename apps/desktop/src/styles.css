@@ -2199,6 +2199,11 @@ button.list-title:hover {
   position: relative;
 }
 
+/* Show Done: Done mail among the inbox, quieter than the rest. */
+.row.done-row .row-main {
+  opacity: 0.55;
+}
+
 .rows.tall .row:not(.open):not(.picked):hover,
 .rows.tall .row.cursor:not(.open):not(.picked),
 .rows.tall .row:not(.open):not(.picked):has(> .row-main:focus-visible) {
