@@ -4005,6 +4005,41 @@ button.list-title:hover {
   color: var(--accent-text);
 }
 
+/* New senders: everyone at once, at the heading's end. */
+.screen-all {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.screen-all button {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.screen-all-accept {
+  color: var(--accent);
+}
+
+.screen-all-block {
+  color: var(--text-2);
+}
+
+.screen-all button:hover {
+  background: var(--hover);
+}
+
+.screen-all-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px 6px 33px;
+  font-size: 13px;
+}
+
 .category-more {
   display: block;
   padding: 2px 0 8px 33px;
