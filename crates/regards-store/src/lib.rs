@@ -31,6 +31,7 @@ pub mod notices;
 pub mod operations;
 pub mod outbox;
 pub mod people;
+pub mod saved_searches;
 pub mod search;
 pub mod settings;
 pub mod signatures;
