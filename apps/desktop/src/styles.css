@@ -2893,6 +2893,12 @@ button.list-title:hover {
   overflow-wrap: anywhere;
 }
 
+.text-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* Reply and forward, quietly, at the card's bottom right. */
 .mail-foot {
   display: flex;
