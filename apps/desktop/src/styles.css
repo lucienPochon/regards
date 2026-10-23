@@ -2157,6 +2157,44 @@ button.list-title:hover {
   padding-left: 32px;
 }
 
+/* Done with a whole day or group: a ringed check at the right, on hover. */
+.day-head:has(.done-all) {
+  display: flex;
+  align-items: center;
+  padding-right: 18px;
+}
+
+.done-all {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 50%;
+  color: var(--muted);
+  opacity: 0;
+}
+
+.day:hover .done-all,
+.bundle:hover .done-all,
+.done-all:focus-visible {
+  opacity: 1;
+}
+
+.done-all:hover {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.bundle-done {
+  position: absolute;
+  top: 50%;
+  right: 40px;
+  transform: translateY(-50%);
+}
+
 .row {
   position: relative;
 }
