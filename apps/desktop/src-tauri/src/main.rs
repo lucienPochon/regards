@@ -31,9 +31,9 @@ use regards_ipc::protocol::{
     AccountAddParams, AccountRef, AccountRemoveParams, AccountSummary, AccountUpdateParams, AgentAccess,
     AgentAccessParams, AgentActivityParams, AgentActivityResult, AgentSendParams, AsideParams, AttachmentFiles,
     AttachmentPreview, AttachmentRef, AttachmentSaveAllParams, AttachmentSaveParams, ClientKind, ConnectionSecurity,
-    DeleteResult, DiscoverParams, DiscoverResult, DraftAttachFileParams, DraftAttachImageParams, DraftCreateParams,
-    DraftDetachParams, DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult, DraftRef,
-    DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
+    ConversationIdsResult, DeleteResult, DiscoverParams, DiscoverResult, DraftAttachFileParams, DraftAttachImageParams,
+    DraftCreateParams, DraftDetachParams, DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult,
+    DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
     ExplainResult, HoldApproveParams, HoldListParams, HoldListResult, HoldRef, HoldView, IdentityListResult,
     IdentityRef, IdentitySaveParams, IdentitySetSignatureParams, IdentitySetVoiceParams, IdentityView,
     MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult,
@@ -947,6 +947,18 @@ async fn thread_get(bridge: State<'_, Bridge>, id: i64) -> Result<ThreadView, St
         .map_err(describe)
 }
 
+/// Each message with the rest of its conversation in the same folder: what an
+/// action on a conversation's row covers.
+#[tauri::command]
+async fn message_conversation_ids(bridge: State<'_, Bridge>, ids: Vec<i64>) -> Result<Vec<i64>, String> {
+    let mut client = bridge.connect().await?.client;
+    let result: ConversationIdsResult = client
+        .call(methods::MESSAGE_CONVERSATION_IDS, MessageIds { ids })
+        .await
+        .map_err(describe)?;
+    Ok(result.ids)
+}
+
 /// Every unread message of a folder (or of one Smart Inbox section) read, with one undo.
 #[tauri::command]
 async fn message_mark_all_read(
@@ -1838,6 +1850,7 @@ fn main() {
             smart_set_screening,
             message_get,
             thread_get,
+            message_conversation_ids,
             message_set_flags,
             message_mark_all_read,
             message_archive,
