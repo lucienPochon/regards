@@ -138,3 +138,23 @@ export function reasonText(explanation: Explanation): string {
       return `You haven't written to ${who} yet.`;
   }
 }
+
+/**
+ * Mail providers anyone can have an address at: blocking one of these
+ * domains would block strangers and friends alike, so the sender card does
+ * not offer it.
+ */
+const SHARED_DOMAINS = new Set([
+  "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "hotmail.co.uk", "hotmail.de", "hotmail.fr", "live.com",
+  "msn.com", "outlook.de", "outlook.fr", "yahoo.com", "yahoo.fr", "yahoo.de", "yahoo.co.uk", "icloud.com", "me.com",
+  "mac.com", "aol.com", "proton.me", "protonmail.com", "pm.me", "gmx.com", "gmx.net", "gmx.de", "gmx.ch", "web.de",
+  "bluewin.ch", "hispeed.ch", "sunrise.ch", "orange.fr", "free.fr", "laposte.net", "zoho.com", "fastmail.com",
+  "hey.com", "yandex.ru", "mail.ru", "qq.com", "163.com",
+]);
+
+/** "@example.org" for an address whose domain can be blocked as a whole; null for a shared provider's. */
+export function blockableDomain(address: string): string | null {
+  const domain = address.trim().toLowerCase().split("@")[1];
+  if (!domain || !domain.includes(".") || SHARED_DOMAINS.has(domain)) return null;
+  return `@${domain}`;
+}

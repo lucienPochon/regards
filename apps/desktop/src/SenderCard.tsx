@@ -7,7 +7,7 @@ import { Icon } from "./icons";
 import { type Note, NOTE_MAX, addNote, listNotes, noteSettings, removeNote, updateNote } from "./notes";
 import type { Anchor } from "./Menu";
 import { useShortcuts } from "./shortcuts";
-import { type Explanation, type Policy, SECTION_LABELS, blockSender, explain, reasonText, setSender } from "./smart";
+import { type Explanation, type Policy, SECTION_LABELS, blockSender, blockableDomain, explain, reasonText, setSender } from "./smart";
 import { useDialogFocus } from "./dialogFocus";
 
 export interface SenderRequest {
@@ -82,6 +82,13 @@ export function SenderCard({
     if (!address) return;
     onClose();
     blockSender(accountId, address, !sender?.blocked).then(onBlocked, onFailed);
+  };
+  // Everyone at their company or service; not offered for gmail.com and the like.
+  const domain = sender?.blocked ? null : blockableDomain(address);
+  const blockDomain = () => {
+    if (!domain) return;
+    onClose();
+    blockSender(accountId, domain).then(onBlocked, onFailed);
   };
   const copy = () => {
     void navigator.clipboard?.writeText(address).then(() => setCopied(true), () => {});
@@ -173,6 +180,15 @@ export function SenderCard({
             <Icon name="thumbDown" size={16} />
             <span>{sender?.blocked ? "Unblock sender" : "Block sender"}</span>
           </button>
+          {domain && (
+            <button type="button" className="sender-row danger" onClick={blockDomain}>
+              <Icon name="thumbDown" size={16} />
+              <span>
+                Block everyone at {domain.slice(1)}
+                <span className="muted sender-row-detail">Their mail goes to Junk, and so does what anyone there sends later</span>
+              </span>
+            </button>
+          )}
         </div>
       </div>
     </div>
