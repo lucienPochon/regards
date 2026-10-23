@@ -12,6 +12,7 @@ import {
   trashMessages,
 } from "./accounts";
 import { type KeySet, getPrefs } from "./prefs";
+import type { Person } from "./accounts";
 import { type Draft, forwardDraft, replyDraft } from "./compose";
 import type { ConfirmRequest } from "./Confirm";
 import type { IconName } from "./icons";
@@ -44,6 +45,8 @@ export interface Target {
   reminding: boolean;
   /** Some are reminders that came due, shown in the inbox. */
   reminded: boolean;
+  /** One newsletter or notification: Unsubscribe is offered, naming who sent it. */
+  unsubscribe?: { from: Person | null } | null;
   /** All Done mail shown in the inbox (Show Done): Done takes them back to it. */
   done?: boolean;
   /**
@@ -72,6 +75,8 @@ export interface ActionHost {
   pickReminder: (anchor: Anchor | null) => Promise<number | null>;
   /** The account's Junk folder, if it has one (for Mark as junk). */
   junkFolder?: (accountId: string) => number | null;
+  /** Leave the mailing list a message came from, after asking. */
+  unsubscribe?: (id: number, from: Person | null) => void;
   /** The account's inbox (for Back to inbox, on Done mail). */
   inboxFolder?: (accountId: string) => number | null;
 }
@@ -90,7 +95,8 @@ export type ActionId =
   | "archive"
   | "move"
   | "junk"
-  | "delete";
+  | "delete"
+  | "unsubscribe";
 
 export interface Action {
   id: ActionId;
@@ -121,6 +127,7 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
     move: ["Mod+Shift+M"],
     junk: ["Shift+1"],
     delete: ["Delete", "Backspace"],
+    unsubscribe: [],
   },
   classic: {
     reply: ["r"],
@@ -137,6 +144,7 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
     move: ["v"],
     junk: ["!"],
     delete: ["#", "Delete"],
+    unsubscribe: [],
   },
 };
 
@@ -291,6 +299,10 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
         run: () => move(() => all().then((list) => moveMessages(list, junk))),
       });
     }
+  }
+  if (target.single !== null && target.unsubscribe && host.unsubscribe) {
+    const [id, from, leave] = [target.single, target.unsubscribe.from, host.unsubscribe];
+    actions.push({ id: "unsubscribe", label: "Unsubscribe…", icon: "unsubscribe", keys: keys.unsubscribe, shown: true, run: () => leave(id, from) });
   }
   actions.push({
     id: "delete",

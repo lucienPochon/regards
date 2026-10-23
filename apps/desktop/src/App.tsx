@@ -9,6 +9,7 @@ import {
   type Role,
   type UndoInfo,
   archiveMessages,
+  unsubscribe,
   getMessage,
   getThread,
   markAllRead,
@@ -47,6 +48,7 @@ import {
   type ListItem,
   type MessageFeed,
   inboxSources,
+  ALL_AT_ONCE,
   allOf,
   newer,
   sectionSources,
@@ -69,9 +71,11 @@ import {
   removeSavedSearch,
   reorderSavedSearches,
   saveSearch,
+  searchMessages,
   searchServer,
   searchTerm,
 } from "./search";
+import { openUrl } from "./background";
 import { type Anchor, Menu, type MenuEntry, type MenuRequest } from "./Menu";
 import { type Bundle, type InboxCard, ListHeader, MessageList, type Screener } from "./MessageList";
 import { SenderCard, type SenderRequest } from "./SenderCard";
@@ -157,6 +161,10 @@ function targetOf(items: ListItem[]): Target {
     snoozed: items.length > 0 && items.every((item) => item.snoozed_until !== null),
     reminding: items.length > 0 && items.every((item) => item.remind_at !== null),
     reminded: items.some((item) => item.reminded),
+    unsubscribe:
+      items.length === 1 && (items[0].section === "newsletters" || items[0].section === "notifications")
+        ? { from: items[0].from }
+        : null,
     done: items.length > 0 && items.every((item) => item.done === true),
     // Rows stand for their conversations.
     conversation: true,
@@ -179,6 +187,7 @@ const PALETTE_ACTIONS = [
   "replyAll",
   "forward",
   "remind",
+  "unsubscribe",
 ] as const;
 
 type Picking = { title: string; confirm: string; initial: number; resolve: (time: number | null) => void };
@@ -224,6 +233,13 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null);
   // Something done that has no undo, said briefly.
   const [said, setSaid] = useState<string | null>(null);
+  // Said with a way to go on: "Unsubscribed · Archive their mail".
+  const [offer, setOffer] = useState<{ text: string; label?: string; run?: () => void } | null>(null);
+  useEffect(() => {
+    if (!offer) return;
+    const timer = window.setTimeout(() => setOffer(null), 12_000);
+    return () => window.clearTimeout(timer);
+  }, [offer]);
   const [help, setHelp] = useState(false);
   const [settings, setSettings] = useState<SettingsTab | null>(null);
   // The sidebar's Agents menu, beside its button.
@@ -711,9 +727,54 @@ export function App() {
   const junkFolder = useCallback((accountId: string) => folderOf(accountId, "junk"), [folderOf]);
   const inboxFolder = useCallback((accountId: string) => folderOf(accountId, "inbox"), [folderOf]);
 
+  /** Everything from an address still in the inboxes, archived with one undo (after unsubscribing). */
+  const archiveFrom = useCallback(
+    async (address: string) => {
+      const ids: number[] = [];
+      let before: MessageCursor | null = null;
+      do {
+        const page = await searchMessages(`${searchTerm("from", address)} in:inbox`, { before, limit: 200 });
+        ids.push(...page.messages.map((message) => message.id));
+        before = page.next;
+      } while (before && ids.length < ALL_AT_ONCE);
+      if (ids.length === 0) return;
+      moved(ids, await archiveMessages(ids.slice(0, ALL_AT_ONCE)));
+    },
+    [moved],
+  );
+  // Leaving a mailing list (#202) acts outside the app: asked first, naming the sender.
+  const leaveList = useCallback(
+    (id: number, from: Person | null) => {
+      const who = from?.name || from?.address || "this sender";
+      void confirm({
+        title: `Unsubscribe from ${who}?`,
+        body: "Regards asks them to stop sending to you: in one click where they take it, otherwise by an email (which you can undo) or on their own page.",
+        confirm: "Unsubscribe",
+      })
+        .then(async (ok) => {
+          if (!ok) return;
+          const result = await unsubscribe(id, getPrefs().undoSeconds);
+          if (result.kind === "sent") {
+            setQueued(result.queued);
+          } else if (result.kind === "web") {
+            await openUrl(result.url);
+            setSaid(`Finish on ${who}'s page, in your browser`);
+          } else {
+            const address = from?.address;
+            setOffer(
+              address
+                ? { text: `Unsubscribed from ${who}`, label: "Archive their mail", run: () => void archiveFrom(address).catch(failed) }
+                : { text: `Unsubscribed from ${who}` },
+            );
+          }
+        })
+        .catch(failed);
+    },
+    [confirm, failed, archiveFrom],
+  );
   const host = useMemo<ActionHost>(
-    () => ({ compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder, junkFolder, inboxFolder }),
-    [compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder, junkFolder, inboxFolder],
+    () => ({ compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder, junkFolder, inboxFolder, unsubscribe: leaveList }),
+    [compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder, junkFolder, inboxFolder, leaveList],
   );
   const actionsForItems = useCallback((list: ListItem[]) => messageActions(targetOf(list), host), [host]);
   const actionsFor = useCallback((target: Target) => messageActions(target, host), [host]);
@@ -1796,6 +1857,26 @@ export function App() {
               <Icon name="alert" size={16} />
               <span>{notice}</span>
               <button type="button" onClick={() => setNotice(null)}>
+                Dismiss
+              </button>
+            </div>
+          )}
+          {offer && (
+            <div className="toast">
+              <Icon name="check" size={16} />
+              <span>{offer.text}</span>
+              {offer.run && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    offer.run?.();
+                    setOffer(null);
+                  }}
+                >
+                  {offer.label}
+                </button>
+              )}
+              <button type="button" onClick={() => setOffer(null)}>
                 Dismiss
               </button>
             </div>
