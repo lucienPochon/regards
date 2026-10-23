@@ -5,9 +5,9 @@
 use crate::{State, sync};
 use regards_imap::{ImapError, ImapServer};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountCheckFailure, AccountRef, AccountRemoveParams, AccountResyncResult, AccountSummary,
-    AccountUpdateParams, AgentAccess, AgentAccessParams, AgentSendParams, AutoCopyParams, ConnectionSecurity,
-    MailboxListResult, MailboxSummary, RpcError, ServerSettings, SignIn, SyncResult, codes,
+    AccountAddParams, AccountCheckFailure, AccountLoginParams, AccountRef, AccountRemoveParams, AccountResyncResult,
+    AccountSummary, AccountUpdateParams, AgentAccess, AgentAccessParams, AgentSendParams, AutoCopyParams,
+    ConnectionSecurity, MailboxListResult, MailboxSummary, RpcError, ServerSettings, SignIn, SyncResult, codes,
 };
 use regards_store::StoreError;
 use regards_store::accounts::{self, Account, AuthKind, NewAccount, Security, Server};
@@ -181,6 +181,76 @@ pub(crate) async fn update(state: &State, params: AccountUpdateParams) -> Result
     summary_of(state, renamed).await
 }
 
+/// `account.set_login`: a password account's new user name, password or
+/// servers, after the IMAP server accepts them. The account keeps its mail,
+/// drafts and outbox; it syncs again at once, and what waited to be sent goes.
+pub(crate) async fn set_login(state: &Arc<State>, params: AccountLoginParams) -> Result<Value, RpcError> {
+    let id = params.id.clone();
+    let account = state
+        .store
+        .read(move |conn| accounts::get(conn, &id))
+        .await
+        .map_err(store_error)?
+        .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such account"))?;
+    if account.auth_kind != AuthKind::Password {
+        return Err(invalid(
+            "this account signs in with its provider; use Sign in again instead",
+        ));
+    }
+    if params.imap.security != ConnectionSecurity::Tls {
+        return Err(invalid(IMAP_TLS_ONLY));
+    }
+    let username = match params.username.as_deref().map(str::trim) {
+        None | Some("") => account.email.clone(),
+        Some(name) => name.to_owned(),
+    };
+    let (imap, smtp) = (server(params.imap, "IMAP")?, server(params.smtp, "SMTP")?);
+    let key = SecretKey::from_stored(account.secret_key.clone());
+    let vault = vault(state).await?;
+    let password = match params.password {
+        Some(password) if password.expose().is_empty() => return Err(invalid("enter the password")),
+        Some(password) => password,
+        None => vault
+            .get(&key)
+            .await
+            .map_err(vault_error)?
+            .ok_or_else(|| invalid("enter the password"))?,
+    };
+
+    let check = regards_imap::verify_login(
+        &ImapServer {
+            host: imap.host.clone(),
+            port: imap.port,
+        },
+        &username,
+        &password,
+        &state.tls,
+    )
+    .await
+    .map_err(check_failed)?;
+    vault.set(&key, &password).await.map_err(vault_error)?;
+    let id = account.id.clone();
+    let changed = state
+        .store
+        .write(move |tx| {
+            let changed = accounts::set_login(tx, &id, &username, &imap, &smtp, &check.capabilities)?;
+            // What waited for a working sign-in goes now.
+            regards_store::outbox::retry_now(tx, &id, crate::compose::now_ms())?;
+            Ok(changed)
+        })
+        .await
+        .map_err(store_error)?
+        .value
+        .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such account"))?;
+    tracing::info!(account = %changed.id, "sign-in changed");
+
+    // The push connection still uses the old servers: start it again.
+    state.watchers.stop_and_wait(&changed.id, RESYNC_WAIT).await;
+    state.outbox.wake();
+    sync::spawn_one(Arc::clone(state), changed.id.clone());
+    summary_of(state, changed).await
+}
+
 pub(crate) async fn remove(state: &State, params: AccountRemoveParams) -> Result<Value, RpcError> {
     let id = params.id;
     let removed = state
@@ -269,6 +339,8 @@ struct Validated {
     smtp: Server,
 }
 
+const IMAP_TLS_ONLY: &str = "IMAP over STARTTLS is not supported yet; use the server's TLS port (usually 993)";
+
 fn validate(params: AccountAddParams) -> Result<Validated, RpcError> {
     let email = params.email.trim().to_owned();
     let valid_email = email
@@ -282,9 +354,7 @@ fn validate(params: AccountAddParams) -> Result<Validated, RpcError> {
         return Err(invalid("enter the password"));
     }
     if params.imap.security != ConnectionSecurity::Tls {
-        return Err(invalid(
-            "IMAP over STARTTLS is not supported yet; use the server's TLS port (usually 993)",
-        ));
+        return Err(invalid(IMAP_TLS_ONLY));
     }
     let display_name = match params.display_name.trim() {
         "" => email.clone(),
