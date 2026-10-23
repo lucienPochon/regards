@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import type { MessageSummary, Person } from "./accounts";
+import type { MessageSummary, Person, UndoInfo } from "./accounts";
 
 /** Mirrors `DraftView` in `regards-ipc`. */
 export interface Draft {
@@ -163,7 +163,12 @@ export const getDraft = (id: number) => invoke<Draft>("draft_get", { id });
 export const attachFiles = (draftId: number) => invoke<Draft | null>("draft_attach_files", { draftId });
 export const detachFile = (draftId: number, attachmentId: number) =>
   invoke<Draft>("draft_detach", { draftId, attachmentId });
-export const deleteDraft = (id: number) => invoke("draft_delete", { id });
+/**
+ * Delete a draft. For a while it can be undone: `undo` goes to `applyUndo`,
+ * which makes the draft again as it was (a new id), its files too.
+ */
+export const deleteDraft = (id: number) =>
+  invoke<{ deleted: boolean; undo: UndoInfo | null }>("draft_delete", { id });
 /** Drafts written elsewhere (another device, webmail), in the server's Drafts folders. */
 export const listDraftsElsewhere = () =>
   invoke<{ messages: MessageSummary[] }>("draft_elsewhere").then((result) => result.messages);
