@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MoveResult, Person } from "./accounts";
+import { usePendingHolds } from "./AgentHolds";
 import { Avatar } from "./Avatar";
+import { listDate } from "./format";
 import { Icon } from "./icons";
+import { type Note, NOTE_MAX, addNote, listNotes, noteSettings, removeNote, updateNote } from "./notes";
 import type { Anchor } from "./Menu";
 import { useShortcuts } from "./shortcuts";
 import { type Explanation, type Policy, SECTION_LABELS, blockSender, blockableDomain, explain, reasonText, setSender } from "./smart";
@@ -16,6 +19,8 @@ export interface SenderRequest {
 }
 
 const MARGIN = 8;
+/** Notes shown before "Show all". */
+const NOTES_SHOWN = 3;
 
 /**
  * Who sent a message, and what to do about them: where their mail goes (or
@@ -29,9 +34,12 @@ export function SenderCard({
   onSearch,
   onBlocked,
   onFailed,
+  onHolds,
 }: {
   request: SenderRequest;
   onClose: () => void;
+  /** Settings › Agents, where an agent's note about them waits. */
+  onHolds?: () => void;
   /** Start a message to them. */
   onWrite: (person: Person) => void;
   /** Search all mail from them. */
@@ -124,6 +132,15 @@ export function SenderCard({
             </select>
           </div>
         </div>
+        {address && (
+          <SenderNotes
+            accountId={accountId}
+            address={address}
+            name={person.name ?? null}
+            onHolds={onHolds}
+            onFailed={onFailed}
+          />
+        )}
         <div className="sender-rows">
           <button type="button" className="sender-row" onClick={() => onWrite(person)}>
             <Icon name="compose" size={16} />
@@ -175,5 +192,188 @@ export function SenderCard({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * What the account knows of them (ADR-0020): one fact per note, by the
+ * person or an agent, kept on this computer. Each can be edited (it is the
+ * person's then) or removed; a new one is added at the bottom. Hidden while
+ * notes are off.
+ */
+function SenderNotes({
+  accountId,
+  address,
+  name,
+  onHolds,
+  onFailed,
+}: {
+  accountId: string;
+  address: string;
+  name: string | null;
+  onHolds?: () => void;
+  onFailed: (error: unknown) => void;
+}) {
+  const [on, setOn] = useState<boolean | null>(null);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [all, setAll] = useState(false);
+  const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
+  const [adding, setAdding] = useState("");
+  const load = useCallback(() => {
+    listNotes(accountId, address).then(setNotes, onFailed);
+  }, [accountId, address, onFailed]);
+  useEffect(load, [load]);
+  useEffect(() => {
+    noteSettings().then(
+      (settings) => setOn(settings.on),
+      () => setOn(false),
+    );
+  }, []);
+  // Agents' notes about them that wait for the person.
+  const waiting = usePendingHolds().filter((hold) => {
+    const about = (hold.params as { address?: unknown } | null)?.address;
+    return hold.reason === "note" && hold.account_id === accountId && String(about ?? "").toLowerCase() === address.toLowerCase();
+  }).length;
+  if (on !== true) return null;
+
+  const who = name || address;
+  const first = who.split(/[\s@]/)[0] || who;
+  const shown = all ? notes : notes.slice(0, NOTES_SHOWN);
+  const add = () => {
+    const text = adding.trim();
+    if (!text) return;
+    addNote({ account_id: accountId, address, text }).then(() => {
+      setAdding("");
+      setAll(true);
+      load();
+    }, onFailed);
+  };
+  const save = () => {
+    const text = editing?.text.trim();
+    if (!editing || !text) return;
+    updateNote(editing.id, text).then(() => {
+      setEditing(null);
+      load();
+    }, onFailed);
+  };
+  const remove = (id: number) => {
+    removeNote(id).then(load, onFailed);
+  };
+  const about = (note: Note) =>
+    [
+      note.by === "person" ? "You" : null,
+      listDate(note.updated_at),
+      note.from_subject ? `from “${note.from_subject}”` : null,
+      note.from_address && note.from_address !== note.address ? `sent by ${note.from_address}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+  return (
+    <section className="sender-notes" aria-label={`Notes about ${who}`}>
+      <div className="notes-head">
+        <Icon name="text" size={16} />
+        <strong>Notes</strong>
+        {notes.length > 0 && <span className="muted">{notes.length}</span>}
+        <span className="notes-where muted">On this computer only</span>
+      </div>
+      {notes.length === 0 && (
+        <p className="notes-empty muted">Nothing yet. Add what&apos;s worth remembering: who decides, what they prefer.</p>
+      )}
+      {notes.length > 0 && (
+        <ul className="notes-list">
+          {shown.map((note) => (
+            <li key={note.id} className="note-item">
+              {editing?.id === note.id ? (
+                <div className="note-edit">
+                  <input
+                    aria-label="Note"
+                    maxLength={NOTE_MAX}
+                    value={editing.text}
+                    onChange={(event) => setEditing({ id: note.id, text: event.target.value })}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") save();
+                      if (event.key === "Escape") {
+                        event.stopPropagation();
+                        setEditing(null);
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <div className="note-edit-buttons">
+                    <button type="button" className="btn small" onClick={() => setEditing(null)}>
+                      Cancel
+                    </button>
+                    <button type="button" className="btn small primary" onClick={save} disabled={!editing.text.trim()}>
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p className="note-text">{note.text}</p>
+                  <p className="note-meta muted">
+                    {note.by === "agent" && (
+                      <span className="note-agent">
+                        <Icon name="agent" size={11} />
+                        Agent
+                      </span>
+                    )}
+                    <span>{about(note)}</span>
+                  </p>
+                  <span className="note-actions">
+                    <button
+                      type="button"
+                      className="icon-btn small"
+                      title="Edit the note"
+                      aria-label="Edit the note"
+                      onClick={() => setEditing({ id: note.id, text: note.text })}
+                    >
+                      <Icon name="compose" size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-btn small"
+                      title="Remove the note"
+                      aria-label="Remove the note"
+                      onClick={() => remove(note.id)}
+                    >
+                      <Icon name="trash" size={13} />
+                    </button>
+                  </span>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {notes.length > NOTES_SHOWN && (
+        <button type="button" className="notes-more" onClick={() => setAll(!all)}>
+          {all ? "Show fewer" : `Show all ${notes.length}`}
+        </button>
+      )}
+      {waiting > 0 && onHolds && (
+        <button type="button" className="notes-waiting" onClick={onHolds}>
+          <Icon name="agent" size={13} />
+          <span>{waiting === 1 ? "1 note from an agent waits for you" : `${waiting} notes from agents wait for you`}</span>
+          <Icon name="chevronRight" size={13} />
+        </button>
+      )}
+      <div className="notes-add">
+        <input
+          aria-label={`Add a note about ${who}`}
+          placeholder={`Add a note about ${first}…`}
+          maxLength={NOTE_MAX}
+          value={adding}
+          onChange={(event) => setAdding(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") add();
+          }}
+        />
+        <button type="button" className="btn small primary" onClick={add} disabled={!adding.trim()}>
+          Add
+        </button>
+      </div>
+    </section>
   );
 }

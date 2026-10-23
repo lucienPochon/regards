@@ -35,13 +35,13 @@ export const learnVoicePrompt = (email: string) =>
 export const listIdentities = (accountId: string) =>
   invoke<{ identities: Identity[] }>("identity_list", { accountId }).then((result) => result.identities);
 
-/** Add one (no `id`) or change one. */
+/** Add one (no `id`) or change one; `signature_id` is its default signature (Settings › Composer › Signatures). */
 export const saveIdentity = (identity: {
   id: number | null;
   account_id: string;
   name: string;
   email: string;
-  signature: string;
+  signature_id: number | null;
 }) => invoke<Identity>("identity_save", { identity: { ...identity, id: identity.id ?? undefined } });
 
 /** Not the default: make another one the default first. */

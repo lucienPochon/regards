@@ -61,6 +61,29 @@ if (params.get("agentsend") === "1" && accounts[0]) {
     });
   });
 }
+// `?sendfail=1`: a message in the Outbox is refused by the server a moment after the app opens.
+if (params.get("sendfail") === "1" && accounts[0]) {
+  const entry: OutboxEntry = {
+    id: 902,
+    account_id: accounts[0].account.id,
+    draft_id: null,
+    subject: "Quote for the bathroom tiles",
+    recipients: [{ name: "Tomás Herrera", address: "tomas@herrera-tiles.example" }],
+    state: "sending",
+    undo_until: Date.now() - 1000,
+    send_at: null,
+    next_attempt_at: Date.now(),
+    attempts: 1,
+    last_error: null,
+    executor: "device",
+    needs_this_computer: true,
+  };
+  outbox.push(entry);
+  window.setTimeout(() => {
+    Object.assign(entry, { state: "failed", last_error: "the server refused tomas@herrera-tiles.example (no such mailbox)" });
+    changed();
+  }, 2500);
+}
 // `?autocopy=bcc` (or cc): the first account copies every new message to an archive address.
 if ((params.get("autocopy") === "bcc" || params.get("autocopy") === "cc") && accounts[0]) {
   (accounts[0].account as { auto_copy?: unknown }).auto_copy = { kind: params.get("autocopy"), address: "archive@example.org" };
@@ -280,8 +303,31 @@ function sampleHolds(): Hold[] {
     result: null,
     error: null,
   });
+  const email = owner.account.email;
   return [
     hold(2, 1, "sending", "draft.send", "Send “Re: Garden plot schedule” to Lena Okafor", heldDraft),
+    {
+      ...hold(3, 4, "voice", "voice.suggest", `Change your voice for ${email}`, null),
+      params: {
+        address: email,
+        text: "Writes in English, or in French when the other person does.\nFriendly and short: the answer first, then one clear next step.\nOpens with “Hi,” and signs “Sam”.\nNever promises a date or a price: leaves [TO CONFIRM].",
+      },
+    },
+    {
+      ...hold(
+        4,
+        5,
+        "note",
+        "note.add",
+        "Save a note about anna@client.example. It has bank details in it, and comes from a message that anna@client.example did not send (billing@client-payments.example).",
+        null,
+      ),
+      params: {
+        account_id: owner.account.id,
+        address: "anna@client.example",
+        text: "Invoices now go to IBAN CH93 0076 2011 6238 5295 7, not the old account.",
+      },
+    },
     hold(1, 6, "bulk", "message.archive", "Archive 120 messages", null),
   ];
 }
@@ -527,7 +573,8 @@ const notes: Note[] = accounts.length
     ].map(({ ago, ...note }) => ({
       ...note,
       id: nextId++,
-      account_id: accounts[0].account.id,
+      // The account she writes to (the work one, when there are two).
+      account_id: (accounts.find((a) => a.mailboxes.some((m) => m.id === 21)) ?? accounts[0]).account.id,
       address: "ines.moreau@example.com",
       created_at: Date.now() - ago * 86_400_000,
       updated_at: Date.now() - ago * 86_400_000,
@@ -1439,10 +1486,12 @@ function handle(cmd: string, args: Args): unknown {
     case "identity_list":
       return { identities: identities.filter((i) => i.account_id === args.accountId) };
     case "identity_save": {
-      const saved = args.identity as Omit<Identity, "is_default"> & { id?: number };
+      const saved = args.identity as { id?: number; account_id: string; name: string; email: string; signature_id: number | null };
+      const chosen = signatures.find((s) => s.id === saved.signature_id) ?? null;
+      const signature = { signature_id: chosen?.id ?? null, signature: chosen?.body ?? "" };
       const existing = identities.find((i) => i.id === saved.id);
-      if (existing) return Object.assign(existing, { name: saved.name, email: saved.email, signature: saved.signature });
-      const added: Identity = { ...saved, id: nextId++, signature_id: null, voice: "", voice_on: false, is_default: false };
+      if (existing) return Object.assign(existing, { name: saved.name, email: saved.email }, signature);
+      const added: Identity = { ...saved, ...signature, id: nextId++, voice: "", voice_on: false, is_default: false };
       identities.push(added);
       return added;
     }
