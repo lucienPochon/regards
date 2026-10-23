@@ -61,6 +61,29 @@ if (params.get("agentsend") === "1" && accounts[0]) {
     });
   });
 }
+// `?sendfail=1`: a message in the Outbox is refused by the server a moment after the app opens.
+if (params.get("sendfail") === "1" && accounts[0]) {
+  const entry: OutboxEntry = {
+    id: 902,
+    account_id: accounts[0].account.id,
+    draft_id: null,
+    subject: "Quote for the bathroom tiles",
+    recipients: [{ name: "Tomás Herrera", address: "tomas@herrera-tiles.example" }],
+    state: "sending",
+    undo_until: Date.now() - 1000,
+    send_at: null,
+    next_attempt_at: Date.now(),
+    attempts: 1,
+    last_error: null,
+    executor: "device",
+    needs_this_computer: true,
+  };
+  outbox.push(entry);
+  window.setTimeout(() => {
+    Object.assign(entry, { state: "failed", last_error: "the server refused tomas@herrera-tiles.example (no such mailbox)" });
+    changed();
+  }, 2500);
+}
 // `?autocopy=bcc` (or cc): the first account copies every new message to an archive address.
 if ((params.get("autocopy") === "bcc" || params.get("autocopy") === "cc") && accounts[0]) {
   (accounts[0].account as { auto_copy?: unknown }).auto_copy = { kind: params.get("autocopy"), address: "archive@example.org" };

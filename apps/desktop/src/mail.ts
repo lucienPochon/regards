@@ -477,11 +477,22 @@ export function useDrafts(): Draft[] {
 }
 
 /** What has not gone out yet. */
-export function useOutbox(): OutboxEntry[] {
+export function useOutbox(onFailed?: (entry: OutboxEntry) => void): OutboxEntry[] {
   const [entries, setEntries] = useState<OutboxEntry[]>([]);
+  // The sends known to have failed (or maybe not gone); null until the first look,
+  // so what failed before the app opened is left to the Outbox.
+  const failedBefore = useRef<Set<number> | null>(null);
+  const tell = useRef(onFailed);
+  tell.current = onFailed;
   const refresh = useCallback(() => {
     listOutbox()
-      .then((result) => setEntries(result.entries))
+      .then((result) => {
+        setEntries(result.entries);
+        const failing = result.entries.filter((entry) => entry.state === "failed" || entry.state === "uncertain");
+        const known = failedBefore.current;
+        failedBefore.current = new Set(failing.map((entry) => entry.id));
+        if (known) for (const entry of failing) if (!known.has(entry.id)) tell.current?.(entry);
+      })
       .catch(() => {});
   }, []);
   useEffect(refresh, [refresh]);
