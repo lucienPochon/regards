@@ -8,10 +8,12 @@ import type { MessageCursor, MessageSummary } from "./accounts";
  *   as the start of a word, so results come while typing.
  * - `"a phrase"` matches as written; `-word` leaves out.
  * - `from:` `to:` `subject:` look in one place (`from:"Lena Müller"`).
- * - `has:attachment`, `is:unread` `is:read` `is:flagged`.
+ * - `has:attachment`, `is:unread` `is:read` `is:flagged` `is:pinned`.
  * - `in:<folder>` by name or role (`in:sent`); Trash and Junk are left out
  *   unless named, or with `in:anywhere`.
- * - `before:` / `after:` `YYYY-MM-DD`.
+ * - `before:` / `after:` `YYYY-MM-DD`; and Spark's "today", "yesterday",
+ *   "this week", "last week", "this month", "last month", "last 3 days"
+ *   (weeks, months), in English or French, in this computer's days.
  *
  * Accents need not be typed: "zurich" finds "Zürich". A message's whole text
  * is searched once it was opened on this device, its start before.
@@ -45,12 +47,16 @@ export interface SearchOptions {
   limit?: number | null;
 }
 
+/** This computer's time minus UTC, in minutes, for relative dates. */
+const localOffset = () => -new Date().getTimezoneOffset();
+
 export const searchMessages = (query: string, options: SearchOptions = {}) =>
   invoke<SearchResult>("search_messages", {
     query,
     accountId: options.accountId ?? null,
     before: options.before ?? null,
     limit: options.limit ?? null,
+    utcOffsetMinutes: localOffset(),
   });
 
 export interface ServerSearchResult {
@@ -81,6 +87,7 @@ export const searchServer = (query: string, options: SearchOptions = {}) =>
     accountId: options.accountId ?? null,
     before: options.before ?? null,
     limit: options.limit ?? null,
+    utcOffsetMinutes: localOffset(),
   });
 
 /**
@@ -91,3 +98,51 @@ export function searchTerm(field: "from" | "to" | "subject" | "in", value: strin
   const clean = value.replace(/"/g, "").trim();
   return /\s/.test(clean) ? `${field}:"${clean}"` : `${field}:${clean}`;
 }
+
+/**
+ * A saved search (Spark's Smart Folder): kept by name, and run again with
+ * `searchMessages(query, { accountId })` whenever it is opened from the
+ * sidebar. Kept on this device. The mail is never moved or copied.
+ */
+export interface SavedSearch {
+  id: number;
+  name: string;
+  query: string;
+  /** Only this account; `null`: every account. */
+  account_id: string | null;
+  /** `#rrggbb`, or none. */
+  color: string | null;
+}
+
+/** The saved searches, in the sidebar's order. */
+export const listSavedSearches = () =>
+  invoke<{ searches: SavedSearch[] }>("saved_search_list").then((result) => result.searches);
+
+/**
+ * Keep a search by name (no `id`: last in the order), or change one: its
+ * name, what it looks for, its account or colour. Throws if the name is
+ * empty, there is nothing to search for, or the colour is not `#rrggbb`.
+ */
+export const saveSearch = (search: {
+  id?: number | null;
+  name: string;
+  query: string;
+  accountId?: string | null;
+  color?: string | null;
+}) =>
+  invoke<SavedSearch>("saved_search_save", {
+    search: {
+      id: search.id ?? null,
+      name: search.name,
+      query: search.query,
+      account_id: search.accountId ?? null,
+      color: search.color ?? null,
+    },
+  });
+
+/** Put the saved searches in this order (dragged in the sidebar); the new list. */
+export const reorderSavedSearches = (ids: number[]) =>
+  invoke<{ searches: SavedSearch[] }>("saved_search_reorder", { ids }).then((result) => result.searches);
+
+/** Forget a saved search; its mail stays where it is. */
+export const removeSavedSearch = (id: number) => invoke<void>("saved_search_remove", { id });

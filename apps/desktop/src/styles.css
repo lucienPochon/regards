@@ -1371,9 +1371,79 @@ button.link:hover {
   font-weight: 600;
 }
 
+/* Saved searches: a coloured dot on the glass when one is chosen. */
+.side-saved .side-item {
+  position: relative;
+}
+
+.saved-dot {
+  position: absolute;
+  top: 9px;
+  left: 26px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--rail);
+}
+
+.search-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.search-save:hover {
+  background: var(--hover);
+}
+
 .side-foot {
   flex: none;
   padding: 8px 0 16px;
+}
+
+/* Offline, or a sync problem: what it means, at the foot; a click tries again. */
+.side-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: calc(100% - 16px);
+  margin: 0 8px 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--rail-hover);
+  color: var(--rail-strong);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.side-status > .icon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--warm);
+}
+
+.side-status > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.side-status span span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--rail-dim);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.rail-status {
+  color: var(--warm);
 }
 
 /* All folders: a second dark panel beside the sidebar, over the mail */
@@ -2922,6 +2992,11 @@ button.list-title:hover {
   background: #fff;
 }
 
+/* In the dark theme the page darkens itself, on the card's own colour. */
+.html-body.dark {
+  background: transparent;
+}
+
 .text-body {
   margin: 0;
   font: inherit;
@@ -4009,6 +4084,41 @@ button.list-title:hover {
   border-color: var(--accent);
   background: var(--accent);
   color: var(--accent-text);
+}
+
+/* New senders: everyone at once, at the heading's end. */
+.screen-all {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.screen-all button {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.screen-all-accept {
+  color: var(--accent);
+}
+
+.screen-all-block {
+  color: var(--text-2);
+}
+
+.screen-all button:hover {
+  background: var(--hover);
+}
+
+.screen-all-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px 6px 33px;
+  font-size: 13px;
 }
 
 .category-more {
@@ -6124,6 +6234,10 @@ button.sender-row:hover:not(:disabled) {
   font-size: 12.5px;
 }
 
+.form-status.error {
+  color: var(--danger);
+}
+
 .account-form .dialog-actions {
   margin-top: 0;
 }
@@ -6381,6 +6495,34 @@ button.sender-row:hover:not(:disabled) {
 .option.link-row > .icon:last-child {
   flex: none;
   color: var(--muted);
+}
+
+/* Settings › Accounts › Details: a password account's servers and user name. */
+.login-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 6px 0 10px;
+  font-size: 13px;
+}
+
+.login-facts dt {
+  color: var(--muted);
+}
+
+.login-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.login-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.login-form {
+  margin-top: 4px;
 }
 
 .subpage-head {

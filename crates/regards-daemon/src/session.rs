@@ -2,7 +2,8 @@
 
 use crate::{
     State, access, accounts, actions, agents, assistant, attachments, audit, compose, context, discover, draft_sync,
-    erase, holds, identities, mail, notes, notices, oauth, people, prefetch, signatures, smart, templates, voice,
+    erase, holds, identities, mail, notes, notices, oauth, people, prefetch, saved, signatures, smart, templates,
+    unsubscribe, voice,
 };
 use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
@@ -475,6 +476,22 @@ impl Session {
                 self.require_ui()?;
                 draft_sync::adopt(&self.state, params(request)?).await
             }
+            methods::SAVED_SEARCH_LIST => {
+                self.require_ui()?;
+                saved::list(&self.state).await
+            }
+            methods::SAVED_SEARCH_SAVE => {
+                self.require_ui()?;
+                saved::save(&self.state, params(request)?).await
+            }
+            methods::SAVED_SEARCH_REORDER => {
+                self.require_ui()?;
+                saved::reorder(&self.state, params(request)?).await
+            }
+            methods::SAVED_SEARCH_REMOVE => {
+                self.require_ui()?;
+                saved::remove(&self.state, params(request)?).await
+            }
             methods::TEMPLATE_LIST => {
                 self.require_ui()?;
                 templates::list(&self.state).await
@@ -764,6 +781,10 @@ impl Session {
                 self.allow_change(Access::Triage, &params.ids, request).await?;
                 actions::remind(&self.state, params).await
             }
+            methods::MESSAGE_UNSUBSCRIBE => {
+                self.require_ui()?;
+                unsubscribe::unsubscribe(&self.state, params(request)?).await
+            }
             methods::MESSAGE_SNOOZE => {
                 let params: SnoozeParams = params(request)?;
                 self.allow_change(Access::Triage, &params.ids, request).await?;
@@ -773,6 +794,13 @@ impl Session {
                 let params: ViewParams = params(request)?;
                 self.allow_account(Access::Read, &params.account_id).await?;
                 mail::view(&self.state, params).await
+            }
+            methods::MESSAGE_CONVERSATION_IDS => {
+                let params: MessageIds = params(request)?;
+                if !self.is_ui() {
+                    self.allow_targets(Access::Read, &params.ids).await?;
+                }
+                mail::conversation_ids(&self.state, params).await
             }
             methods::THREAD_GET => {
                 let params: MessageRef = params(request)?;

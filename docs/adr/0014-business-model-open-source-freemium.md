@@ -17,7 +17,7 @@ The project will remain open source. The [cost analysis](../research/06-costs-an
 
 In an open-source client, any feature that is "paid" only because of client-side code can be unlocked by anyone who forks it. A paywall on local code is therefore both ineffective and against the spirit of the project.
 
-## Decision (proposed)
+## Decision
 
 1. **Rule: charge only for what costs us money to run.** The client, core, CLI and MCP server are identical for free and paid users: no DRM, no feature flags tied to payment in local code. Paid value lives in **hosted services**, which are open source (AGPL, ADR-0004) and **self-hostable**. People pay for convenience, reliability and support.
 2. **Tiers:**

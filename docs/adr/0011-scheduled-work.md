@@ -2,7 +2,7 @@
 
 - **Status:** Accepted. **Item 6 is superseded:**
   - background mode is on by default ([ADR-0017](0017-send-when-off-relay-in-v1.md) §1)
-  - sending while the computer is off uses the sealed Send Service in 1.0 ([ADR-0018](0018-modern-minimal-v1.md)), hosted as a Pro feature ([ADR-0014](0014-business-model-open-source-freemium.md)) and self-hostable for free
+  - sending while the computer is off uses the sealed Send Service ([ADR-0018](0018-modern-minimal-v1.md)), in 1.1 ([ADR-0019](0019-send-while-off-in-1-1.md)), hosted as a Pro feature ([ADR-0014](0014-business-model-open-source-freemium.md)) and self-hostable for free
 - **Date:** 2026-10-18
 - **Deciders:** Project owner
 

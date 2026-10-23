@@ -5,6 +5,7 @@ import {
   type Person,
   type Role,
   type ThreadEntry,
+  conversationIds,
   getMessage,
   getThread,
   messageHtmlUrl,
@@ -22,6 +23,7 @@ import { MARK_READ_AFTER, STEP_DWELL, getPrefs, usePrefs } from "./prefs";
 import { senderImages, setSenderImages } from "./smart";
 import { asMarkdown, printMessage, textParts } from "./messageText";
 import { openUrl } from "./background";
+import { useDark } from "./theme";
 import { SourceDialog } from "./SourceDialog";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 
@@ -120,7 +122,10 @@ export function ReadingPane({
     const timer = window.setTimeout(
       () => {
         markedRead.current = true;
-        setFlags([item.id], { seen: true }).catch(() => {});
+        // With the rest of its conversation in the folder, as a row's Mark read.
+        conversationIds([item.id])
+          .then((ids) => setFlags(ids, { seen: true }))
+          .catch(() => {});
       },
       stepped ? Math.max(after, STEP_DWELL) : after,
     );
@@ -144,7 +149,9 @@ export function ReadingPane({
   const message = detail?.message ?? item;
   const mailboxId = detail?.mailbox_id ?? item.mailboxId;
   const folder = folders.find((f) => f.id === mailboxId);
+  // The toolbar acts on the conversation, as its row does; a card's ⋯ on that one message.
   const target: Target = {
+    conversation: true,
     ids: [item.id],
     single: item.id,
     accountId: item.accountId,
@@ -334,6 +341,7 @@ function ThreadMessage({
   const own = useDetail(entry.message.id, given === null && expanded);
   const load = given ?? own;
   const [showText, setShowText] = useState(false);
+  const dark = useDark();
   // Settings › General: images from the web load in every message, or only when asked.
   const [allowRemote, setAllowRemote] = useState(() => getPrefs().remoteImages);
   const [details, setDetails] = useState(false);
@@ -537,15 +545,15 @@ function ThreadMessage({
               // Only our script, which says how tall the message is (its page's CSP allows no
               // other); no same-origin access, no forms, popups or navigation.
               <iframe
-                // Loaded again when the sender's images are allowed or blocked.
-                key={String(fromSender)}
+                // Loaded again when the sender's images are allowed or blocked, or the theme changes.
+                key={`${fromSender}:${dark}`}
                 ref={frame}
-                className="html-body"
+                className={dark ? "html-body dark" : "html-body"}
                 style={frameHeight === null ? undefined : { height: frameHeight }}
                 sandbox="allow-scripts"
                 referrerPolicy="no-referrer"
                 title="Message content"
-                src={messageHtmlUrl(message.id, allowRemote || fromSender === true)}
+                src={messageHtmlUrl(message.id, allowRemote || fromSender === true, dark)}
               />
             ) : (
               <TextBody text={ready.text.trim()} onFailed={setImagesError} />

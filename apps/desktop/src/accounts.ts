@@ -363,6 +363,9 @@ export interface MessageListResult {
  * A page of a folder. In the inbox, of one Smart Inbox section (see
  * smart.ts) when `section` is given, and only read (`true`) or unread
  * (`false`) mail when `seen` is: the card view's cards.
+ * With `withDone`, the inbox (with neither) also lists the account's Done
+ * mail by date, as Spark's Show Done (Ctrl+E): those rows have the
+ * Archive's (or All Mail's) `mailbox_id`; show them as done, greyed.
  */
 export function listMessages(
   mailboxId: number,
@@ -370,8 +373,9 @@ export function listMessages(
   limit: number | null = null,
   section: string | null = null,
   seen: boolean | null = null,
+  withDone = false,
 ): Promise<MessageListResult> {
-  return invoke<MessageListResult>("message_list", { mailboxId, before, limit, section, seen });
+  return invoke<MessageListResult>("message_list", { mailboxId, before, limit, section, seen, withDone });
 }
 
 /**
@@ -484,6 +488,39 @@ export interface UndoInfo {
 export interface MoveResult {
   moved: number;
   undo: UndoInfo | null;
+}
+
+/**
+ * What unsubscribing did: the sender took a one-click request (`done`); an
+ * email asking to leave is in the Outbox, undoable as a send (`sent`, its
+ * `queued` as `sendDraft` gives it); or the list's page is to be opened in
+ * the browser to finish there (`web`, always `https://`, through `openUrl`).
+ */
+export type UnsubscribeResult =
+  | { kind: "done" }
+  | { kind: "sent"; queued: { outbox_id: number; undo_until: number; send_at: number | null } }
+  | { kind: "web"; url: string };
+
+/**
+ * Leave the mailing list a message came from (its `List-Unsubscribe`
+ * header): one click where the sender takes one, else an email to the
+ * list's address (from the address it writes to), else its page. Throws
+ * when the message gives no way; newsletters and notifications usually do.
+ * It acts outside the app: ask first, naming the sender.
+ */
+export function unsubscribe(id: number, undoSeconds: number | null = null): Promise<UnsubscribeResult> {
+  return invoke<UnsubscribeResult>("message_unsubscribe", { id, undoSeconds });
+}
+
+/**
+ * Each message with the rest of its conversation in the same folder (not
+ * deleted): what an action on a conversation's row covers. Archive, trash,
+ * move and mark read these, so a Done leaves nothing of the conversation
+ * behind. The ones given come first, each once. Not for an action on one
+ * message of a conversation (a card's ⋯ in the reading pane).
+ */
+export function conversationIds(ids: number[]): Promise<number[]> {
+  return invoke<number[]>("message_conversation_ids", { ids });
 }
 
 export function archiveMessages(ids: number[]): Promise<MoveResult> {

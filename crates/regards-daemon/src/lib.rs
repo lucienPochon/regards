@@ -30,6 +30,7 @@ mod people;
 mod prefetch;
 mod push;
 mod queue;
+mod saved;
 mod scheduler;
 mod search;
 mod sender;
@@ -38,6 +39,7 @@ mod signatures;
 mod smart;
 mod sync;
 mod templates;
+mod unsubscribe;
 mod voice;
 
 pub use oauth::OauthApp;

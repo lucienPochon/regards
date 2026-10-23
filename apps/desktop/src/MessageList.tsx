@@ -106,6 +106,8 @@ export interface SearchControls {
   suggestion: string | null;
   /** Asking the servers, for words in mail not opened here. */
   server: ServerSearch;
+  /** Keep this search by name, in the sidebar. */
+  onSave?: () => void;
 }
 
 export interface ServerSearch {
@@ -152,10 +154,26 @@ export interface InboxCard {
   screen?: boolean;
 }
 
-/** Accepting or blocking a new sender, from their row. */
+/** Accepting or blocking a new sender, from their row; or every new sender at once. */
 export interface Screener {
   accept: (item: ListItem) => void;
   block: (item: ListItem) => void;
+  acceptAll: () => void;
+  blockAll: () => void;
+}
+
+/** Every new sender at once: let them all in, or block them all (after asking). */
+function ScreenAll({ screener }: { screener: Screener }) {
+  return (
+    <span className="screen-all">
+      <button type="button" className="screen-all-accept" title="Accept every new sender: their mail goes to People" onClick={screener.acceptAll}>
+        Accept all
+      </button>
+      <button type="button" className="screen-all-block" title="Block every new sender: their mail goes to Junk" onClick={screener.blockAll}>
+        Block all
+      </button>
+    </span>
+  );
 }
 
 /** A row's marks in words, for screen readers: the dot, pin, flag and the rest are pictures. */
@@ -671,6 +689,12 @@ export function MessageList({
                   {items.length}
                   {feed.more ? "+" : ""} {items.length === 1 && !feed.more ? "result" : "results"}
                 </span>
+                {search.onSave && query && (
+                  <button type="button" className="search-save" title="Keep this search in the sidebar" onClick={search.onSave}>
+                    <Icon name="star" size={13} />
+                    Save this search
+                  </button>
+                )}
                 {search.indexing > 0 && (
                   <span className="search-indexing">
                     Still indexing: recent mail may be missing.
@@ -681,6 +705,12 @@ export function MessageList({
                 )}
                 <ServerRow server={search.server} />
               </p>
+            )}
+            {screenAll && screener && items.length > 0 && !searching && (
+              <div className="screen-all-bar">
+                <span className="muted">Accept them into People, or block them: their mail goes to Junk.</span>
+                <ScreenAll screener={screener} />
+              </div>
             )}
             {searching && search.top.length > 0 && items.length > TOP_AFTER && (
               <section className="day top-results" aria-label="Top results">
@@ -704,6 +734,7 @@ export function MessageList({
                 <h3 className="day-head category-head">
                   New senders
                   <span className="category-count">{newSenders.total}</span>
+                  {screener && <ScreenAll screener={screener} />}
                 </h3>
                 <ul>{newSenders.items.map((item) => row(item, true))}</ul>
                 {newSenders.total > newSenders.items.length && (
@@ -735,6 +766,7 @@ export function MessageList({
                     <h3 className="day-head category-head">
                       {card.label}
                       <span className="category-count">{card.total}</span>
+                      {card.screen && screener && <ScreenAll screener={screener} />}
                       {card.onRead && (
                         <button
                           type="button"

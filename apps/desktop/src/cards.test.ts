@@ -26,6 +26,7 @@ describe("the card view's sources", () => {
       limit: 5,
       section: "people",
       seen: false,
+      withDone: false,
     });
 
     const read = inboxSources(mail, true);
@@ -37,6 +38,7 @@ describe("the card view's sources", () => {
       limit: 50,
       section: null,
       seen: true,
+      withDone: false,
     });
   });
 

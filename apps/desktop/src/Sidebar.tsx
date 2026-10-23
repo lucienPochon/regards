@@ -8,8 +8,10 @@ import { type Anchor, type MenuEntry, type MenuRequest, anchorOf } from "./Menu"
 import type { SidebarChanges, SidebarPrefs } from "./sidebar-prefs";
 import { accountColour, accountLabel, usePrefs } from "./prefs";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
+import { useOnline } from "./online";
 import { MARKED_ICONS, MARKED_LABELS, ROLE_ICONS, ROLE_LABELS, type View, depth, leafName, sameView, viewKey } from "./views";
 import { useDialogFocus } from "./dialogFocus";
+import type { SavedSearch } from "./search";
 
 /** What dragging messages carries: the messages, and the account and folder each is in. */
 export const DRAG_TYPE = "application/x-regards-messages";
@@ -72,6 +74,7 @@ export function Sidebar({
   onDrop,
   folderMenu,
   onNewFolder,
+  saved,
 }: {
   mail: MailState;
   outbox: OutboxEntry[];
@@ -100,6 +103,7 @@ export function Sidebar({
   folderMenu?: (view: View) => MenuEntry[];
   /** A new folder at the top of an account. */
   onNewFolder?: (accountId: string) => void;
+  saved?: SavedList;
 }) {
   const [open, setOpen] = useState<Set<Role>>(() => new Set());
   const [panel, setPanel] = useState(false);
@@ -111,6 +115,13 @@ export function Sidebar({
   const nameOf = (account: { id: string; email: string }) => accountLabel(appPrefs, account);
   const me = accounts[0]?.account;
   const hidden = new Set(prefs.hidden);
+  // Offline, or a sync that fails: said at the foot, and on the rail.
+  const online = useOnline();
+  const status = !online
+    ? { label: "Offline", detail: "Mail you send waits in the Outbox and goes when you're back online." }
+    : syncProblem
+      ? { label: "Sync problem", detail: syncProblem }
+      : null;
 
   const roleExists = (r: Role) => accounts.some((a) => a.mailboxes.some((m) => m.role === r && m.selectable));
   const exists = (row: Row) => (row.view.kind === "role" ? roleExists(row.view.role) : accounts.length > 0 || row.view.kind !== "marked");
@@ -273,6 +284,17 @@ export function Sidebar({
         {/* Empty rail space opens the sidebar too. */}
         <div className="rail-space" onClick={onExpand} aria-hidden="true" />
         <div className="rail-foot">
+          {status && (
+            <button
+              type="button"
+              className="rail-me rail-status"
+              title={`${status.label}: ${status.detail}`}
+              aria-label={`${status.label}: ${status.detail}`}
+              onClick={online ? onSync : undefined}
+            >
+              <Icon name={online ? "alert" : "offline"} size={18} />
+            </button>
+          )}
           {onAgents && appPrefs.agentsButton && (
             <button
               type="button"
@@ -362,6 +384,7 @@ export function Sidebar({
             </button>
           </li>
         </ul>
+        {saved && saved.searches.length > 0 && <SavedSearches saved={saved} onMenu={onMenu} onOpened={() => setPanel(false)} />}
         {recents.length > 0 && (
           <section className="side-recents">
             <div className="side-heading with-tools">
@@ -389,6 +412,20 @@ export function Sidebar({
         )}
       </div>
       <div className="side-foot">
+        {status && (
+          <button
+            type="button"
+            className="side-status"
+            title={online ? "Try again" : status.detail}
+            onClick={online ? onSync : undefined}
+          >
+            <Icon name={online ? "alert" : "offline"} size={17} />
+            <span>
+              <strong>{status.label}</strong>
+              <span>{status.detail}</span>
+            </span>
+          </button>
+        )}
         {onAgents && appPrefs.agentsButton && (
           <button type="button" className="side-item" onClick={(event) => onAgents(anchorOf(event.currentTarget))}>
             <Icon name="agent" size={19} />
@@ -414,6 +451,7 @@ export function Sidebar({
           onMenu={onMenu}
           folderMenu={folderMenu}
           onNewFolder={onNewFolder}
+          saved={saved}
         />
       )}
     </nav>
@@ -434,6 +472,7 @@ function FolderPanel({
   onMenu,
   folderMenu,
   onNewFolder,
+  saved,
 }: {
   accounts: AccountMail[];
   view: View;
@@ -444,6 +483,7 @@ function FolderPanel({
   onMenu: (request: MenuRequest) => void;
   folderMenu?: (view: View) => MenuEntry[];
   onNewFolder?: (accountId: string) => void;
+  saved?: SavedList;
 }) {
   useShortcuts({ Escape: onClose }, { modal: true });
   const appPrefs = usePrefs();
@@ -516,6 +556,32 @@ function FolderPanel({
         <div className="panel-scroll">
           <h2 className="panel-head">All folders</h2>
           <ul>{system.map((entry) => row(entry.view, entry.icon, entry.label))}</ul>
+          {saved && saved.searches.length > 0 && (
+            <section className="panel-account">
+              <h3 className="panel-head account">
+                <Icon name="search" size={15} />
+                <span className="label">Saved searches</span>
+              </h3>
+              <ul>
+                {saved.searches.map((search) => (
+                  <li key={search.id} className={saved.active === search.id ? "panel-row active" : "panel-row"}>
+                    <button
+                      type="button"
+                      className="panel-open"
+                      title={search.query}
+                      onClick={() => {
+                        saved.onOpen(search);
+                        onClose();
+                      }}
+                    >
+                      <Icon name="search" size={17} />
+                      <span className="label">{search.name}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {accounts.map((account) => (
             <section key={account.account.id} className="panel-account">
               <h3 className="panel-head account">
@@ -560,5 +626,80 @@ function FolderPanel({
         </p>
       </aside>
     </>
+  );
+}
+
+/** The saved searches the sidebar lists, and what can be done with them. */
+export interface SavedList {
+  searches: SavedSearch[];
+  /** The one whose results show, if any. */
+  active: number | null;
+  onOpen: (search: SavedSearch) => void;
+  /** Rename, change what it looks for or its colour, forget it. */
+  menu: (search: SavedSearch) => MenuEntry[];
+  /** Put them in this order (dragged). */
+  onReorder: (ids: number[]) => void;
+}
+
+const SAVED_TYPE = "application/x-regards-saved-search";
+
+/**
+ * Saved searches under the folders: each runs again when opened; right-click
+ * to change or forget it; drag one to put it elsewhere in the list.
+ */
+function SavedSearches({ saved, onMenu, onOpened }: { saved: SavedList; onMenu: (request: MenuRequest) => void; onOpened: () => void }) {
+  const [over, setOver] = useState<number | null>(null);
+  const drop = (onto: number, event: DragEvent) => {
+    event.preventDefault();
+    setOver(null);
+    const moved = Number(event.dataTransfer.getData(SAVED_TYPE));
+    if (!moved || moved === onto) return;
+    const ids = saved.searches.map((search) => search.id).filter((id) => id !== moved);
+    ids.splice(ids.indexOf(onto), 0, moved);
+    saved.onReorder(ids);
+  };
+  return (
+    <section className="side-saved">
+      <h2 className="side-heading">Saved searches</h2>
+      <ul className="side-list">
+        {saved.searches.map((search) => (
+          <li
+            key={search.id}
+            className="side-entry"
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.setData(SAVED_TYPE, String(search.id));
+              event.dataTransfer.effectAllowed = "move";
+            }}
+            onDragOver={(event) => {
+              if (!event.dataTransfer.types.includes(SAVED_TYPE)) return;
+              event.preventDefault();
+              setOver(search.id);
+            }}
+            onDragLeave={() => setOver((now) => (now === search.id ? null : now))}
+            onDrop={(event) => drop(search.id, event)}
+          >
+            <button
+              type="button"
+              className={["side-item", saved.active === search.id ? "active" : "", over === search.id ? "drop" : ""].join(" ")}
+              aria-current={saved.active === search.id ? "page" : undefined}
+              title={search.query}
+              onClick={() => {
+                saved.onOpen(search);
+                onOpened();
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                onMenu({ anchor: { x: event.clientX, y: event.clientY }, entries: saved.menu(search), label: "Saved search" });
+              }}
+            >
+              <Icon name="search" size={19} className={search.color ? "saved-colour" : undefined} />
+              {search.color && <span className="saved-dot" style={{ background: search.color }} aria-hidden="true" />}
+              <span className="label">{search.name}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

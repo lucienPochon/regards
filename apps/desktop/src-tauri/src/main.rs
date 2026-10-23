@@ -31,20 +31,22 @@ use regards_ipc::protocol::{
     AccountAddParams, AccountLoginParams, AccountRef, AccountRemoveParams, AccountSummary, AccountUpdateParams,
     AgentAccess, AgentAccessParams, AgentActivityParams, AgentActivityResult, AgentSendParams, AsideParams,
     AttachmentFiles, AttachmentPreview, AttachmentRef, AttachmentSaveAllParams, AttachmentSaveParams, ClientKind,
-    ConnectionSecurity, DeleteResult, DiscoverParams, DiscoverResult, DraftAttachFileParams, DraftAttachImageParams,
-    DraftCreateParams, DraftDetachParams, DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult,
-    DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
-    ExplainResult, HoldApproveParams, HoldListParams, HoldListResult, HoldRef, HoldView, IdentityListResult,
-    IdentityRef, IdentitySaveParams, IdentitySetSignatureParams, IdentitySetVoiceParams, IdentityView,
-    MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult,
-    MessageRef, MoveParams, MoveResult, NoteAddParams, NoteAddResult, NoteListParams, NoteListResult, NoteRef,
-    NoteRemoved, NoteSetEnabledParams, NoteSettings, NoteUpdateParams, NoteView, NotesForgotten, OauthFlowRef,
-    OauthProvidersResult, OauthStartParams, OauthStartResult, OutboxListResult, OutboxRef, OutboxRescheduleParams,
-    OutboxUndoResult, PinParams, Principal, RemindParams, Screening, ScreeningParams, SearchParams, SearchResult,
-    Section, SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams, SenderSetResult,
-    ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SignatureListResult, SignatureRef,
-    SignatureSaveParams, SignatureView, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef,
-    TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, View, ViewParams, methods,
+    ConnectionSecurity, ConversationIdsResult, DeleteResult, DiscoverParams, DiscoverResult, DraftAttachFileParams,
+    DraftAttachImageParams, DraftCreateParams, DraftDetachParams, DraftImageAttached, DraftImagesResult,
+    DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams,
+    DraftUpdateParams, DraftView, ExplainResult, HoldApproveParams, HoldListParams, HoldListResult, HoldRef, HoldView,
+    IdentityListResult, IdentityRef, IdentitySaveParams, IdentitySetSignatureParams, IdentitySetVoiceParams,
+    IdentityView, MailboxListResult, MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams,
+    MessageListResult, MessageRef, MoveParams, MoveResult, NoteAddParams, NoteAddResult, NoteListParams,
+    NoteListResult, NoteRef, NoteRemoved, NoteSetEnabledParams, NoteSettings, NoteUpdateParams, NoteView,
+    NotesForgotten, OauthFlowRef, OauthProvidersResult, OauthStartParams, OauthStartResult, OutboxListResult,
+    OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams, SavedSearchListResult,
+    SavedSearchOrderParams, SavedSearchRef, SavedSearchSaveParams, SavedSearchView, Screening, ScreeningParams,
+    SearchParams, SearchResult, Section, SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams,
+    SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SignatureListResult,
+    SignatureRef, SignatureSaveParams, SignatureView, SmartOverviewResult, SnoozeParams, SyncResult,
+    TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult,
+    UnsubscribeParams, UnsubscribeResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -712,6 +714,7 @@ async fn message_list(
     limit: Option<u32>,
     section: Option<Section>,
     seen: Option<bool>,
+    with_done: Option<bool>,
 ) -> Result<MessageListResult, String> {
     let mut client = bridge.connect().await?.client;
     client
@@ -723,6 +726,7 @@ async fn message_list(
                 before,
                 section,
                 seen,
+                with_done: with_done.unwrap_or(false),
             },
         )
         .await
@@ -737,6 +741,7 @@ async fn search_messages(
     account_id: Option<String>,
     before: Option<MessageCursor>,
     limit: Option<u32>,
+    utc_offset_minutes: Option<i32>,
 ) -> Result<SearchResult, String> {
     let mut client = bridge.connect().await?.client;
     client
@@ -747,6 +752,7 @@ async fn search_messages(
                 account_id,
                 limit,
                 before,
+                utc_offset_minutes,
             },
         )
         .await
@@ -761,6 +767,7 @@ async fn search_server(
     account_id: Option<String>,
     before: Option<MessageCursor>,
     limit: Option<u32>,
+    utc_offset_minutes: Option<i32>,
 ) -> Result<ServerSearchResult, String> {
     let mut client = bridge.connect().await?.client;
     client
@@ -771,6 +778,7 @@ async fn search_server(
                 account_id,
                 limit,
                 before,
+                utc_offset_minutes,
             },
         )
         .await
@@ -986,6 +994,32 @@ async fn thread_get(bridge: State<'_, Bridge>, id: i64) -> Result<ThreadView, St
         .call(methods::THREAD_GET, MessageRef { id })
         .await
         .map_err(describe)
+}
+
+/// Leave the mailing list a message came from: one click, an email, or its page to open.
+#[tauri::command]
+async fn message_unsubscribe(
+    bridge: State<'_, Bridge>,
+    id: i64,
+    undo_seconds: Option<u32>,
+) -> Result<UnsubscribeResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_UNSUBSCRIBE, UnsubscribeParams { id, undo_seconds })
+        .await
+        .map_err(describe)
+}
+
+/// Each message with the rest of its conversation in the same folder: what an
+/// action on a conversation's row covers.
+#[tauri::command]
+async fn message_conversation_ids(bridge: State<'_, Bridge>, ids: Vec<i64>) -> Result<Vec<i64>, String> {
+    let mut client = bridge.connect().await?.client;
+    let result: ConversationIdsResult = client
+        .call(methods::MESSAGE_CONVERSATION_IDS, MessageIds { ids })
+        .await
+        .map_err(describe)?;
+    Ok(result.ids)
 }
 
 /// Every unread message of a folder (or of one Smart Inbox section) read, with one undo.
@@ -1305,6 +1339,47 @@ async fn draft_adopt(bridge: State<'_, Bridge>, message_id: i64) -> Result<Draft
         .call(methods::DRAFT_ADOPT, MessageRef { id: message_id })
         .await
         .map_err(describe)
+}
+
+/// Saved searches (Smart Folders), in the sidebar's order.
+#[tauri::command]
+async fn saved_search_list(bridge: State<'_, Bridge>) -> Result<SavedSearchListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::SAVED_SEARCH_LIST, Value::Null)
+        .await
+        .map_err(describe)
+}
+
+/// Keep a search by name (no `id`), or change one.
+#[tauri::command]
+async fn saved_search_save(
+    bridge: State<'_, Bridge>,
+    search: SavedSearchSaveParams,
+) -> Result<SavedSearchView, String> {
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::SAVED_SEARCH_SAVE, search).await.map_err(describe)
+}
+
+/// Put saved searches in this order.
+#[tauri::command]
+async fn saved_search_reorder(bridge: State<'_, Bridge>, ids: Vec<i64>) -> Result<SavedSearchListResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::SAVED_SEARCH_REORDER, SavedSearchOrderParams { ids })
+        .await
+        .map_err(describe)
+}
+
+/// Forget a saved search; its mail stays.
+#[tauri::command]
+async fn saved_search_remove(bridge: State<'_, Bridge>, id: i64) -> Result<(), String> {
+    let mut client = bridge.connect().await?.client;
+    let _: Value = client
+        .call(methods::SAVED_SEARCH_REMOVE, SavedSearchRef { id })
+        .await
+        .map_err(describe)?;
+    Ok(())
 }
 
 /// Templates: text to start a message with, by name.
@@ -1749,6 +1824,15 @@ fn main() {
         ))
         // Used from Rust only, as above.
         .plugin(tauri_plugin_notification::init())
+        // The main window's size, place and maximised state, put back when it is
+        // first shown (background::show). Composer windows are not kept.
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(background::WINDOW_STATE)
+                .with_filter(|label| label == "main")
+                .skip_initial_state("main")
+                .build(),
+        )
         .manage(notify::Notifier::default())
         .manage(Bridge::new())
         .manage(links::Pending::default())
@@ -1880,6 +1964,8 @@ fn main() {
             smart_set_screening,
             message_get,
             thread_get,
+            message_conversation_ids,
+            message_unsubscribe,
             message_set_flags,
             message_mark_all_read,
             message_archive,
@@ -1912,6 +1998,10 @@ fn main() {
             identity_list,
             draft_elsewhere,
             draft_adopt,
+            saved_search_list,
+            saved_search_save,
+            saved_search_reorder,
+            saved_search_remove,
             template_list,
             template_save,
             template_remove,

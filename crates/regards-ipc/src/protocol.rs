@@ -97,6 +97,10 @@ pub mod methods {
     pub const MESSAGE_MARK_ALL_READ: &str = "message.mark_all_read";
     /// The conversation a message belongs to, across folders. `ui` only for now.
     pub const THREAD_GET: &str = "thread.get";
+    /// Each message with the others of its conversation in the same folder:
+    /// what an action on a conversation's row (archive, trash, move, mark
+    /// read) covers. `ui` only, as `thread.get`.
+    pub const MESSAGE_CONVERSATION_IDS: &str = "message.conversation_ids";
     /// Mark messages read or unread, flagged or not. Applied at once, sent to the
     /// server by the operation queue (ADR-0010). `ui` only for now.
     pub const MESSAGE_SET_FLAGS: &str = "message.set_flags";
@@ -115,6 +119,12 @@ pub mod methods {
     pub const MESSAGE_PIN: &str = "message.pin";
     /// Set messages aside (out of the inbox) or bring them back; undoable.
     pub const MESSAGE_SET_ASIDE: &str = "message.set_aside";
+    /// Leave the mailing list a message came from (RFC 2369 `List-Unsubscribe`):
+    /// a one-click request where the sender takes one (RFC 8058); else an
+    /// email to the address its link names, queued with an undo, from the
+    /// address the message was sent to; else its web page, for the app to
+    /// open. `ui` only: it acts outside the app.
+    pub const MESSAGE_UNSUBSCRIBE: &str = "message.unsubscribe";
     /// Snooze messages until a time, or "someday"; or end a snooze. Undoable.
     pub const MESSAGE_SNOOZE: &str = "message.snooze";
     /// The Smart Inbox (plan §5.4): an account's inbox by section, with counts.
@@ -208,6 +218,14 @@ pub mod methods {
     /// Pick up a draft written elsewhere: it becomes a draft here, kept in step.
     pub const DRAFT_ADOPT: &str = "draft.adopt";
     /// Templates: text to start a message with, kept on this device. `ui` only.
+    /// Saved searches (Smart Folders), in the sidebar's order. `ui` only.
+    pub const SAVED_SEARCH_LIST: &str = "saved_search.list";
+    /// Keep a search by name (no `id`), or change one. `ui` only.
+    pub const SAVED_SEARCH_SAVE: &str = "saved_search.save";
+    /// Put saved searches in this order. `ui` only.
+    pub const SAVED_SEARCH_REORDER: &str = "saved_search.reorder";
+    /// Forget a saved search; its mail stays. `ui` only.
+    pub const SAVED_SEARCH_REMOVE: &str = "saved_search.remove";
     pub const TEMPLATE_LIST: &str = "template.list";
     /// Add a template (without `id`) or change one.
     pub const TEMPLATE_SAVE: &str = "template.save";
@@ -968,6 +986,12 @@ pub struct MessageListParams {
     /// card view shows it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seen: Option<bool>,
+    /// In the inbox, without `section` or `seen`: the account's Done mail too
+    /// (its Archive, or All Mail without what is in the inbox), by date among
+    /// the rest, as Spark's "Show Done" does. Those rows have the Archive's
+    /// (or All Mail's) `mailbox_id`: the app shows them as done.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub with_done: bool,
 }
 
 /// Parameters of [`methods::SEARCH`].
@@ -977,7 +1001,9 @@ pub struct SearchParams {
     /// also as the start of a word); `"a phrase"`, `-word`; `from:` `to:`
     /// `subject:`; `has:attachment`; `is:unread` `is:read` `is:flagged`;
     /// `in:<folder or role>` (`in:anywhere` takes in Trash and Junk, left
-    /// out otherwise); `before:` / `after:` `YYYY-MM-DD`.
+    /// out otherwise); `before:` / `after:` `YYYY-MM-DD`; `is:pinned`;
+    /// "today", "yesterday", "this week", "last week", "this month", "last
+    /// month", "last 3 days" (weeks, months), and in French.
     pub query: String,
     /// Only this account; every account when omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -987,6 +1013,10 @@ pub struct SearchParams {
     pub limit: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub before: Option<MessageCursor>,
+    /// The local time's offset from UTC in minutes, for "today", "last week"
+    /// and the like; UTC days when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub utc_offset_minutes: Option<i32>,
 }
 
 /// What [`methods::SEARCH`] found.
@@ -1150,6 +1180,14 @@ pub struct ThreadView {
 /// Parameters of [`methods::MESSAGE_ARCHIVE`] and [`methods::MESSAGE_TRASH`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageIds {
+    pub ids: Vec<i64>,
+}
+
+/// The result of [`methods::MESSAGE_CONVERSATION_IDS`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConversationIdsResult {
+    /// The ones asked for first, in their order; the rest of each
+    /// conversation newest first; each once.
     pub ids: Vec<i64>,
 }
 
@@ -1788,6 +1826,54 @@ pub struct AgentContext {
     pub people: Vec<PersonMemory>,
 }
 
+/// A saved search (Spark's Smart Folder): opening it runs `query` again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedSearchView {
+    pub id: i64,
+    pub name: String,
+    /// What was typed, as [`SearchParams::query`].
+    pub query: String,
+    /// Only this account; `None`: every account.
+    #[serde(default)]
+    pub account_id: Option<String>,
+    /// `#rrggbb`, or none.
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+/// Result of [`methods::SAVED_SEARCH_LIST`]: in the sidebar's order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedSearchListResult {
+    pub searches: Vec<SavedSearchView>,
+}
+
+/// Parameters of [`methods::SAVED_SEARCH_SAVE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedSearchSaveParams {
+    /// `None`: a new one, last in the order.
+    #[serde(default)]
+    pub id: Option<i64>,
+    pub name: String,
+    pub query: String,
+    #[serde(default)]
+    pub account_id: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+/// Parameters of [`methods::SAVED_SEARCH_REMOVE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedSearchRef {
+    pub id: i64,
+}
+
+/// Parameters of [`methods::SAVED_SEARCH_REORDER`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedSearchOrderParams {
+    /// First to last; any left out keep their order after these.
+    pub ids: Vec<i64>,
+}
+
 /// A template.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TemplateView {
@@ -1853,6 +1939,27 @@ pub struct DraftSendParams {
     /// Remind me if nobody has replied by then (Unix ms), as [`methods::MESSAGE_REMIND`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remind_at: Option<i64>,
+}
+
+/// Parameters of [`methods::MESSAGE_UNSUBSCRIBE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnsubscribeParams {
+    pub id: i64,
+    /// For an unsubscribe email: seconds it can be undone, as [`DraftSendParams`].
+    #[serde(default)]
+    pub undo_seconds: Option<u32>,
+}
+
+/// The result of [`methods::MESSAGE_UNSUBSCRIBE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UnsubscribeResult {
+    /// The sender took the one-click request: nothing more to do.
+    Done,
+    /// An email asking to leave is in the Outbox, undoable as any send.
+    Sent { queued: DraftSendResult },
+    /// Open this page (always `https://`) in the browser to finish there.
+    Web { url: String },
 }
 
 /// Result of [`methods::DRAFT_SEND`].

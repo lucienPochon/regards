@@ -36,6 +36,10 @@ const parked = (m: FixtureMessage) => m.aside === true || (m.snoozed_until ?? 0)
 const inboxPlace = (m: FixtureMessage) =>
   m.surfaced_at && (m.reminded || m.surfaced_at > m.received_at) ? m.surfaced_at : m.received_at;
 let nextId = 10_000;
+// Saved searches (Smart Folders), as the sidebar lists them.
+let savedSearches: Array<{ id: number; name: string; query: string; account_id: string | null; color: string | null }> = [
+  { id: 9_001, name: "Receipts", query: "receipt has:attachment", account_id: null, color: "#1d7a61" },
+];
 // Checking for updates: not asked yet (`?updates=on` or `off` answers it), and what a check found.
 let updateChecks: boolean | null = params.get("updates") === "on" ? true : params.get("updates") === "off" ? false : null;
 let updateFound: { version: string; url: string; published_at: string | null } | null = null;
@@ -1241,10 +1245,13 @@ function handle(cmd: string, args: Args): unknown {
       const place = (m: FixtureMessage) => (inbox ? inboxPlace(m) : m.received_at);
       const section = inbox ? ((args.section as Section | null) ?? null) : null;
       const seen = inbox ? ((args.seen as boolean | null | undefined) ?? null) : null;
+      // Show Done: the account's Archive among the inbox, by date.
+      const archive = inbox && args.withDone && section === null && seen === null ? account?.mailboxes.find((b) => b.role === "archive")?.id : undefined;
       const all = messages
         .filter((m) =>
           inbox
-            ? !parked(m) && (m.mailboxId === args.mailboxId || (m.reminded === true && account?.mailboxes.some((b) => b.id === m.mailboxId)))
+            ? (archive !== undefined && m.mailboxId === archive) ||
+              (!parked(m) && (m.mailboxId === args.mailboxId || (m.reminded === true && account?.mailboxes.some((b) => b.id === m.mailboxId))))
             : m.mailboxId === args.mailboxId,
         )
         .filter((m) => {
@@ -1322,6 +1329,18 @@ function handle(cmd: string, args: Args): unknown {
         attachments: message.attachments,
       };
     }
+    case "message_conversation_ids": {
+      const all: number[] = [];
+      for (const id of args.ids as number[]) {
+        const message = byId(id);
+        const conversation = messages
+          .filter((m) => m.id === id || (m.thread === message.thread && m.mailboxId === message.mailboxId))
+          .sort((a, b) => b.received_at - a.received_at || b.id - a.id)
+          .map((m) => m.id);
+        for (const found of [id, ...conversation]) if (!all.includes(found)) all.push(found);
+      }
+      return all;
+    }
     case "thread_get": {
       const message = byId(args.id as number);
       return {
@@ -1366,6 +1385,11 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       // The daemon records an undo for it too; the app shows none for its own flag changes.
       return { changed: ids.length, undo: null };
+    }
+    case "message_unsubscribe": {
+      // In the preview every message takes one click.
+      byId(args.id as number);
+      return { kind: "done" };
     }
     case "message_archive": {
       // Done with a reminder shown from another folder: it leaves the inbox and stays filed.
@@ -1749,6 +1773,33 @@ function handle(cmd: string, args: Args): unknown {
       if (undo) undo.also = () => void (before ? choices.set(key, before) : choices.delete(key));
       return result;
     }
+    case "saved_search_list":
+      return { searches: savedSearches };
+    case "saved_search_save": {
+      const given = args.search as { id: number | null; name: string; query: string; account_id: string | null; color: string | null };
+      const name = given.name.trim();
+      if (!name) throw "give the saved search a name";
+      if (!given.query.trim()) throw "there is nothing to search for";
+      const saved = { ...given, id: given.id ?? nextId++, name, query: given.query.trim() };
+      const at = savedSearches.findIndex((s) => s.id === saved.id);
+      if (at >= 0) savedSearches[at] = saved;
+      else savedSearches.push(saved);
+      changed();
+      return saved;
+    }
+    case "saved_search_reorder": {
+      const ids = args.ids as number[];
+      savedSearches = [
+        ...ids.map((id) => savedSearches.find((s) => s.id === id)).filter((s) => s !== undefined),
+        ...savedSearches.filter((s) => !ids.includes(s.id)),
+      ];
+      changed();
+      return { searches: savedSearches };
+    }
+    case "saved_search_remove":
+      savedSearches = savedSearches.filter((s) => s.id !== args.id);
+      changed();
+      return null;
     case "template_list":
       return { templates: [...templates].sort((a, b) => a.name.localeCompare(b.name)) };
     case "template_save": {
@@ -1827,5 +1878,8 @@ mockIPC(
   (path: string) => {
     const id = Number(path.match(/message\/(\d+)/)?.[1]);
     const html = messages.find((m) => m.id === id)?.html ?? "";
-    return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+    // As the desktop darkens it (`dark=1`), roughly: inverted with its hues kept, pictures as sent.
+    const dark =
+      "<style>html{background:#fff;filter:invert(0.88) hue-rotate(180deg)}img,picture,video,[style*=background-image]{filter:invert(1) hue-rotate(180deg)}</style>";
+    return `data:text/html;charset=utf-8,${encodeURIComponent(path.includes("dark=1") ? dark + html : html)}`;
   };
