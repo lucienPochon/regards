@@ -119,6 +119,12 @@ pub mod methods {
     pub const MESSAGE_PIN: &str = "message.pin";
     /// Set messages aside (out of the inbox) or bring them back; undoable.
     pub const MESSAGE_SET_ASIDE: &str = "message.set_aside";
+    /// Leave the mailing list a message came from (RFC 2369 `List-Unsubscribe`):
+    /// a one-click request where the sender takes one (RFC 8058); else an
+    /// email to the address its link names, queued with an undo, from the
+    /// address the message was sent to; else its web page, for the app to
+    /// open. `ui` only: it acts outside the app.
+    pub const MESSAGE_UNSUBSCRIBE: &str = "message.unsubscribe";
     /// Snooze messages until a time, or "someday"; or end a snooze. Undoable.
     pub const MESSAGE_SNOOZE: &str = "message.snooze";
     /// The Smart Inbox (plan §5.4): an account's inbox by section, with counts.
@@ -1871,6 +1877,27 @@ pub struct DraftSendParams {
     /// Remind me if nobody has replied by then (Unix ms), as [`methods::MESSAGE_REMIND`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remind_at: Option<i64>,
+}
+
+/// Parameters of [`methods::MESSAGE_UNSUBSCRIBE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnsubscribeParams {
+    pub id: i64,
+    /// For an unsubscribe email: seconds it can be undone, as [`DraftSendParams`].
+    #[serde(default)]
+    pub undo_seconds: Option<u32>,
+}
+
+/// The result of [`methods::MESSAGE_UNSUBSCRIBE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UnsubscribeResult {
+    /// The sender took the one-click request: nothing more to do.
+    Done,
+    /// An email asking to leave is in the Outbox, undoable as any send.
+    Sent { queued: DraftSendResult },
+    /// Open this page (always `https://`) in the browser to finish there.
+    Web { url: String },
 }
 
 /// Result of [`methods::DRAFT_SEND`].

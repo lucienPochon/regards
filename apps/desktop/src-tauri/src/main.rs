@@ -45,7 +45,7 @@ use regards_ipc::protocol::{
     SenderSetParams, SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult,
     SignatureListResult, SignatureRef, SignatureSaveParams, SignatureView, SmartOverviewResult, SnoozeParams,
     SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult,
-    View, ViewParams, methods,
+    UnsubscribeParams, UnsubscribeResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -993,6 +993,20 @@ async fn thread_get(bridge: State<'_, Bridge>, id: i64) -> Result<ThreadView, St
         .map_err(describe)
 }
 
+/// Leave the mailing list a message came from: one click, an email, or its page to open.
+#[tauri::command]
+async fn message_unsubscribe(
+    bridge: State<'_, Bridge>,
+    id: i64,
+    undo_seconds: Option<u32>,
+) -> Result<UnsubscribeResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_UNSUBSCRIBE, UnsubscribeParams { id, undo_seconds })
+        .await
+        .map_err(describe)
+}
+
 /// Each message with the rest of its conversation in the same folder: what an
 /// action on a conversation's row covers.
 #[tauri::command]
@@ -1907,6 +1921,7 @@ fn main() {
             message_get,
             thread_get,
             message_conversation_ids,
+            message_unsubscribe,
             message_set_flags,
             message_mark_all_read,
             message_archive,
