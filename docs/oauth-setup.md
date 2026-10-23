@@ -14,7 +14,7 @@ The daemon reads them at start-up from the environment. Failing that, it uses th
 | `REGARDS_GOOGLE_CLIENT_ID` | The Google OAuth client's id |
 | `REGARDS_GOOGLE_CLIENT_SECRET` | The secret Google gives a *Desktop app* client. It is not confidential: it ships in every copy, as Google expects for installed apps. PKCE is what protects the sign-in |
 
-- **Release builds:** set the variables in CI when building.
+- **Release builds:** the release workflow reads repository secrets of the same names (*Settings* → *Secrets and variables* → *Actions*). A missing one gives a warning in the run, and that build has no sign-in for the provider.
 - **Development:** set them in the shell that runs `npm run tauri dev`. The app starts the daemon, which inherits them.
 
 None of these are secrets of the person using Regards. Their tokens are separate:
