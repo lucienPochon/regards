@@ -5,6 +5,7 @@ import {
   type Person,
   type Role,
   type ThreadEntry,
+  conversationIds,
   getMessage,
   getThread,
   messageHtmlUrl,
@@ -111,7 +112,12 @@ export function ReadingPane({
   useEffect(() => {
     if (load.state !== "ready" || markedRead.current) return;
     markedRead.current = true;
-    if (!load.detail.message.seen) setFlags([item.id], { seen: true }).catch(() => {});
+    // With the rest of its conversation in the folder, as a row's Mark read.
+    if (!load.detail.message.seen) {
+      conversationIds([item.id])
+        .then((ids) => setFlags(ids, { seen: true }))
+        .catch(() => {});
+    }
   }, [load, item.id]);
 
   // The rest of the conversation is a nicety: without it, the message still shows.
@@ -131,7 +137,9 @@ export function ReadingPane({
   const message = detail?.message ?? item;
   const mailboxId = detail?.mailbox_id ?? item.mailboxId;
   const folder = folders.find((f) => f.id === mailboxId);
+  // The toolbar acts on the conversation, as its row does; a card's ⋯ on that one message.
   const target: Target = {
+    conversation: true,
     ids: [item.id],
     single: item.id,
     accountId: item.accountId,
