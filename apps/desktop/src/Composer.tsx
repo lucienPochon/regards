@@ -20,6 +20,7 @@ import {
   parseRecipients,
   saveDraft,
   sendDraft,
+  fillPlaceholders,
   insertTemplateHtml,
   setDraftFrom,
   swapSignatureHtml,
@@ -393,17 +394,27 @@ export function Composer({
     if (at !== null) await send(at);
   };
 
-  /** A template's text where one writes, and its subject if there is none yet. */
+  /**
+   * A template's text where one writes, and its subject if there is none
+   * yet, its name placeholders filled from the first recipient and the
+   * sender (add the recipient first, as in Spark).
+   */
   const insertTemplate = async (anchor: Anchor) => {
     if (!pickTemplate || !fields) return;
     const template = await pickTemplate(anchor, { subject: fields.subject, html: fields.html });
     if (!template) return;
+    const first = parseRecipients(fields.to)[0];
+    const names = { to: first?.name ?? null, me: draft?.from.name ?? null };
+    const filled = {
+      body: fillPlaceholders(template.body, names),
+      html: template.html === null ? null : fillPlaceholders(template.html, names, true),
+    };
     setFields((current) =>
       current
         ? {
             ...current,
-            html: insertTemplateHtml(current.html, template),
-            subject: current.subject.trim() ? current.subject : template.subject,
+            html: insertTemplateHtml(current.html, filled),
+            subject: current.subject.trim() ? current.subject : fillPlaceholders(template.subject, names),
           }
         : current,
     );
