@@ -375,6 +375,39 @@ fn newest_in_folder(seen: Option<bool>) -> String {
     )
 }
 
+/// How a conversation's row in a folder looks, from all its messages there:
+/// read only when all are, with files when any has some.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ConversationState {
+    pub seen: bool,
+    pub has_attachments: bool,
+}
+
+/// [`ConversationState`] of each of `threads` in folder `mailbox_id` (one
+/// on its way into it counts as there; deleted ones do not), by thread.
+pub fn conversation_states(
+    conn: &Connection,
+    mailbox_id: i64,
+    threads: &[i64],
+) -> Result<std::collections::HashMap<i64, ConversationState>, StoreError> {
+    let threads = serde_json::to_string(threads).expect("numbers always serialize");
+    let mut statement = conn.prepare_cached(
+        "SELECT thread_id, MIN(seen), MAX(COALESCE(has_attachments, 0)) FROM messages \
+         WHERE thread_id IN (SELECT value FROM json_each(?2)) AND deleted = 0 \
+         AND COALESCE(moving_to, mailbox_id) = ?1 GROUP BY thread_id",
+    )?;
+    let rows = statement.query_map(params![mailbox_id, threads], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            ConversationState {
+                seen: row.get(1)?,
+                has_attachments: row.get(2)?,
+            },
+        ))
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 /// The page query of [`list`]. A message being moved shows in its target
 /// folder at once; one marked deleted (being deleted for good, or by another
 /// client) is not shown; a conversation shows as its newest message
@@ -383,17 +416,54 @@ fn newest_in_folder(seen: Option<bool>) -> String {
 /// index: with an OR, a 100k-message folder took 55 ms per page instead of
 /// well under 1.
 fn list_sql() -> String {
+    list_sql_where("")
+}
+
+/// [`list_sql`], each half with `extra` conditions on `messages`, and a
+/// conversation as its newest message ([`newest_in_folder`]).
+fn list_sql_where(extra: &str) -> String {
     let newest = newest_in_folder(None);
     format!(
         "SELECT * FROM (SELECT {COLUMNS} FROM messages \
-             WHERE mailbox_id = ?1 AND moving_to IS NULL AND deleted = 0 AND (received_at, id) < (?2, ?3) \
+             WHERE mailbox_id = ?1 AND moving_to IS NULL AND deleted = 0 AND (received_at, id) < (?2, ?3) {extra} \
              AND {newest} ORDER BY received_at DESC, id DESC LIMIT ?4) \
          UNION ALL \
          SELECT * FROM (SELECT {COLUMNS} FROM messages \
-             WHERE moving_to = ?1 AND deleted = 0 AND (received_at, id) < (?2, ?3) \
+             WHERE moving_to = ?1 AND deleted = 0 AND (received_at, id) < (?2, ?3) {extra} \
              AND {newest} ORDER BY received_at DESC, id DESC LIMIT ?4) \
          ORDER BY received_at DESC, id DESC LIMIT ?4"
     )
+}
+
+/// A page of what was filed as Done in `done` (an account's Archive, or its
+/// All Mail), for the inbox's "Show Done", newest first and older than
+/// `before`. With `inbox`, copies that are in the inbox too are left out:
+/// All Mail holds those as well. As [`list`] otherwise.
+pub fn done_page(
+    conn: &Connection,
+    done: i64,
+    inbox: Option<i64>,
+    limit: u32,
+    before: Option<Cursor>,
+) -> Result<Vec<Message>, StoreError> {
+    let (received_at, id) = before.map_or((i64::MAX, i64::MAX), |c| (c.received_at, c.id));
+    let rows = match inbox {
+        None => conn
+            .prepare_cached(&list_sql())?
+            .query_map(params![done, received_at, id, limit], from_row)?
+            .map(|row| row?)
+            .collect::<Result<Vec<_>, _>>()?,
+        Some(inbox) => conn
+            .prepare_cached(&list_sql_where(
+                "AND (messages.message_id_header IS NULL OR NOT EXISTS (SELECT 1 FROM messages i \
+                 WHERE i.message_id_header = messages.message_id_header AND i.deleted = 0 \
+                 AND COALESCE(i.moving_to, i.mailbox_id) = ?5))",
+            ))?
+            .query_map(params![done, received_at, id, limit, inbox], from_row)?
+            .map(|row| row?)
+            .collect::<Result<Vec<_>, _>>()?,
+    };
+    Ok(rows)
 }
 
 /// The inbox's page query: [`list_sql`] without what account ?5 has set
@@ -989,6 +1059,43 @@ mod tests {
             .unwrap();
         let left = store.read(move |c| conversation_ids(c, &[m1])).await.unwrap();
         assert_eq!(left, [m1, m3]);
+    }
+
+    #[tokio::test]
+    async fn done_mail_in_all_mail_leaves_out_what_is_in_the_inbox_too() {
+        let (_temp, store, inbox) = store_with_inbox().await;
+        let all = store
+            .write(move |tx| {
+                let account: String =
+                    tx.query_row("SELECT account_id FROM mailboxes WHERE id = ?1", [inbox], |r| r.get(0))?;
+                tx.execute(
+                    "INSERT INTO mailboxes (account_id, remote_name, name, delimiter, role, selectable, attributes) \
+                     VALUES (?1, CAST('[Gmail]/All Mail' AS BLOB), '[Gmail]/All Mail', '/', 'all', 1, '[]')",
+                    [&account],
+                )?;
+                let all = tx.last_insert_rowid();
+                let with_id = |uid: u32, id: &str| {
+                    let mut new = message(uid, i64::from(uid) * 1000, id);
+                    new.headers.message_id = Some(format!("{id}@x"));
+                    new
+                };
+                // "still" is in the inbox too; "done" only in All Mail.
+                upsert(tx, inbox, &[with_id(1, "still")])?;
+                upsert(tx, all, &[with_id(1, "still"), with_id(2, "done")])?;
+                Ok(all)
+            })
+            .await
+            .unwrap()
+            .value;
+        let subjects = |rows: Vec<Message>| rows.into_iter().map(|m| m.subject).collect::<Vec<_>>();
+        let done = store
+            .read(move |c| done_page(c, all, Some(inbox), 10, None))
+            .await
+            .unwrap();
+        assert_eq!(subjects(done), ["done"]);
+        // An Archive folder holds only what was filed: nothing to leave out.
+        let archive = store.read(move |c| done_page(c, all, None, 10, None)).await.unwrap();
+        assert_eq!(subjects(archive), ["done", "still"]);
     }
 
     #[tokio::test]

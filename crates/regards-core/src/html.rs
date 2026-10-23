@@ -135,10 +135,13 @@ pub fn sanitize_outgoing(html: &str) -> String {
         ])
         .add_tag_attributes("a", ["href"])
         .add_tag_attributes("img", ["src", "alt"])
+        // `type="cite"`: quoted history, which readers fold (fold_quotes).
+        .add_tag_attributes("blockquote", ["type"])
         .add_url_schemes(["http", "https", "mailto", "cid"])
         // An image is one of the message's own, never fetched from the web.
         .attribute_filter(|element, attribute, value| match (element, attribute) {
             ("img", "src") if !value.starts_with("cid:") => None,
+            ("blockquote", "type") if value != "cite" => None,
             ("a", "href") if value.starts_with("cid:") => None,
             _ => Some(value.into()),
         })
@@ -148,6 +151,27 @@ pub fn sanitize_outgoing(html: &str) -> String {
         .clean(html)
         .to_string();
     without_empty_images(&clean)
+}
+
+/// A message's HTML, to quote under a reply or a forward: as
+/// [`sanitize_outgoing`] keeps formatting, without its pictures (a forward
+/// carries them as files). `None` when it has no HTML version.
+pub fn quotable(raw: &[u8]) -> Option<String> {
+    let message = MessageParser::default().parse(raw)?;
+    let part = message.html_part(0).filter(|part| part.is_text_html())?;
+    let html = part.text_contents()?;
+    if start_tags(html) > MAX_TAGS {
+        return None;
+    }
+    let kept = sanitize_outgoing(html);
+    let mut out = String::with_capacity(kept.len());
+    let mut rest = kept.as_str();
+    while let Some(at) = rest.find("<img") {
+        out.push_str(&rest[..at]);
+        rest = rest[at..].find('>').map_or("", |end| &rest[at + end + 1..]);
+    }
+    out.push_str(rest);
+    Some(out)
 }
 
 /// Images left without a source (it was from the web) are taken out. The
@@ -870,6 +894,35 @@ mod tests {
         assert!(
             html.contains("<blockquote type=\"cite\">c") && html.contains("<blockquote>d"),
             "{html}"
+        );
+    }
+
+    #[test]
+    fn a_quoted_message_keeps_its_formatting_but_not_its_pictures_or_scripts() {
+        let raw = b"Content-Type: text/html
+
+<p>Hi <b>Bob</b>, <a href=\"https://example.test\">see</a></p>\n            <img src=\"cid:logo\"><img src=\"https://t.test/p.gif\"><script>steal()</script><ul><li>one</li></ul>
+";
+        let quoted = quotable(raw).unwrap();
+        assert!(
+            quoted.contains("<b>Bob</b>") && quoted.contains("<li>one</li>"),
+            "{quoted}"
+        );
+        assert!(quoted.contains("href=\"https://example.test\""), "{quoted}");
+        assert!(!quoted.contains("<img") && !quoted.contains("script"), "{quoted}");
+        assert!(
+            quotable(
+                b"Content-Type: text/plain
+
+Hi
+"
+            )
+            .is_none()
+        );
+        // Quoted history keeps its mark when sent, for readers to fold.
+        assert!(
+            sanitize_outgoing("<blockquote type=\"cite\">a</blockquote><blockquote type=\"x\">b</blockquote>")
+                .contains("<blockquote type=\"cite\">a</blockquote><blockquote>b")
         );
     }
 

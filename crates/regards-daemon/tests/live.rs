@@ -115,6 +115,7 @@ async fn messages(desktop: &mut Client, mailbox_id: i64) -> MessageListResult {
                 before: None,
                 section: None,
                 seen: None,
+                with_done: false,
             },
         )
         .await
@@ -305,6 +306,7 @@ async fn live_sync_follows_new_flagged_expunged_and_reset_mailboxes() {
                 before: None,
                 section: None,
                 seen: None,
+                with_done: false,
             },
         )
         .await
@@ -319,6 +321,7 @@ async fn live_sync_follows_new_flagged_expunged_and_reset_mailboxes() {
                 before: first.next,
                 section: None,
                 seen: None,
+                with_done: false,
             },
         )
         .await
@@ -903,6 +906,10 @@ async fn live_conversations_span_folders() {
         .into_iter()
         .map(|m| (m.subject, m.id))
         .collect();
+    // A conversation is one row in the inbox: its newest message there.
+    let mut rows: Vec<&str> = ids.iter().map(|(s, _)| s.as_str()).collect();
+    rows.sort_unstable();
+    assert_eq!(rows, ["Re: Plans", "Unrelated"]);
     let id = |subject: &str| ids.iter().find(|(s, _)| s == subject).unwrap().1;
     let thread = |view: ThreadView| {
         view.messages
@@ -913,20 +920,21 @@ async fn live_conversations_span_folders() {
 
     // The original, the reply in Sent and the answer to it, oldest first.
     let view: ThreadView = desktop
-        .call(methods::THREAD_GET, MessageRef { id: id("Plans") })
+        .call(methods::THREAD_GET, MessageRef { id: id("Re: Plans") })
         .await
         .unwrap();
+    let original = view.messages[0].message.id;
     let plans = [
         ("Plans".to_owned(), Some(Role::Inbox)),
         ("Re: Plans".to_owned(), Some(Role::Sent)),
         ("Re: Plans".to_owned(), Some(Role::Inbox)),
     ];
     assert_eq!(thread(view), plans);
-    let from_reply: ThreadView = desktop
-        .call(methods::THREAD_GET, MessageRef { id: id("Re: Plans") })
+    let from_original: ThreadView = desktop
+        .call(methods::THREAD_GET, MessageRef { id: original })
         .await
         .unwrap();
-    assert_eq!(thread(from_reply), plans);
+    assert_eq!(thread(from_original), plans);
     let alone: ThreadView = desktop
         .call(methods::THREAD_GET, MessageRef { id: id("Unrelated") })
         .await
@@ -935,7 +943,7 @@ async fn live_conversations_span_folders() {
 
     // A message on its way to the trash shows there at once.
     let _: MoveResult = desktop
-        .call(methods::MESSAGE_TRASH, MessageIds { ids: vec![id("Plans")] })
+        .call(methods::MESSAGE_TRASH, MessageIds { ids: vec![original] })
         .await
         .unwrap();
     let moved: ThreadView = desktop
@@ -1259,6 +1267,92 @@ async fn live_unsubscribing_writes_to_the_list_or_opens_its_page() {
 
 #[tokio::test]
 #[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_formatted_mail_is_quoted_and_forwarded_formatted_in_local_time() {
+    use regards_ipc::protocol::DraftForwardParams;
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    // Thursday 2026-10-22, 13:00 UTC.
+    let formatted = format!(
+        "From: Ada <ada@example.test>\r\nTo: {}@example.test\r\nSubject: Plans\r\n\
+         Date: Thu, 22 Oct 2026 13:00:00 +0000\r\nMessage-ID: <plans@example.test>\r\n\
+         Content-Type: text/html; charset=utf-8\r\n\r\n<p>Lunch on <b>Friday</b>?</p><img src=\"https://t.test/p.gif\">\r\n",
+        live.user
+    );
+    seed.append(b"INBOX", &[], formatted.as_bytes()).await.unwrap();
+    seed.append(b"INBOX", &[], &message(2, "Plain", "bob@example.test"))
+        .await
+        .unwrap();
+    let (_temp, mut desktop, _account, inbox, handle) = daemon_with_account(&live).await;
+    let ids: Vec<(String, i64)> = messages(&mut desktop, inbox)
+        .await
+        .messages
+        .into_iter()
+        .map(|m| (m.subject, m.id))
+        .collect();
+    let id = |subject: &str| ids.iter().find(|(s, _)| s == subject).unwrap().1;
+    let zurich = Some(120);
+
+    let reply: DraftView = desktop
+        .call(
+            methods::DRAFT_REPLY,
+            DraftReplyParams {
+                message_id: id("Plans"),
+                all: false,
+                utc_offset_minutes: zurich,
+            },
+        )
+        .await
+        .unwrap();
+    let html = reply.html.expect("a formatted reply");
+    assert!(
+        html.contains("<p>On 2026-10-22 15:00, Ada wrote:</p><blockquote type=\"cite\">"),
+        "{html}"
+    );
+    assert!(html.contains("<b>Friday</b>") && !html.contains("<img"), "{html}");
+    assert!(
+        reply.body.contains("> Lunch on Friday?"),
+        "the plain text goes too: {}",
+        reply.body
+    );
+
+    let forward: DraftView = desktop
+        .call(
+            methods::DRAFT_FORWARD,
+            DraftForwardParams {
+                id: id("Plans"),
+                utc_offset_minutes: zurich,
+            },
+        )
+        .await
+        .unwrap();
+    let html = forward.html.expect("a formatted forward");
+    assert!(
+        html.contains("Date: 2026-10-22 15:00") && html.contains("<b>Friday</b>"),
+        "{html}"
+    );
+
+    // Plain mail is quoted as text, as before.
+    let plain: DraftView = desktop
+        .call(
+            methods::DRAFT_REPLY,
+            DraftReplyParams {
+                message_id: id("Plain"),
+                all: false,
+                utc_offset_minutes: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(plain.html, None);
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
 async fn live_actions_taken_offline_reach_the_server_once_it_is_back() {
     let live = live();
     let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
@@ -1422,6 +1516,7 @@ async fn live_a_reply_can_be_undone_then_goes_out_once_and_lands_in_sent() {
             DraftReplyParams {
                 message_id: original,
                 all: false,
+                utc_offset_minutes: None,
             },
         )
         .await
@@ -1993,9 +2088,25 @@ async fn live_snoozed_mail_comes_back_as_new_or_when_someone_replies() {
         References: <sync-2@example.test>\r\nDate: Sun, 18 Oct 2026 12:00:00 +0000\r\n\r\nHere I am\r\n";
     seed.append(b"INBOX", &[], reply).await.unwrap();
     sync(&mut desktop, &account.id).await;
+    // The conversation is back, as one row: its newest message, the reply.
     let shown = subjects(messages(&mut desktop, inbox).await);
-    assert!(shown.contains(&"Waiting for Bob".to_owned()), "{shown:?}");
-    assert!(shown.contains(&"Re: Waiting for Bob".to_owned()));
+    assert!(shown.contains(&"Re: Waiting for Bob".to_owned()), "{shown:?}");
+    let snoozed_now: MessageListResult = desktop
+        .call(
+            methods::MESSAGE_VIEW,
+            ViewParams {
+                account_id: account.id.clone(),
+                view: View::Snoozed,
+                limit: None,
+                before: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(
+        !subjects(snoozed_now).contains(&"Waiting for Bob".to_owned()),
+        "its snooze ended"
+    );
 
     // Undo a snooze.
     let snoozed: MarkResult = desktop
@@ -2190,6 +2301,7 @@ async fn live_a_reply_goes_out_from_the_address_it_was_written_to() {
             DraftReplyParams {
                 message_id: id,
                 all: true,
+                utc_offset_minutes: None,
             },
         )
         .await
@@ -2269,6 +2381,7 @@ async fn live_the_smart_inbox_sorts_by_section_and_follows_corrections() {
                 before: None,
                 section: Some(Section::Newsletters),
                 seen: None,
+                with_done: false,
             },
         )
         .await
@@ -2367,16 +2480,27 @@ async fn live_rows_show_a_preview_a_paperclip_a_thread_size_and_unread_counts() 
     let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
 
     let page = messages(&mut desktop, inbox).await;
-    let row = |subject: &str| page.messages.iter().find(|m| m.subject == subject).unwrap().clone();
-    let tickets = row("Tickets");
-    assert!(tickets.has_attachments);
-    assert_eq!(tickets.preview.as_deref(), Some("Here are the tickets for Zürich."));
+    let row = |subject: &str| page.messages.iter().find(|m| m.subject == subject).cloned();
+    // "Tickets" and its answer are one row, the answer's: unread while the
+    // first is, with its file.
+    assert!(row("Tickets").is_none());
+    let tickets = row("Re: Tickets").unwrap();
+    assert_eq!(tickets.preview.as_deref(), Some("And the seats."));
     assert_eq!(tickets.thread_size, 2);
-    let weekly = row("Weekly");
+    assert!(tickets.has_attachments && !tickets.seen, "{tickets:?}");
+    let weekly = row("Weekly").unwrap();
     assert!(!weekly.has_attachments);
     assert_eq!(weekly.preview.as_deref(), Some("This week: seeds and tools."));
     assert_eq!(weekly.thread_size, 1);
-    assert_eq!(row("Re: Tickets").preview.as_deref(), Some("And the seats."));
+    // The first message's preview, as it is shown in the conversation.
+    let first: ThreadView = desktop
+        .call(methods::THREAD_GET, MessageRef { id: tickets.id })
+        .await
+        .unwrap();
+    assert_eq!(
+        first.messages[0].message.preview.as_deref(),
+        Some("Here are the tickets for Zürich.")
+    );
 
     // Two unread in the inbox; one set aside leaves one.
     let unread = |listed: &MailboxListResult| listed.mailboxes.iter().find(|m| m.id == inbox).unwrap().unread;
@@ -2427,6 +2551,7 @@ async fn live_new_senders_can_be_held_accepted_or_blocked() {
         before: None,
         section: Some(section),
         seen: None,
+        with_done: false,
     };
 
     // Held: new senders are out of the inbox, in their own section.
@@ -2945,6 +3070,7 @@ async fn live_agents_organise_mail_and_the_app_undoes_it() {
                 before: None,
                 section: None,
                 seen: None,
+                with_done: false,
             },
         )
         .await
@@ -3149,6 +3275,7 @@ async fn live_bulk_changes_and_deleting_for_good_wait_for_the_person() {
                 before: None,
                 section: None,
                 seen: None,
+                with_done: false,
             },
         )
         .await
@@ -3296,6 +3423,7 @@ async fn live_mail_that_gives_orders_moves_nothing() {
                 before: None,
                 section: None,
                 seen: None,
+                with_done: false,
             },
         )
         .await
@@ -3633,8 +3761,22 @@ async fn live_the_assistant_summarises_and_drafts_a_reply_with_the_persons_key()
     .await
     .unwrap();
     let (_temp, mut desktop, _account, inbox, handle) = daemon_with_account(&live).await;
+    // The conversation is one row, its newest message; the others are found through it.
     let listed = messages(&mut desktop, inbox).await.messages;
-    let id = |subject: &str| listed.iter().find(|m| m.subject == subject).unwrap().id;
+    let newest = listed.iter().find(|m| m.subject == "Re: Plans").unwrap().id;
+    let conversation: ThreadView = desktop
+        .call(methods::THREAD_GET, MessageRef { id: newest })
+        .await
+        .unwrap();
+    let id = |subject: &str| {
+        conversation
+            .messages
+            .iter()
+            .find(|entry| entry.message.subject == subject)
+            .unwrap()
+            .message
+            .id
+    };
     let summary = AssistantParams {
         message_id: id("Re: Plans"),
         task: AssistantTask::Summary,

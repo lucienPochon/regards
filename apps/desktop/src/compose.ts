@@ -149,9 +149,14 @@ export const isUntouched = (id: number) => untouched.has(id);
 export const touchDraft = (id: number) => untouched.delete(id);
 
 export const newDraft = (accountId: string) => invoke<Draft>("draft_create", { accountId }).then(started);
+/** This computer's time minus UTC, in minutes: a reply's "On … wrote:" and a forward's "Date:" are in it. */
+const localOffset = () => -new Date().getTimezoneOffset();
+/** A reply, addressed and quoted (formatted mail formatted, in a cited blockquote). */
 export const replyDraft = (messageId: number, all: boolean) =>
-  invoke<Draft>("draft_reply", { messageId, all }).then(started);
-export const forwardDraft = (messageId: number) => invoke<Draft>("draft_forward", { messageId }).then(started);
+  invoke<Draft>("draft_reply", { messageId, all, utcOffsetMinutes: localOffset() }).then(started);
+/** A forward, with the original's files (and formatting, when it has some). */
+export const forwardDraft = (messageId: number) =>
+  invoke<Draft>("draft_forward", { messageId, utcOffsetMinutes: localOffset() }).then(started);
 export const listDrafts = () => invoke<{ drafts: Draft[] }>("draft_list");
 export const getDraft = (id: number) => invoke<Draft>("draft_get", { id });
 /** Pick files with the system dialog and attach them; `null` if cancelled. */
@@ -268,6 +273,37 @@ export function insertTemplateHtml(html: string, template: { body: string; html:
   const insert = template.html ?? textToHtml(template.body);
   const rest = html.startsWith("<p></p>") ? html.slice("<p></p>".length) : html;
   return insert + rest;
+}
+
+/**
+ * A template's name placeholders filled in, as Spark's templates do:
+ * `{{name}}`, `{{first name}}` and `{{last name}}` from the first recipient,
+ * `{{my name}}` and `{{my first name}}` from whom it is sent as. Case and
+ * spaces inside the braces do not matter. One with no name to fill it (a
+ * recipient known only by address), any other `{{…}}`, and `[[blanks]]`
+ * stay as they are: the send check asks about them. With `html`, what goes
+ * in is escaped.
+ */
+export function fillPlaceholders(
+  text: string,
+  names: { to: string | null; me: string | null },
+  html = false,
+): string {
+  const words = (name: string | null) => (name ?? "").trim().split(/\s+/).filter(Boolean);
+  const [to, me] = [words(names.to), words(names.me)];
+  const values: Record<string, string | undefined> = {
+    name: to.join(" ") || undefined,
+    firstname: to[0],
+    lastname: to.length > 1 ? to[to.length - 1] : undefined,
+    myname: me.join(" ") || undefined,
+    myfirstname: me[0],
+  };
+  const escape = (value: string) =>
+    html ? value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") : value;
+  return text.replace(/\{\{([^{}\n]{1,40})\}\}/g, (whole, inside: string) => {
+    const value = values[inside.toLowerCase().replace(/\s+/g, "")];
+    return value === undefined ? whole : escape(value);
+  });
 }
 
 export function textToHtml(text: string): string {
