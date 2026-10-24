@@ -225,6 +225,26 @@ export function discoverAccount(email: string): Promise<Discovered> {
   return invoke<Discovered>("account_discover", { email });
 }
 
+/** Mirrors `ServerCheckResult`: whether one server answered. Nothing signed in. */
+export interface ServerCheck {
+  /** Absent: it answered, with a certificate valid for it. */
+  reason?: AccountCheckFailure;
+  /**
+   * A sending server that did not answer: other settings on the same host
+   * that did ("Use 465"), best first.
+   */
+  suggestion?: ServerSettings;
+}
+
+/**
+ * Check one server of the server form as it is left: "imap" (always TLS)
+ * or "smtp". Takes a few seconds at most; a wrong password still shows
+ * only when the account is added.
+ */
+export function checkServer(server: "imap" | "smtp", settings: ServerSettings): Promise<ServerCheck> {
+  return invoke<ServerCheck>("account_check_server", { server, settings });
+}
+
 /** The providers this version can sign in with; the others take a password (or app password). */
 export async function oauthProviders(): Promise<Provider[]> {
   const result = await invoke<{ providers: Provider[] }>("account_oauth_providers");
