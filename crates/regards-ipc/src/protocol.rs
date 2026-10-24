@@ -112,6 +112,13 @@ pub mod methods {
     /// what an action on a conversation's row (archive, trash, move, mark
     /// read) covers. `ui` only, as `thread.get`.
     pub const MESSAGE_CONVERSATION_IDS: &str = "message.conversation_ids";
+    /// Each message's Gmail labels: the label folders holding a copy of it,
+    /// and labels added here not synced back yet. `ui` only for now.
+    pub const MESSAGE_LABELS: &str = "message.labels";
+    /// Add and remove Gmail labels: a label added is a copy in its folder, one
+    /// removed is that copy deleted. Applied at once, sent by the operation
+    /// queue. `ui` only.
+    pub const MESSAGE_SET_LABELS: &str = "message.set_labels";
     /// Mark messages read or unread, flagged or not. Applied at once, sent to the
     /// server by the operation queue (ADR-0010). `ui` only for now.
     pub const MESSAGE_SET_FLAGS: &str = "message.set_flags";
@@ -1222,6 +1229,42 @@ pub struct ThreadView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageIds {
     pub ids: Vec<i64>,
+}
+
+/// One message's labels, in [`LabelsResult`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageLabels {
+    pub id: i64,
+    /// The label folders' ids.
+    pub labels: Vec<i64>,
+}
+
+/// The result of [`methods::MESSAGE_LABELS`]: the messages asked for, in their order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LabelsResult {
+    pub messages: Vec<MessageLabels>,
+}
+
+/// Parameters of [`methods::MESSAGE_SET_LABELS`]: the same change for each message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetLabelsParams {
+    pub ids: Vec<i64>,
+    /// Label folders to add.
+    #[serde(default)]
+    pub add: Vec<i64>,
+    /// Label folders to remove.
+    #[serde(default)]
+    pub remove: Vec<i64>,
+}
+
+/// The result of [`methods::MESSAGE_SET_LABELS`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetLabelsResult {
+    /// Each message's labels now.
+    pub messages: Vec<MessageLabels>,
+    /// Copies deleted with a label removed: gone from the label's folder,
+    /// including any of `ids` that was that copy.
+    pub gone: Vec<i64>,
 }
 
 /// The result of [`methods::MESSAGE_CONVERSATION_IDS`].

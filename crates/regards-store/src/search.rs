@@ -451,11 +451,34 @@ pub fn search(
     Ok(hits)
 }
 
-/// The query's filters on the message row `m`, as SQL (only numbers in it).
+/// The query's filters on the message row `m`, as SQL. Nothing typed goes
+/// in as text: numbers, fixed types and extensions, and file names as hex.
 fn filters(query: &Query, m: &str) -> String {
     let mut sql = String::new();
     if query.has_attachment {
         sql.push_str(&format!(" AND {m}.has_attachments = 1"));
+    }
+    // Files, as listed from the message's structure (migration 38).
+    for kind in &query.file_kinds {
+        let (types, extensions) = kind.types_and_extensions();
+        let by_type = types.iter().map(|mime| match mime.strip_suffix('/') {
+            Some(family) => format!("f.mime LIKE '{family}/%'"),
+            None => format!("f.mime = '{mime}'"),
+        });
+        let by_name = extensions
+            .iter()
+            .map(|extension| format!("lower(f.name) LIKE '%.{extension}'"));
+        let any = by_type.chain(by_name).collect::<Vec<_>>().join(" OR ");
+        sql.push_str(&format!(
+            " AND EXISTS (SELECT 1 FROM main.message_files f WHERE f.message_id = {m}.id AND ({any}))"
+        ));
+    }
+    for name in &query.file_names {
+        let hex: String = name.as_bytes().iter().map(|byte| format!("{byte:02X}")).collect();
+        sql.push_str(&format!(
+            " AND EXISTS (SELECT 1 FROM main.message_files f WHERE f.message_id = {m}.id \
+             AND instr(lower(f.name), lower(CAST(X'{hex}' AS TEXT))) > 0)"
+        ));
     }
     match query.unread {
         Some(true) => sql.push_str(&format!(" AND {m}.seen = 0")),
@@ -642,7 +665,7 @@ mod tests {
                         mail(3, "Projector repair", person("Bob", "bob@example.org"), 3_000),
                     ],
                 )?;
-                messages::set_details(tx, inbox, 1, false, Some("The quarterly report is attached"))
+                messages::set_details(tx, inbox, 1, false, Some("The quarterly report is attached"), &[])
             })
             .await
             .unwrap();
@@ -741,7 +764,23 @@ mod tests {
                     archive,
                     &[mail(4, "Old plans", person("Bob", "bob@rail.example"), 500)],
                 )?;
-                messages::set_details(tx, inbox, 2, true, Some("Your seats are booked for Lugano"))
+                messages::set_details(
+                    tx,
+                    inbox,
+                    2,
+                    true,
+                    Some("Your seats are booked for Lugano"),
+                    &[
+                        messages::FileShape {
+                            name: Some("Billets Zürich–Lugano.PDF".into()),
+                            mime: "application/pdf".into(),
+                        },
+                        messages::FileShape {
+                            name: Some("map.png".into()),
+                            mime: "image/png".into(),
+                        },
+                    ],
+                )
             })
             .await
             .unwrap();
@@ -775,6 +814,24 @@ mod tests {
             find(&store, "in:archive").await,
             ["Old plans"],
             "the folder's last name part"
+        );
+        assert_eq!(
+            find(&store, "has:pdf").await,
+            ["Train tickets"],
+            "by type, before any download"
+        );
+        assert_eq!(find(&store, "has:image").await, ["Train tickets"]);
+        assert_eq!(find(&store, "has:spreadsheet").await, Vec::<String>::new());
+        assert_eq!(find(&store, "filename:billets").await, ["Train tickets"], "any case");
+        assert_eq!(find(&store, "filename:zürich").await, ["Train tickets"]);
+        assert_eq!(
+            find(&store, "filename:it's").await,
+            Vec::<String>::new(),
+            "quotes stay text"
+        );
+        assert_eq!(
+            find(&store, "filename:billets has:pdf from:bob").await,
+            ["Train tickets"]
         );
         assert_eq!(
             find(&store, r#""plot garden""#).await,

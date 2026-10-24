@@ -51,7 +51,7 @@ Run `regards <command> --json`. Every command prints one JSON object. Dates are 
 
 Start with `regards accounts --json`, then `regards folders --account-id <id> --json` to find the inbox.
 
-Search uses words (the last one also as the start of a word), `"a phrase"`, `-word`, `from:`, `to:`, `subject:`, `has:attachment`, `is:unread`, `is:read`, `is:flagged`, `in:<folder>`, `before:YYYY-MM-DD` and `after:YYYY-MM-DD`. A message's whole text is searched only once it was opened in Regards. `search-server` asks the mail servers for the rest.
+Search uses words (the last one also as the start of a word), `"a phrase"`, `-word`, `from:`, `to:`, `subject:`, `has:attachment`, `has:pdf` (or `image`, `document`, `spreadsheet`, `presentation`, `archive`), `filename:<part of a name>`, `is:unread`, `is:read`, `is:flagged`, `is:pinned`, `in:<folder>`, `before:YYYY-MM-DD` and `after:YYYY-MM-DD`. A message's whole text is searched only once it was opened in Regards. `search-server` asks the mail servers for the rest.
 
 ## Commands
 "#;

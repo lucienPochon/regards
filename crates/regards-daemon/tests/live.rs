@@ -1271,6 +1271,83 @@ async fn live_unsubscribing_writes_to_the_list_or_opens_its_page() {
 
 #[tokio::test]
 #[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_a_label_is_a_copy_in_the_labels_folder() {
+    use regards_ipc::ClientError;
+    use regards_ipc::protocol::{
+        LabelsResult, MailboxCreateParams, MailboxSummary, MessageIds, SetLabelsParams, SetLabelsResult, codes,
+    };
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
+    let garden: MailboxSummary = desktop
+        .call(
+            methods::MAILBOX_CREATE,
+            MailboxCreateParams {
+                account_id: account.id.clone(),
+                parent_id: None,
+                name: "Garden".into(),
+            },
+        )
+        .await
+        .unwrap();
+    seed.append(b"INBOX", &[], &message(41, "Plot rota", "lena@example.test"))
+        .await
+        .unwrap();
+    sync(&mut desktop, &account.id).await;
+    let row = messages(&mut desktop, inbox)
+        .await
+        .messages
+        .into_iter()
+        .find(|m| m.subject == "Plot rota")
+        .unwrap();
+    let set = |add: Vec<i64>, remove: Vec<i64>| SetLabelsParams {
+        ids: vec![row.id],
+        add,
+        remove,
+    };
+
+    // Added: here at once, then a copy in the label's folder on the server.
+    let added: SetLabelsResult = desktop
+        .call(methods::MESSAGE_SET_LABELS, set(vec![garden.id], vec![]))
+        .await
+        .unwrap();
+    assert_eq!(added.messages[0].labels, [garden.id]);
+    server_count_becomes(&mut seed, b"Garden", 1).await;
+    sync(&mut desktop, &account.id).await;
+    let listed: LabelsResult = desktop
+        .call(methods::MESSAGE_LABELS, MessageIds { ids: vec![row.id] })
+        .await
+        .unwrap();
+    assert_eq!(listed.messages[0].labels, [garden.id], "now from the synced copy");
+    assert_eq!(messages(&mut desktop, garden.id).await.messages.len(), 1);
+
+    // Removed: the copy goes, the message stays where it was.
+    let removed: SetLabelsResult = desktop
+        .call(methods::MESSAGE_SET_LABELS, set(vec![], vec![garden.id]))
+        .await
+        .unwrap();
+    assert!(removed.messages[0].labels.is_empty());
+    assert_eq!(removed.gone.len(), 1, "the copy in Garden");
+    server_count_becomes(&mut seed, b"Garden", 0).await;
+    server_count_becomes(&mut seed, b"INBOX", 1).await;
+
+    // The inbox is not a label.
+    match desktop
+        .call::<_, Value>(methods::MESSAGE_SET_LABELS, set(vec![inbox], vec![]))
+        .await
+    {
+        Err(ClientError::Rpc(error)) => assert_eq!(error.code, codes::CONFLICT),
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
 async fn live_folders_are_made_renamed_deleted_and_trash_emptied() {
     use regards_ipc::ClientError;
     use regards_ipc::protocol::{MailboxCreateParams, MailboxRef, MailboxRenameParams, MailboxSummary, codes};

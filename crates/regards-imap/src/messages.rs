@@ -579,6 +579,22 @@ impl Session {
         Ok(moved)
     }
 
+    /// Copy `uids` of the selected mailbox to `target`, leaving them where they
+    /// are: on Gmail, a label added. Returns where the copies are when the
+    /// server reports it (COPYUID).
+    pub async fn copy_messages(&mut self, uids: &str, target: &[u8]) -> Result<Option<Moved>, ImapError> {
+        let reply = self
+            .conn
+            .run(CommandBody::Copy {
+                sequence_set: sequence_set(uids)?,
+                mailbox: mailbox(target)?,
+                uid: true,
+            })
+            .await?;
+        ok(&reply, "COPY")?;
+        Ok(copy_uid(&reply))
+    }
+
     /// Delete `uids` of the selected mailbox for good: `\Deleted`, then UID
     /// EXPUNGE of exactly these. That needs UIDPLUS; without it nothing is
     /// done, since a plain EXPUNGE could remove other messages marked deleted.

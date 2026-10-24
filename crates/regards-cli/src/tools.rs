@@ -149,8 +149,10 @@ pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "search",
         description: "Search the mail, newest first. Words match subject, people and text; also \
-                      \"a phrase\", -word, from: to: subject:, has:attachment, is:unread, is:read, \
-                      is:flagged, in:<folder>, before:YYYY-MM-DD, after:YYYY-MM-DD. A message's whole \
+                      \"a phrase\", -word, from: to: subject:, has:attachment, has:pdf (or image, \
+                      document, spreadsheet, presentation, archive), filename:<part of a name>, \
+                      is:unread, is:read, is:flagged, is:pinned, in:<folder>, before:YYYY-MM-DD, \
+                      after:YYYY-MM-DD. A message's whole \
                       text is searched once it was opened; use `search_server` for the rest. When \
                       nothing is found, `suggestion` may give the search with typos fixed.",
         access: Access::Read,

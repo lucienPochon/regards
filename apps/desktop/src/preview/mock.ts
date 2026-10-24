@@ -21,6 +21,21 @@ const accountCount = Number(params.get("accounts") ?? "1");
 const accounts: FixtureAccount[] = accountCount === 0 ? [] : accountCount >= 2 ? [PERSONAL, WORK] : [PERSONAL];
 const started = Date.now();
 let messages: FixtureMessage[] = fixtureMessages(started, accounts);
+// `?gmail=1`: the first account is on Gmail, its own folders are labels, and a few messages have some.
+const labels = new Map<number, Set<number>>();
+if (params.get("gmail") === "1" && accounts[0]) {
+  const first = accounts[0];
+  first.account = { ...first.account, imap_capabilities: [...first.account.imap_capabilities, "X-GM-EXT-1"] };
+  const folder = (name: string) => first.mailboxes.find((m) => m.name === name)?.id;
+  const label = (subject: string, ...names: string[]) => {
+    const message = messages.find((m) => m.subject === subject);
+    const ids = names.map(folder).filter((id): id is number => id !== undefined);
+    if (message) labels.set(message.id, new Set(ids));
+  };
+  label("Re: Garden plot schedule", "Projects/Garden");
+  label("Your tickets: Zürich → Lugano, Sat 24 Oct", "Travel", "Receipts");
+  label("Your October statement is ready", "Receipts");
+}
 const drafts: Draft[] = [];
 /** Images in drafts' text, by Content-ID. */
 const draftImages = new Map<string, { mime: string; data: string }>();
@@ -235,8 +250,21 @@ function searchSamples(query: string, accountId: string | null, server = false) 
       case "subject":
         test = (m) => fold(m.subject).includes(value);
         break;
-      case "has":
-        test = (m) => m.attachments.length > 0;
+      case "has": {
+        // As the daemon reads files from the structure: by type, or by the name's extension.
+        const kinds: Record<string, (a: { name: string | null; mime: string }) => boolean> = {
+          pdf: (a) => a.mime === "application/pdf" || /\.pdf$/i.test(a.name ?? ""),
+          image: (a) => a.mime.startsWith("image/"),
+          images: (a) => a.mime.startsWith("image/"),
+          document: (a) => /\.(docx?|odt|rtf|pages)$/i.test(a.name ?? ""),
+          spreadsheet: (a) => /\.(xlsx?|xlsm|ods|csv|numbers)$/i.test(a.name ?? ""),
+        };
+        const kind = kinds[value];
+        test = kind ? (m) => m.attachments.some(kind) : (m) => m.attachments.length > 0;
+        break;
+      }
+      case "filename":
+        test = (m) => m.attachments.some((a) => fold(a.name ?? "").includes(value));
         break;
       case "is":
         test = (m) => (value === "unread" ? !m.seen : value === "read" ? m.seen : value === "flagged" ? m.flagged : true);
@@ -1328,6 +1356,19 @@ function handle(cmd: string, args: Args): unknown {
         images_from_sender: imagesFrom(accountOfMailbox(message.mailboxId)?.account.id ?? "", message.from?.address),
         attachments: message.attachments,
       };
+    }
+    case "message_labels":
+      return { messages: (args.ids as number[]).map((id) => ({ id, labels: [...(labels.get(id) ?? [])].sort((a, b) => a - b) })) };
+    case "message_set_labels": {
+      const ids = args.ids as number[];
+      for (const id of ids) {
+        const now = labels.get(id) ?? new Set<number>();
+        for (const add of args.add as number[]) now.add(add);
+        for (const remove of args.remove as number[]) now.delete(remove);
+        labels.set(id, now);
+      }
+      changed();
+      return { messages: ids.map((id) => ({ id, labels: [...(labels.get(id) ?? [])].sort((a, b) => a - b) })), gone: [] };
     }
     case "message_conversation_ids": {
       const all: number[] = [];
