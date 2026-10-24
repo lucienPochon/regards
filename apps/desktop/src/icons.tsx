@@ -353,6 +353,20 @@ const PATHS = {
   ),
   single: <rect x="3" y="4.5" width="18" height="15" rx="2.5" />,
   moon: <path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z" />,
+  // An open eye: show.
+  eye: (
+    <>
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z" />
+      <circle cx="12" cy="12" r="2.75" />
+    </>
+  ),
+  // A closed padlock: kept private, encrypted.
+  lock: (
+    <>
+      <rect x="5" y="10.5" width="14" height="10" rx="2" />
+      <path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3" />
+    </>
+  ),
   // An eye, struck through: hide.
   eyeOff: (
     <>

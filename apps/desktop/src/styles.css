@@ -6299,105 +6299,565 @@ button.sender-row:hover:not(:disabled) {
   background: radial-gradient(circle at 50% 0%, var(--pill-strong), var(--bg) 60%);
 }
 
-.welcome-card {
-  display: grid;
-  justify-items: center;
-  width: min(560px, 100%);
-  padding: 32px 32px 26px;
+/* Adding an account (AddAccount.tsx): one question per card, on the first run and in Settings. */
+.signup-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(460px, 100%);
+  padding: 26px 34px 28px;
   border: 1px solid var(--border);
   border-radius: 18px;
   background: var(--bg-elev);
   box-shadow: var(--shadow-lg);
+}
+
+.signup-card h1 {
+  margin: 0;
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.signup-card p {
+  margin: 0;
+}
+
+.signup-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+}
+
+.signup-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 9px 0 4px;
+  border-radius: 8px;
+  color: var(--text-2);
+}
+
+.signup-back:hover {
+  background: var(--hover);
+}
+
+/* Three steps: the one shown is the long dot. */
+.signup-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.signup-dots > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-strong);
+  opacity: 0.4;
+  transition: width 0.2s;
+}
+
+.signup-dots > .on {
+  background: var(--accent);
+  opacity: 1;
+}
+
+.signup-dots > .now {
+  width: 22px;
+}
+
+.signup-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.signup-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.signup-titles .muted,
+.signup-problem .muted,
+.signup-done .muted {
+  line-height: 1.45;
+}
+
+.signup-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.signup-field .muted.small {
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.input.big {
+  height: 44px;
+  padding: 0 13px;
+  border-radius: 10px;
+  font-size: 15px;
+}
+
+.btn.big {
+  height: 44px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* Under the address: what the lookup found. */
+.signup-found {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--notice);
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.signup-found .icon {
+  flex: none;
+}
+
+.signup-found.good {
+  background: var(--pill);
+  color: var(--accent-hover);
+}
+
+.signup-found.warn {
+  background: var(--warm-soft);
+  color: var(--warm-text);
+}
+
+.signup-found.bad {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.signup-foot {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+}
+
+.signup-foot .icon {
+  flex: none;
+}
+
+.signup-foot button.link {
+  padding: 1px 4px;
+}
+
+/* The address, once given: who is signing in, and a way back to change it. */
+.signup-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.signup-chip.warn {
+  border-color: var(--warm-line);
+  background: var(--warm-soft);
+  color: var(--warm-text);
+}
+
+.signup-initial {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--pill-strong);
+  color: var(--accent-hover);
+  font-weight: 700;
+}
+
+.signup-chip-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 12.5px;
+}
+
+.signup-chip-text strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signup-tip {
+  display: flex;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  background: var(--notice);
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.signup-tip .icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+/* The password, with a button to show it. */
+.signup-secret {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.signup-secret .input {
+  padding-right: 46px;
+}
+
+.signup-secret .icon-btn {
+  position: absolute;
+  right: 5px;
+}
+
+.signup-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--notice);
+  color: var(--text-2);
+  font-size: 13px;
+  list-style: none;
+}
+
+.signup-steps li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.signup-steps li > span:first-child {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-elev);
+  color: var(--accent-hover);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.signup-steps strong {
+  color: var(--text);
+}
+
+.signup-alt {
+  font-size: 13px;
   text-align: center;
 }
 
-.welcome-card h1 {
-  margin: 16px 0 6px;
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+/* Checking: what is done, and what is under way. */
+.signup-checks {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  list-style: none;
 }
 
-.welcome-card > p {
-  max-width: 46ch;
+.signup-checks li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
 }
 
-.welcome-card .account-form {
+.signup-checks li + li {
+  border-top: 1px solid var(--border);
+}
+
+.signup-checks li > span:nth-child(2) {
+  flex: 1;
+}
+
+.signup-checks li > .muted {
+  font-size: 12.5px;
+}
+
+.signup-checks li.done > .icon {
+  box-sizing: content-box;
+  padding: 3.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.signup-checks li.now {
+  background: var(--pill);
+  font-weight: 600;
+}
+
+.signup-checks li.now .muted {
+  font-weight: 400;
+}
+
+.signup-checks .spinner.small {
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  border-width: 2.5px;
+  border-color: var(--pill-strong);
+  border-top-color: var(--accent);
+}
+
+/* The servers, when they could not be found or need changing. */
+.signup-server {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.signup-server.marked {
+  border-color: var(--danger);
+}
+
+/* Floated, the legend is laid out as the group's first row. */
+.signup-server legend {
+  display: flex;
+  float: left;
+  align-items: baseline;
+  gap: 4px;
   width: 100%;
-  margin-top: 20px;
+  padding: 0;
+  font-size: 13.5px;
+  font-weight: 600;
 }
 
-/* Signing in with Microsoft or Google: above the password form, then waiting for the browser. */
-.oauth-choice {
+.signup-server legend .muted {
+  font-weight: 400;
+}
+
+.signup-always {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.signup-row {
+  display: flex;
+  gap: 10px;
+}
+
+.signup-row .grow {
+  flex: 1;
+}
+
+.signup-row .port {
+  flex: 0 0 84px;
+}
+
+.signup-server .signup-field {
+  gap: 5px;
+  font-size: 12.5px;
+}
+
+.signup-server .input,
+.signup-body > .signup-field > .input:not(.big) {
+  height: 40px;
+  border-radius: 10px;
+  font-size: 14.5px;
+}
+
+.signup-segmented {
+  display: flex;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--chip);
+}
+
+.signup-segmented button {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.signup-segmented button[aria-checked="true"] {
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-sm), 0 1px 3px rgb(0 0 0 / 0.08);
+  color: var(--text);
+}
+
+/* When it doesn't work: the problem, and the ways forward. */
+.signup-problem {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.signup-problem > span {
   display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.signup-problem > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.signup-problem h1 {
+  font-size: 21px;
+}
+
+.signup-problem strong {
+  color: var(--text-2);
+}
+
+.signup-choices {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
-.oauth-button {
+.signup-choice {
   display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
-  min-height: 52px;
-  padding: 8px 14px;
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  background: var(--bg);
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elev);
   color: var(--text);
   text-align: left;
 }
 
-.oauth-button:hover {
-  border-color: var(--accent);
+.signup-choice:hover {
+  background: var(--hover);
 }
 
-.oauth-button.suggested {
-  border-color: var(--accent);
+.signup-choice.main {
+  padding: 10px 13px;
+  border: 2px solid var(--accent);
   background: var(--pill);
 }
 
-.oauth-button > .icon {
+.signup-choice > .icon {
   flex: none;
   color: var(--accent);
 }
 
-.oauth-button > span:not(.chip) {
-  display: grid;
-  flex: 1;
-  gap: 1px;
-  min-width: 0;
+.signup-choice > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.oauth-button strong {
-  font-size: 14px;
-}
-
-.oauth-button .muted {
+.signup-choice .muted {
   font-size: 12.5px;
 }
 
-.oauth-button .chip {
-  background: var(--pill-strong);
-  color: var(--accent);
-}
-
-.oauth-or {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 6px 0 2px;
+.signup-said {
   color: var(--muted);
   font-size: 12.5px;
 }
 
-.oauth-or::before,
-.oauth-or::after {
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-  content: "";
+.signup-said summary {
+  cursor: pointer;
 }
 
+.signup-said code {
+  display: block;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--notice);
+  color: var(--text-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* Ready: done, and the name people see. */
+.signup-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.signup-done > span {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.signup-another {
+  align-self: center;
+  font-size: 14px;
+}
+
+.signup-card .oauth-waiting {
+  margin-top: 0;
+}
+
+/* In Settings › Accounts the card sits in the page, not over it. */
+.settings-pane .signup-card {
+  width: 100%;
+  padding: 22px 28px 24px;
+  box-shadow: var(--shadow-md);
+}
+
+/* Signing in with Microsoft or Google: waiting for the browser. */
 .oauth-waiting {
   display: grid;
   justify-items: center;
@@ -6444,61 +6904,6 @@ button.sender-row:hover:not(:disabled) {
 .oauth-url .btn {
   flex: none;
   margin-top: 0;
-}
-
-.welcome-card .oauth-waiting {
-  margin-top: 20px;
-}
-
-/* Adding an account: what the lookup found, the password tip, and the servers behind a disclosure. */
-.lookup-status {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: -4px 0 0;
-  color: var(--muted);
-  font-size: 12.5px;
-  text-align: left;
-}
-
-.lookup-status .icon {
-  flex: none;
-  color: var(--accent);
-}
-
-.password-help {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 1.45;
-}
-
-.oauth-only {
-  margin: 0;
-  color: var(--text-2);
-  font-size: 13px;
-  text-align: left;
-}
-
-.oauth-only.error {
-  color: var(--danger);
-}
-
-.server-settings {
-  display: grid;
-  gap: 12px;
-}
-
-.server-settings[open] {
-  padding-bottom: 2px;
-}
-
-.server-settings > summary {
-  justify-self: start;
-}
-
-.server-settings[open] > summary {
-  margin-bottom: 12px;
 }
 
 /* Settings controls: a switch, a dropdown, a row that opens a page, and that page's head. */
@@ -7245,8 +7650,7 @@ button.sender-row:hover:not(:disabled) {
   color: var(--muted);
 }
 
-.about-head .mark,
-.welcome-card .mark {
+.about-head .mark {
   filter: drop-shadow(0 8px 16px rgb(16 26 21 / 0.22));
 }
 

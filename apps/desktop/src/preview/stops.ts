@@ -25,6 +25,9 @@ export interface Group {
 const NEWSLETTER = "message:4";
 const settings = (page: string, ...more: string[]) => ["wait:600", `settings:${page}`, ...more];
 const openRow = (words: string) => ["wait:700", `text:.row-main=${words}`];
+/** The first run's address typed, and looked up. */
+const signUp = (address: string) => ["wait:500", `type:${address}`, "wait:1300"];
+const signIn = (address: string, password: string) => [...signUp(address), "text:button=Continue", "wait:300", `type:${password}`, "text:button=Sign in"];
 
 export const TOUR: Group[] = [
   {
@@ -167,7 +170,16 @@ export const TOUR: Group[] = [
   {
     title: "Accounts",
     stops: [
-      { id: "first-run", label: "First run", note: "No account yet.", params: { accounts: "0" } },
+      { id: "first-run", label: "First run", note: "No account yet: the address first, nothing else.", params: { accounts: "0" } },
+      { id: "signup-found", label: "Sign-up › Settings found", note: "Looked up a moment after typing stops.", params: { accounts: "0" }, steps: signUp("ada@ik.me") },
+      { id: "signup-password", label: "Sign-up › Password", note: "The address in a chip; the servers a click away.", params: { accounts: "0" }, steps: [...signUp("ada@ik.me"), "text:button=Continue"] },
+      { id: "signup-checking", label: "Sign-up › Checking", note: "Receiving and sending are both checked before anything is saved.", params: { accounts: "0" }, steps: [...signIn("ada@ik.me", "correct horse"), "wait:300"] },
+      { id: "signup-wrong", label: "Sign-up › Password turned down", note: "Both user names tried; ways forward, with the server's own words folded away.", params: { accounts: "0" }, steps: [...signIn("ada@ik.me", "wrong"), "wait:2200"] },
+      { id: "signup-no-send", label: "Sign-up › Sending fails", note: "Receiving works: check the servers, or add it anyway.", params: { accounts: "0" }, steps: [...signIn("ada@ik.me", "nosend"), "wait:2200"] },
+      { id: "signup-ready", label: "Sign-up › Ready", note: "The name people see is asked last, and filled in.", params: { accounts: "0" }, steps: [...signIn("ada.lovelace@ik.me", "correct horse"), "wait:2200"] },
+      { id: "signup-servers", label: "Sign-up › Servers not found", note: "Typed by hand: receiving is TLS only; sending STARTTLS or TLS sets the port.", params: { accounts: "0" }, steps: [...signUp("ada@unknown-host.ch"), "text:button=Continue"] },
+      { id: "signup-google", label: "Sign-up › Google", note: "In the browser; an app password as the way around.", params: { accounts: "0" }, steps: [...signUp("ada@gmail.com"), "text:button=Continue"] },
+      { id: "signup-oauth-only", label: "Sign-up › Outlook.com", note: "Microsoft's own sign-in only.", params: { accounts: "0" }, steps: [...signUp("ada@outlook.com"), "text:button=Continue"] },
       { id: "accounts", label: "Accounts", note: "Sync, addresses and signatures, details, remove.", params: { accounts: "2" }, steps: settings("Accounts") },
       { id: "account-details", label: "An account's details", note: "Your name, its label in Regards, colour, and the unified inbox.", params: { accounts: "2" }, steps: settings("Accounts", "text:button=Details") },
       { id: "identities", label: "Addresses", note: "Send as an alias.", steps: settings("Accounts", "text:button=Addresses") },
