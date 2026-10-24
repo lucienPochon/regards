@@ -11,6 +11,9 @@ import {
   type UndoInfo,
   archiveMessages,
   createFolder,
+  isGmail,
+  labelFolders,
+  setLabels,
   deleteFolder,
   emptyFolder,
   renameFolder,
@@ -94,6 +97,7 @@ import { AgentsMenu } from "./AgentsMenu";
 import { ConnectDialog, type ConnectId } from "./ConnectDialog";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { NameDialog, type NameRequest } from "./NameDialog";
+import { useLabels } from "./labels";
 import { type Template, listTemplates, saveTemplate } from "./templates";
 import { type AssistantJob, AssistantDialog, useAssistantKind } from "./AssistantDialog";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
@@ -194,6 +198,7 @@ const PALETTE_ACTIONS = [
   "forward",
   "remind",
   "unsubscribe",
+  "label",
 ] as const;
 
 type Picking = { title: string; confirm: string; initial: number; resolve: (time: number | null) => void };
@@ -778,9 +783,86 @@ export function App() {
     },
     [confirm, failed, archiveFrom],
   );
+  // Gmail labels (ADR-0009 §6): each Gmail account's label folders, and the labels of what shows.
+  const gmailLabels = useMemo(
+    () => new Map(accounts.filter((entry) => isGmail(entry.account)).map((entry) => [entry.account.id, labelFolders(entry.mailboxes)])),
+    [accounts],
+  );
+  const labelIds = useMemo(
+    () =>
+      [...feed.items, ...(openItem ? [openItem] : [])]
+        .filter((item) => gmailLabels.has(item.accountId))
+        .map((item) => item.id),
+    [feed.items, openItem, gmailLabels],
+  );
+  const shownLabels = useLabels(labelIds);
+  const labelsOf = (item: ListItem) =>
+    (shownLabels.labels.get(item.id) ?? []).flatMap((id) => {
+      const folder = gmailLabels.get(item.accountId)?.find((mailbox) => mailbox.id === id);
+      return folder ? [{ id, name: leafName(folder) }] : [];
+    });
+  // The picker reads these when opened: the host stays the same as labels change.
+  const labelState = useRef({ folders: gmailLabels, labels: shownLabels.labels, update: shownLabels.update });
+  labelState.current = { folders: gmailLabels, labels: shownLabels.labels, update: shownLabels.update };
+  const hasLabels = useCallback((accountId: string) => labelState.current.folders.has(accountId), []);
+  const pickLabels = useCallback(
+    (ids: number[], accountId: string) => {
+      const { folders, labels } = labelState.current;
+      const have = (label: number) => ids.every((id) => (labels.get(id) ?? []).includes(label));
+      const change = (add: number[], remove: number[]) =>
+        setLabels(ids, add, remove)
+          .then((result) => {
+            labelState.current.update(result.messages);
+            if (result.gone.length > 0) moved(result.gone, null);
+          })
+          .catch(failed);
+      setMenu({
+        anchor: { x: 0, y: 0 },
+        variant: "palette",
+        title: ids.length === 1 ? "Labels" : `Labels of ${ids.length} messages`,
+        label: "Labels",
+        filter: "Find a label",
+        entries: [
+          ...(folders.get(accountId) ?? []).map((folder) => ({
+            label: folder.delimiter ? folder.name.split(folder.delimiter).join(" › ") : folder.name,
+            icon: have(folder.id) ? ("check" as const) : ("tag" as const),
+            onSelect: () => void (have(folder.id) ? change([], [folder.id]) : change([folder.id], [])),
+          })),
+          "separator",
+          {
+            label: "New label…",
+            icon: "plus",
+            onSelect: () =>
+              setNaming({
+                title: "New label",
+                label: "Label name",
+                value: "",
+                confirm: "Create",
+                onSave: (name) => createFolder(accountId, null, name).then((made) => change([made.id], [])),
+              }),
+          },
+        ],
+      });
+    },
+    [moved, failed],
+  );
   const host = useMemo<ActionHost>(
-    () => ({ compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder, junkFolder, inboxFolder, unsubscribe: leaveList }),
-    [compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder, junkFolder, inboxFolder, leaveList],
+    () => ({
+      compose,
+      moved,
+      marked,
+      failed,
+      confirm,
+      pickFolder,
+      pickSnooze,
+      pickReminder,
+      junkFolder,
+      inboxFolder,
+      unsubscribe: leaveList,
+      hasLabels,
+      pickLabels,
+    }),
+    [compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder, junkFolder, inboxFolder, leaveList, hasLabels, pickLabels],
   );
   const actionsForItems = useCallback((list: ListItem[]) => messageActions(targetOf(list), host), [host]);
   const actionsFor = useCallback((target: Target) => messageActions(target, host), [host]);
@@ -1722,6 +1804,7 @@ export function App() {
         }}
         onPick={setPicked}
         actionsFor={actionsForItems}
+        labelsOf={gmailLabels.size > 0 ? labelsOf : undefined}
         onDoneAll={role === "inbox" || view.kind === "section" ? doneWith : undefined}
         onPalette={(actions, paletteTitle, about) => palette(actions, paletteTitle, about ? [senderEntry(about)] : [])}
         empty={empty}
@@ -1773,6 +1856,8 @@ export function App() {
     <ReadingPane
       key={openItem.id}
       item={openItem}
+      labels={labelsOf(openItem)}
+      onLabel={(mailboxId) => changeView({ kind: "mailbox", mailboxId, accountId: openItem.accountId })}
       stepped={openedByStep}
       folders={folders}
       mode={layout.mode}

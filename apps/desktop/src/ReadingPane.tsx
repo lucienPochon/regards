@@ -86,6 +86,8 @@ export function ReadingPane({
   assistant,
   onClose,
   onStep,
+  labels = [],
+  onLabel,
   stepped = false,
 }: {
   item: ListItem;
@@ -103,6 +105,9 @@ export function ReadingPane({
   onClose: () => void;
   /** The next (1) or previous (-1) message of the list, when the list is not beside it. */
   onStep?: (by: number) => void;
+  /** Its Gmail labels, each opening its folder. */
+  labels?: { id: number; name: string }[];
+  onLabel?: (id: number) => void;
   /** Opened by stepping through the list with the keyboard: read only if one stays. */
   stepped?: boolean;
 }) {
@@ -248,7 +253,7 @@ export function ReadingPane({
           )}
         </div>
         <div className="reader-tools">
-          {choose(actions, "delete", "flag", "unread", "read", "pin", "aside", "snooze", "unsubscribe").map(tool)}
+          {choose(actions, "delete", "flag", "unread", "read", "pin", "aside", "snooze", "label", "unsubscribe").map(tool)}
           <button
             type="button"
             className="icon-btn"
@@ -278,6 +283,21 @@ export function ReadingPane({
       </header>
       <div className="reader-scroll">
         <h1 className="reader-subject">{subject}</h1>
+        {labels.length > 0 && (
+          <div className="reader-labels" aria-label="Labels">
+            {labels.map((label) => (
+              <button
+                key={label.id}
+                type="button"
+                className="label-chip"
+                title={`Open ${label.name}`}
+                onClick={() => onLabel?.(label.id)}
+              >
+                {label.name}
+              </button>
+            ))}
+          </div>
+        )}
         {load.state === "failed" ? (
           <p className="error reader-error" role="alert">{load.message}</p>
         ) : (
