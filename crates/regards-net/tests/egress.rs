@@ -41,8 +41,12 @@ fn reserved(host: &str) -> bool {
         || ["example.org", "example.com", "example.net"].contains(&host)
 }
 
+/// Found when the test runs (cargo sets `CARGO_MANIFEST_DIR` for it): the
+/// value built in can name another checkout that shared the build folder.
 fn workspace() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+    let crate_dir =
+        std::env::var_os("CARGO_MANIFEST_DIR").map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from);
+    crate_dir.join("..").join("..")
 }
 
 /// The Rust sources that ship: each crate's and the desktop app's `src`.
