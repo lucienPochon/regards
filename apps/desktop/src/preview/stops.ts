@@ -180,6 +180,7 @@ export const TOUR: Group[] = [
       { id: "signup-servers", label: "Sign-up › Servers not found", note: "Typed by hand: receiving is TLS only; sending STARTTLS or TLS sets the port.", params: { accounts: "0" }, steps: [...signUp("ada@unknown-host.ch"), "text:button=Continue"] },
       { id: "signup-google", label: "Sign-up › Google", note: "In the browser; an app password as the way around.", params: { accounts: "0" }, steps: [...signUp("ada@gmail.com"), "text:button=Continue"] },
       { id: "signup-oauth-only", label: "Sign-up › Outlook.com", note: "Microsoft's own sign-in only.", params: { accounts: "0" }, steps: [...signUp("ada@outlook.com"), "text:button=Continue"] },
+      { id: "signup-no-imap", label: "Sign-up › No mail apps", note: "Proton Mail, Tuta, HEY: said under the address, before any password.", params: { accounts: "0" }, steps: signUp("ada@proton.me") },
       { id: "accounts", label: "Accounts", note: "Sync, addresses and signatures, details, remove.", params: { accounts: "2" }, steps: settings("Accounts") },
       { id: "account-details", label: "An account's details", note: "Your name, its label in Regards, colour, and the unified inbox.", params: { accounts: "2" }, steps: settings("Accounts", "text:button=Details") },
       { id: "identities", label: "Addresses", note: "Send as an alias.", steps: settings("Accounts", "text:button=Addresses") },

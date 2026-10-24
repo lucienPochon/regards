@@ -882,6 +882,15 @@ function handle(cmd: string, args: Args): unknown {
       const domain = String(args.email ?? "").split("@")[1]?.toLowerCase() ?? "";
       // A host whose servers can't be found: "unknown" in its name.
       if (domain.includes("unknown")) return { source: null, imap: null, smtp: null, oauth_only: false };
+      if (domain === "proton.me") {
+        return {
+          source: "known",
+          imap: null,
+          smtp: null,
+          oauth_only: false,
+          no_imap: "Proton Mail lets mail apps in only through its Proton Mail Bridge app, which Regards does not support yet.",
+        };
+      }
       if (domain === "outlook.com" || domain === "hotmail.com") {
         // Microsoft's consumer mail takes no password: only signing in with Microsoft.
         return { source: "known", imap: null, smtp: null, oauth: "microsoft", oauth_only: true };

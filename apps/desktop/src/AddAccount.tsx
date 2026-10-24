@@ -177,12 +177,14 @@ export function AddAccount({
   const known = found && asked.current?.address === email.trim() ? found : null;
   const offered = (result: Discovered | null) => (result?.oauth && providers.includes(result.oauth) ? result.oauth : null);
   const provider = offered(known);
-  const blocked = known?.oauth_only === true && provider === null;
+  // No way in: the provider's own sign-in only, which this version lacks, or no mail app at all.
+  const shut = (result: Discovered) => (result.oauth_only && !offered(result)) || Boolean(result.no_imap);
+  const blocked = known !== null && shut(known);
 
   const proceed = async () => {
     const clean = email.trim();
     const result = known ?? (await lookUp(clean));
-    if (!result || (result.oauth_only && !offered(result))) return;
+    if (!result || shut(result)) return;
     setInput((now) => ({ ...now, email: clean }));
     const way = offered(result);
     if (way) go({ kind: "provider", provider: way });
@@ -534,6 +536,14 @@ function Found({
     );
   }
   if (!found) return null;
+  if (found.no_imap) {
+    return (
+      <p className="signup-found bad" role="alert">
+        <Icon name="alert" size={15} />
+        {found.no_imap}
+      </p>
+    );
+  }
   if (blocked) {
     return (
       <p className="signup-found bad" role="alert">
