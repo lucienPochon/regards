@@ -333,6 +333,10 @@ impl Session {
                 self.require_ui()?;
                 discover::discover(&self.state, params(request)?).await
             }
+            methods::ACCOUNT_CHECK_SERVER => {
+                self.require_ui()?;
+                discover::check_server(&self.state, params(request)?).await
+            }
             methods::ACCOUNT_OAUTH_PROVIDERS => {
                 self.require_ui()?;
                 Ok(oauth::providers(&self.state))

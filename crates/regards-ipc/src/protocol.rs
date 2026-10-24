@@ -49,6 +49,9 @@ pub mod methods {
     /// An address's mail servers, found before the person types them
     /// (known providers, DNS, then the usual names, checked). `ui` only.
     pub const ACCOUNT_DISCOVER: &str = "account.discover";
+    /// Whether one server answers, before any password is typed; for a
+    /// sending server that does not, other settings that do. `ui` only.
+    pub const ACCOUNT_CHECK_SERVER: &str = "account.check_server";
     /// The providers this build can sign in with (ADR-0018). `ui` only.
     pub const ACCOUNT_OAUTH_PROVIDERS: &str = "account.oauth_providers";
     /// Begin signing in with a provider: the daemon waits for the browser to
@@ -660,6 +663,29 @@ pub enum SignIn {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiscoverParams {
     pub email: String,
+}
+
+/// Parameters of [`methods::ACCOUNT_CHECK_SERVER`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerCheckParams {
+    pub server: CheckedServer,
+    /// IMAP is always TLS.
+    pub settings: ServerSettings,
+}
+
+/// Result of [`methods::ACCOUNT_CHECK_SERVER`]. Nothing signed in: a wrong
+/// password still shows only when the account is added.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerCheckResult {
+    /// `None`: it answered, with a certificate valid for it. Otherwise why
+    /// not: connect, tls, timeout, not_imap or protocol.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<AccountCheckFailure>,
+    /// A sending server that did not answer: other settings on the same
+    /// host that did, best first (the same port with the other security,
+    /// then 587 with STARTTLS, then 465 with TLS).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggestion: Option<ServerSettings>,
 }
 
 /// Where [`methods::ACCOUNT_DISCOVER`] found the servers.

@@ -114,6 +114,22 @@ export const WORK: FixtureAccount = {
   ],
 };
 
+/** An account added in the preview: the usual folders, and no mail yet. `n` keeps its folder ids apart. */
+export function addedAccount(n: number, name: string, email: string, login: Partial<AccountSummary> = {}): FixtureAccount {
+  const base = 100 + 10 * n;
+  return {
+    account: { ...account(`added-${n}`, person(name, email), Date.now()), ...login },
+    mailboxes: [
+      box(base + 1, "INBOX", "inbox"),
+      box(base + 2, "Drafts", "drafts"),
+      box(base + 3, "Sent", "sent"),
+      box(base + 4, "Archive", "archive"),
+      box(base + 5, "Junk", "junk"),
+      box(base + 6, "Trash", "trash"),
+    ],
+  };
+}
+
 const pdf = (name: string, size: number): Attachment => ({ name, mime: "application/pdf", size, inline: false, risk: "open", preview: null });
 const jpg = (name: string, size: number): Attachment => ({ name, mime: "image/jpeg", size, inline: false, risk: "open", preview: "image" });
 

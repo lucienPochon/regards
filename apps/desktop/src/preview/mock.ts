@@ -12,7 +12,7 @@ import type { Signature } from "../signatures";
 import type { Template } from "../templates";
 import type { AgentAccess, AgentActivity, Hold } from "../agents";
 import { type Explanation, type Policy, type Screening, SECTIONS, type Section } from "../smart";
-import { type FixtureAccount, type FixtureMessage, ME, PERSONAL, WORK, fixtureMessages } from "./fixtures";
+import { type FixtureAccount, type FixtureMessage, ME, PERSONAL, WORK, addedAccount, fixtureMessages } from "./fixtures";
 
 type Args = Record<string, unknown>;
 
@@ -107,8 +107,10 @@ if (params.get("sendfail") === "1" && accounts[0]) {
 if ((params.get("autocopy") === "bcc" || params.get("autocopy") === "cc") && accounts[0]) {
   (accounts[0].account as { auto_copy?: unknown }).auto_copy = { kind: params.get("autocopy"), address: "archive@example.org" };
 }
-// The address a sign-in was started for; `?signin=1` signs the first account out of Microsoft.
+// The address a sign-in was started for, and with whom; `?signin=1` signs the first account out of Microsoft.
 let oauthEmail: string | null = null;
+let oauthProvider: "microsoft" | "google" = "microsoft";
+let added = 0;
 if (params.get("signin") === "1" && accounts[0]) {
   accounts[0].account = { ...accounts[0].account, sign_in: "microsoft", needs_sign_in: true };
   // A message sent meanwhile waits in the Outbox for the sign-in.
@@ -808,8 +810,49 @@ function handle(cmd: string, args: Args): unknown {
       };
     case "account_list":
       return accounts.map((a) => a.account);
-    case "account_add":
-      throw new Error("The preview cannot sign in to a real server.");
+    case "account_add": {
+      // Signing in takes a moment. In the preview a password "wrong" is turned down, "nosend" gets in
+      // but cannot send, and nothing answers at a server named "nowhere…"; anything else works.
+      const input = args.input as {
+        displayName: string;
+        email: string;
+        username: string | null;
+        password: string;
+        imapHost: string;
+        imapPort: number;
+        smtpHost: string;
+        smtpPort: number;
+        smtpSecurity: "tls" | "starttls";
+        skipSendCheck?: boolean;
+      };
+      const email = input.email.trim();
+      const imapHost = input.imapHost.trim();
+      const smtpHost = input.smtpHost.trim() || imapHost;
+      // Like the daemon: the address, then the part before the @, unless a user name was given.
+      const tried = input.username?.trim() ? [input.username.trim()] : [email, email.split("@")[0]];
+      return new Promise((resolve, reject) =>
+        window.setTimeout(() => {
+          const fail = (message: string, check: Record<string, unknown> | null) => reject({ message, check });
+          if (accounts.some((a) => a.account.email.toLowerCase() === email.toLowerCase()))
+            return fail(`${email} is already in Regards.`, null);
+          if (imapHost.startsWith("nowhere"))
+            return fail(`Could not connect to ${imapHost}:${input.imapPort}: no answer.`, { reason: "connect", server: "imap" });
+          if (input.password === "wrong")
+            return fail("[AUTHENTICATIONFAILED] Authentication failed.", { reason: "auth_failed", server: "imap", tried });
+          if (!input.skipSendCheck && (input.password === "nosend" || smtpHost.startsWith("nowhere")))
+            return fail(`Could not connect to ${smtpHost}:${input.smtpPort}: no answer.`, { reason: "connect", server: "smtp" });
+          added += 1;
+          const entry = addedAccount(added, input.displayName.trim() || email, email, {
+            username: tried[0],
+            imap: { host: imapHost, port: input.imapPort, security: "tls" },
+            smtp: { host: smtpHost, port: input.smtpPort, security: input.smtpSecurity },
+          });
+          accounts.push(entry);
+          changed();
+          resolve(entry.account);
+        }, 1800),
+      );
+    }
     case "account_set_login": {
       const input = args.input as {
         id: string;
@@ -832,8 +875,13 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return owner.account;
     }
+    case "account_check_server":
+      // Every server answers in the preview.
+      return {};
     case "account_discover": {
       const domain = String(args.email ?? "").split("@")[1]?.toLowerCase() ?? "";
+      // A host whose servers can't be found: "unknown" in its name.
+      if (domain.includes("unknown")) return { source: null, imap: null, smtp: null, oauth_only: false };
       if (domain === "outlook.com" || domain === "hotmail.com") {
         // Microsoft's consumer mail takes no password: only signing in with Microsoft.
         return { source: "known", imap: null, smtp: null, oauth: "microsoft", oauth_only: true };
@@ -1071,20 +1119,29 @@ function handle(cmd: string, args: Args): unknown {
       return { providers: ["microsoft", "google"] };
     case "account_oauth_start":
       oauthEmail = (args.email as string | null) ?? null;
+      oauthProvider = args.provider === "google" ? "google" : "microsoft";
       return { flow_id: "preview-flow", url: "https://login.example.test/authorize" };
     case "account_oauth_finish":
-      // `?oauth=ok`: signing in again works, for an account the preview has.
+      // `?oauth=ok`: signing in works: again, for an account the preview has, or for a new one.
       if (params.get("oauth") === "ok") {
         const owner = accounts.find((a) => a.account.email === oauthEmail);
-        if (owner) {
-          return new Promise((resolve) =>
-            window.setTimeout(() => {
+        const email = oauthEmail ?? "ada.lovelace@gmail.com";
+        const provider = oauthProvider;
+        return new Promise((resolve) =>
+          window.setTimeout(() => {
+            if (owner) {
               owner.account = { ...owner.account, needs_sign_in: false };
               changed();
-              resolve(owner.account);
-            }, 1500),
-          );
-        }
+              return resolve(owner.account);
+            }
+            added += 1;
+            // The provider gives the name on the account.
+            const entry = addedAccount(added, "Ada Lovelace", email, { sign_in: provider });
+            accounts.push(entry);
+            changed();
+            resolve(entry.account);
+          }, 1500),
+        );
       }
       // Waits like a person in the browser, then says what the preview cannot do.
       return new Promise((_, reject) =>
@@ -1888,9 +1945,12 @@ function handle(cmd: string, args: Args): unknown {
 mockIPC(
   (cmd, args) => {
     try {
-      // As the real bridge does, a failure comes back as its message, also from a call that takes a moment.
+      // As the real bridge does, a failure comes back as its message, also from a call that takes a moment;
+      // adding an account's comes back as { message, check }, as it is.
       return Promise.resolve(handle(cmd, (args ?? {}) as Args)).catch((error: unknown) =>
-        Promise.reject(error instanceof Error ? error.message : String(error)),
+        Promise.reject(
+          error instanceof Error ? error.message : typeof error === "object" && error !== null && "check" in error ? error : String(error),
+        ),
       );
     } catch (error) {
       return Promise.reject(error instanceof Error ? error.message : String(error));

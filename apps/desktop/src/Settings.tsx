@@ -8,8 +8,8 @@ import { AgentsGate } from "./AgentsGate";
 import { AgentHolds } from "./AgentHolds";
 import { leafName } from "./views";
 import { AGENT_ACCESS_LEVELS, AGENT_SEND_WINDOW, type AgentAccess, setAgentAccess, setAgentSend } from "./agents";
-import { AccountForm } from "./AccountForm";
 import { AccountLogin } from "./AccountLogin";
+import { AddAccount } from "./AddAccount";
 import { IdentitiesEditor } from "./IdentitiesEditor";
 import { AssistantPage } from "./AssistantSettings";
 import { OauthWaiting, PROVIDERS, useOauth } from "./OauthSignIn";
@@ -192,10 +192,7 @@ function AccountsTab({ mail, confirm }: { mail: MailState; confirm: (request: Co
         </ul>
       )}
       {adding ? (
-        <section className="panel">
-          <h4>Add an account</h4>
-          <AccountForm onDone={() => setAdding(false)} onCancel={() => setAdding(false)} />
-        </section>
+        <AddAccount onDone={() => setAdding(false)} onCancel={() => setAdding(false)} />
       ) : (
         <button type="button" className="btn" onClick={() => setAdding(true)}>
           <Icon name="plus" size={16} />
