@@ -267,10 +267,14 @@ async fn deliver(state: &State, entry: &Entry) -> Result<Submitted, SubmitError>
 }
 
 pub(crate) fn smtp_server(account: &Account) -> SmtpServer {
+    smtp_endpoint(&account.smtp)
+}
+
+pub(crate) fn smtp_endpoint(server: &accounts::Server) -> SmtpServer {
     SmtpServer {
-        host: account.smtp.host.clone(),
-        port: account.smtp.port,
-        security: match account.smtp.security {
+        host: server.host.clone(),
+        port: server.port,
+        security: match server.security {
             accounts::Security::Tls => Security::Tls,
             accounts::Security::Starttls => Security::StartTls,
         },

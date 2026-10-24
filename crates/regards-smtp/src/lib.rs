@@ -101,15 +101,21 @@ impl SubmitError {
             retry: false,
         }
     }
+
+    /// The server's certificate was not accepted (checking an account's
+    /// settings tells this apart from other refusals).
+    pub fn is_certificate(&self) -> bool {
+        matches!(self, Self::NotSent { reason, retry: false } if reason.starts_with(CERTIFICATE_REFUSED))
+    }
 }
+
+const CERTIFICATE_REFUSED: &str = "the server's security certificate was not accepted";
 
 impl From<NetError> for SubmitError {
     fn from(error: NetError) -> Self {
         match error {
             // A certificate problem does not go away by waiting.
-            NetError::Tls(reason) => {
-                SubmitError::refused(format!("the server's security certificate was not accepted: {reason}"))
-            }
+            NetError::Tls(reason) => SubmitError::refused(format!("{CERTIFICATE_REFUSED}: {reason}")),
             other => SubmitError::later(other.to_string()),
         }
     }

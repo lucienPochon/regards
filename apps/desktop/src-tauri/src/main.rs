@@ -47,7 +47,7 @@ use regards_ipc::protocol::{
     SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SetLabelsParams,
     SetLabelsResult, SignatureListResult, SignatureRef, SignatureSaveParams, SignatureView, SmartOverviewResult,
     SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView,
-    UndoParams, UndoResult, UnsubscribeParams, UnsubscribeResult, View, ViewParams, methods,
+    UndoParams, UndoResult, UnsubscribeParams, UnsubscribeResult, View, ViewParams, codes, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -203,6 +203,34 @@ struct AccountInput {
     smtp_host: String,
     smtp_port: u16,
     smtp_security: ConnectionSecurity,
+    #[serde(default)]
+    skip_send_check: bool,
+}
+
+/// A refused account check as the UI gets it: the daemon's message and,
+/// for a server's refusal, `AccountCheckDetails` (what failed, on which
+/// server, with which user names), so the form can say what to change.
+#[derive(Debug, Serialize)]
+struct CheckFailure {
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    check: Option<Value>,
+}
+
+impl From<String> for CheckFailure {
+    fn from(message: String) -> Self {
+        Self { message, check: None }
+    }
+}
+
+fn check_failure(error: ClientError) -> CheckFailure {
+    match error {
+        ClientError::Rpc(error) => CheckFailure {
+            check: error.data.filter(|_| error.code == codes::ACCOUNT_CHECK_FAILED),
+            message: error.message,
+        },
+        other => other.to_string().into(),
+    }
 }
 
 #[tauri::command]
@@ -213,7 +241,7 @@ async fn account_list(bridge: State<'_, Bridge>) -> Result<Vec<AccountSummary>, 
 
 /// Check the sign-in with the server, then save the account (password in the OS credential store).
 #[tauri::command]
-async fn account_add(bridge: State<'_, Bridge>, input: AccountInput) -> Result<AccountSummary, String> {
+async fn account_add(bridge: State<'_, Bridge>, input: AccountInput) -> Result<AccountSummary, CheckFailure> {
     let smtp_host = match input.smtp_host.trim() {
         "" => input.imap_host.clone(),
         host => host.to_owned(),
@@ -233,9 +261,10 @@ async fn account_add(bridge: State<'_, Bridge>, input: AccountInput) -> Result<A
             port: input.smtp_port,
             security: input.smtp_security,
         },
+        skip_send_check: input.skip_send_check,
     };
     let mut client = bridge.connect().await?.client;
-    client.call(methods::ACCOUNT_ADD, params).await.map_err(describe)
+    client.call(methods::ACCOUNT_ADD, params).await.map_err(check_failure)
 }
 
 /// What agents may do with an account (ADR-0012): off, read, triage or send.
@@ -587,7 +616,7 @@ struct LoginInput {
 /// Change a password account's user name, password or servers; the daemon
 /// checks them with the IMAP server first.
 #[tauri::command]
-async fn account_set_login(bridge: State<'_, Bridge>, input: LoginInput) -> Result<AccountSummary, String> {
+async fn account_set_login(bridge: State<'_, Bridge>, input: LoginInput) -> Result<AccountSummary, CheckFailure> {
     let smtp_host = match input.smtp_host.trim() {
         "" => input.imap_host.clone(),
         host => host.to_owned(),
@@ -608,7 +637,10 @@ async fn account_set_login(bridge: State<'_, Bridge>, input: LoginInput) -> Resu
         },
     };
     let mut client = bridge.connect().await?.client;
-    client.call(methods::ACCOUNT_SET_LOGIN, params).await.map_err(describe)
+    client
+        .call(methods::ACCOUNT_SET_LOGIN, params)
+        .await
+        .map_err(check_failure)
 }
 
 /// The providers this version can sign in with (ADR-0018); others use a password.

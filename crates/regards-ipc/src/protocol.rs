@@ -565,12 +565,18 @@ pub struct ServerSettings {
 pub struct AccountAddParams {
     pub display_name: String,
     pub email: String,
-    /// Defaults to `email`.
+    /// When absent, the address is tried, then the part before its `@`
+    /// (some hosts want only that).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
     pub password: Secret,
     pub imap: ServerSettings,
     pub smtp: ServerSettings,
+    /// Add the account without signing in to the SMTP server first, for
+    /// example on a network that blocks the mail ports: the first send
+    /// says what is wrong instead.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub skip_send_check: bool,
 }
 
 /// Parameters of [`methods::ACCOUNT_SET_AUTO_COPY`].
@@ -2523,7 +2529,29 @@ pub struct MessageListResult {
     pub next: Option<MessageCursor>,
 }
 
-/// Why an account check failed: `data.reason` of [`codes::ACCOUNT_CHECK_FAILED`].
+/// `data` of [`codes::ACCOUNT_CHECK_FAILED`]: what failed, so the account
+/// form can say what to change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountCheckDetails {
+    pub reason: AccountCheckFailure,
+    pub server: CheckedServer,
+    /// The user names the server refused, in the order tried (empty for
+    /// OAuth sign-in).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tried: Vec<String>,
+}
+
+/// Which of an account's servers turned the check down.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckedServer {
+    /// Receiving.
+    Imap,
+    /// Sending.
+    Smtp,
+}
+
+/// Why an account check failed: [`AccountCheckDetails::reason`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AccountCheckFailure {
@@ -2532,7 +2560,7 @@ pub enum AccountCheckFailure {
     /// The server's certificate was not accepted.
     Tls,
     Timeout,
-    /// Something other than an IMAP server answered.
+    /// Something other than an IMAP server answered (receiving only).
     NotImap,
     /// Wrong user name or password.
     AuthFailed,
