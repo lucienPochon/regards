@@ -155,6 +155,11 @@ export interface Discovered {
   oauth_only: boolean;
   /** What to tell the person about the password, such as making an app password. */
   password_help?: string;
+  /**
+   * The provider lets no mail app in (Proton Mail, Tuta, HEY): what to tell
+   * the person, instead of asking for a password or servers.
+   */
+  no_imap?: string;
 }
 
 /**

@@ -36,6 +36,9 @@ pub(crate) async fn discover(state: &State, params: DiscoverParams) -> Result<Va
 }
 
 async fn find(tls: &TlsOptions, domain: &str) -> DiscoverResult {
+    if let Some(why) = autoconfig::no_imap(domain) {
+        return no_imap(why, DiscoverSource::Known);
+    }
     if let Some(settings) = autoconfig::known(domain) {
         return result(settings, DiscoverSource::Known);
     }
@@ -51,6 +54,9 @@ async fn find(tls: &TlsOptions, domain: &str) -> DiscoverResult {
             srv(&resolver, &names[1]),
             srv(&resolver, &names[2]),
         );
+        if let Some(why) = autoconfig::no_imap_by_mx(&mx) {
+            return no_imap(why, DiscoverSource::Mx);
+        }
         if let Some(settings) = autoconfig::by_mx(&mx) {
             return result(settings, DiscoverSource::Mx);
         }
@@ -99,6 +105,16 @@ fn result(settings: Settings, source: DiscoverSource) -> DiscoverResult {
         oauth: settings.oauth,
         oauth_only: settings.oauth_only,
         password_help: settings.password_help.map(str::to_owned),
+        no_imap: None,
+    }
+}
+
+/// A provider that lets no mail app in: no servers to offer.
+fn no_imap(why: &str, source: DiscoverSource) -> DiscoverResult {
+    DiscoverResult {
+        source: Some(source),
+        no_imap: Some(why.to_owned()),
+        ..DiscoverResult::default()
     }
 }
 

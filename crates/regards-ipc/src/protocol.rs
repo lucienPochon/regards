@@ -689,6 +689,10 @@ pub struct DiscoverResult {
     /// What to tell the person about the password (an app password …).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password_help: Option<String>,
+    /// The provider lets no mail app in over IMAP (Proton Mail, Tuta, HEY):
+    /// what to tell the person, instead of asking for servers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no_imap: Option<String>,
 }
 
 /// The result of [`methods::ACCOUNT_OAUTH_PROVIDERS`]: those this build has
