@@ -199,7 +199,7 @@ export function removeAccount(id: string): Promise<void> {
 }
 
 /** Where `discoverAccount` found the servers. */
-export type DiscoverSource = "known" | "mx" | "dns" | "file" | "guess";
+export type DiscoverSource = "known" | "mx" | "dns" | "file" | "database" | "guess";
 
 /** Mirrors `DiscoverResult`: a proposal for the form, checked when the account is added. */
 export interface Discovered {

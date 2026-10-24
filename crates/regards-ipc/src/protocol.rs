@@ -702,6 +702,9 @@ pub enum DiscoverSource {
     /// The settings file the domain publishes (autoconfig), and the servers
     /// answered.
     File,
+    /// Thunderbird's database of providers, shipped with Regards, by the
+    /// domain or its MX host names; the servers answered.
+    Database,
     /// The usual names on the domain (`imap.`, `mail.`, `smtp.`), which answered.
     Guess,
 }

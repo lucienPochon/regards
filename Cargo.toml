@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/regards-core",
+    "crates/regards-ispdb",
     "crates/regards-ipc",
     "crates/regards-daemon",
     "crates/regards-cli",
@@ -27,6 +28,7 @@ regards-core = { path = "crates/regards-core" }
 regards-ipc = { path = "crates/regards-ipc" }
 regards-daemon = { path = "crates/regards-daemon" }
 regards-imap = { path = "crates/regards-imap" }
+regards-ispdb = { path = "crates/regards-ispdb" }
 regards-net = { path = "crates/regards-net" }
 regards-smtp = { path = "crates/regards-smtp" }
 regards-store = { path = "crates/regards-store" }

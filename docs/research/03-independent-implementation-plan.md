@@ -151,6 +151,7 @@ flowchart LR
   - Proton Mail, Tuta and HEY are named as having no IMAP (`no_imap`).
   - After MX, the settings file the domain publishes (Thunderbird's autoconfig format) is read from `autoconfig.<domain>` or `.well-known`, over HTTPS and without the address. Its servers are probed like the usual names.
   - `provider_name` gives the name to show.
+  - Thunderbird's database of providers (ISPDB, 164 files, MPL-2.0) ships in `crates/regards-ispdb` and is read on the computer. It is checked by domain right after the known providers, and by MX host after the domain's own settings file. An entry naming a known provider's servers yields Regards' own entry (Microsoft's sign-in, for example).
 
   It takes 12 s at most. A real run found microsoft.com behind Microsoft 365 by its MX, and mailbox.org by its usual names (`tests/accounts.rs`, ignored by default). No ISPDB or other third party is asked.
 - **Accepted when:** setup succeeds against Microsoft 365, Outlook.com, Gmail (both paths), Infomaniak, iCloud and a self-hosted Dovecot, and no secret is ever written outside the keychain.
