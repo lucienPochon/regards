@@ -74,6 +74,12 @@ We must support generic IMAP/SMTP, Gmail and Microsoft 365/Outlook. Tenants may 
      - **Across folders:** copies in Inbox, Sent and All Mail share a Message-ID and so a thread. `thread.get` returns the conversation oldest first, one entry per message, with the folder it is in (or on its way to).
      - **When:** each message is threaded as sync stores it. Messages stored before threading existed are threaded in the background at startup, 500 at a time.
      - **Not yet:** the JWZ parent tree (replies are a flat list), subject fallback, and Gmail thread IDs.
+6. **Gmail labels over IMAP (2026-10-24, migration 37).** A label is a copy of the message in the label's folder, matched by Message-ID within the account. Every folder is synced, so the copies are already in the store.
+   - **Adding** a label copies the message there (a `copy` operation in the queue). **Removing** one deletes that copy (`\Deleted`, then UID EXPUNGE), which Gmail takes as the label removed: the mail stays in All Mail.
+   - **Label folders** are the account's own folders: no role, and not under `[Gmail]` or `[Google Mail]`.
+   - **A label added here** shows at once (`label_adds`), until the next sync of the label's folder brings the copy back.
+   - **Only on Gmail** (X-GM-EXT-1) does the app offer labels. Elsewhere a copy is a second message, not a label.
+   - **Not used:** `X-GM-LABELS`. It would need codec support and a Gmail server in the tests. Copies work with any IMAP server, and the Dovecot live tests cover them.
 
 ## Alternatives considered
 

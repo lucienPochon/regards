@@ -38,6 +38,8 @@ pub enum OperationKind {
     Move,
     /// Delete the messages for good: `\Deleted`, then UID EXPUNGE of exactly these.
     Delete,
+    /// Copy the messages to `target_mailbox_id`: a Gmail label added (migration 37).
+    Copy,
 }
 
 impl OperationKind {
@@ -47,6 +49,7 @@ impl OperationKind {
             Self::RemoveFlags => "remove_flags",
             Self::Move => "move",
             Self::Delete => "delete",
+            Self::Copy => "copy",
         }
     }
 }
@@ -58,7 +61,7 @@ pub struct NewOperation {
     pub kind: OperationKind,
     pub uids: Vec<u32>,
     pub flags: Vec<FlagName>,
-    /// For moves.
+    /// For moves and copies.
     pub target_mailbox_id: Option<i64>,
 }
 
@@ -211,6 +214,8 @@ pub fn reapply_pending(tx: &Transaction<'_>, mailbox_id: i64, uid_validity: u32)
             OperationKind::Delete => {
                 apply_locally(tx, mailbox_id, &operation.uids, &[FlagName::Deleted], true)?;
             }
+            // The source is unchanged; the label it adds waits in `label_adds`.
+            OperationKind::Copy => {}
         }
     }
     Ok(())
@@ -222,6 +227,31 @@ pub fn withdraw_move(tx: &Transaction<'_>, mailbox_id: i64, uid: u32) -> Result<
     let mut withdrew = false;
     for operation in pending(tx, mailbox_id)? {
         if operation.kind != OperationKind::Move || !operation.uids.contains(&uid) {
+            continue;
+        }
+        withdrew = true;
+        let rest: Vec<u32> = operation.uids.iter().copied().filter(|u| *u != uid).collect();
+        if rest.is_empty() {
+            remove(tx, operation.id)?;
+        } else {
+            tx.execute(
+                "UPDATE operations SET uids = ?2 WHERE id = ?1",
+                params![operation.id, json(&rest)],
+            )?;
+        }
+    }
+    Ok(withdrew)
+}
+
+/// Withdraw `uid` from pending copies to `target`: a label removed again
+/// before the server was told it was added. Whether one was pending.
+pub fn withdraw_copy(tx: &Transaction<'_>, mailbox_id: i64, uid: u32, target: i64) -> Result<bool, StoreError> {
+    let mut withdrew = false;
+    for operation in pending(tx, mailbox_id)? {
+        if operation.kind != OperationKind::Copy
+            || operation.target_mailbox_id != Some(target)
+            || !operation.uids.contains(&uid)
+        {
             continue;
         }
         withdrew = true;
@@ -258,6 +288,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Operation, StoreError>> {
                 "remove_flags" => OperationKind::RemoveFlags,
                 "move" => OperationKind::Move,
                 "delete" => OperationKind::Delete,
+                "copy" => OperationKind::Copy,
                 other => return Err(StoreError::Corrupt(format!("unknown operation {other:?}"))),
             },
             uids: serde_json::from_str(&uids).map_err(|e| StoreError::Corrupt(format!("operation uids: {e}")))?,

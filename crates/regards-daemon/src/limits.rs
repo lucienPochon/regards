@@ -27,6 +27,7 @@ const READING: &[&str] = &[
     methods::ATTACHMENT_PREVIEW,
     methods::THREAD_GET,
     methods::MESSAGE_CONVERSATION_IDS,
+    methods::MESSAGE_LABELS,
     methods::MESSAGE_VIEW,
     methods::SMART_OVERVIEW,
     methods::MESSAGE_EXPLAIN,

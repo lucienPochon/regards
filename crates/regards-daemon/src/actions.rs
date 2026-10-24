@@ -864,7 +864,7 @@ fn plan_moves(tx: &rusqlite::Transaction<'_>, requests: &[(i64, i64)], now: i64)
     Ok((moved, inverse, accounts))
 }
 
-fn check_count(ids: &[i64]) -> Result<(), RpcError> {
+pub(crate) fn check_count(ids: &[i64]) -> Result<(), RpcError> {
     if ids.is_empty() || ids.len() > MAX_MESSAGES {
         return Err(RpcError::new(
             codes::INVALID_PARAMS,

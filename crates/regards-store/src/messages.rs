@@ -128,6 +128,9 @@ pub fn upsert(tx: &Transaction<'_>, mailbox_id: i64, messages: &[NewMessage]) ->
         let mut references = headers.in_reply_to.clone();
         references.extend(headers.references.iter().cloned());
         crate::threads::assign(tx, &account_id, row, headers.message_id.as_deref(), &references)?;
+        if let Some(message_id) = headers.message_id.as_deref() {
+            crate::labels::synced(tx, mailbox_id, message_id)?;
+        }
         // Mail from the account itself: everyone it went to is someone it writes to.
         let from = headers.from.as_ref().and_then(|p| p.address.as_deref());
         if from.is_some_and(|address| own.iter().any(|mine| mine.eq_ignore_ascii_case(address))) {
@@ -712,6 +715,18 @@ pub fn by_uids(conn: &Connection, mailbox_id: i64, uids: &[u32]) -> Result<Vec<M
     ))?;
     let rows = statement.query_map(params![mailbox_id, uids], from_row)?;
     rows.map(|row| row?).collect()
+}
+
+/// The Message-ID of the message at `uid` in `mailbox_id`, if it has one.
+pub fn message_id_of(conn: &Connection, mailbox_id: i64, uid: u32) -> Result<Option<String>, StoreError> {
+    Ok(conn
+        .query_row(
+            "SELECT message_id_header FROM messages WHERE mailbox_id = ?1 AND uid = ?2",
+            params![mailbox_id, uid],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .optional()?
+        .flatten())
 }
 
 pub fn get(conn: &Connection, id: i64) -> Result<Option<Message>, StoreError> {

@@ -36,18 +36,18 @@ use regards_ipc::protocol::{
     DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult,
     DraftSetFromParams, DraftUpdateParams, DraftView, ExplainResult, HoldApproveParams, HoldListParams, HoldListResult,
     HoldRef, HoldView, IdentityListResult, IdentityRef, IdentitySaveParams, IdentitySetSignatureParams,
-    IdentitySetVoiceParams, IdentityView, MailboxCreateParams, MailboxListResult, MailboxRef, MailboxRenameParams,
-    MailboxSummary, MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams, MessageListResult,
-    MessageRef, MoveParams, MoveResult, NoteAddParams, NoteAddResult, NoteListParams, NoteListResult, NoteRef,
-    NoteRemoved, NoteSetEnabledParams, NoteSettings, NoteUpdateParams, NoteView, NotesForgotten, OauthFlowRef,
-    OauthProvidersResult, OauthStartParams, OauthStartResult, OutboxListResult, OutboxRef, OutboxRescheduleParams,
-    OutboxUndoResult, PinParams, Principal, RemindParams, SavedSearchListResult, SavedSearchOrderParams,
-    SavedSearchRef, SavedSearchSaveParams, SavedSearchView, Screening, ScreeningParams, SearchParams, SearchResult,
-    Section, SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams, SenderSetResult,
-    ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SignatureListResult, SignatureRef,
-    SignatureSaveParams, SignatureView, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef,
-    TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, UnsubscribeParams, UnsubscribeResult, View,
-    ViewParams, methods,
+    IdentitySetVoiceParams, IdentityView, LabelsResult, MailboxCreateParams, MailboxListResult, MailboxRef,
+    MailboxRenameParams, MailboxSummary, MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams,
+    MessageListResult, MessageRef, MoveParams, MoveResult, NoteAddParams, NoteAddResult, NoteListParams,
+    NoteListResult, NoteRef, NoteRemoved, NoteSetEnabledParams, NoteSettings, NoteUpdateParams, NoteView,
+    NotesForgotten, OauthFlowRef, OauthProvidersResult, OauthStartParams, OauthStartResult, OutboxListResult,
+    OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams, SavedSearchListResult,
+    SavedSearchOrderParams, SavedSearchRef, SavedSearchSaveParams, SavedSearchView, Screening, ScreeningParams,
+    SearchParams, SearchResult, Section, SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams,
+    SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SetLabelsParams,
+    SetLabelsResult, SignatureListResult, SignatureRef, SignatureSaveParams, SignatureView, SmartOverviewResult,
+    SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView,
+    UndoParams, UndoResult, UnsubscribeParams, UnsubscribeResult, View, ViewParams, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -1076,6 +1076,31 @@ async fn message_conversation_ids(bridge: State<'_, Bridge>, ids: Vec<i64>) -> R
     Ok(result.ids)
 }
 
+/// Each message's Gmail labels, as label folder ids.
+#[tauri::command]
+async fn message_labels(bridge: State<'_, Bridge>, ids: Vec<i64>) -> Result<LabelsResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_LABELS, MessageIds { ids })
+        .await
+        .map_err(describe)
+}
+
+/// Gmail labels added to and removed from messages (copies in label folders).
+#[tauri::command]
+async fn message_set_labels(
+    bridge: State<'_, Bridge>,
+    ids: Vec<i64>,
+    add: Vec<i64>,
+    remove: Vec<i64>,
+) -> Result<SetLabelsResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_SET_LABELS, SetLabelsParams { ids, add, remove })
+        .await
+        .map_err(describe)
+}
+
 /// Every unread message of a folder (or of one Smart Inbox section) read, with one undo.
 #[tauri::command]
 async fn message_mark_all_read(
@@ -2046,6 +2071,8 @@ fn main() {
             message_get,
             thread_get,
             message_conversation_ids,
+            message_labels,
+            message_set_labels,
             message_unsubscribe,
             message_set_flags,
             message_mark_all_read,
