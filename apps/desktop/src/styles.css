@@ -6726,6 +6726,49 @@ button.sender-row:hover:not(:disabled) {
   color: var(--text);
 }
 
+/* Under a server's fields: its check. */
+.signup-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.signup-check.good {
+  color: var(--accent-hover);
+}
+
+.signup-check.good .icon {
+  color: var(--accent);
+}
+
+.signup-check.bad {
+  gap: 10px;
+  padding: 9px 10px 9px 12px;
+  border-radius: 10px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  line-height: 1.4;
+}
+
+.signup-check.bad > span {
+  flex: 1;
+}
+
+.signup-check.bad .btn {
+  flex: none;
+  border-color: var(--danger);
+  background: var(--bg-elev);
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.signup-server.failed .input {
+  border-color: var(--danger);
+}
+
 /* When it doesn't work: the problem, and the ways forward. */
 .signup-problem {
   display: flex;

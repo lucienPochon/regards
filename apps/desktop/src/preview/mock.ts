@@ -875,9 +875,18 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return owner.account;
     }
-    case "account_check_server":
-      // Every server answers in the preview.
-      return {};
+    case "account_check_server": {
+      // In the preview servers answer, after a moment, except one named "nowhere…", and sending on
+      // port 587 at a host with "alpes" in its name, which answers on 465 with TLS instead.
+      const settings = args.settings as { host: string; port: number; security: string };
+      const answer =
+        settings.host.startsWith("nowhere")
+          ? { reason: "connect" }
+          : args.server === "smtp" && settings.host.includes("alpes") && settings.port === 587
+            ? { reason: "connect", suggestion: { host: settings.host, port: 465, security: "tls" } }
+            : {};
+      return new Promise((resolve) => window.setTimeout(() => resolve(answer), 700));
+    }
     case "account_discover": {
       const domain = String(args.email ?? "").split("@")[1]?.toLowerCase() ?? "";
       // A host whose servers can't be found: "unknown" in its name.
