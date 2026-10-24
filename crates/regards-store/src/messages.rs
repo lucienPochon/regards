@@ -223,24 +223,50 @@ pub fn drafts_elsewhere(conn: &Connection, account_id: Option<&str>) -> Result<V
     rows.map(|row| row?).collect()
 }
 
+/// A file a message carries, as its structure describes it (migration 38).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileShape {
+    /// Decoded and cleaned; `None` when unnamed.
+    pub name: Option<String>,
+    /// `type/subtype`, lowercase.
+    pub mime: String,
+}
+
 /// What a list row shows beyond the headers: whether the message carries
-/// files, and the start of its text.
+/// files, and the start of its text. The files themselves are kept for
+/// search (`filename:`, `has:pdf`).
 pub fn set_details(
     tx: &Transaction<'_>,
     mailbox_id: i64,
     uid: u32,
     has_attachments: bool,
     preview: Option<&str>,
+    files: &[FileShape],
 ) -> Result<(), StoreError> {
-    tx.prepare_cached("UPDATE messages SET has_attachments = ?3, preview = ?4 WHERE mailbox_id = ?1 AND uid = ?2")?
-        .execute(params![mailbox_id, uid, has_attachments, preview])?;
+    let id: Option<i64> = tx
+        .prepare_cached(
+            "UPDATE messages SET has_attachments = ?3, preview = ?4, files_read = 1 \
+             WHERE mailbox_id = ?1 AND uid = ?2 RETURNING id",
+        )?
+        .query_row(params![mailbox_id, uid, has_attachments, preview], |r| r.get(0))
+        .optional()?;
+    let Some(id) = id else { return Ok(()) };
+    tx.prepare_cached("DELETE FROM message_files WHERE message_id = ?1")?
+        .execute([id])?;
+    let mut insert = tx.prepare_cached("INSERT INTO message_files (message_id, name, mime) VALUES (?1, ?2, ?3)")?;
+    for file in files {
+        insert.execute(params![id, file.name, file.mime])?;
+    }
     Ok(())
 }
 
-/// Messages of a folder whose details were not fetched yet, newest first.
+/// Messages of a folder whose details were not fetched yet, newest first;
+/// and those carrying files read before files were listed (migration 38).
 pub fn details_unknown(conn: &Connection, mailbox_id: i64, limit: u32) -> Result<Vec<u32>, StoreError> {
     let mut statement = conn.prepare_cached(
-        "SELECT uid FROM messages WHERE mailbox_id = ?1 AND has_attachments IS NULL ORDER BY uid DESC LIMIT ?2",
+        "SELECT uid FROM messages WHERE mailbox_id = ?1 \
+         AND (has_attachments IS NULL OR (has_attachments = 1 AND files_read IS NULL)) \
+         ORDER BY uid DESC LIMIT ?2",
     )?;
     let rows = statement.query_map(params![mailbox_id, limit], |row| row.get(0))?;
     Ok(rows.collect::<Result<Vec<u32>, _>>()?)

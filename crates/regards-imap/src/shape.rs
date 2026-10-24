@@ -1,5 +1,6 @@
 //! What a message's structure says, for its row in a list (BODYSTRUCTURE):
-//! whether it carries files, and which part holds the start of its text.
+//! whether it carries files (and which: their types and names, for search),
+//! and which part holds the start of its text.
 //!
 //! Fetched apart from the headers: servers that send a malformed structure
 //! then cost a message its preview, not its place in the folder.
@@ -20,6 +21,19 @@ pub struct Shape {
     pub has_attachments: bool,
     /// Where its text is: a plain-text part if there is one, else HTML.
     pub text: Option<TextPart>,
+    /// The files, in order.
+    pub files: Vec<FilePart>,
+}
+
+/// A file a message carries, as its structure describes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FilePart {
+    /// `type/subtype`, lowercase.
+    pub mime: String,
+    /// Its Content-Type and Content-Disposition parameters as sent (keys
+    /// lowercase): the name may be split or encoded (RFC 2231, RFC 2047),
+    /// which the reader of these decodes.
+    pub params: Vec<(String, String)>,
 }
 
 /// The part holding a message's text, and how to read it.
@@ -172,7 +186,17 @@ fn walk(
                     }
                 }
                 // Images shown in the text (multipart/related) are not files to list.
-                _ if attached || (named && !related) => shape.has_attachments = true,
+                _ if attached || (named && !related) => {
+                    shape.has_attachments = true;
+                    let mut params = pairs(&body.basic.parameter_list);
+                    if let Some((_, disposition)) = disposition {
+                        params.extend(pairs(disposition));
+                    }
+                    shape.files.push(FilePart {
+                        mime: mime_of(&body.specific),
+                        params,
+                    });
+                }
                 _ => {}
             }
         }
@@ -188,6 +212,27 @@ fn param(params: &[(imap_types::core::IString<'_>, imap_types::core::IString<'_>
         .iter()
         .find(|(key, _)| lower(key.as_ref()) == name)
         .map(|(_, value)| String::from_utf8_lossy(value.as_ref()).trim().to_owned())
+}
+
+/// A single part's `type/subtype`, lowercase.
+fn mime_of(specific: &SpecificFields<'_>) -> String {
+    match specific {
+        SpecificFields::Basic { r#type, subtype } => format!("{}/{}", lower(r#type.as_ref()), lower(subtype.as_ref())),
+        SpecificFields::Message { .. } => "message/rfc822".into(),
+        SpecificFields::Text { subtype, .. } => format!("text/{}", lower(subtype.as_ref())),
+    }
+}
+
+fn pairs(params: &[(imap_types::core::IString<'_>, imap_types::core::IString<'_>)]) -> Vec<(String, String)> {
+    params
+        .iter()
+        .map(|(key, value)| {
+            (
+                lower(key.as_ref()),
+                String::from_utf8_lossy(value.as_ref()).into_owned(),
+            )
+        })
+        .collect()
 }
 
 fn has(params: &[(imap_types::core::IString<'_>, imap_types::core::IString<'_>)], name: &str) -> bool {
@@ -243,6 +288,15 @@ mod tests {
         let mixed = format!(r#"({alternative}{pdf} "MIXED" ("BOUNDARY" "m") NIL NIL NIL)"#);
         let found = shape(&mixed);
         assert!(found.has_attachments);
+        assert_eq!(found.files.len(), 1);
+        assert_eq!(found.files[0].mime, "application/pdf");
+        assert_eq!(
+            found.files[0].params,
+            [
+                ("name".to_owned(), "Ticket.pdf".to_owned()),
+                ("filename".to_owned(), "Ticket.pdf".to_owned())
+            ]
+        );
         assert_eq!(found.text.unwrap().section, [1, 1]);
     }
 

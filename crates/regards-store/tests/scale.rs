@@ -350,7 +350,7 @@ async fn bench_searching_100k_messages() {
                 let messages: Vec<NewMessage> = batch.iter().map(|(m, _)| m.clone()).collect();
                 messages::upsert(tx, inbox, &messages)?;
                 for (message, preview) in &batch {
-                    messages::set_details(tx, inbox, message.uid, message.uid % 7 == 0, Some(preview))?;
+                    messages::set_details(tx, inbox, message.uid, message.uid % 7 == 0, Some(preview), &[])?;
                 }
                 Ok(())
             })
