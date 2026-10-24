@@ -24,6 +24,10 @@ const ALLOWED: &[(&str, &str)] = &[
         "the assistant, when the person chooses Anthropic with their key",
     ),
     ("github.com", "release pages, opened in the browser"),
+    (
+        "autoconfig.",
+        "autoconfig.<the address's domain>: the mail settings file the person's own domain publishes",
+    ),
     ("localhost", "this computer"),
     ("127.0.0.1", "this computer"),
     ("regards-mail.localhost", "the reading frame, inside the app"),

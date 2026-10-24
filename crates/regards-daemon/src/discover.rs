@@ -1,13 +1,14 @@
 //! `account.discover` (plan §5.1): an address's mail servers, found before
 //! the person types any, in the order of [`regards_core::autoconfig`]:
-//! known providers, then DNS (MX for hosted domains, SRV records), then the
-//! usual names on the domain, probed with TLS so that a host is offered only
-//! if it answers with a valid certificate.
+//! known providers, then MX records (hosted domains), the settings file the
+//! domain publishes, SRV records, then the usual names on the domain;
+//! servers probed with TLS so that a host is offered only if it answers
+//! with a valid certificate.
 
 use crate::{State, accounts};
 use hickory_resolver::TokioResolver;
 use hickory_resolver::proto::rr::RData;
-use regards_core::autoconfig::{self, Endpoint, Security, Settings};
+use regards_core::autoconfig::{self, ConfigFile, Endpoint, Security, Settings};
 use regards_imap::{ImapServer, TlsOptions};
 use regards_ipc::protocol::{
     AccountCheckFailure, CheckedServer, ConnectionSecurity, DiscoverParams, DiscoverResult, DiscoverSource, RpcError,
@@ -23,6 +24,8 @@ use tokio::task::JoinSet;
 const TOTAL: Duration = Duration::from_secs(12);
 /// One DNS question.
 const DNS_WAIT: Duration = Duration::from_secs(4);
+/// A provider's settings file, from one of its two places.
+const FILE_WAIT: Duration = Duration::from_secs(4);
 /// One server's answer to a probe.
 const PROBE_WAIT: Duration = Duration::from_secs(6);
 
@@ -43,33 +46,105 @@ async fn find(tls: &TlsOptions, domain: &str) -> DiscoverResult {
     if let Some(settings) = autoconfig::known(domain) {
         return result(settings, DiscoverSource::Known);
     }
-    if let Ok(resolver) = TokioResolver::builder_tokio().and_then(|builder| builder.build()) {
-        let names = [
-            format!("_imaps._tcp.{domain}."),
-            format!("_submissions._tcp.{domain}."),
-            format!("_submission._tcp.{domain}."),
-        ];
-        let (mx, imaps, submissions, submission) = tokio::join!(
-            mx(&resolver, domain),
-            srv(&resolver, &names[0]),
-            srv(&resolver, &names[1]),
-            srv(&resolver, &names[2]),
-        );
-        if let Some(provider) = autoconfig::no_imap_by_mx(&mx) {
+    // The domain's own settings file, asked while DNS answers.
+    let file = tokio::spawn(provider_file(tls.clone(), domain.to_owned()));
+    let dns = dns(domain).await;
+    if let Some(dns) = &dns {
+        if let Some(provider) = autoconfig::no_imap_by_mx(&dns.mx) {
+            file.abort();
             return no_imap(provider, DiscoverSource::Mx);
         }
-        if let Some(settings) = autoconfig::by_mx(&mx) {
+        if let Some(settings) = autoconfig::by_mx(&dns.mx) {
+            file.abort();
             return result(settings, DiscoverSource::Mx);
         }
-        if let Some((imap, smtp)) = autoconfig::from_srv(&imaps, &submissions, &submission)
-            && imap_answers(tls, &imap).await
-            && smtp_answers(tls, &smtp).await
-        {
-            return result(plain(imap, smtp), DiscoverSource::Dns);
+    }
+    if let Ok(Some(config)) = file.await {
+        let (imap, smtp) = answering(tls, config.imap, config.smtp).await;
+        if imap.is_some() {
+            return DiscoverResult {
+                provider_name: config.name,
+                ..found(imap, smtp, DiscoverSource::File)
+            };
         }
     }
+    if let Some(dns) = &dns
+        && let Some((imap, smtp)) = autoconfig::from_srv(&dns.imaps, &dns.submissions, &dns.submission)
+        && imap_answers(tls, &imap).await
+        && smtp_answers(tls, &smtp).await
+    {
+        return result(plain(imap, smtp), DiscoverSource::Dns);
+    }
     let (imaps, smtps) = autoconfig::guesses(domain);
-    let (imap, smtp) = tokio::join!(
+    let (imap, smtp) = answering(tls, imaps, smtps).await;
+    found(imap, smtp, DiscoverSource::Guess)
+}
+
+/// What DNS says of a domain's mail: its MX host names, and its SRV records
+/// for IMAP over TLS and for submission (TLS, then STARTTLS).
+struct Dns {
+    mx: Vec<String>,
+    imaps: Vec<(u16, String, u16)>,
+    submissions: Vec<(u16, String, u16)>,
+    submission: Vec<(u16, String, u16)>,
+}
+
+async fn dns(domain: &str) -> Option<Dns> {
+    let resolver = TokioResolver::builder_tokio()
+        .and_then(|builder| builder.build())
+        .ok()?;
+    let names = [
+        format!("_imaps._tcp.{domain}."),
+        format!("_submissions._tcp.{domain}."),
+        format!("_submission._tcp.{domain}."),
+    ];
+    let (mx, imaps, submissions, submission) = tokio::join!(
+        mx(&resolver, domain),
+        srv(&resolver, &names[0]),
+        srv(&resolver, &names[1]),
+        srv(&resolver, &names[2]),
+    );
+    Some(Dns {
+        mx,
+        imaps,
+        submissions,
+        submission,
+    })
+}
+
+/// The settings file the domain publishes, from the first of its two places
+/// with one Regards can use; both asked at once.
+async fn provider_file(tls: TlsOptions, domain: String) -> Option<ConfigFile> {
+    let [first, second] = autoconfig::config_urls(&domain);
+    let other = tokio::spawn({
+        let (tls, domain) = (tls.clone(), domain.clone());
+        async move { settings_file(&tls, &second, &domain).await }
+    });
+    if let Some(found) = settings_file(&tls, &first, &domain).await {
+        other.abort();
+        return Some(found);
+    }
+    other.await.ok().flatten()
+}
+
+async fn settings_file(tls: &TlsOptions, url: &str, domain: &str) -> Option<ConfigFile> {
+    let answer = tokio::time::timeout(FILE_WAIT, regards_net::https::get(url, tls))
+        .await
+        .ok()?
+        .ok()?;
+    if answer.status != 200 {
+        return None;
+    }
+    autoconfig::from_config(std::str::from_utf8(&answer.body).ok()?, domain)
+}
+
+/// The first of each list that answers, all probed at once.
+async fn answering(
+    tls: &TlsOptions,
+    imaps: Vec<Endpoint>,
+    smtps: Vec<Endpoint>,
+) -> (Option<Endpoint>, Option<Endpoint>) {
+    tokio::join!(
         first_answering(imaps, |endpoint| {
             let tls = tls.clone();
             async move { imap_answers(&tls, &endpoint).await }
@@ -78,9 +153,13 @@ async fn find(tls: &TlsOptions, domain: &str) -> DiscoverResult {
             let tls = tls.clone();
             async move { smtp_answers(&tls, &endpoint).await }
         }),
-    );
+    )
+}
+
+/// Servers that answered, from `source`: nothing known of how they sign in.
+fn found(imap: Option<Endpoint>, smtp: Option<Endpoint>, source: DiscoverSource) -> DiscoverResult {
     DiscoverResult {
-        source: (imap.is_some() || smtp.is_some()).then_some(DiscoverSource::Guess),
+        source: (imap.is_some() || smtp.is_some()).then_some(source),
         imap: imap.map(settings_of),
         smtp: smtp.map(settings_of),
         ..DiscoverResult::default()

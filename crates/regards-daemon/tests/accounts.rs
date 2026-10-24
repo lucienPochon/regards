@@ -690,14 +690,19 @@ async fn real_domains_by_their_mx_and_their_usual_names() {
         regional.source == Some(DiscoverSource::Mx) && regional.oauth_only,
         "{regional:?}"
     );
+    // A provider that publishes its settings file, at a name no guess finds.
+    let file = discover(&mut desktop, "someone@runbox.com").await.unwrap();
+    assert_eq!(file.source, Some(DiscoverSource::File), "{file:?}");
+    assert_eq!(file.imap.as_ref().unwrap().host, "mail.runbox.com");
+    assert_eq!(file.provider_name.as_deref(), Some("Runbox"));
     // A provider not in the list, found by DNS or its usual names.
-    let other = discover(&mut desktop, "someone@hispeed.ch").await.unwrap();
+    let other = discover(&mut desktop, "someone@sunrise.ch").await.unwrap();
     assert!(
         matches!(other.source, Some(DiscoverSource::Dns | DiscoverSource::Guess)),
         "{other:?}"
     );
-    assert!(other.imap.as_ref().unwrap().host.ends_with("hispeed.ch"));
-    println!("{hosted:?}\n{regional:?}\n{other:?}");
+    assert!(other.imap.as_ref().unwrap().host.ends_with("sunrise.ch"));
+    println!("{hosted:?}\n{regional:?}\n{file:?}\n{other:?}");
 }
 
 #[tokio::test]

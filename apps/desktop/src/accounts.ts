@@ -199,15 +199,15 @@ export function removeAccount(id: string): Promise<void> {
 }
 
 /** Where `discoverAccount` found the servers. */
-export type DiscoverSource = "known" | "mx" | "dns" | "guess";
+export type DiscoverSource = "known" | "mx" | "dns" | "file" | "guess";
 
 /** Mirrors `DiscoverResult`: a proposal for the form, checked when the account is added. */
 export interface Discovered {
   /** `null`: nothing found; ask for the servers. */
   source: DiscoverSource | null;
   /**
-   * What people know the provider as ("Infomaniak", "Google Workspace");
-   * absent for servers found by DNS or by their usual names.
+   * What people know the provider as ("Infomaniak", "Google Workspace"),
+   * or the name its settings file gives; absent for servers found by DNS or by their usual names.
    */
   provider_name?: string;
   imap: ServerSettings | null;
