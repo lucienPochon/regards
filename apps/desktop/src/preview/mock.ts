@@ -250,8 +250,21 @@ function searchSamples(query: string, accountId: string | null, server = false) 
       case "subject":
         test = (m) => fold(m.subject).includes(value);
         break;
-      case "has":
-        test = (m) => m.attachments.length > 0;
+      case "has": {
+        // As the daemon reads files from the structure: by type, or by the name's extension.
+        const kinds: Record<string, (a: { name: string | null; mime: string }) => boolean> = {
+          pdf: (a) => a.mime === "application/pdf" || /\.pdf$/i.test(a.name ?? ""),
+          image: (a) => a.mime.startsWith("image/"),
+          images: (a) => a.mime.startsWith("image/"),
+          document: (a) => /\.(docx?|odt|rtf|pages)$/i.test(a.name ?? ""),
+          spreadsheet: (a) => /\.(xlsx?|xlsm|ods|csv|numbers)$/i.test(a.name ?? ""),
+        };
+        const kind = kinds[value];
+        test = kind ? (m) => m.attachments.some(kind) : (m) => m.attachments.length > 0;
+        break;
+      }
+      case "filename":
+        test = (m) => m.attachments.some((a) => fold(a.name ?? "").includes(value));
         break;
       case "is":
         test = (m) => (value === "unread" ? !m.seen : value === "read" ? m.seen : value === "flagged" ? m.flagged : true);

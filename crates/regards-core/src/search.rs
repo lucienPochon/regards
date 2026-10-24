@@ -4,6 +4,8 @@
 //!   prefix, so results come as one types. `"a phrase"` matches as written,
 //!   `-word` leaves out.
 //! - `from:` `to:` `subject:` look in one place; `has:attachment`,
+//!   `has:pdf` (`image`, `document`, `spreadsheet`, `presentation`,
+//!   `archive`), `filename:<part of a name>`,
 //!   `is:unread` / `is:read` / `is:flagged` (`is:starred`), `is:pinned`,
 //!   `in:<folder>` and `before:` / `after:` (`YYYY-MM-DD`, UTC days)
 //!   filter; with a clock ([`parse_at`]), so do "today", "last week" and
@@ -22,6 +24,10 @@ pub struct Query {
     /// The words and phrases as typed, for searching a server.
     pub terms: Vec<Term>,
     pub has_attachment: bool,
+    /// Carrying a file of each of these kinds (`has:pdf`).
+    pub file_kinds: Vec<FileKind>,
+    /// Carrying a file whose name contains each of these, lowercase (`filename:`).
+    pub file_names: Vec<String>,
     /// `Some(true)`: only unread; `Some(false)`: only read.
     pub unread: Option<bool>,
     pub flagged: bool,
@@ -38,6 +44,78 @@ impl Query {
     /// Nothing to search for.
     pub fn is_empty(&self) -> bool {
         *self == Self::default()
+    }
+}
+
+/// A kind of file, for `has:` (by type or by the name's extension).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileKind {
+    Pdf,
+    Image,
+    /// Word processing: doc, docx, odt, rtf, pages.
+    Document,
+    /// xls, xlsx, ods, csv, numbers.
+    Spreadsheet,
+    /// ppt, pptx, odp, key.
+    Presentation,
+    /// zip, rar, 7z, tar, gz.
+    Archive,
+}
+
+impl FileKind {
+    /// The types (exactly, or `image/` as a prefix) and name extensions of this kind.
+    pub fn types_and_extensions(self) -> (&'static [&'static str], &'static [&'static str]) {
+        match self {
+            Self::Pdf => (&["application/pdf"], &["pdf"]),
+            Self::Image => (
+                &["image/"],
+                &[
+                    "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "tif", "tiff", "bmp",
+                ],
+            ),
+            Self::Document => (
+                &[
+                    "application/msword",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "application/vnd.oasis.opendocument.text",
+                    "application/rtf",
+                    "text/rtf",
+                    "application/vnd.apple.pages",
+                ],
+                &["doc", "docx", "odt", "rtf", "pages"],
+            ),
+            Self::Spreadsheet => (
+                &[
+                    "application/vnd.ms-excel",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/vnd.oasis.opendocument.spreadsheet",
+                    "text/csv",
+                    "application/vnd.apple.numbers",
+                ],
+                &["xls", "xlsx", "ods", "csv", "numbers"],
+            ),
+            Self::Presentation => (
+                &[
+                    "application/vnd.ms-powerpoint",
+                    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    "application/vnd.oasis.opendocument.presentation",
+                    "application/vnd.apple.keynote",
+                ],
+                &["ppt", "pptx", "odp", "key"],
+            ),
+            Self::Archive => (
+                &[
+                    "application/zip",
+                    "application/x-zip-compressed",
+                    "application/x-rar-compressed",
+                    "application/vnd.rar",
+                    "application/x-7z-compressed",
+                    "application/x-tar",
+                    "application/gzip",
+                ],
+                &["zip", "rar", "7z", "tar", "gz", "tgz"],
+            ),
+        }
     }
 }
 
@@ -144,6 +222,21 @@ fn apply(query: &mut Query, text: &str) -> bool {
     let value = value.to_lowercase();
     match (key.to_lowercase().as_str(), value.as_str()) {
         ("has", "attachment" | "attachments" | "file" | "files") => query.has_attachment = true,
+        ("has", kind) => {
+            let kind = match kind {
+                "pdf" | "pdfs" => FileKind::Pdf,
+                "image" | "images" | "photo" | "photos" | "picture" | "pictures" => FileKind::Image,
+                "document" | "documents" | "doc" | "docs" => FileKind::Document,
+                "spreadsheet" | "spreadsheets" | "sheet" | "sheets" => FileKind::Spreadsheet,
+                "presentation" | "presentations" | "slides" => FileKind::Presentation,
+                "archive" | "archives" | "zip" | "zips" => FileKind::Archive,
+                _ => return false,
+            };
+            if !query.file_kinds.contains(&kind) {
+                query.file_kinds.push(kind);
+            }
+        }
+        ("filename", name) if !name.is_empty() => query.file_names.push(name.to_owned()),
         ("is", "unread") => query.unread = Some(true),
         ("is", "read") => query.unread = Some(false),
         ("is", "flagged" | "starred") => query.flagged = true,
@@ -529,6 +622,19 @@ mod tests {
         assert_eq!(text("before:soon"), Some(r#""before"* "soon"*"#.into()));
         assert!(parse("is:read").unread == Some(false) && parse("is:read").text.is_none());
         assert!(Query::default().is_empty() && !parse("x").is_empty());
+    }
+
+    #[test]
+    fn files_are_filters_by_kind_or_name() {
+        let query = parse("has:pdf has:images has:PDF filename:Rapport has:attachment budget");
+        assert_eq!(query.file_kinds, [FileKind::Pdf, FileKind::Image], "each kind once");
+        assert_eq!(query.file_names, ["rapport"]);
+        assert!(query.has_attachment);
+        assert_eq!(query.text, Some(r#""budget"*"#.into()));
+        assert_eq!(parse("has:sheets has:slides has:zip has:docs").file_kinds.len(), 4);
+        // Not a kind, nor a name: searched as words.
+        assert!(parse("has:cake").file_kinds.is_empty() && parse("has:cake").text.is_some());
+        assert!(parse("filename:").file_names.is_empty());
     }
 
     #[test]

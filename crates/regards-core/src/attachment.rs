@@ -221,6 +221,42 @@ pub fn display_name(name: &str) -> Option<String> {
     (!clean.is_empty()).then(|| clean.to_owned())
 }
 
+/// A file's name from the parameters a message's structure gives its part
+/// (BODYSTRUCTURE): Content-Disposition `filename`, else Content-Type
+/// `name`. Split or percent-encoded names (RFC 2231) and encoded words (RFC
+/// 2047) are put back together as when the message itself is read, then
+/// cleaned as [`display_name`]. `None` if it has none.
+pub fn name_from_parameters(params: &[(String, String)]) -> Option<String> {
+    // mail-parser decodes them: give it the parameters as header lines,
+    // without anything that could end a line or a parameter early.
+    let render = |wanted: &str| -> String {
+        params
+            .iter()
+            .filter(|(key, _)| key == wanted || key.strip_prefix(wanted).is_some_and(|rest| rest.starts_with('*')))
+            .filter(|(key, _)| {
+                key.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '*' | '-' | '_'))
+            })
+            .map(|(key, value)| {
+                let value: String = value.chars().filter(|c| !c.is_control()).collect();
+                if key.ends_with('*') {
+                    format!("; {key}={}", value.replace([';', ' ', '"'], ""))
+                } else {
+                    format!("; {key}=\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+                }
+            })
+            .collect()
+    };
+    let header = format!(
+        "Content-Type: application/octet-stream{}\r\nContent-Disposition: attachment{}\r\n\r\n",
+        render("name"),
+        render("filename")
+    );
+    let message = mail_parser::MessageParser::default().parse(header.as_bytes())?;
+    let name = mail_parser::MimeHeaders::attachment_name(message.root_part())?;
+    display_name(name)
+}
+
 /// The name to save under, safe on every system: [`display_name`] without
 /// reserved characters, leading or trailing dots and spaces, or device names
 /// (`CON`, `NUL.txt`…), at most 150 characters with the extension kept. An
@@ -365,6 +401,42 @@ pub fn preview(name: Option<&str>, mime: &str, data: &[u8]) -> Option<Preview> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn named(params: &[(&str, &str)]) -> Option<String> {
+        let params: Vec<(String, String)> = params.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect();
+        name_from_parameters(&params)
+    }
+
+    #[test]
+    fn a_files_name_from_its_structure_is_decoded_as_when_read() {
+        assert_eq!(named(&[("name", "Ticket.pdf")]).as_deref(), Some("Ticket.pdf"));
+        assert_eq!(
+            named(&[("name", "x.bin"), ("filename", "Rapport annuel.pdf")]).as_deref(),
+            Some("Rapport annuel.pdf"),
+            "the disposition's name first"
+        );
+        assert_eq!(
+            named(&[("filename*", "utf-8''Z%C3%BCrich%20Lugano.pdf")]).as_deref(),
+            Some("Zürich Lugano.pdf"),
+            "RFC 2231"
+        );
+        assert_eq!(
+            named(&[("filename*0*", "utf-8''Fa%C3%A7ture"), ("filename*1", " 2026.pdf")]).as_deref(),
+            Some("Façture 2026.pdf"),
+            "RFC 2231, split"
+        );
+        assert_eq!(
+            named(&[("name", "=?utf-8?Q?Re=C3=A7u_octobre.pdf?=")]).as_deref(),
+            Some("Reçu octobre.pdf"),
+            "RFC 2047"
+        );
+        assert_eq!(
+            named(&[("filename", "..\\..\\notes.txt\r\nX-Evil: 1")]).as_deref(),
+            Some("notes.txtX-Evil: 1"),
+            "no folders, and the line stays one parameter"
+        );
+        assert_eq!(named(&[("charset", "utf-8")]), None);
+    }
 
     #[test]
     fn names_lose_folders_controls_and_direction_marks() {
