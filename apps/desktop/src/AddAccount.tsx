@@ -573,11 +573,12 @@ function Found({
               <strong>{found.provider_name}</strong> · settings found
             </>,
           ]
-        : found.source === "known" || found.source === "mx" || found.source === "dns"
-          ? ["good", `Settings found for ${domain}`]
+        : found.source === null
+          ? ["warn", `We couldn't find ${domain}'s servers: you'll type them next`]
           : found.source === "guess"
             ? ["good", `Likely settings for ${domain}: signing in checks them`]
-            : ["warn", `We couldn't find ${domain}'s servers: you'll type them next`];
+            : // Listed, from the domain's own settings file, its MX or DNS records.
+              ["good", `Settings found for ${domain}`];
   return (
     <p className={`signup-found ${tone}`} role="status">
       <Icon name={tone === "good" ? "check" : "info"} size={15} />
