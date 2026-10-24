@@ -2,6 +2,8 @@
 
 #[path = "../../regards-imap/tests/support/fake_imap.rs"]
 mod fake_imap;
+#[path = "../../regards-smtp/tests/support/fake_smtp.rs"]
+mod fake_smtp;
 
 use fake_imap::{PASSWORD, fake_server, pki};
 use regards_core::mailbox::Role;
@@ -78,6 +80,8 @@ fn params(email: &str, port: u16, password: &str) -> AccountAddParams {
             port: 587,
             security: ConnectionSecurity::Starttls,
         },
+        // Nothing answers on 587 here; `sending_is_checked_too` has a server.
+        skip_send_check: true,
     }
 }
 
@@ -189,7 +193,11 @@ async fn a_failed_sign_in_stores_nothing_and_says_why() {
             .await,
     );
     assert_eq!(code, codes::ACCOUNT_CHECK_FAILED);
-    assert_eq!(data, Some(json!({ "reason": "auth_failed" })));
+    assert_eq!(
+        data,
+        Some(json!({ "reason": "auth_failed", "server": "imap", "tried": ["ada@example.test", "ada"] })),
+        "the address, then the part before its @"
+    );
 
     // An untrusted certificate is a different, named failure.
     let (port, _) = fake_server(&pki, "* OK ready\r\n", PASSWORD).await;
@@ -201,10 +209,121 @@ async fn a_failed_sign_in_stores_nothing_and_says_why() {
             .await,
     );
     assert_eq!(code, codes::ACCOUNT_CHECK_FAILED);
-    assert_eq!(data, Some(json!({ "reason": "tls" })));
+    assert_eq!(
+        data,
+        Some(json!({ "reason": "tls", "server": "imap", "tried": ["ada@example.test"] }))
+    );
 
     let listed: Vec<AccountSummary> = desktop.call(methods::ACCOUNT_LIST, Value::Null).await.unwrap();
     assert!(listed.is_empty());
+}
+
+#[tokio::test]
+async fn a_host_that_wants_the_name_before_the_at_gets_it() {
+    let pki = pki(&["localhost"]);
+    let (port, _) = fake_imap::serve(
+        &pki,
+        fake_imap::Script {
+            username: Some("ada"),
+            ..fake_imap::Script::new(PASSWORD)
+        },
+    )
+    .await;
+    let running = start(
+        TlsOptions::platform()
+            .with_extra_roots_pem(pki.ca_pem.as_bytes())
+            .unwrap(),
+    )
+    .await;
+    let mut desktop = running.desktop().await;
+
+    let added: AccountSummary = desktop
+        .call(methods::ACCOUNT_ADD, params("ada@example.test", port, PASSWORD))
+        .await
+        .unwrap();
+    assert_eq!(added.username, "ada", "kept: the account syncs with it");
+
+    // A user name the person typed is the only one tried.
+    let typed = AccountAddParams {
+        username: Some("ada@example.test".into()),
+        ..params("other@example.test", port, PASSWORD)
+    };
+    let (code, data) = rpc_error(desktop.call::<_, Value>(methods::ACCOUNT_ADD, typed).await);
+    assert_eq!(code, codes::ACCOUNT_CHECK_FAILED);
+    assert_eq!(
+        data,
+        Some(json!({ "reason": "auth_failed", "server": "imap", "tried": ["ada@example.test"] }))
+    );
+}
+
+#[tokio::test]
+async fn sending_is_checked_too() {
+    let imap_pki = pki(&["localhost"]);
+    let (imap_port, _) = fake_server(&imap_pki, "* OK ready\r\n", PASSWORD).await;
+    let smtp_pki = fake_smtp::pki();
+    let smtp_script = |password| fake_smtp::Script {
+        password,
+        ..fake_smtp::Script::new(fake_smtp::Mode::StartTls {
+            offer: true,
+            inject: false,
+        })
+    };
+    let (smtp_port, mut sessions) = fake_smtp::serve(&smtp_pki, smtp_script(PASSWORD)).await;
+    let (refusing_port, _) = fake_smtp::serve(&smtp_pki, smtp_script("another password")).await;
+    let running = start(
+        TlsOptions::platform()
+            .with_extra_roots_pem(imap_pki.ca_pem.as_bytes())
+            .unwrap()
+            .with_extra_roots_pem(smtp_pki.ca_pem.as_bytes())
+            .unwrap(),
+    )
+    .await;
+    let mut desktop = running.desktop().await;
+    let sending_to = |email: &str, port| AccountAddParams {
+        smtp: ServerSettings {
+            host: "127.0.0.1".into(),
+            port,
+            security: ConnectionSecurity::Starttls,
+        },
+        skip_send_check: false,
+        ..params(email, imap_port, PASSWORD)
+    };
+
+    // Receiving works, sending refuses the password: nothing is kept.
+    let (code, data) = rpc_error(
+        desktop
+            .call::<_, Value>(methods::ACCOUNT_ADD, sending_to("ada@example.test", refusing_port))
+            .await,
+    );
+    assert_eq!(code, codes::ACCOUNT_CHECK_FAILED);
+    assert_eq!(
+        data,
+        Some(json!({ "reason": "auth_failed", "server": "smtp", "tried": ["ada@example.test"] }))
+    );
+    let listed: Vec<AccountSummary> = desktop.call(methods::ACCOUNT_LIST, Value::Null).await.unwrap();
+    assert!(listed.is_empty());
+
+    // Nothing answers: named apart from a refused password.
+    let closed = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let (_, data) = rpc_error(
+        desktop
+            .call::<_, Value>(methods::ACCOUNT_ADD, sending_to("ada@example.test", closed))
+            .await,
+    );
+    assert_eq!(data.unwrap()["reason"], "connect");
+
+    // Both work: added, after a sign-in that sent nothing.
+    let added: AccountSummary = desktop
+        .call(methods::ACCOUNT_ADD, sending_to("ada@example.test", smtp_port))
+        .await
+        .unwrap();
+    assert_eq!(added.smtp.port, smtp_port);
+    let session = sessions.next().await;
+    assert!(session.login.is_some() && session.data.is_none());
 }
 
 fn login(id: &str, port: u16, password: Option<&str>) -> AccountLoginParams {
@@ -250,7 +369,10 @@ async fn a_changed_password_or_server_is_checked_then_kept() {
             .await,
     );
     assert_eq!(code, codes::ACCOUNT_CHECK_FAILED);
-    assert_eq!(data, Some(json!({ "reason": "auth_failed" })));
+    assert_eq!(
+        data,
+        Some(json!({ "reason": "auth_failed", "server": "imap", "tried": ["ada@example.test"] }))
+    );
     assert_eq!(running.vault.get(&key).await.unwrap().unwrap().expose(), PASSWORD);
 
     // The new password on the new server: both kept, the account stays.

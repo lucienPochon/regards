@@ -54,15 +54,72 @@ export interface AccountInput {
   smtpHost: string;
   smtpPort: number;
   smtpSecurity: ConnectionSecurity;
+  /**
+   * Add it without signing in to the SMTP server first (a network that
+   * blocks the mail ports): the first send says what is wrong instead.
+   */
+  skipSendCheck?: boolean;
+}
+
+/** Why a server turned an account down; mirrors `AccountCheckFailure` in `regards-ipc`. */
+export type AccountCheckFailure =
+  | "connect"
+  | "tls"
+  | "timeout"
+  | "not_imap"
+  | "auth_failed"
+  | "login_disabled"
+  | "protocol";
+
+/** Mirrors `AccountCheckDetails` in `regards-ipc`: what failed, so the form can say what to change. */
+export interface AccountCheckDetails {
+  reason: AccountCheckFailure;
+  /** "imap": receiving; "smtp": sending (the receiving check passed). */
+  server: "imap" | "smtp";
+  /** The user names the server refused, in the order tried. */
+  tried?: string[];
+}
+
+/**
+ * How `addAccount` and `setLogin` fail. `check` says what a server refused;
+ * it is null when no server was asked (a duplicate address, a missing
+ * field, no daemon).
+ */
+export class AccountCheckError extends Error {
+  readonly check: AccountCheckDetails | null;
+
+  constructor(message: string, check: AccountCheckDetails | null) {
+    super(message);
+    this.name = "AccountCheckError";
+    this.check = check;
+  }
+
+  /** Only the message, as the plain text these calls failed with before. */
+  override toString(): string {
+    return this.message;
+  }
+}
+
+async function checked<T>(call: Promise<T>): Promise<T> {
+  try {
+    return await call;
+  } catch (failure) {
+    const { message, check } = (failure ?? {}) as { message?: unknown; check?: AccountCheckDetails };
+    throw new AccountCheckError(typeof message === "string" ? message : String(failure), check ?? null);
+  }
 }
 
 export function listAccounts(): Promise<AccountSummary[]> {
   return invoke<AccountSummary[]>("account_list");
 }
 
-/** Signs in to the server to check the details, then saves the account. */
+/**
+ * Signs in to the servers to check the details, then saves the account.
+ * Without a user name it tries the address, then the part before its @.
+ * Fails with an `AccountCheckError`.
+ */
 export function addAccount(input: AccountInput): Promise<AccountSummary> {
-  return invoke<AccountSummary>("account_add", { input });
+  return checked(invoke<AccountSummary>("account_add", { input }));
 }
 
 /**
@@ -91,12 +148,13 @@ export interface LoginInput {
 /**
  * Change a password account's password, user name or servers, for example
  * after the password was changed at the provider. The daemon signs in to
- * the IMAP server with them first: on refusal it throws as `addAccount`
- * does (`checkFailure`), and nothing changes. The account keeps its mail,
- * drafts and outbox, syncs again, and what waited to be sent goes.
+ * the IMAP server with them first: on refusal it throws an
+ * `AccountCheckError`, as `addAccount` does, and nothing changes. The
+ * account keeps its mail, drafts and outbox, syncs again, and what waited
+ * to be sent goes.
  */
 export function setLogin(input: LoginInput): Promise<AccountSummary> {
-  return invoke<AccountSummary>("account_set_login", { input });
+  return checked(invoke<AccountSummary>("account_set_login", { input }));
 }
 
 /** A copy every new draft of an account gets: Cc or Bcc to one address. */

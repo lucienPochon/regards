@@ -185,6 +185,7 @@ async fn live_sync_follows_new_flagged_expunged_and_reset_mailboxes() {
                     port: 587,
                     security: ConnectionSecurity::Starttls,
                 },
+                skip_send_check: true,
             },
         )
         .await
@@ -385,6 +386,7 @@ async fn live_message_bodies_download_once_and_stay_unread() {
                     port: 587,
                     security: ConnectionSecurity::Starttls,
                 },
+                skip_send_check: true,
             },
         )
         .await
@@ -552,6 +554,8 @@ async fn daemon_reachable(
                 password: live.password.clone(),
                 imap: settings(live.server.port),
                 smtp,
+                // Some callers pass a server that refuses, to test sending.
+                skip_send_check: true,
             },
         )
         .await

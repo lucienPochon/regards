@@ -82,6 +82,8 @@ pub struct Script {
     pub greeting: &'static str,
     /// The only password LOGIN accepts.
     pub password: &'static str,
+    /// The only user name LOGIN accepts; any, when `None`.
+    pub username: Option<&'static str>,
     /// Untagged lines sent in reply to LIST.
     pub list: &'static str,
     /// Answer the first command with this verb ("LIST", "SELECT", "UID", ...) with
@@ -99,6 +101,7 @@ impl Script {
         Self {
             greeting: "* OK ready\r\n",
             password,
+            username: None,
             list: DEFAULT_LIST,
             hostile: None,
             meanwhile: "",
@@ -212,7 +215,10 @@ where
             }
             Some("LOGIN") => {
                 let attempt = args.get(3).cloned().unwrap_or_default();
-                let ok = attempt == script.password;
+                let ok = attempt == script.password
+                    && script
+                        .username
+                        .is_none_or(|name| args.get(2).is_some_and(|given| given == name));
                 given = Some(attempt);
                 if ok {
                     format!("{tag} OK [CAPABILITY IMAP4rev1 IDLE MOVE UIDPLUS SPECIAL-USE] Logged in\r\n")
