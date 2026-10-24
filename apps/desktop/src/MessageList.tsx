@@ -208,6 +208,7 @@ export function MessageList({
   onOpen,
   onPick,
   actionsFor,
+  labelsOf,
   onDoneAll,
   onPalette,
   empty,
@@ -240,6 +241,8 @@ export function MessageList({
   onOpen: (item: ListItem, how?: "step") => void;
   onPick: (ids: Set<number>) => void;
   actionsFor: (items: ListItem[]) => Action[];
+  /** A Gmail message's labels, as chips before its subject. */
+  labelsOf?: (item: ListItem) => { id: number; name: string }[];
   /** Done with a whole day: its messages archived, one undo. Only where Done means something (the inbox). */
   onDoneAll?: (items: ListItem[]) => void;
   /** The command palette, for these actions (right-click and the ⋯ buttons); `about` is the one message. */
@@ -507,6 +510,11 @@ export function MessageList({
           <span className="from">{who(item, own)}</span>
           <span className="subject">
             {item.pinned && <Icon name="pinFilled" size={13} className="pinned" />}
+            {labelsOf?.(item).map((label) => (
+              <span key={label.id} className="label-chip">
+                {label.name}
+              </span>
+            ))}
             {item.subject || "(no subject)"}
           </span>
           <span className="marks">

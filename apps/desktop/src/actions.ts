@@ -75,6 +75,10 @@ export interface ActionHost {
   pickReminder: (anchor: Anchor | null) => Promise<number | null>;
   /** The account's Junk folder, if it has one (for Mark as junk). */
   junkFolder?: (accountId: string) => number | null;
+  /** Whether the account has labels (Gmail). */
+  hasLabels?: (accountId: string) => boolean;
+  /** Add or remove the account's labels on these messages. */
+  pickLabels?: (ids: number[], accountId: string, anchor: Anchor | null) => void;
   /** Leave the mailing list a message came from, after asking. */
   unsubscribe?: (id: number, from: Person | null) => void;
   /** The account's inbox (for Back to inbox, on Done mail). */
@@ -96,7 +100,8 @@ export type ActionId =
   | "move"
   | "junk"
   | "delete"
-  | "unsubscribe";
+  | "unsubscribe"
+  | "label";
 
 export interface Action {
   id: ActionId;
@@ -128,6 +133,7 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
     junk: ["Shift+1"],
     delete: ["Delete", "Backspace"],
     unsubscribe: [],
+    label: ["l"],
   },
   classic: {
     reply: ["r"],
@@ -145,6 +151,7 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
     junk: ["!"],
     delete: ["#", "Delete"],
     unsubscribe: [],
+    label: ["l"],
   },
 };
 
@@ -299,6 +306,11 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
         run: () => move(() => all().then((list) => moveMessages(list, junk))),
       });
     }
+  }
+  // Gmail: labels, each a copy in the label's folder (ADR-0009 §6).
+  if (target.accountId !== null && host.hasLabels?.(target.accountId) && host.pickLabels) {
+    const [account, pick] = [target.accountId, host.pickLabels];
+    actions.push({ id: "label", label: "Label…", icon: "tag", keys: keys.label, shown: true, run: (anchor) => pick(ids, account, anchor ?? null) });
   }
   if (target.single !== null && target.unsubscribe && host.unsubscribe) {
     const [id, from, leave] = [target.single, target.unsubscribe.from, host.unsubscribe];

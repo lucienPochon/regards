@@ -150,6 +150,7 @@ export const TOUR: Group[] = [
       { id: "outbox", label: "Scheduled and held", note: "One for tomorrow morning; one held because the computer was off.", params: { outbox: "1" }, steps: ["wait:800", "text:button=Outbox"] },
       { id: "outbox-agent", label: "Sent by an agent", note: "Its countdown, and Call it back.", params: { agentsend: "1" }, steps: ["wait:800", "text:button=Outbox"] },
       { id: "outbox-signin", label: "Waiting for a sign-in", note: "Sends once you sign in again.", params: { signin: "1" }, steps: ["wait:800", "text:button=Outbox"] },
+      { id: "labels", label: "Labels (Gmail)", note: "Chips before the subject; L (Label…) adds or removes them.", params: { gmail: "1" }, steps: ["wait:900"] },
       { id: "send-failed", label: "A send that failed", note: "Said in the app too: the system notification is quiet while the window is in front.", params: { sendfail: "1" }, steps: ["wait:3200"] },
     ],
   },
