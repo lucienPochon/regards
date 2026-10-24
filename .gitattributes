@@ -2,3 +2,5 @@
 *.png binary
 *.ico binary
 *.icns binary
+# Mozilla's provider files, kept byte for byte as they come (some end lines with CRLF).
+crates/regards-ispdb/data/*.xml -text

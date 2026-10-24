@@ -5,24 +5,31 @@
 //!
 //! 1. **Known providers** ([`known`]): the big ones, by the address's domain;
 //!    and those that let no mail app in ([`no_imap`]), to say so.
-//! 2. **MX records** (the daemon asks DNS) naming a provider that hosts
+//! 2. **Thunderbird's database of providers**, shipped with Regards
+//!    (`regards_ispdb`), by the address's domain ([`from_database`]).
+//! 3. **MX records** (the daemon asks DNS) naming a provider that hosts
 //!    other domains, such as Microsoft 365 or Google Workspace, or its own
 //!    addresses in other countries ([`by_mx`], [`no_imap_by_mx`]).
-//! 3. **The settings file the domain publishes** ([`config_urls`],
+//! 4. **The settings file the domain publishes** ([`config_urls`],
 //!    [`from_config`]), as many hosts do for Thunderbird.
-//! 4. **SRV records** (RFC 6186/8314) the domain publishes ([`from_srv`]).
-//! 5. **The usual names** on the domain ([`guesses`]): `imap.`, `mail.`,
+//! 5. **Thunderbird's database by the MX host names**, for domains hosted
+//!    by a provider it lists ([`from_database_by_mx`]).
+//! 6. **SRV records** (RFC 6186/8314) the domain publishes ([`from_srv`]).
+//! 7. **The usual names** on the domain ([`guesses`]): `imap.`, `mail.`,
 //!    `smtp.` with the standard ports.
 //!
-//! Servers found from 3 on are each checked before they are offered.
+//! Servers found by 2 and from 4 on are each checked before they are offered.
 //!
-//! Nothing here is sent to anyone else: DNS goes to the system's resolvers,
-//! the settings file comes from the address's own domain (over HTTPS, and
-//! without the address), and the only mail servers contacted are the
-//! candidates themselves. What is found is only a proposal: adding the
-//! account still signs in to check it.
+//! Nothing here is sent to anyone else: Thunderbird's database is read on
+//! this computer, DNS goes to the system's resolvers, the settings file
+//! comes from the address's own domain (over HTTPS, and without the
+//! address), and the only mail servers contacted are the candidates
+//! themselves. What is found is only a proposal: adding the account still
+//! signs in to check it.
 
 use crate::oauth::Provider;
+use std::collections::HashMap;
+use std::sync::LazyLock;
 
 /// How a connection is secured; IMAP is always TLS from the first byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -356,6 +363,17 @@ pub fn known(domain: &str) -> Option<Settings> {
         .map(Known::settings)
 }
 
+/// A provider Regards knows, by its IMAP server: when another list names
+/// the same servers (Thunderbird's database lists Microsoft's addresses in
+/// every country), what Regards knows of it is better: how it signs in,
+/// what to say about the password.
+pub fn known_by_server(imap_host: &str) -> Option<Settings> {
+    KNOWN
+        .iter()
+        .find(|known| known.imap.0.eq_ignore_ascii_case(imap_host))
+        .map(Known::settings)
+}
+
 /// Whose domains an MX rule finds.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Hosts {
@@ -518,6 +536,9 @@ pub struct ConfigFile {
     pub imap: Vec<Endpoint>,
     /// SMTP with TLS or STARTTLS, never in the clear, in the file's order.
     pub smtp: Vec<Endpoint>,
+    /// The domains it says it is for, lower case (how Thunderbird's
+    /// database finds a provider).
+    pub domains: Vec<String>,
 }
 
 /// Read a provider's settings file. `%EMAILDOMAIN%` in a host name is the
@@ -540,11 +561,13 @@ pub fn from_config(xml: &str, domain: &str) -> Option<ConfigFile> {
         Socket,
         ShortName,
         Name,
+        Domain,
     }
 
     let mut reader = quick_xml::Reader::from_str(xml);
     let (mut imap, mut smtp) = (Vec::new(), Vec::new());
     let (mut short_name, mut long_name) = (String::new(), String::new());
+    let mut domains: Vec<String> = Vec::new();
     // The server being read, if it is one Regards uses, and the field read.
     let mut server: Option<Server> = None;
     let mut field: Option<Field> = None;
@@ -569,6 +592,10 @@ pub fn from_config(xml: &str, domain: &str) -> Option<ConfigFile> {
                 "socketType" => field = Some(Field::Socket),
                 "displayShortName" => field = Some(Field::ShortName),
                 "displayName" => field = Some(Field::Name),
+                "domain" => {
+                    domains.push(String::new());
+                    field = Some(Field::Domain);
+                }
                 _ => field = None,
             },
             Event::Text(text) => {
@@ -579,6 +606,7 @@ pub fn from_config(xml: &str, domain: &str) -> Option<ConfigFile> {
                     (Some(Field::Socket), Some(server)) => server.socket.push_str(&text),
                     (Some(Field::ShortName), None) => short_name.push_str(&text),
                     (Some(Field::Name), None) => long_name.push_str(&text),
+                    (Some(Field::Domain), None) => domains.last_mut().into_iter().for_each(|last| last.push_str(&text)),
                     _ => {}
                 }
             }
@@ -623,7 +651,52 @@ pub fn from_config(xml: &str, domain: &str) -> Option<ConfigFile> {
                     .iter()
                     .any(|word| name.eq_ignore_ascii_case(word))
         });
-    Some(ConfigFile { name, imap, smtp })
+    let domains = domains
+        .iter()
+        .map(|domain| domain.trim().to_ascii_lowercase())
+        .filter(|domain| !domain.is_empty())
+        .collect();
+    Some(ConfigFile {
+        name,
+        imap,
+        smtp,
+        domains,
+    })
+}
+
+/// Thunderbird's database of providers (`regards_ispdb`), indexed the first
+/// time it is needed: each domain, and the file that names it. Files with no
+/// server Regards can use are left out.
+static DATABASE: LazyLock<HashMap<String, &'static str>> = LazyLock::new(|| {
+    let mut index = HashMap::new();
+    for (_, xml) in regards_ispdb::FILES {
+        if let Some(file) = from_config(xml, "example.invalid") {
+            for domain in file.domains {
+                index.entry(domain).or_insert(*xml);
+            }
+        }
+    }
+    index
+});
+
+/// A provider in Thunderbird's database, by the address's own domain.
+pub fn from_database(domain: &str) -> Option<ConfigFile> {
+    from_config(DATABASE.get(domain)?, domain)
+}
+
+/// A domain hosted by a provider in Thunderbird's database, by its MX host
+/// names: `mx01.t-online.de` is looked up as itself, then as `t-online.de`.
+/// `domain` is the address's, for the file's `%EMAILDOMAIN%`.
+pub fn from_database_by_mx(mx_hosts: &[String], domain: &str) -> Option<ConfigFile> {
+    mx_hosts.iter().find_map(|host| {
+        let host = host.trim_end_matches('.').to_ascii_lowercase();
+        let labels: Vec<&str> = host.split('.').collect();
+        // Never a top-level domain alone: at least two labels.
+        (0..labels.len().saturating_sub(1)).find_map(|start| {
+            let xml = DATABASE.get(&labels[start..].join("."))?;
+            from_config(xml, domain)
+        })
+    })
 }
 
 /// The usual names, best first, to try in turn: IMAP on 993; submission
@@ -863,5 +936,43 @@ mod tests {
         };
         assert_eq!(named("Mail", "Runbox Mail").as_deref(), Some("Runbox Mail"));
         assert_eq!(named("Mail", "%EMAILADDRESS%"), None);
+    }
+
+    #[test]
+    fn thunderbirds_database_names_providers_no_list_here_has() {
+        // Most of its files name a server Regards can use; the others offer only
+        // POP or no encryption (in 2026, small Japanese providers mostly).
+        let usable = regards_ispdb::FILES
+            .iter()
+            .filter(|(_, xml)| from_config(xml, "example.invalid").is_some())
+            .count();
+        assert!(usable * 4 >= regards_ispdb::FILES.len() * 3, "{usable} usable files");
+        assert!(DATABASE.len() > 500, "{} domains", DATABASE.len());
+
+        // A1 (Austria), by either of its domains.
+        let a1 = from_database("aon.at").unwrap();
+        assert_eq!(
+            (a1.imap[0].host.as_str(), a1.imap[0].port, a1.imap[0].security),
+            ("securemail.a1.net", 993, Security::Tls)
+        );
+        assert_eq!((a1.smtp[0].port, a1.smtp[0].security), (587, Security::Starttls));
+        assert_eq!(a1.name.as_deref(), Some("a1.net"));
+        assert_eq!(from_database("example.org"), None);
+        // Microsoft's addresses abroad are in it too: what Regards knows of
+        // those servers decides (sign-in with Microsoft only).
+        let outlook = from_database("outlook.it").unwrap();
+        let listed = known_by_server(&outlook.imap[0].host).unwrap();
+        assert!(listed.oauth_only && listed.oauth == Some(Provider::Microsoft));
+        assert_eq!(known_by_server("securemail.a1.net"), None);
+
+        // A domain whose mail T-Online hosts, by its MX host names.
+        let hosted = from_database_by_mx(&["mx01.t-online.de.".into()], "studio-lovelace.de").unwrap();
+        assert_eq!(hosted.imap[0].host, "secureimap.t-online.de");
+        assert_eq!(from_database_by_mx(&["mx.example.org".into()], "example.org"), None);
+        assert_eq!(
+            from_database_by_mx(&["de".into()], "example.de"),
+            None,
+            "never a top-level domain"
+        );
     }
 }

@@ -11,7 +11,7 @@
 // missing cargo-about writes an empty list, so development builds work.
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -54,14 +54,29 @@ for (const licence of about.data.licenses) {
     used.get(key).push(index);
   }
 }
-const crates = about.data.crates
-  .map(({ package: pkg, license }) => ({
-    name: pkg.name,
-    version: pkg.version,
-    licence: license,
-    texts: used.get(`${pkg.name}@${pkg.version}`) ?? [],
-  }))
-  .sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
+const crates = about.data.crates.map(({ package: pkg, license }) => ({
+  name: pkg.name,
+  version: pkg.version,
+  licence: license,
+  texts: used.get(`${pkg.name}@${pkg.version}`) ?? [],
+}));
+
+// Thunderbird's provider database ships inside the service (crates/regards-ispdb):
+// Mozilla's files, under their own licence. cargo-about leaves Regards' own
+// crates out, so it is named here.
+const ispdb = join(root, "crates", "regards-ispdb");
+const source = JSON.parse(readFileSync(join(ispdb, "source.json"), "utf8"));
+let mpl = texts.findIndex((text) => text.id === "MPL-2.0");
+if (mpl < 0) {
+  mpl = texts.push({ id: "MPL-2.0", name: "Mozilla Public License 2.0", text: readFileSync(join(ispdb, "LICENSE"), "utf8") }) - 1;
+}
+crates.push({
+  name: "Thunderbird ISPDB (mail provider settings)",
+  version: `${source.commit.slice(0, 12)} (${source.date.slice(0, 10)})`,
+  licence: "MPL-2.0",
+  texts: [mpl],
+});
+crates.sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
 
 write({ generated: true, tool: about.tool, texts, crates });
 console.log(`licences: ${crates.length} crates, ${texts.length} licence texts (${about.tool})`);

@@ -661,6 +661,10 @@ async fn an_address_tells_its_servers_before_any_are_typed() {
     assert_eq!(gmail.oauth, Some(Provider::Google));
     assert!(gmail.password_help.unwrap().contains("app password"));
     assert!(discover(&mut desktop, "ada@hotmail.com").await.unwrap().oauth_only);
+    // In Thunderbird's database, under Microsoft's servers: Regards' own entry decides.
+    let abroad = discover(&mut desktop, "ada@outlook.it").await.unwrap();
+    assert_eq!(abroad.source, Some(DiscoverSource::Database));
+    assert!(abroad.oauth_only && abroad.provider_name.as_deref() == Some("Outlook.com"));
     // A provider with no IMAP: said so, and no servers to try.
     let proton = discover(&mut desktop, "ada@proton.me").await.unwrap();
     assert!(proton.no_imap.is_some() && proton.imap.is_none() && proton.smtp.is_none());
@@ -687,7 +691,7 @@ async fn real_domains_by_their_mx_and_their_usual_names() {
     // Microsoft's own address in another country, not in the list.
     let regional = discover(&mut desktop, "someone@hotmail.it").await.unwrap();
     assert!(
-        regional.source == Some(DiscoverSource::Mx) && regional.oauth_only,
+        matches!(regional.source, Some(DiscoverSource::Mx | DiscoverSource::Database)) && regional.oauth_only,
         "{regional:?}"
     );
     // A provider that publishes its settings file, at a name no guess finds.
@@ -695,6 +699,10 @@ async fn real_domains_by_their_mx_and_their_usual_names() {
     assert_eq!(file.source, Some(DiscoverSource::File), "{file:?}");
     assert_eq!(file.imap.as_ref().unwrap().host, "mail.runbox.com");
     assert_eq!(file.provider_name.as_deref(), Some("Runbox"));
+    // A provider only Thunderbird's database knows, with no settings file of its own.
+    let database = discover(&mut desktop, "someone@a1.net").await.unwrap();
+    assert_eq!(database.source, Some(DiscoverSource::Database), "{database:?}");
+    assert_eq!(database.imap.as_ref().unwrap().host, "securemail.a1.net");
     // A provider not in the list, found by DNS or its usual names.
     let other = discover(&mut desktop, "someone@sunrise.ch").await.unwrap();
     assert!(

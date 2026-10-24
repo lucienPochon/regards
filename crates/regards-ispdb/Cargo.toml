@@ -1,0 +1,12 @@
+[package]
+name = "regards-ispdb"
+description = "Thunderbird's mail provider database (ISPDB), as Regards ships it: the providers' settings files, unchanged"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# The files are Mozilla's, under their licence; the rest of Regards is Apache-2.0 OR MIT.
+license = "MPL-2.0"
+publish.workspace = true
+
+[lints]
+workspace = true

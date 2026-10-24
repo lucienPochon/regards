@@ -1,9 +1,10 @@
 //! `account.discover` (plan §5.1): an address's mail servers, found before
 //! the person types any, in the order of [`regards_core::autoconfig`]:
-//! known providers, then MX records (hosted domains), the settings file the
-//! domain publishes, SRV records, then the usual names on the domain;
-//! servers probed with TLS so that a host is offered only if it answers
-//! with a valid certificate.
+//! known providers, Thunderbird's database (shipped with Regards), MX records
+//! (hosted domains), the settings file the domain publishes, the database by
+//! MX host, SRV records, then the usual names on the domain; servers probed
+//! with TLS so that a host is offered only if it answers with a valid
+//! certificate.
 
 use crate::{State, accounts};
 use hickory_resolver::TokioResolver;
@@ -46,6 +47,11 @@ async fn find(tls: &TlsOptions, domain: &str) -> DiscoverResult {
     if let Some(settings) = autoconfig::known(domain) {
         return result(settings, DiscoverSource::Known);
     }
+    if let Some(config) = autoconfig::from_database(domain)
+        && let Some(found) = database_entry(tls, config).await
+    {
+        return found;
+    }
     // The domain's own settings file, asked while DNS answers.
     let file = tokio::spawn(provider_file(tls.clone(), domain.to_owned()));
     let dns = dns(domain).await;
@@ -59,14 +65,16 @@ async fn find(tls: &TlsOptions, domain: &str) -> DiscoverResult {
             return result(settings, DiscoverSource::Mx);
         }
     }
-    if let Ok(Some(config)) = file.await {
-        let (imap, smtp) = answering(tls, config.imap, config.smtp).await;
-        if imap.is_some() {
-            return DiscoverResult {
-                provider_name: config.name,
-                ..found(imap, smtp, DiscoverSource::File)
-            };
-        }
+    if let Ok(Some(config)) = file.await
+        && let Some(found) = checked(tls, config, DiscoverSource::File).await
+    {
+        return found;
+    }
+    if let Some(dns) = &dns
+        && let Some(config) = autoconfig::from_database_by_mx(&dns.mx, domain)
+        && let Some(found) = database_entry(tls, config).await
+    {
+        return found;
     }
     if let Some(dns) = &dns
         && let Some((imap, smtp)) = autoconfig::from_srv(&dns.imaps, &dns.submissions, &dns.submission)
@@ -78,6 +86,31 @@ async fn find(tls: &TlsOptions, domain: &str) -> DiscoverResult {
     let (imaps, smtps) = autoconfig::guesses(domain);
     let (imap, smtp) = answering(tls, imaps, smtps).await;
     found(imap, smtp, DiscoverSource::Guess)
+}
+
+/// A provider from Thunderbird's database. When it names the servers of a
+/// provider Regards lists (outlook.it is Microsoft's), Regards' own entry:
+/// its sign-in and what to say about the password. Otherwise the servers
+/// that answer.
+async fn database_entry(tls: &TlsOptions, config: ConfigFile) -> Option<DiscoverResult> {
+    let listed = config
+        .imap
+        .first()
+        .and_then(|imap| autoconfig::known_by_server(&imap.host));
+    match listed {
+        Some(settings) => Some(result(settings, DiscoverSource::Database)),
+        None => checked(tls, config, DiscoverSource::Database).await,
+    }
+}
+
+/// The servers a settings file names that answer, under its provider's
+/// name; `None` when no IMAP server answered.
+async fn checked(tls: &TlsOptions, config: ConfigFile, source: DiscoverSource) -> Option<DiscoverResult> {
+    let (imap, smtp) = answering(tls, config.imap, config.smtp).await;
+    imap.is_some().then(|| DiscoverResult {
+        provider_name: config.name,
+        ..found(imap, smtp, source)
+    })
 }
 
 /// What DNS says of a domain's mail: its MX host names, and its SRV records
