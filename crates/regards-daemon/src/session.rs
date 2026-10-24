@@ -2,7 +2,7 @@
 
 use crate::{
     State, access, accounts, actions, agents, assistant, attachments, audit, compose, context, discover, draft_sync,
-    erase, folders, holds, identities, mail, notes, notices, oauth, people, prefetch, saved, signatures, smart,
+    erase, folders, holds, identities, labels, mail, notes, notices, oauth, people, prefetch, saved, signatures, smart,
     templates, unsubscribe, voice,
 };
 use regards_core::agents::Access;
@@ -818,6 +818,17 @@ impl Session {
                     self.allow_targets(Access::Read, &params.ids).await?;
                 }
                 mail::conversation_ids(&self.state, params).await
+            }
+            methods::MESSAGE_LABELS => {
+                let params: MessageIds = params(request)?;
+                if !self.is_ui() {
+                    self.allow_targets(Access::Read, &params.ids).await?;
+                }
+                labels::labels(&self.state, params).await
+            }
+            methods::MESSAGE_SET_LABELS => {
+                self.require_ui()?;
+                labels::set(&self.state, params(request)?).await
             }
             methods::THREAD_GET => {
                 let params: MessageRef = params(request)?;

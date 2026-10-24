@@ -22,6 +22,7 @@ pub mod drafts;
 pub mod holds;
 pub mod identities;
 pub mod images;
+pub mod labels;
 pub mod mailboxes;
 pub mod marks;
 pub mod messages;

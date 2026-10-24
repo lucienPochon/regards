@@ -12,8 +12,8 @@ use crate::State;
 use crate::sync::{self, SyncError};
 use regards_imap::{ImapError, Moved, Session, SystemFlag};
 use regards_store::mailboxes::{self, Mailbox};
-use regards_store::messages;
 use regards_store::operations::{self, FlagName, Operation, OperationKind};
+use regards_store::{labels, messages};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -195,7 +195,12 @@ async fn send(state: &Arc<State>, session: &mut Session, account_id: &str, due: 
                     let moved = session.move_messages(&uids, &target.remote_name).await?;
                     Ok(Sent::Moved(moved))
                 }
-                (OperationKind::Move, None) => Ok(Sent::Void),
+                (OperationKind::Move | OperationKind::Copy, None) => Ok(Sent::Void),
+                (OperationKind::Copy, Some(target)) => {
+                    // A Gmail label added; the copy comes back in the label folder's next sync.
+                    session.copy_messages(&uids, &target.remote_name).await?;
+                    Ok(Sent::Done)
+                }
                 (OperationKind::Delete, _) => {
                     session.delete_messages(&uids).await?;
                     Ok(Sent::Deleted)
@@ -299,19 +304,29 @@ async fn give_up(
     mailbox: &Mailbox,
     reason: &str,
 ) -> Result<(), SyncError> {
-    let (id, source, uids, is_move) = (
+    let (id, source, uids, kind, target) = (
         operation.id,
         operation.mailbox_id,
         operation.uids.clone(),
-        operation.kind == OperationKind::Move,
+        operation.kind,
+        operation.target_mailbox_id,
     );
+    let account = account_id.to_owned();
     state
         .store
         .write(move |tx| {
             operations::remove(tx, id)?;
-            if is_move {
+            if kind == OperationKind::Move {
                 // Show the messages where they still are on the server.
                 messages::set_moving_to(tx, source, &uids, None)?;
+            }
+            if let (OperationKind::Copy, Some(target)) = (kind, target) {
+                // The labels it was adding are not there after all.
+                for uid in &uids {
+                    if let Some(message_id) = messages::message_id_of(tx, source, *uid)? {
+                        labels::remove_pending(tx, &account, &message_id, target)?;
+                    }
+                }
             }
             Ok(())
         })

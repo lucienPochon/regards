@@ -523,6 +523,47 @@ export function conversationIds(ids: number[]): Promise<number[]> {
   return invoke<number[]>("message_conversation_ids", { ids });
 }
 
+/** One message's Gmail labels: the ids of the label folders holding a copy of it. */
+export interface MessageLabels {
+  id: number;
+  labels: number[];
+}
+
+/**
+ * Gmail labels. Gmail shows each label as a folder holding a copy of every
+ * message with it; a label added here counts at once, before the copy is
+ * made on the server. Only for accounts whose server has X-GM-EXT-1 (`isGmail`).
+ */
+export function messageLabels(ids: number[]): Promise<MessageLabels[]> {
+  return invoke<{ messages: MessageLabels[] }>("message_labels", { ids }).then((result) => result.messages);
+}
+
+/**
+ * Add and remove Gmail labels on messages: each label added is a copy in its
+ * folder, each removed is that copy deleted (the mail stays in All Mail).
+ * `gone`: copies deleted, any of `ids` among them (it left that folder).
+ */
+export function setLabels(ids: number[], add: number[], remove: number[]): Promise<{ messages: MessageLabels[]; gone: number[] }> {
+  return invoke("message_set_labels", { ids, add, remove });
+}
+
+/** The account is on Gmail (labels, not only folders). */
+export const isGmail = (account: AccountSummary) => account.imap_capabilities.includes("X-GM-EXT-1");
+
+/**
+ * The folders of a Gmail account that are labels: its own folders, not the
+ * system ones (with a role) nor Gmail's under "[Gmail]".
+ */
+export function labelFolders(mailboxes: MailboxSummary[]): MailboxSummary[] {
+  return mailboxes.filter(
+    (mailbox) =>
+      mailbox.role === null &&
+      mailbox.selectable &&
+      !mailbox.name.startsWith("[Gmail]/") &&
+      !mailbox.name.startsWith("[Google Mail]/"),
+  );
+}
+
 export function archiveMessages(ids: number[]): Promise<MoveResult> {
   return invoke<MoveResult>("message_archive", { ids });
 }
