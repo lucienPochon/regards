@@ -37,6 +37,9 @@ pub(crate) async fn discover(state: &State, params: DiscoverParams) -> Result<Va
 }
 
 async fn find(tls: &TlsOptions, domain: &str) -> DiscoverResult {
+    if let Some(provider) = autoconfig::no_imap(domain) {
+        return no_imap(provider, DiscoverSource::Known);
+    }
     if let Some(settings) = autoconfig::known(domain) {
         return result(settings, DiscoverSource::Known);
     }
@@ -52,6 +55,9 @@ async fn find(tls: &TlsOptions, domain: &str) -> DiscoverResult {
             srv(&resolver, &names[1]),
             srv(&resolver, &names[2]),
         );
+        if let Some(provider) = autoconfig::no_imap_by_mx(&mx) {
+            return no_imap(provider, DiscoverSource::Mx);
+        }
         if let Some(settings) = autoconfig::by_mx(&mx) {
             return result(settings, DiscoverSource::Mx);
         }
@@ -84,6 +90,7 @@ async fn find(tls: &TlsOptions, domain: &str) -> DiscoverResult {
 /// Servers named by DNS: nothing known of how they sign in.
 fn plain(imap: Endpoint, smtp: Endpoint) -> Settings {
     Settings {
+        name: None,
         imap,
         smtp,
         oauth: None,
@@ -95,11 +102,23 @@ fn plain(imap: Endpoint, smtp: Endpoint) -> Settings {
 fn result(settings: Settings, source: DiscoverSource) -> DiscoverResult {
     DiscoverResult {
         source: Some(source),
+        provider_name: settings.name.map(str::to_owned),
         imap: Some(settings_of(settings.imap)),
         smtp: Some(settings_of(settings.smtp)),
         oauth: settings.oauth,
         oauth_only: settings.oauth_only,
         password_help: settings.password_help.map(str::to_owned),
+        no_imap: None,
+    }
+}
+
+/// A provider that lets no mail app in (its name, and why): no servers to offer.
+fn no_imap((name, why): (&str, &str), source: DiscoverSource) -> DiscoverResult {
+    DiscoverResult {
+        source: Some(source),
+        provider_name: Some(name.to_owned()),
+        no_imap: Some(why.to_owned()),
+        ..DiscoverResult::default()
     }
 }
 

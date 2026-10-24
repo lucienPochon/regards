@@ -648,6 +648,7 @@ async fn an_address_tells_its_servers_before_any_are_typed() {
     // A known provider: at once, no lookup, with what to say of the password.
     let gmail = discover(&mut desktop, "ada@gmail.com").await.unwrap();
     assert_eq!(gmail.source, Some(DiscoverSource::Known));
+    assert_eq!(gmail.provider_name.as_deref(), Some("Gmail"));
     let (imap, smtp) = (gmail.imap.unwrap(), gmail.smtp.unwrap());
     assert_eq!(
         (imap.host.as_str(), imap.port, imap.security),
@@ -660,6 +661,10 @@ async fn an_address_tells_its_servers_before_any_are_typed() {
     assert_eq!(gmail.oauth, Some(Provider::Google));
     assert!(gmail.password_help.unwrap().contains("app password"));
     assert!(discover(&mut desktop, "ada@hotmail.com").await.unwrap().oauth_only);
+    // A provider with no IMAP: said so, and no servers to try.
+    let proton = discover(&mut desktop, "ada@proton.me").await.unwrap();
+    assert!(proton.no_imap.is_some() && proton.imap.is_none() && proton.smtp.is_none());
+    assert_eq!(proton.provider_name.as_deref(), Some("Proton Mail"));
 
     let refused = discover(&mut desktop, "not an address").await.unwrap_err();
     assert!(matches!(refused, ClientError::Rpc(ref e) if e.code == codes::INVALID_PARAMS));
@@ -679,14 +684,20 @@ async fn real_domains_by_their_mx_and_their_usual_names() {
     let hosted = discover(&mut desktop, "someone@microsoft.com").await.unwrap();
     assert_eq!(hosted.source, Some(DiscoverSource::Mx), "{hosted:?}");
     assert_eq!(hosted.oauth, Some(Provider::Microsoft));
+    // Microsoft's own address in another country, not in the list.
+    let regional = discover(&mut desktop, "someone@hotmail.it").await.unwrap();
+    assert!(
+        regional.source == Some(DiscoverSource::Mx) && regional.oauth_only,
+        "{regional:?}"
+    );
     // A provider not in the list, found by DNS or its usual names.
-    let other = discover(&mut desktop, "someone@mailbox.org").await.unwrap();
+    let other = discover(&mut desktop, "someone@hispeed.ch").await.unwrap();
     assert!(
         matches!(other.source, Some(DiscoverSource::Dns | DiscoverSource::Guess)),
         "{other:?}"
     );
-    assert!(other.imap.as_ref().unwrap().host.ends_with("mailbox.org"));
-    println!("{hosted:?}\n{other:?}");
+    assert!(other.imap.as_ref().unwrap().host.ends_with("hispeed.ch"));
+    println!("{hosted:?}\n{regional:?}\n{other:?}");
 }
 
 #[tokio::test]

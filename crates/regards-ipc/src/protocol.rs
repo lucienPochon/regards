@@ -709,6 +709,11 @@ pub enum DiscoverSource {
 pub struct DiscoverResult {
     /// `None`: nothing found; ask for the servers.
     pub source: Option<DiscoverSource>,
+    /// What people know the provider as ("Infomaniak", "Google Workspace"),
+    /// for the form to say; absent for servers found by DNS or by their
+    /// usual names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_name: Option<String>,
     pub imap: Option<ServerSettings>,
     pub smtp: Option<ServerSettings>,
     /// The provider's OAuth sign-in, if Regards knows one (offer it when
@@ -721,6 +726,10 @@ pub struct DiscoverResult {
     /// What to tell the person about the password (an app password …).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password_help: Option<String>,
+    /// The provider lets no mail app in over IMAP (Proton Mail, Tuta, HEY):
+    /// what to tell the person, instead of asking for servers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no_imap: Option<String>,
 }
 
 /// The result of [`methods::ACCOUNT_OAUTH_PROVIDERS`]: those this build has
