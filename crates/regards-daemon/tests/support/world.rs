@@ -119,6 +119,7 @@ impl World {
                         port: self.smtp_port,
                         security: ConnectionSecurity::Starttls,
                     },
+                    skip_send_check: false,
                 },
             )
             .await

@@ -2,13 +2,15 @@
 //! for the list and an account's folders, which agents see of the accounts
 //! open to them (ADR-0012).
 
-use crate::{State, sync};
+use crate::{State, sender, sync};
 use regards_imap::{ImapError, ImapServer};
 use regards_ipc::protocol::{
-    AccountAddParams, AccountCheckFailure, AccountLoginParams, AccountRef, AccountRemoveParams, AccountResyncResult,
-    AccountSummary, AccountUpdateParams, AgentAccess, AgentAccessParams, AgentSendParams, AutoCopyParams,
-    ConnectionSecurity, MailboxListResult, MailboxSummary, RpcError, ServerSettings, SignIn, SyncResult, codes,
+    AccountAddParams, AccountCheckDetails, AccountCheckFailure, AccountLoginParams, AccountRef, AccountRemoveParams,
+    AccountResyncResult, AccountSummary, AccountUpdateParams, AgentAccess, AgentAccessParams, AgentSendParams,
+    AutoCopyParams, CheckedServer, ConnectionSecurity, MailboxListResult, MailboxSummary, RpcError, ServerSettings,
+    SignIn, SyncResult, codes,
 };
+use regards_smtp::{Credentials, SubmitError};
 use regards_store::StoreError;
 use regards_store::accounts::{self, Account, AuthKind, NewAccount, Security, Server};
 use regards_store::mailboxes;
@@ -87,9 +89,28 @@ pub(crate) async fn add(state: &Arc<State>, params: AccountAddParams) -> Result<
         host: new.imap.host.clone(),
         port: new.imap.port,
     };
-    let check = regards_imap::verify_login(&server, &new.username, &new.password, &state.tls)
-        .await
-        .map_err(check_failed)?;
+    let mut tried = vec![new.username.clone()];
+    let mut signed_in = regards_imap::verify_login(&server, &new.username, &new.password, &state.tls).await;
+    let mut username = new.username;
+    if matches!(signed_in, Err(ImapError::AuthFailed(_)))
+        && let Some(fallback) = new.fallback_username
+    {
+        tried.push(fallback.clone());
+        signed_in = regards_imap::verify_login(&server, &fallback, &new.password, &state.tls).await;
+        username = fallback;
+    }
+    let check = signed_in.map_err(|error| check_failed(error, &tried))?;
+    // Sending too, so that a wrong SMTP server shows here and not at the first send.
+    if !new.skip_send_check {
+        let credentials = Credentials {
+            username: &username,
+            password: &new.password,
+            oauth: false,
+        };
+        regards_smtp::verify_login(&sender::smtp_endpoint(&new.smtp), &credentials, &state.tls)
+            .await
+            .map_err(|error| send_check_failed(error, std::slice::from_ref(&username)))?;
+    }
 
     let id = accounts::new_id();
     let key = SecretKey::new(&id, SecretKind::MailPassword);
@@ -101,7 +122,7 @@ pub(crate) async fn add(state: &Arc<State>, params: AccountAddParams) -> Result<
         display_name: new.display_name,
         email: new.email,
         auth_kind: AuthKind::Password,
-        username: new.username,
+        username,
         secret_key: key.as_str().to_owned(),
         imap: new.imap,
         smtp: new.smtp,
@@ -227,7 +248,7 @@ pub(crate) async fn set_login(state: &Arc<State>, params: AccountLoginParams) ->
         &state.tls,
     )
     .await
-    .map_err(check_failed)?;
+    .map_err(|error| check_failed(error, std::slice::from_ref(&username)))?;
     vault.set(&key, &password).await.map_err(vault_error)?;
     let id = account.id.clone();
     let changed = state
@@ -334,9 +355,13 @@ struct Validated {
     display_name: String,
     email: String,
     username: String,
+    /// Tried when the server refuses `username`: the part of the address
+    /// before the `@`, when no user name was given.
+    fallback_username: Option<String>,
     password: regards_vault::Secret,
     imap: Server,
     smtp: Server,
+    skip_send_check: bool,
 }
 
 const IMAP_TLS_ONLY: &str = "IMAP over STARTTLS is not supported yet; use the server's TLS port (usually 993)";
@@ -360,17 +385,19 @@ fn validate(params: AccountAddParams) -> Result<Validated, RpcError> {
         "" => email.clone(),
         name => name.to_owned(),
     };
-    let username = match params.username.as_deref().map(str::trim) {
-        None | Some("") => email.clone(),
-        Some(name) => name.to_owned(),
+    let (username, fallback_username) = match params.username.as_deref().map(str::trim) {
+        None | Some("") => (email.clone(), email.split_once('@').map(|(local, _)| local.to_owned())),
+        Some(name) => (name.to_owned(), None),
     };
     Ok(Validated {
         display_name,
         email,
         username,
+        fallback_username,
         password: params.password,
         imap: server(params.imap, "IMAP")?,
         smtp: server(params.smtp, "SMTP")?,
+        skip_send_check: params.skip_send_check,
     })
 }
 
@@ -494,7 +521,8 @@ pub(crate) async fn vault(state: &State) -> Result<Vault, RpcError> {
         })
 }
 
-pub(crate) fn check_failed(error: ImapError) -> RpcError {
+/// A refused IMAP check, after trying `tried` as the user name.
+pub(crate) fn check_failed(error: ImapError, tried: &[String]) -> RpcError {
     let reason = match error {
         ImapError::Connect(_) => AccountCheckFailure::Connect,
         ImapError::Tls(_) => AccountCheckFailure::Tls,
@@ -504,8 +532,33 @@ pub(crate) fn check_failed(error: ImapError) -> RpcError {
         ImapError::LoginDisabled => AccountCheckFailure::LoginDisabled,
         ImapError::Protocol(_) => AccountCheckFailure::Protocol,
     };
-    let mut rpc = RpcError::new(codes::ACCOUNT_CHECK_FAILED, error.to_string());
-    rpc.data = Some(json!({ "reason": reason }));
+    refused(error.to_string(), reason, CheckedServer::Imap, tried)
+}
+
+/// A refused SMTP check: the account receives, but could not send.
+fn send_check_failed(error: SubmitError, tried: &[String]) -> RpcError {
+    let reason = match &error {
+        SubmitError::SignIn(_) => AccountCheckFailure::AuthFailed,
+        error if error.is_certificate() => AccountCheckFailure::Tls,
+        // Offline, a timeout, or a refusal for now.
+        SubmitError::NotSent { retry: true, .. } => AccountCheckFailure::Connect,
+        SubmitError::NotSent { .. } | SubmitError::Uncertain(_) => AccountCheckFailure::Protocol,
+    };
+    refused(
+        format!("checking the sending server: {error}"),
+        reason,
+        CheckedServer::Smtp,
+        tried,
+    )
+}
+
+fn refused(message: String, reason: AccountCheckFailure, server: CheckedServer, tried: &[String]) -> RpcError {
+    let mut rpc = RpcError::new(codes::ACCOUNT_CHECK_FAILED, message);
+    rpc.data = Some(json!(AccountCheckDetails {
+        reason,
+        server,
+        tried: tried.to_vec(),
+    }));
     rpc
 }
 

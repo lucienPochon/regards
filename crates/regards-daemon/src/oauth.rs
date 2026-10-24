@@ -378,7 +378,7 @@ pub(crate) async fn finish(state: &Arc<State>, params: OauthFlowRef) -> Result<V
     };
     let check = regards_imap::verify_sign_in(&server, &email, Auth::Bearer(&tokens.access), &state.tls)
         .await
-        .map_err(account_methods::check_failed)?;
+        .map_err(|error| account_methods::check_failed(error, &[]))?;
     let vault = account_methods::vault(state).await?;
 
     if let Some(account) = existing {
