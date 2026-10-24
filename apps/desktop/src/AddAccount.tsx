@@ -206,10 +206,12 @@ export function AddAccount({
   };
 
   const host = input.imapHost || known?.imap?.host || "";
+  // The provider's name, while its servers are the ones in use.
+  const named = known?.provider_name && (!known.imap || !input.imapHost || input.imapHost === known.imap.host) ? known.provider_name : "";
   const chip = (
     <AddressChip
       email={email.trim()}
-      detail={provider && step.kind === "provider" ? PROVIDERS[provider].label : host}
+      detail={provider && step.kind === "provider" ? PROVIDERS[provider].label : named || host}
       onChange={changeAddress}
     />
   );
@@ -263,7 +265,7 @@ export function AddAccount({
           }}
         >
           {chip}
-          <h1>Your password</h1>
+          <h1>{named ? `Your ${named} password` : "Your password"}</h1>
           {step.askUsername && (
             <label className="signup-field">
               User name
@@ -410,6 +412,7 @@ export function AddAccount({
           failure={step.failure}
           email={email.trim()}
           host={host}
+          named={named}
           found={known}
           provider={provider}
           onPassword={() => {
@@ -552,18 +555,25 @@ function Found({
       </p>
     );
   }
-  const [tone, text] =
+  const [tone, text]: readonly ["good" | "warn", ReactNode] =
     provider !== null
-      ? (["good", `${PROVIDERS[provider].label} · you sign in in your browser`] as const)
-      : found.source === "known" || found.source === "mx" || found.source === "dns"
-        ? (["good", `Settings found for ${domain}`] as const)
-        : found.source === "guess"
-          ? (["good", `Likely settings for ${domain}: signing in checks them`] as const)
-          : (["warn", `We couldn't find ${domain}'s servers: you'll type them next`] as const);
+      ? ["good", `${PROVIDERS[provider].label} · you sign in in your browser`]
+      : found.source !== null && found.provider_name
+        ? [
+            "good",
+            <>
+              <strong>{found.provider_name}</strong> · settings found
+            </>,
+          ]
+        : found.source === "known" || found.source === "mx" || found.source === "dns"
+          ? ["good", `Settings found for ${domain}`]
+          : found.source === "guess"
+            ? ["good", `Likely settings for ${domain}: signing in checks them`]
+            : ["warn", `We couldn't find ${domain}'s servers: you'll type them next`];
   return (
     <p className={`signup-found ${tone}`} role="status">
       <Icon name={tone === "good" ? "check" : "info"} size={15} />
-      {text}
+      <span>{text}</span>
     </p>
   );
 }
@@ -749,6 +759,7 @@ function Recover({
   failure,
   email,
   host,
+  named,
   found,
   provider,
   onPassword,
@@ -761,6 +772,8 @@ function Recover({
   failure: Failure;
   email: string;
   host: string;
+  /** The provider's name, when discovery knows it. */
+  named: string;
   found: Discovered | null;
   provider: Provider | null;
   onPassword: () => void;
@@ -773,13 +786,15 @@ function Recover({
   const check = failure.check;
   const sending = check?.server === "smtp";
   const where = host || email.split("@")[1] || "the server";
+  // Who turned the password down: the provider, by name, where known.
+  const who = named || where;
   const tried = check?.tried?.length ? check.tried : [email];
   let title: string;
   let lead: ReactNode;
   let choices: ReactNode;
   switch (check?.reason) {
     case "auth_failed":
-      title = sending ? "The sending server didn't accept the password" : `${where} didn't accept the password`;
+      title = sending ? "The sending server didn't accept the password" : `${who} didn't accept the password`;
       lead = (
         <>
           {sending
@@ -801,7 +816,7 @@ function Recover({
           <Choice
             icon="lock"
             title="Use a password made for Regards"
-            detail={found?.password_help ?? "If two-step sign-in is on, your provider needs an app password."}
+            detail={found?.password_help ?? `If two-step sign-in is on, ${named || "your provider"} needs an app password.`}
             onClick={onPassword}
           />
           {provider && (
@@ -812,7 +827,7 @@ function Recover({
       );
       break;
     case "login_disabled":
-      title = `${where} doesn't take a password here`;
+      title = `${who} doesn't take a password here`;
       lead = "The server turned password sign-in off for mail apps.";
       choices = (
         <>

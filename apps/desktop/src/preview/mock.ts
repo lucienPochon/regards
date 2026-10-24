@@ -888,12 +888,13 @@ function handle(cmd: string, args: Args): unknown {
           imap: null,
           smtp: null,
           oauth_only: false,
+          provider_name: "Proton Mail",
           no_imap: "Proton Mail lets mail apps in only through its Proton Mail Bridge app, which Regards does not support yet.",
         };
       }
       if (domain === "outlook.com" || domain === "hotmail.com") {
         // Microsoft's consumer mail takes no password: only signing in with Microsoft.
-        return { source: "known", imap: null, smtp: null, oauth: "microsoft", oauth_only: true };
+        return { source: "known", imap: null, smtp: null, oauth: "microsoft", oauth_only: true, provider_name: "Outlook.com" };
       }
       if (domain === "gmail.com") {
         return {
@@ -903,6 +904,17 @@ function handle(cmd: string, args: Args): unknown {
           oauth: "google",
           oauth_only: false,
           password_help: "Gmail takes an app password, not your Google password.",
+          provider_name: "Gmail",
+        };
+      }
+      if (domain === "ik.me" || domain === "infomaniak.com") {
+        return {
+          source: "known",
+          imap: { host: "mail.infomaniak.com", port: 993, security: "tls" },
+          smtp: { host: "mail.infomaniak.com", port: 465, security: "tls" },
+          oauth_only: false,
+          password_help: "With two-step sign-in on, make a password for Regards in the Infomaniak Manager.",
+          provider_name: "Infomaniak",
         };
       }
       return domain.includes(".")
