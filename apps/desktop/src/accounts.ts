@@ -205,6 +205,11 @@ export type DiscoverSource = "known" | "mx" | "dns" | "guess";
 export interface Discovered {
   /** `null`: nothing found; ask for the servers. */
   source: DiscoverSource | null;
+  /**
+   * What people know the provider as ("Infomaniak", "Google Workspace");
+   * absent for servers found by DNS or by their usual names.
+   */
+  provider_name?: string;
   imap: ServerSettings | null;
   smtp: ServerSettings | null;
   /** The provider's OAuth sign-in, if Regards knows one: offer it when `oauthProviders()` has it. */

@@ -35,6 +35,10 @@ pub struct Endpoint {
 /// An address's servers, and how it signs in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
+    /// What people know the provider as ("Infomaniak", "Google
+    /// Workspace"), for the form to say; `None` for servers found by DNS
+    /// or by their usual names.
+    pub name: Option<&'static str>,
     pub imap: Endpoint,
     pub smtp: Endpoint,
     /// The provider's OAuth sign-in, if it has one Regards knows.
@@ -47,6 +51,7 @@ pub struct Settings {
 }
 
 struct Known {
+    name: &'static str,
     domains: &'static [&'static str],
     imap: (&'static str, u16),
     smtp: (&'static str, u16, Security),
@@ -60,6 +65,7 @@ const GOOGLE_HELP: &str = "Gmail takes an app password, not your Google password
 
 const KNOWN: &[Known] = &[
     Known {
+        name: "Gmail",
         domains: &["gmail.com", "googlemail.com"],
         imap: ("imap.gmail.com", 993),
         smtp: ("smtp.gmail.com", 587, Security::Starttls),
@@ -68,6 +74,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "Outlook.com",
         domains: &[
             "outlook.com",
             "hotmail.com",
@@ -87,6 +94,7 @@ const KNOWN: &[Known] = &[
         oauth_only: true,
     },
     Known {
+        name: "iCloud Mail",
         domains: &["icloud.com", "me.com", "mac.com"],
         imap: ("imap.mail.me.com", 993),
         smtp: ("smtp.mail.me.com", 587, Security::Starttls),
@@ -98,6 +106,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "Yahoo Mail",
         domains: &[
             "yahoo.com",
             "yahoo.fr",
@@ -116,6 +125,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "AOL Mail",
         domains: &["aol.com", "aim.com", "aol.fr", "aol.de", "aol.it", "aol.co.uk"],
         imap: ("imap.aol.com", 993),
         smtp: ("smtp.aol.com", 465, Security::Tls),
@@ -127,6 +137,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "Fastmail",
         domains: &["fastmail.com", "fastmail.fm"],
         imap: ("imap.fastmail.com", 993),
         smtp: ("smtp.fastmail.com", 465, Security::Tls),
@@ -137,6 +148,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "Infomaniak",
         domains: &["ik.me", "etik.com", "ikmail.com"],
         imap: ("mail.infomaniak.com", 993),
         smtp: ("mail.infomaniak.com", 587, Security::Starttls),
@@ -145,6 +157,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "GMX",
         domains: &["gmx.net", "gmx.de", "gmx.ch", "gmx.at"],
         imap: ("imap.gmx.net", 993),
         smtp: ("mail.gmx.net", 587, Security::Starttls),
@@ -153,6 +166,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "WEB.DE",
         domains: &["web.de"],
         imap: ("imap.web.de", 993),
         smtp: ("smtp.web.de", 587, Security::Starttls),
@@ -161,6 +175,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "Bluewin",
         domains: &["bluewin.ch"],
         imap: ("imaps.bluewin.ch", 993),
         smtp: ("smtpauths.bluewin.ch", 465, Security::Tls),
@@ -169,6 +184,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "GMX",
         domains: &["gmx.com", "gmx.us", "gmx.co.uk", "gmx.fr", "gmx.es", "gmx.it"],
         imap: ("imap.gmx.com", 993),
         smtp: ("mail.gmx.com", 587, Security::Starttls),
@@ -177,6 +193,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "mail.com",
         domains: &["mail.com", "email.com", "usa.com", "post.com"],
         imap: ("imap.mail.com", 993),
         smtp: ("smtp.mail.com", 587, Security::Starttls),
@@ -185,6 +202,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "T-Online",
         domains: &["t-online.de", "magenta.de"],
         imap: ("secureimap.t-online.de", 993),
         smtp: ("securesmtp.t-online.de", 465, Security::Tls),
@@ -196,6 +214,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "Posteo",
         domains: &[
             "posteo.de",
             "posteo.net",
@@ -212,6 +231,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "mailbox.org",
         domains: &["mailbox.org"],
         imap: ("imap.mailbox.org", 993),
         smtp: ("smtp.mailbox.org", 465, Security::Tls),
@@ -220,6 +240,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "Zoho Mail",
         domains: &["zoho.com", "zohomail.com"],
         imap: ("imap.zoho.com", 993),
         smtp: ("smtp.zoho.com", 465, Security::Tls),
@@ -228,6 +249,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "Zoho Mail",
         domains: &["zoho.eu", "zohomail.eu"],
         imap: ("imap.zoho.eu", 993),
         smtp: ("smtp.zoho.eu", 465, Security::Tls),
@@ -236,6 +258,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "Yandex Mail",
         domains: &["yandex.com", "yandex.ru", "ya.ru"],
         imap: ("imap.yandex.com", 993),
         smtp: ("smtp.yandex.com", 465, Security::Tls),
@@ -247,6 +270,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "Orange",
         domains: &["orange.fr", "wanadoo.fr"],
         imap: ("imap.orange.fr", 993),
         smtp: ("smtp.orange.fr", 465, Security::Tls),
@@ -255,6 +279,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "Free",
         domains: &["free.fr"],
         imap: ("imap.free.fr", 993),
         smtp: ("smtp.free.fr", 465, Security::Tls),
@@ -263,6 +288,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "SFR",
         domains: &["sfr.fr", "neuf.fr"],
         imap: ("imap.sfr.fr", 993),
         smtp: ("smtp.sfr.fr", 465, Security::Tls),
@@ -271,6 +297,7 @@ const KNOWN: &[Known] = &[
         oauth_only: false,
     },
     Known {
+        name: "La Poste",
         domains: &["laposte.net"],
         imap: ("imap.laposte.net", 993),
         smtp: ("smtp.laposte.net", 465, Security::Tls),
@@ -286,6 +313,7 @@ const ZOHO_HELP: &str = "Zoho Mail lets mail apps in once IMAP access is turned 
 impl Known {
     fn settings(&self) -> Settings {
         Settings {
+            name: Some(self.name),
             imap: Endpoint {
                 host: self.imap.0.to_owned(),
                 port: self.imap.1,
@@ -326,33 +354,37 @@ pub fn known(domain: &str) -> Option<Settings> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Hosts {
     /// The provider's own, such as its addresses in other countries: they
-    /// sign in as its listed domain does.
+    /// sign in as its listed domain does, under its name.
     Own,
-    /// Other organisations' (Microsoft 365, Google Workspace): how their
-    /// people sign in is the organisation's choice.
-    Others,
+    /// Other organisations', under this name (Microsoft 365, Google
+    /// Workspace): how their people sign in is the organisation's choice.
+    Others(&'static str),
 }
 
 /// Providers by the end of their MX host names, most specific first.
 const BY_MX: &[(&str, &str, Hosts)] = &[
     // Microsoft 365: <tenant>.mail.protection.outlook.com.
-    (".mail.protection.outlook.com", "outlook.com", Hosts::Others),
+    (
+        ".mail.protection.outlook.com",
+        "outlook.com",
+        Hosts::Others("Microsoft 365"),
+    ),
     // Microsoft's own addresses in every country (hotmail.it, live.nl, outlook.es):
     // <region>.olc.protection.outlook.com.
     (".olc.protection.outlook.com", "outlook.com", Hosts::Own),
     // Google Workspace: aspmx.l.google.com and its alternates, or smtp.google.com.
-    (".google.com", "gmail.com", Hosts::Others),
-    (".googlemail.com", "gmail.com", Hosts::Others),
-    (".icloud.com", "icloud.com", Hosts::Others),
-    (".messagingengine.com", "fastmail.com", Hosts::Others),
+    (".google.com", "gmail.com", Hosts::Others("Google Workspace")),
+    (".googlemail.com", "gmail.com", Hosts::Others("Google Workspace")),
+    (".icloud.com", "icloud.com", Hosts::Others("iCloud Mail")),
+    (".messagingengine.com", "fastmail.com", Hosts::Others("Fastmail")),
     // AOL and the addresses it took over (verizon.net), before the rest of Yahoo.
     (".mail.gm0.yahoodns.net", "aol.com", Hosts::Own),
-    (".yahoodns.net", "yahoo.com", Hosts::Others),
-    (".infomaniak.ch", "ik.me", Hosts::Others),
+    (".yahoodns.net", "yahoo.com", Hosts::Others("Yahoo Mail")),
+    (".infomaniak.ch", "ik.me", Hosts::Others("Infomaniak")),
     (".posteo.de", "posteo.de", Hosts::Own),
-    (".mailbox.org", "mailbox.org", Hosts::Others),
-    (".zoho.com", "zoho.com", Hosts::Others),
-    (".zoho.eu", "zoho.eu", Hosts::Others),
+    (".mailbox.org", "mailbox.org", Hosts::Others("mailbox.org")),
+    (".zoho.com", "zoho.com", Hosts::Others("Zoho Mail")),
+    (".zoho.eu", "zoho.eu", Hosts::Others("Zoho Mail")),
 ];
 
 /// A domain hosted by a provider Regards knows, by its MX records. For
@@ -363,26 +395,38 @@ pub fn by_mx(mx_hosts: &[String]) -> Option<Settings> {
         let host = format!(".{}", host.trim_end_matches('.').to_ascii_lowercase());
         let (_, like, hosts) = BY_MX.iter().find(|(suffix, _, _)| host.ends_with(suffix))?;
         let mut settings = known(like)?;
-        if settings.oauth.is_some() && *hosts == Hosts::Others {
-            settings.oauth_only = false;
-            settings.password_help = None;
+        if let Hosts::Others(name) = *hosts {
+            settings.name = Some(name);
+            if settings.oauth.is_some() {
+                settings.oauth_only = false;
+                settings.password_help = None;
+            }
         }
         Some(settings)
     })
 }
 
-/// Providers that let no mail app in over IMAP: their domains, the end of
-/// their MX host names (for the domains they host), and what to tell the
-/// person instead of asking for servers that do not exist.
-const NO_IMAP: &[(&[&str], &str, &str)] = &[
-    (
-        &["proton.me", "protonmail.com", "protonmail.ch", "pm.me"],
-        ".protonmail.ch",
-        "Proton Mail lets mail apps in only through its Proton Mail Bridge app, which Regards does not \
-         support yet.",
-    ),
-    (
-        &[
+/// A provider that lets no mail app in over IMAP.
+struct NoImap {
+    name: &'static str,
+    domains: &'static [&'static str],
+    /// The end of its MX host names, for the domains it hosts.
+    mx: &'static str,
+    /// What to tell the person, instead of asking for servers that do not exist.
+    why: &'static str,
+}
+
+const NO_IMAP: &[NoImap] = &[
+    NoImap {
+        name: "Proton Mail",
+        domains: &["proton.me", "protonmail.com", "protonmail.ch", "pm.me"],
+        mx: ".protonmail.ch",
+        why: "Proton Mail lets mail apps in only through its Proton Mail Bridge app, which Regards does not \
+              support yet.",
+    },
+    NoImap {
+        name: "Tuta",
+        domains: &[
             "tuta.com",
             "tutanota.com",
             "tutanota.de",
@@ -390,32 +434,35 @@ const NO_IMAP: &[(&[&str], &str, &str)] = &[
             "tuta.io",
             "keemail.me",
         ],
-        ".tutanota.de",
-        "Tuta Mail does not let other mail apps in: it works only in Tuta's own apps.",
-    ),
-    (
-        &["hey.com"],
-        ".app.hey.com",
-        "HEY does not let other mail apps in: it works only in HEY's own apps.",
-    ),
+        mx: ".tutanota.de",
+        why: "Tuta Mail does not let other mail apps in: it works only in Tuta's own apps.",
+    },
+    NoImap {
+        name: "HEY",
+        domains: &["hey.com"],
+        mx: ".app.hey.com",
+        why: "HEY does not let other mail apps in: it works only in HEY's own apps.",
+    },
 ];
 
-/// Why a provider cannot be added, by the address's own domain.
-pub fn no_imap(domain: &str) -> Option<&'static str> {
+/// A provider that cannot be added, by the address's own domain: its name,
+/// and why.
+pub fn no_imap(domain: &str) -> Option<(&'static str, &'static str)> {
     NO_IMAP
         .iter()
-        .find(|(domains, _, _)| domains.contains(&domain))
-        .map(|(_, _, why)| *why)
+        .find(|provider| provider.domains.contains(&domain))
+        .map(|provider| (provider.name, provider.why))
 }
 
-/// Why a hosted domain cannot be added, by its MX records.
-pub fn no_imap_by_mx(mx_hosts: &[String]) -> Option<&'static str> {
+/// A hosted domain that cannot be added, by its MX records: the provider's
+/// name, and why.
+pub fn no_imap_by_mx(mx_hosts: &[String]) -> Option<(&'static str, &'static str)> {
     mx_hosts.iter().find_map(|host| {
         let host = format!(".{}", host.trim_end_matches('.').to_ascii_lowercase());
         NO_IMAP
             .iter()
-            .find(|(_, suffix, _)| host.ends_with(suffix))
-            .map(|(_, _, why)| *why)
+            .find(|provider| host.ends_with(provider.mx))
+            .map(|provider| (provider.name, provider.why))
     })
 }
 
@@ -540,17 +587,28 @@ mod tests {
 
     #[test]
     fn providers_that_let_no_mail_app_in_say_why() {
-        assert!(no_imap("proton.me").unwrap().contains("Bridge"));
+        let (name, why) = no_imap("proton.me").unwrap();
+        assert!(name == "Proton Mail" && why.contains("Bridge"));
         assert!(no_imap("tutanota.com").is_some());
         assert_eq!(no_imap("gmail.com"), None);
         // A domain of their own, hosted there.
         assert!(no_imap_by_mx(&["mail.protonmail.ch.".into(), "mailsec.protonmail.ch.".into()]).is_some());
-        assert!(no_imap_by_mx(&["mail.tutanota.de".into()]).is_some());
+        assert_eq!(no_imap_by_mx(&["mail.tutanota.de".into()]).unwrap().0, "Tuta");
         assert_eq!(no_imap_by_mx(&["mx.example.org".into()]), None);
         // None of them is in the list of providers to add.
-        for (domains, _, _) in NO_IMAP {
-            assert!(domains.iter().all(|domain| known(domain).is_none()));
+        for provider in NO_IMAP {
+            assert!(provider.domains.iter().all(|domain| known(domain).is_none()));
         }
+    }
+
+    #[test]
+    fn providers_by_the_name_people_know() {
+        assert_eq!(known("ik.me").unwrap().name, Some("Infomaniak"));
+        let hosted = |mx: &str| by_mx(&[mx.into()]).unwrap().name;
+        assert_eq!(hosted("aspmx.l.google.com"), Some("Google Workspace"));
+        assert_eq!(hosted("contoso-com.mail.protection.outlook.com"), Some("Microsoft 365"));
+        assert_eq!(hosted("eur.olc.protection.outlook.com"), Some("Outlook.com"));
+        assert_eq!(hosted("mta-gw.infomaniak.ch"), Some("Infomaniak"));
     }
 
     #[test]
