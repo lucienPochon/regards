@@ -850,7 +850,7 @@ function Recover({
     <div className="signup-body">
       <div className="signup-problem">
         <span aria-hidden="true">
-          <Icon name="alert" size={18} />
+          <Icon name={check?.reason === "auth_failed" || check?.reason === "login_disabled" ? "lock" : "alert"} size={18} />
         </span>
         <div>
           <h1>{title}</h1>
