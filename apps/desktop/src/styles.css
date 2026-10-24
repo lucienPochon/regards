@@ -6893,6 +6893,49 @@ button.sender-row:hover:not(:disabled) {
   margin-top: 0;
 }
 
+/* In a window over the mail: ✕ in the corner, Cancel beside Continue. */
+.signup-dialog {
+  width: min(460px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  border-radius: 18px;
+  outline: none;
+}
+
+.signup-dialog .signup-card {
+  position: relative;
+  width: 100%;
+  padding-top: 22px;
+}
+
+.signup-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+.signup-dialog .signup-top {
+  padding-right: 34px;
+}
+
+.signup-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.signup-buttons > .btn {
+  flex: 1;
+}
+
+.signup-buttons > .btn.primary {
+  flex: 2;
+}
+
+.signup-foot.center {
+  justify-content: center;
+  text-align: center;
+}
+
 /* In Settings › Accounts the card sits in the page, not over it. */
 .settings-pane .signup-card {
   width: 100%;
@@ -7579,6 +7622,41 @@ button.sender-row:hover:not(:disabled) {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Under the Inbox chevron: "Add an account…", after the accounts, and a new account's first sync. */
+.side-item.side-add {
+  color: var(--rail-dim);
+}
+
+.side-item.side-add:hover {
+  color: var(--rail-text);
+}
+
+.side-add-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  border: 1.5px dashed var(--rail-dim);
+  border-radius: 50%;
+  color: var(--rail-text);
+}
+
+.side-item .spinner.side-first-sync {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-left: auto;
+  border-color: var(--rail-line);
+  border-top-color: var(--accent);
+}
+
+.side-item.active .spinner.side-first-sync {
+  border-color: rgb(255 255 255 / 0.25);
+  border-top-color: var(--rail-strong);
 }
 
 /* The first run: the window's own title band, with the caption buttons. */
