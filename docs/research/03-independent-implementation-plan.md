@@ -145,6 +145,12 @@ flowchart LR
      - MX records name a provider hosting the domain: Microsoft 365, Google Workspace, iCloud, Fastmail, Yahoo or Infomaniak. OAuth is then offered, not required.
      - Otherwise, the SRV records of RFC 6186 and RFC 8314.
   3. **The usual names:** `imap.` and `mail.` on 993; `smtp.` and `mail.` on 587, then 465. They are probed at once. A server is offered only if it greets with a certificate valid for its name; nothing signs in.
+- **Since 2026-10-24** (the sign-up redesign):
+  - More known providers: GMX.com, mail.com, T-Online, Posteo, mailbox.org, Zoho, Yandex, Orange, Free, SFR and La Poste.
+  - Microsoft's regional domains, by their `olc.protection.outlook.com` MX.
+  - Proton Mail, Tuta and HEY are named as having no IMAP (`no_imap`).
+  - After MX, the settings file the domain publishes (Thunderbird's autoconfig format) is read from `autoconfig.<domain>` or `.well-known`, over HTTPS and without the address. Its servers are probed like the usual names.
+  - `provider_name` gives the name to show.
 
   It takes 12 s at most. A real run found microsoft.com behind Microsoft 365 by its MX, and mailbox.org by its usual names (`tests/accounts.rs`, ignored by default). No ISPDB or other third party is asked.
 - **Accepted when:** setup succeeds against Microsoft 365, Outlook.com, Gmail (both paths), Infomaniak, iCloud and a self-hosted Dovecot, and no secret is ever written outside the keychain.
