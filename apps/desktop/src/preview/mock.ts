@@ -111,6 +111,12 @@ if ((params.get("autocopy") === "bcc" || params.get("autocopy") === "cc") && acc
 let oauthEmail: string | null = null;
 let oauthProvider: "microsoft" | "google" = "microsoft";
 let added = 0;
+/** Accounts added in the preview: until when their first sync runs. */
+const firstSync = new Map<string, number>();
+const syncFirst = (id: string) => {
+  firstSync.set(id, Date.now() + 5000);
+  window.setTimeout(changed, 5100);
+};
 if (params.get("signin") === "1" && accounts[0]) {
   accounts[0].account = { ...accounts[0].account, sign_in: "microsoft", needs_sign_in: true };
   // A message sent meanwhile waits in the Outbox for the sign-in.
@@ -848,6 +854,7 @@ function handle(cmd: string, args: Args): unknown {
             smtp: { host: smtpHost, port: input.smtpPort, security: input.smtpSecurity },
           });
           accounts.push(entry);
+          syncFirst(entry.account.id);
           changed();
           resolve(entry.account);
         }, 1800),
@@ -1168,6 +1175,7 @@ function handle(cmd: string, args: Args): unknown {
             // The provider gives the name on the account.
             const entry = addedAccount(added, "Ada Lovelace", email, { sign_in: provider });
             accounts.push(entry);
+            syncFirst(entry.account.id);
             changed();
             resolve(entry.account);
           }, 1500),
@@ -1348,7 +1356,10 @@ function handle(cmd: string, args: Args): unknown {
         messages.filter((m) => m.mailboxId === id && !m.seen && (role !== "inbox" || !parked(m))).length;
       return {
         mailboxes: (owner?.mailboxes ?? []).map((m) => ({ ...m, unread: unread(m.id, m.role) })),
-        sync: { running: false, last_success_at: Date.now(), last_error: null, push_active: true },
+        sync:
+          (firstSync.get(String(args.accountId)) ?? 0) > Date.now()
+            ? { running: true, last_success_at: null, last_error: null, push_active: false }
+            : { running: false, last_success_at: Date.now(), last_error: null, push_active: true },
       };
     }
     case "message_list": {

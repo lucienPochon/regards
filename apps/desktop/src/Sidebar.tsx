@@ -1,4 +1,4 @@
-import { type DragEvent, type MouseEvent, useRef, useState } from "react";
+import { type DragEvent, type MouseEvent, useEffect, useRef, useState } from "react";
 import type { MailboxSummary, Role } from "./accounts";
 import { Avatar } from "./Avatar";
 import type { OutboxEntry } from "./compose";
@@ -74,6 +74,7 @@ export function Sidebar({
   onDrop,
   folderMenu,
   onNewFolder,
+  onAddAccount,
   saved,
 }: {
   mail: MailState;
@@ -103,6 +104,8 @@ export function Sidebar({
   folderMenu?: (view: View) => MenuEntry[];
   /** A new folder at the top of an account. */
   onNewFolder?: (accountId: string) => void;
+  /** Adding another account: the last row under the Inbox chevron. */
+  onAddAccount?: () => void;
   saved?: SavedList;
 }) {
   const [open, setOpen] = useState<Set<Role>>(() => new Set());
@@ -111,6 +114,14 @@ export function Sidebar({
   const [dropOn, setDropOn] = useState<string | null>(null);
   const accounts = mail.state === "ready" ? mail.accounts : [];
   const many = accounts.length > 1;
+  // Each account under a chevron: with several; under Inbox also with one, for "Add an account…".
+  const listed = (r: Role) => many || (r === "inbox" && onAddAccount !== undefined && accounts.length > 0);
+  // An account added: the inbox's list opens on it.
+  const counted = useRef(accounts.length);
+  useEffect(() => {
+    if (accounts.length > counted.current && counted.current > 0) setOpen((now) => new Set(now).add("inbox"));
+    counted.current = accounts.length;
+  }, [accounts.length]);
   const appPrefs = usePrefs();
   const nameOf = (account: { id: string; email: string }) => accountLabel(appPrefs, account);
   const me = accounts[0]?.account;
@@ -192,7 +203,7 @@ export function Sidebar({
     const key = viewKey(row.view);
     return (
       <li key={key} className="side-entry">
-        {options.chevron && many && (
+        {options.chevron && listed(options.chevron) && (
           <button
             type="button"
             className="side-chevron"
@@ -237,32 +248,56 @@ export function Sidebar({
     );
   };
 
-  // Each account's folder with that role, under the chevron.
+  // Each account's folder with that role, under the chevron; under Inbox, "Add an account…" last.
   const perAccount = (r: Role) =>
-    many &&
-    open.has(r) &&
-    accounts.flatMap((account) => {
-      const mailbox = account.mailboxes.find((m) => m.role === r && m.selectable);
-      if (!mailbox) return [];
-      const target: View = { kind: "mailbox", mailboxId: mailbox.id, accountId: account.account.id };
-      const active = sameView(view, target);
-      const person = { name: account.account.display_name, address: account.account.email };
-      return [
-        <li key={`${r}-${account.account.id}`} className="side-entry account">
+    listed(r) &&
+    open.has(r) && [
+      ...accounts.flatMap((account) => {
+        const mailbox = account.mailboxes.find((m) => m.role === r && m.selectable);
+        // Its mail still coming in for the first time.
+        const first = account.error === null && !account.sync?.last_success_at;
+        // A new account shows in the inbox's list before its folders are known.
+        if (!mailbox && !(r === "inbox" && first)) return [];
+        const target: View | null = mailbox ? { kind: "mailbox", mailboxId: mailbox.id, accountId: account.account.id } : null;
+        const active = target !== null && sameView(view, target);
+        const person = { name: account.account.display_name, address: account.account.email };
+        return [
+          <li key={`${r}-${account.account.id}`} className="side-entry account">
+            <button
+              type="button"
+              className={active ? "side-item active" : "side-item"}
+              title={expanded ? (first ? "Its mail is coming in" : undefined) : nameOf(account.account)}
+              onClick={() => target && go(target)}
+              {...(target ? dragProps(target) : {})}
+            >
+              <Avatar person={person} size="xs" ring colour={accountColour(appPrefs, account.account.id)} />
+              {expanded && <span className="label">{nameOf(account.account)}</span>}
+              {expanded && r === "inbox" && first ? (
+                <span className="spinner small side-first-sync" role="img" aria-label="Its mail is coming in" />
+              ) : expanded && r === "inbox" && mailbox?.unread ? (
+                <span className="count unread-count">{mailbox.unread}</span>
+              ) : null}
+            </button>
+          </li>,
+        ];
+      }),
+      r === "inbox" && onAddAccount && (
+        <li key="inbox-add-account" className="side-entry account">
           <button
             type="button"
-            className={active ? "side-item active" : "side-item"}
-            title={expanded ? undefined : nameOf(account.account)}
-            onClick={() => go(target)}
-            {...dragProps(target)}
+            className="side-item side-add"
+            title={expanded ? undefined : "Add an account…"}
+            aria-label={expanded ? undefined : "Add an account…"}
+            onClick={onAddAccount}
           >
-            <Avatar person={person} size="xs" ring colour={accountColour(appPrefs, account.account.id)} />
-            {expanded && <span className="label">{nameOf(account.account)}</span>}
-            {expanded && r === "inbox" && mailbox.unread ? <span className="count unread-count">{mailbox.unread}</span> : null}
+            <span className="side-add-mark" aria-hidden="true">
+              <Icon name="plus" size={11} />
+            </span>
+            {expanded && <span className="label">Add an account…</span>}
           </button>
-        </li>,
-      ];
-    });
+        </li>
+      ),
+    ];
 
   const hideMenu = (row: Row): MenuEntry[] => [{ label: "Remove from sidebar", onSelect: () => changes.hide(row.view) }];
   const top = TOP.filter((row) => !hidden.has(viewKey(row.view)) && exists(row));

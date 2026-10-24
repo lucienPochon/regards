@@ -29,6 +29,7 @@ import {
   trashMessages,
 } from "./accounts";
 import { type Action, type ActionHost, type Target, choose, messageActions } from "./actions";
+import { AddAccountDialog } from "./AddAccount";
 import { usePendingHolds } from "./AgentHolds";
 import { AskUpdates, useUpdateStatus } from "./UpdateCheck";
 import { Avatar } from "./Avatar";
@@ -252,6 +253,8 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [offer]);
   const [help, setHelp] = useState(false);
+  // Adding another account from the main screen, in a window over the mail.
+  const [addingAccount, setAddingAccount] = useState(false);
   const [settings, setSettings] = useState<SettingsTab | null>(null);
   // The sidebar's Agents menu, beside its button.
   const [agentsMenu, setAgentsMenu] = useState<Anchor | null>(null);
@@ -292,6 +295,8 @@ export function App() {
   }, []);
 
   const accounts = useMemo(() => (mail.state === "ready" ? mail.accounts : []), [mail]);
+  const accountsNow = useRef(accounts);
+  accountsNow.current = accounts;
   const ownAddresses = useMemo(() => new Set(accounts.map((entry) => entry.account.email.toLowerCase())), [accounts]);
   // The first run's sign-up stays up after the account is added, until its "Open Inbox".
   const [welcoming, setWelcoming] = useState(false);
@@ -881,6 +886,13 @@ export function App() {
     setOverlay(false);
   }, []);
 
+  /** An account's own inbox, once its folders are known; every inbox until then. */
+  const openInboxOf = (accountId: string) => {
+    const entry = accountsNow.current.find((one) => one.account.id === accountId);
+    const inbox = entry?.mailboxes.find((mailbox) => mailbox.role === "inbox");
+    changeView(inbox ? { kind: "mailbox", mailboxId: inbox.id, accountId } : INBOX);
+  };
+
   // A regards:// link (agents give them, so the person can see what they found or did),
   // or a mailto: one once Regards is the mail app. Any web page can open a link, so it
   // only ever opens a view, or a new message to look over: nothing is sent.
@@ -1401,6 +1413,7 @@ export function App() {
         "separator",
         { label: "Settings…", hint: `${MOD_KEY}+,`, onSelect: () => setSettings("accounts") },
         { label: "Accounts…", onSelect: () => setSettings("accounts") },
+        { label: "Add an account…", icon: "plus", onSelect: () => setAddingAccount(true) },
         { label: "Keyboard shortcuts", hint: "?", onSelect: () => setHelp(true) },
         "separator",
         { label: "Quit Regards", hint: `${MOD_KEY}+Q`, onSelect: quit },
@@ -1955,6 +1968,10 @@ export function App() {
       setOverlay(false);
       setSettings("accounts");
     },
+    onAddAccount: () => {
+      setOverlay(false);
+      setAddingAccount(true);
+    },
     onAgents: (anchor: Anchor) => {
       setOverlay(false);
       setAgentsMenu(anchor);
@@ -2032,10 +2049,23 @@ export function App() {
             pickSendTime={pickSendTime}
             pickReminder={pickReminder}
             pickTemplate={pickTemplate}
-            onAddAccount={() => setSettings("accounts")}
+            onAddAccount={() => setAddingAccount(true)}
             onPopOut={(subject) => {
               setComposer(null);
               openComposerWindow(composer.id, subject).catch(failed);
+            }}
+          />
+        )}
+        {addingAccount && (
+          <AddAccountDialog
+            onClose={() => setAddingAccount(false)}
+            onAdded={(account) => {
+              setAddingAccount(false);
+              setOffer({
+                text: `${account.email} is added. Its mail is coming in.`,
+                label: "Open its Inbox",
+                run: () => openInboxOf(account.id),
+              });
             }}
           />
         )}

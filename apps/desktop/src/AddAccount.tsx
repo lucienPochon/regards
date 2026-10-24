@@ -1,4 +1,13 @@
-import { type FocusEvent, type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type FocusEvent,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   type AccountCheckDetails,
   AccountCheckError,
@@ -16,8 +25,10 @@ import {
   updateAccount,
 } from "./accounts";
 import { AppMark } from "./AppMark";
+import { useDialogFocus } from "./dialogFocus";
 import { Icon } from "./icons";
 import { OauthWaiting, PROVIDERS, useOauth } from "./OauthSignIn";
+import { useShortcuts } from "./shortcuts";
 
 /** An address worth looking up: something@domain.tld. */
 const COMPLETE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -69,12 +80,15 @@ const DOT: Record<Step["kind"], 1 | 2 | 3> = {
 export function AddAccount({
   onDone,
   onCancel,
+  onClose,
   first = false,
 }: {
-  /** Finished, with or without an account added. */
-  onDone: () => void;
+  /** Finished: with the account added, unless it was given up. */
+  onDone: (account?: AccountSummary) => void;
   /** Gives up before an account was added (Settings). */
   onCancel?: () => void;
+  /** In a window over the mail: ✕ and Esc close it, except while signing in. */
+  onClose?: () => void;
   /** The first run: "Open Inbox" ends it. */
   first?: boolean;
 }) {
@@ -231,8 +245,12 @@ export function AddAccount({
           }}
         >
           <div className="signup-titles">
-            <h1>{first ? "Add your email" : "Add an account"}</h1>
-            <p className="muted">Just the address for now. Regards works out your provider and its servers.</p>
+            <h1>{first ? "Add your email" : onClose ? "Add another account" : "Add an account"}</h1>
+            <p className="muted">
+              {onClose
+                ? "The same steps as the first time. Your other accounts keep working meanwhile."
+                : "Just the address for now. Regards works out your provider and its servers."}
+            </p>
           </div>
           <label className="signup-field">
             Email address
@@ -248,13 +266,29 @@ export function AddAccount({
             />
           </label>
           <Found email={email.trim()} found={known} looking={looking} provider={provider} blocked={blocked} />
-          <button type="submit" className="btn primary big" disabled={!COMPLETE.test(email.trim()) || blocked}>
-            Continue
-          </button>
-          <p className="signup-foot muted">
-            <Icon name="lock" size={14} />
-            Your password and your mail stay on this computer.
-          </p>
+          {onClose ? (
+            <>
+              <div className="signup-buttons">
+                <button type="button" className="btn big" onClick={onClose}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn primary big" disabled={!COMPLETE.test(email.trim()) || blocked}>
+                  Continue
+                </button>
+              </div>
+              <p className="signup-foot center muted">Esc or ✕ closes it; nothing is saved until the last step.</p>
+            </>
+          ) : (
+            <>
+              <button type="submit" className="btn primary big" disabled={!COMPLETE.test(email.trim()) || blocked}>
+                Continue
+              </button>
+              <p className="signup-foot muted">
+                <Icon name="lock" size={14} />
+                Your password and your mail stay on this computer.
+              </p>
+            </>
+          )}
         </form>
       );
       break;
@@ -441,8 +475,17 @@ export function AddAccount({
   }
 
   const backable = step.kind !== "address" && step.kind !== "checking" && step.kind !== "ready";
+  // In a window: closed while nothing is saved yet; once added, it ends as "Done" would.
+  // While the servers check the sign-in it stays, as the account may be about to be added.
+  const close =
+    onClose && step.kind !== "checking" ? (step.kind === "ready" ? () => onDone(step.account) : onClose) : undefined;
+  const escape = (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || event.defaultPrevented || !onClose) return;
+    event.preventDefault();
+    close?.();
+  };
   return (
-    <section className="signup-card" aria-label="Add an email account">
+    <section className="signup-card" aria-label="Add an email account" onKeyDown={escape}>
       {step.kind !== "ready" && (
         <div className="signup-top">
           {backable || (step.kind === "address" && onCancel) ? (
@@ -450,14 +493,47 @@ export function AddAccount({
               <Icon name="back" size={16} />
               {step.kind === "address" ? "Cancel" : "Back"}
             </button>
+          ) : onClose ? (
+            <Dots at={DOT[step.kind]} />
           ) : (
             <AppMark size={40} />
           )}
-          <Dots at={DOT[step.kind]} />
+          {(backable || !onClose) && <Dots at={DOT[step.kind]} />}
         </div>
+      )}
+      {onClose && (
+        <button
+          type="button"
+          className="icon-btn signup-close"
+          aria-label="Close"
+          title={close ? "Close (Esc)" : "Signing in…"}
+          disabled={!close}
+          onClick={close}
+        >
+          <Icon name="close" size={17} />
+        </button>
       )}
       {body}
     </section>
+  );
+}
+
+/**
+ * Adding another account from the main screen (the ⌄ menu, the sidebar,
+ * the composer's From menu): the same steps, in a window over the mail.
+ * Other accounts keep syncing meanwhile.
+ */
+export function AddAccountDialog({ onClose, onAdded }: { onClose: () => void; onAdded: (account: AccountSummary) => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  useDialogFocus(box);
+  // Nothing behind it answers keys while it is open.
+  useShortcuts({}, { modal: true });
+  return (
+    <div className="backdrop">
+      <div ref={box} tabIndex={-1} className="signup-dialog" role="dialog" aria-modal="true" aria-label="Add another account">
+        <AddAccount onClose={onClose} onDone={(account) => (account ? onAdded(account) : onClose())} />
+      </div>
+    </div>
   );
 }
 
@@ -1079,7 +1155,7 @@ function Ready({
   account: AccountSummary;
   sendChecked: boolean;
   first: boolean;
-  onDone: () => void;
+  onDone: (account: AccountSummary) => void;
   onAnother: () => void;
 }) {
   const given = account.display_name && account.display_name !== account.email ? account.display_name : "";
@@ -1096,7 +1172,7 @@ function Ready({
       className="signup-body"
       onSubmit={(event: FormEvent) => {
         event.preventDefault();
-        finish(onDone);
+        finish(() => onDone(account));
       }}
     >
       <div className="signup-done">
