@@ -673,6 +673,9 @@ pub enum DiscoverSource {
     Mx,
     /// The domain's SRV records (RFC 6186), and the servers answered.
     Dns,
+    /// The settings file the domain publishes (autoconfig), and the servers
+    /// answered.
+    File,
     /// The usual names on the domain (`imap.`, `mail.`, `smtp.`), which answered.
     Guess,
 }
@@ -684,8 +687,8 @@ pub struct DiscoverResult {
     /// `None`: nothing found; ask for the servers.
     pub source: Option<DiscoverSource>,
     /// What people know the provider as ("Infomaniak", "Google Workspace"),
-    /// for the form to say; absent for servers found by DNS or by their
-    /// usual names.
+    /// for the form to say, or the name the domain's settings file gives;
+    /// absent for servers found by DNS or by their usual names.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_name: Option<String>,
     pub imap: Option<ServerSettings>,

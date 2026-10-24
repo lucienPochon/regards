@@ -5,16 +5,22 @@
 //!
 //! 1. **Known providers** ([`known`]): the big ones, by the address's domain;
 //!    and those that let no mail app in ([`no_imap`]), to say so.
-//! 2. **DNS** (the daemon asks): RFC 6186/8314 SRV records the domain
-//!    publishes ([`from_srv`]), or its MX records naming a provider that
-//!    hosts other domains, such as Microsoft 365 or Google Workspace, or
-//!    its own addresses in other countries ([`by_mx`], [`no_imap_by_mx`]).
-//! 3. **The usual names** on the domain ([`guesses`]): `imap.`, `mail.`,
-//!    `smtp.` with the standard ports, each checked before it is offered.
+//! 2. **MX records** (the daemon asks DNS) naming a provider that hosts
+//!    other domains, such as Microsoft 365 or Google Workspace, or its own
+//!    addresses in other countries ([`by_mx`], [`no_imap_by_mx`]).
+//! 3. **The settings file the domain publishes** ([`config_urls`],
+//!    [`from_config`]), as many hosts do for Thunderbird.
+//! 4. **SRV records** (RFC 6186/8314) the domain publishes ([`from_srv`]).
+//! 5. **The usual names** on the domain ([`guesses`]): `imap.`, `mail.`,
+//!    `smtp.` with the standard ports.
 //!
-//! Nothing here is sent anywhere: DNS goes to the system's resolvers, and
-//! the only servers contacted are the candidates themselves. What is found
-//! is only a proposal: adding the account still signs in to check it.
+//! Servers found from 3 on are each checked before they are offered.
+//!
+//! Nothing here is sent to anyone else: DNS goes to the system's resolvers,
+//! the settings file comes from the address's own domain (over HTTPS, and
+//! without the address), and the only mail servers contacted are the
+//! candidates themselves. What is found is only a proposal: adding the
+//! account still signs in to check it.
 
 use crate::oauth::Provider;
 
@@ -491,6 +497,135 @@ pub fn from_srv(
     Some((imap, smtp))
 }
 
+/// Where a provider's own settings file may be (Thunderbird's autoconfig
+/// format, which many hosts publish, cPanel and Plesk among them): on the
+/// address's own domain, over HTTPS only. The address itself is not sent.
+pub fn config_urls(domain: &str) -> [String; 2] {
+    [
+        format!("https://autoconfig.{domain}/mail/config-v1.1.xml"),
+        format!("https://{domain}/.well-known/autoconfig/mail/config-v1.1.xml"),
+    ]
+}
+
+/// What a provider's settings file says that Regards uses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigFile {
+    /// Its short display name ("Runbox"), unless it is a placeholder or
+    /// says only "Mail".
+    pub name: Option<String>,
+    /// IMAP over TLS, in the file's order (Regards does not use IMAP with
+    /// STARTTLS).
+    pub imap: Vec<Endpoint>,
+    /// SMTP with TLS or STARTTLS, never in the clear, in the file's order.
+    pub smtp: Vec<Endpoint>,
+}
+
+/// Read a provider's settings file. `%EMAILDOMAIN%` in a host name is the
+/// address's domain; a host with any other placeholder is skipped. `None`
+/// when the file is not one, or names no server Regards can use.
+pub fn from_config(xml: &str, domain: &str) -> Option<ConfigFile> {
+    use quick_xml::events::Event;
+
+    #[derive(Default)]
+    struct Server {
+        smtp: bool,
+        host: String,
+        port: String,
+        socket: String,
+    }
+    #[derive(Clone, Copy)]
+    enum Field {
+        Host,
+        Port,
+        Socket,
+        ShortName,
+        Name,
+    }
+
+    let mut reader = quick_xml::Reader::from_str(xml);
+    let (mut imap, mut smtp) = (Vec::new(), Vec::new());
+    let (mut short_name, mut long_name) = (String::new(), String::new());
+    // The server being read, if it is one Regards uses, and the field read.
+    let mut server: Option<Server> = None;
+    let mut field: Option<Field> = None;
+    loop {
+        match reader.read_event().ok()? {
+            Event::Start(tag) => match tag.local_name().as_ref() {
+                kind @ ("incomingServer" | "outgoingServer") => {
+                    let is_smtp = kind == "outgoingServer";
+                    let wanted = if is_smtp { "smtp" } else { "imap" };
+                    let used = tag
+                        .try_get_attribute("type")
+                        .ok()
+                        .flatten()
+                        .is_some_and(|kind| kind.value == wanted);
+                    server = used.then(|| Server {
+                        smtp: is_smtp,
+                        ..Server::default()
+                    });
+                }
+                "hostname" => field = Some(Field::Host),
+                "port" => field = Some(Field::Port),
+                "socketType" => field = Some(Field::Socket),
+                "displayShortName" => field = Some(Field::ShortName),
+                "displayName" => field = Some(Field::Name),
+                _ => field = None,
+            },
+            Event::Text(text) => {
+                let text = text.xml10_content();
+                match (field, server.as_mut()) {
+                    (Some(Field::Host), Some(server)) => server.host.push_str(&text),
+                    (Some(Field::Port), Some(server)) => server.port.push_str(&text),
+                    (Some(Field::Socket), Some(server)) => server.socket.push_str(&text),
+                    (Some(Field::ShortName), None) => short_name.push_str(&text),
+                    (Some(Field::Name), None) => long_name.push_str(&text),
+                    _ => {}
+                }
+            }
+            Event::End(tag) => match tag.local_name().as_ref() {
+                "incomingServer" | "outgoingServer" => {
+                    let Some(found) = server.take() else { continue };
+                    let host = found.host.trim().replace("%EMAILDOMAIN%", domain).to_ascii_lowercase();
+                    let port = found.port.trim().parse().ok().filter(|&port: &u16| port != 0);
+                    let socket = found.socket.trim();
+                    let security = if socket.eq_ignore_ascii_case("SSL") {
+                        Some(Security::Tls)
+                    } else if found.smtp && socket.eq_ignore_ascii_case("STARTTLS") {
+                        Some(Security::Starttls)
+                    } else {
+                        None
+                    };
+                    let usable_host =
+                        !host.is_empty() && !host.chars().any(|c| c.is_whitespace() || matches!(c, '%' | '/' | ':'));
+                    if let (true, Some(port), Some(security)) = (usable_host, port, security) {
+                        let endpoint = Endpoint { host, port, security };
+                        if found.smtp { &mut smtp } else { &mut imap }.push(endpoint);
+                    }
+                }
+                _ => field = None,
+            },
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if imap.is_empty() && smtp.is_empty() {
+        return None;
+    }
+    let name = [short_name, long_name]
+        .into_iter()
+        .map(|name| name.trim().to_owned())
+        .find(|name| {
+            !name.is_empty()
+                && name.chars().count() <= 40
+                && !name.contains('%')
+                && !name.chars().any(char::is_control)
+                && !["mail", "email", "e-mail"]
+                    .iter()
+                    .any(|word| name.eq_ignore_ascii_case(word))
+        });
+    Some(ConfigFile { name, imap, smtp })
+}
+
 /// The usual names, best first, to try in turn: IMAP on 993; submission
 /// with STARTTLS on 587, then TLS on 465.
 pub fn guesses(domain: &str) -> (Vec<Endpoint>, Vec<Endpoint>) {
@@ -648,5 +783,85 @@ mod tests {
         assert_eq!(imap[0].host, "imap.example.org");
         assert_eq!((smtp[0].host.as_str(), smtp[0].port), ("smtp.example.org", 587));
         assert_eq!(smtp.last().unwrap().security, Security::Tls);
+    }
+
+    #[test]
+    fn a_providers_settings_file_names_the_servers_regards_can_use() {
+        // As a cPanel host publishes it, with the cases Regards skips.
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<clientConfig version="1.1">
+  <emailProvider id="example.org">
+    <domain>example.org</domain>
+    <displayName>%EMAILADDRESS%</displayName>
+    <displayShortName>Example Hosting</displayShortName>
+    <incomingServer type="imap">
+      <hostname>mail.example.org</hostname>
+      <port>143</port>
+      <socketType>STARTTLS</socketType>
+    </incomingServer>
+    <incomingServer type="imap">
+      <hostname>mail.%EMAILDOMAIN%</hostname>
+      <port>993</port>
+      <socketType>SSL</socketType>
+      <username>%EMAILADDRESS%</username>
+    </incomingServer>
+    <incomingServer type="pop3">
+      <hostname>mail.example.org</hostname>
+      <port>995</port>
+      <socketType>SSL</socketType>
+    </incomingServer>
+    <outgoingServer type="smtp">
+      <hostname>smtp.example.org</hostname>
+      <port>25</port>
+      <socketType>plain</socketType>
+    </outgoingServer>
+    <outgoingServer type="smtp">
+      <hostname> Shared.Host.Example </hostname>
+      <port>465</port>
+      <socketType>SSL</socketType>
+    </outgoingServer>
+    <outgoingServer type="smtp">
+      <hostname>%EMAILLOCALPART%.example.org</hostname>
+      <port>587</port>
+      <socketType>STARTTLS</socketType>
+    </outgoingServer>
+  </emailProvider>
+</clientConfig>"#;
+        let file = from_config(xml, "example.org").unwrap();
+        assert_eq!(file.name.as_deref(), Some("Example Hosting"));
+        assert_eq!(
+            file.imap,
+            [Endpoint {
+                host: "mail.example.org".into(),
+                port: 993,
+                security: Security::Tls
+            }],
+            "IMAP over TLS only; not POP"
+        );
+        assert_eq!(
+            file.smtp,
+            [Endpoint {
+                host: "shared.host.example".into(),
+                port: 465,
+                security: Security::Tls
+            }],
+            "never in the clear; no host made from the person's address"
+        );
+        assert_eq!(from_config("<html><body>Not found</body></html>", "example.org"), None);
+        assert_eq!(from_config("<clientConfig><unclosed>", "example.org"), None);
+        assert_eq!(from_config("", "example.org"), None);
+
+        // A short name that says nothing: the long one, if it says more.
+        let named = |short: &str, long: &str| {
+            let xml = format!(
+                "<clientConfig><emailProvider id=\"x\"><displayName>{long}</displayName>\
+                 <displayShortName>{short}</displayShortName><incomingServer type=\"imap\">\
+                 <hostname>imap.x.example</hostname><port>993</port><socketType>SSL</socketType>\
+                 </incomingServer></emailProvider></clientConfig>"
+            );
+            from_config(&xml, "x.example").unwrap().name
+        };
+        assert_eq!(named("Mail", "Runbox Mail").as_deref(), Some("Runbox Mail"));
+        assert_eq!(named("Mail", "%EMAILADDRESS%"), None);
     }
 }
