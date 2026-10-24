@@ -293,6 +293,12 @@ export function App() {
 
   const accounts = useMemo(() => (mail.state === "ready" ? mail.accounts : []), [mail]);
   const ownAddresses = useMemo(() => new Set(accounts.map((entry) => entry.account.email.toLowerCase())), [accounts]);
+  // The first run's sign-up stays up after the account is added, until its "Open Inbox".
+  const [welcoming, setWelcoming] = useState(false);
+  const noAccounts = mail.state === "ready" && accounts.length === 0;
+  useEffect(() => {
+    if (noAccounts) setWelcoming(true);
+  }, [noAccounts]);
   const appPrefs = usePrefs();
   const standardKeys = appPrefs.keySet === "standard";
   // Settings › Accessibility: the whole window larger or smaller.
@@ -1474,13 +1480,13 @@ export function App() {
     </div>
   );
 
-  if (mail.state === "ready" && accounts.length === 0) {
+  if (noAccounts || (welcoming && mail.state === "ready")) {
     // The first run still has the window's own title band and caption buttons.
     return (
       <div className={["welcome-shell", PLATFORM !== "linux" ? "framed" : "", PLATFORM].join(" ")}>
         {PLATFORM !== "linux" && <div className="drag-band" data-tauri-drag-region aria-hidden="true" />}
         {banner}
-        <Welcome />
+        <Welcome onDone={() => setWelcoming(false)} />
         <TitleBar onAppMenu={appMenu} />
         {menu && <Menu request={menu} onClose={() => setMenu(null)} />}
         {help && <ShortcutHelp onClose={() => setHelp(false)} />}
