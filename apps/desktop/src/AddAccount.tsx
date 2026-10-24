@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type FocusEvent, type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
   type AccountCheckDetails,
   AccountCheckError,
@@ -7,7 +7,10 @@ import {
   type ConnectionSecurity,
   type Discovered,
   type Provider,
+  type ServerCheck,
+  type ServerSettings,
   addAccount,
+  checkServer,
   discoverAccount,
   oauthProviders,
   updateAccount,
@@ -177,12 +180,14 @@ export function AddAccount({
   const known = found && asked.current?.address === email.trim() ? found : null;
   const offered = (result: Discovered | null) => (result?.oauth && providers.includes(result.oauth) ? result.oauth : null);
   const provider = offered(known);
-  const blocked = known?.oauth_only === true && provider === null;
+  // No way in: the provider's own sign-in only, which this version lacks, or no mail app at all.
+  const shut = (result: Discovered) => (result.oauth_only && !offered(result)) || Boolean(result.no_imap);
+  const blocked = known !== null && shut(known);
 
   const proceed = async () => {
     const clean = email.trim();
     const result = known ?? (await lookUp(clean));
-    if (!result || (result.oauth_only && !offered(result))) return;
+    if (!result || shut(result)) return;
     setInput((now) => ({ ...now, email: clean }));
     const way = offered(result);
     if (way) go({ kind: "provider", provider: way });
@@ -204,10 +209,12 @@ export function AddAccount({
   };
 
   const host = input.imapHost || known?.imap?.host || "";
+  // The provider's name, while its servers are the ones in use.
+  const named = known?.provider_name && (!known.imap || !input.imapHost || input.imapHost === known.imap.host) ? known.provider_name : "";
   const chip = (
     <AddressChip
       email={email.trim()}
-      detail={provider && step.kind === "provider" ? PROVIDERS[provider].label : host}
+      detail={provider && step.kind === "provider" ? PROVIDERS[provider].label : named || host}
       onChange={changeAddress}
     />
   );
@@ -261,7 +268,7 @@ export function AddAccount({
           }}
         >
           {chip}
-          <h1>Your password</h1>
+          <h1>{named ? `Your ${named} password` : "Your password"}</h1>
           {step.askUsername && (
             <label className="signup-field">
               User name
@@ -376,6 +383,11 @@ export function AddAccount({
               smtpPort: typed.current.has("smtpPort") ? now.smtpPort : security === "tls" ? 465 : 587,
             }));
           }}
+          onSending={(settings) => {
+            typed.current.add("smtpPort");
+            typed.current.add("smtpSecurity");
+            setInput((now) => ({ ...now, smtpPort: settings.port, smtpSecurity: settings.security }));
+          }}
           onContinue={() => (step.then === "check" && input.password ? void signIn() : go({ kind: "password" }))}
         />
       );
@@ -408,6 +420,7 @@ export function AddAccount({
           failure={step.failure}
           email={email.trim()}
           host={host}
+          named={named}
           found={known}
           provider={provider}
           onPassword={() => {
@@ -534,6 +547,14 @@ function Found({
     );
   }
   if (!found) return null;
+  if (found.no_imap) {
+    return (
+      <p className="signup-found bad" role="alert">
+        <Icon name="alert" size={15} />
+        {found.no_imap}
+      </p>
+    );
+  }
   if (blocked) {
     return (
       <p className="signup-found bad" role="alert">
@@ -542,18 +563,26 @@ function Found({
       </p>
     );
   }
-  const [tone, text] =
+  const [tone, text]: readonly ["good" | "warn", ReactNode] =
     provider !== null
-      ? (["good", `${PROVIDERS[provider].label} · you sign in in your browser`] as const)
-      : found.source === "known" || found.source === "mx" || found.source === "dns"
-        ? (["good", `Settings found for ${domain}`] as const)
-        : found.source === "guess"
-          ? (["good", `Likely settings for ${domain}: signing in checks them`] as const)
-          : (["warn", `We couldn't find ${domain}'s servers: you'll type them next`] as const);
+      ? ["good", `${PROVIDERS[provider].label} · you sign in in your browser`]
+      : found.source !== null && found.provider_name
+        ? [
+            "good",
+            <>
+              <strong>{found.provider_name}</strong> · settings found
+            </>,
+          ]
+        : found.source === null
+          ? ["warn", `We couldn't find ${domain}'s servers: you'll type them next`]
+          : found.source === "guess"
+            ? ["good", `Likely settings for ${domain}: signing in checks them`]
+            : // Listed, from the domain's own settings file, its MX or DNS records.
+              ["good", `Settings found for ${domain}`];
   return (
     <p className={`signup-found ${tone}`} role="status">
       <Icon name={tone === "good" ? "check" : "info"} size={15} />
-      {text}
+      <span>{text}</span>
     </p>
   );
 }
@@ -586,6 +615,51 @@ function PasswordField({ value, autoFocus, onChange }: { value: string; autoFocu
   );
 }
 
+type Server = "imap" | "smtp";
+/** A server's check: under way, or what it found, for the settings it was made with. */
+type Checked = { key: string } & ({ state: "checking" } | ({ state: "done" } & ServerCheck));
+
+const keyOf = (settings: ServerSettings) => `${settings.host.toLowerCase()}:${settings.port}:${settings.security}`;
+
+/**
+ * Each server is checked as its fields are left, and once on opening when
+ * filled in: does it answer, securely. Nothing signs in; a check that
+ * cannot be made says nothing.
+ */
+function useServerChecks() {
+  const [checks, setChecks] = useState<Partial<Record<Server, Checked>>>({});
+  const asked = useRef<Partial<Record<Server, string>>>({});
+  const check = useCallback((server: Server, settings: ServerSettings) => {
+    if (!settings.host || !settings.port) return;
+    const key = keyOf(settings);
+    if (asked.current[server] === key) return;
+    asked.current[server] = key;
+    setChecks((now) => ({ ...now, [server]: { key, state: "checking" } }));
+    checkServer(server, settings).then(
+      (result) => {
+        if (asked.current[server] === key) setChecks((now) => ({ ...now, [server]: { key, state: "done", ...result } }));
+      },
+      () => {
+        if (asked.current[server] !== key) return;
+        asked.current[server] = undefined;
+        setChecks((now) => ({ ...now, [server]: undefined }));
+      },
+    );
+  }, []);
+  // Settings already known to answer, such as a suggestion taken.
+  const answered = useCallback((server: Server, settings: ServerSettings) => {
+    const key = keyOf(settings);
+    asked.current[server] = key;
+    setChecks((now) => ({ ...now, [server]: { key, state: "done" } }));
+  }, []);
+  /** The check for these settings, if it is theirs. */
+  const of = (server: Server, settings: ServerSettings) => {
+    const found = checks[server];
+    return found && found.key === keyOf(settings) ? found : null;
+  };
+  return { check, answered, of };
+}
+
 function ServersForm({
   email,
   notFound,
@@ -593,18 +667,44 @@ function ServersForm({
   mark,
   onChange,
   onSecurity,
+  onSending,
   onContinue,
 }: {
   email: string;
   notFound: boolean;
   input: AccountInput;
   /** A server sign-in could not reach. */
-  mark?: "imap" | "smtp";
+  mark?: Server;
   onChange: (input: AccountInput, field: keyof AccountInput) => void;
   onSecurity: (security: ConnectionSecurity) => void;
+  /** Other settings for sending, on the same server: a check's suggestion. */
+  onSending: (settings: ServerSettings) => void;
   onContinue: () => void;
 }) {
   const field = <K extends keyof AccountInput>(key: K, value: AccountInput[K]) => onChange({ ...input, [key]: value }, key);
+  const settings: Record<Server, ServerSettings> = {
+    imap: { host: input.imapHost.trim(), port: input.imapPort, security: "tls" },
+    smtp: { host: input.smtpHost.trim() || input.imapHost.trim(), port: input.smtpPort, security: input.smtpSecurity },
+  };
+  const checks = useServerChecks();
+  // Filled in already (found, or back to change them): checked on opening.
+  useEffect(() => {
+    checks.check("imap", settings.imap);
+    checks.check("smtp", settings.smtp);
+    // Only on opening; after that, as each server's fields are left.
+  }, []);
+  const leaving = (server: Server) => (event: FocusEvent<HTMLFieldSetElement>) => {
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+    checks.check(server, settings[server]);
+  };
+  const state = (server: Server) => {
+    const found = checks.of(server, settings[server]);
+    const failed = found?.state === "done" && found.reason !== undefined;
+    const fine = found?.state === "done" && found.reason === undefined;
+    return { found, className: ["signup-server", failed ? "failed" : "", mark === server && !fine ? "marked" : ""].filter(Boolean).join(" ") };
+  };
+  const imap = state("imap");
+  const smtp = state("smtp");
   return (
     <form
       className="signup-body"
@@ -627,10 +727,11 @@ function ServersForm({
       <div className="signup-titles">
         <h1>Your mail servers</h1>
         <p className="muted">
-          Your host&apos;s help pages or welcome email list them. Type the names; Regards fills in the usual ports.
+          Your host&apos;s help pages or welcome email list them. Type the names; Regards fills in the usual ports and checks
+          each server as you go.
         </p>
       </div>
-      <fieldset className={mark === "imap" ? "signup-server marked" : "signup-server"}>
+      <fieldset className={imap.className} onBlur={leaving("imap")}>
         <legend>
           Receiving <span className="muted">· IMAP</span>
           <span className="signup-always muted">
@@ -661,8 +762,9 @@ function ServersForm({
             />
           </label>
         </div>
+        <CheckLine server="imap" settings={settings.imap} found={imap.found} />
       </fieldset>
-      <fieldset className={mark === "smtp" ? "signup-server marked" : "signup-server"}>
+      <fieldset className={smtp.className} onBlur={leaving("smtp")}>
         <legend>
           Sending <span className="muted">· SMTP</span>
         </legend>
@@ -702,6 +804,15 @@ function ServersForm({
             </button>
           ))}
         </div>
+        <CheckLine
+          server="smtp"
+          settings={settings.smtp}
+          found={smtp.found}
+          onUse={(suggested) => {
+            onSending(suggested);
+            checks.answered("smtp", suggested);
+          }}
+        />
       </fieldset>
       <label className="signup-field">
         User name
@@ -718,6 +829,71 @@ function ServersForm({
         Continue
       </button>
     </form>
+  );
+}
+
+const securityName = (security: ConnectionSecurity) => (security === "tls" ? "TLS" : "STARTTLS");
+
+/** Under a server's fields: being checked, answers, or what doesn't, with the settings that do when known. */
+function CheckLine({
+  server,
+  settings,
+  found,
+  onUse,
+}: {
+  server: Server;
+  settings: ServerSettings;
+  found: Checked | null;
+  onUse?: (settings: ServerSettings) => void;
+}) {
+  if (!found) return null;
+  if (found.state === "checking") {
+    return (
+      <p className="signup-check" role="status">
+        <span className="spinner small" aria-hidden="true" />
+        Checking {settings.host}…
+      </p>
+    );
+  }
+  if (found.reason === undefined) {
+    return (
+      <p className="signup-check good" role="status">
+        <Icon name="check" size={14} />
+        It answers, securely
+      </p>
+    );
+  }
+  const port = settings.port;
+  const what =
+    found.reason === "tls"
+      ? `No secure connection on port ${port}`
+      : found.reason === "not_imap"
+        ? `What answers on port ${port} isn't a server for ${server === "imap" ? "receiving" : "sending"} mail`
+        : found.reason === "protocol"
+          ? `The server on port ${port} answered in a way Regards didn't expect`
+          : `Nothing answered on port ${port}`;
+  const suggestion = found.suggestion;
+  return (
+    <div className="signup-check bad" role="alert">
+      {suggestion ? (
+        <span>
+          {what}, but this server answers on{" "}
+          <strong>
+            {suggestion.port} with {securityName(suggestion.security)}
+          </strong>
+          .
+        </span>
+      ) : (
+        <span>
+          {what}. {found.reason === "tls" ? "Check the port." : "Check the server name and port."}
+        </span>
+      )}
+      {suggestion && onUse && (
+        <button type="button" className="btn small" onClick={() => onUse(suggestion)}>
+          Use {suggestion.port}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -739,6 +915,7 @@ function Recover({
   failure,
   email,
   host,
+  named,
   found,
   provider,
   onPassword,
@@ -751,6 +928,8 @@ function Recover({
   failure: Failure;
   email: string;
   host: string;
+  /** The provider's name, when discovery knows it. */
+  named: string;
   found: Discovered | null;
   provider: Provider | null;
   onPassword: () => void;
@@ -763,13 +942,15 @@ function Recover({
   const check = failure.check;
   const sending = check?.server === "smtp";
   const where = host || email.split("@")[1] || "the server";
+  // Who turned the password down: the provider, by name, where known.
+  const who = named || where;
   const tried = check?.tried?.length ? check.tried : [email];
   let title: string;
   let lead: ReactNode;
   let choices: ReactNode;
   switch (check?.reason) {
     case "auth_failed":
-      title = sending ? "The sending server didn't accept the password" : `${where} didn't accept the password`;
+      title = sending ? "The sending server didn't accept the password" : `${who} didn't accept the password`;
       lead = (
         <>
           {sending
@@ -791,7 +972,7 @@ function Recover({
           <Choice
             icon="lock"
             title="Use a password made for Regards"
-            detail={found?.password_help ?? "If two-step sign-in is on, your provider needs an app password."}
+            detail={found?.password_help ?? `If two-step sign-in is on, ${named || "your provider"} needs an app password.`}
             onClick={onPassword}
           />
           {provider && (
@@ -802,7 +983,7 @@ function Recover({
       );
       break;
     case "login_disabled":
-      title = `${where} doesn't take a password here`;
+      title = `${who} doesn't take a password here`;
       lead = "The server turned password sign-in off for mail apps.";
       choices = (
         <>

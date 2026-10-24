@@ -875,16 +875,35 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return owner.account;
     }
-    case "account_check_server":
-      // Every server answers in the preview.
-      return {};
+    case "account_check_server": {
+      // In the preview servers answer, after a moment, except one named "nowhere…", and sending on
+      // port 587 at a host with "alpes" in its name, which answers on 465 with TLS instead.
+      const settings = args.settings as { host: string; port: number; security: string };
+      const answer =
+        settings.host.startsWith("nowhere")
+          ? { reason: "connect" }
+          : args.server === "smtp" && settings.host.includes("alpes") && settings.port === 587
+            ? { reason: "connect", suggestion: { host: settings.host, port: 465, security: "tls" } }
+            : {};
+      return new Promise((resolve) => window.setTimeout(() => resolve(answer), 700));
+    }
     case "account_discover": {
       const domain = String(args.email ?? "").split("@")[1]?.toLowerCase() ?? "";
       // A host whose servers can't be found: "unknown" in its name.
       if (domain.includes("unknown")) return { source: null, imap: null, smtp: null, oauth_only: false };
+      if (domain === "proton.me") {
+        return {
+          source: "known",
+          imap: null,
+          smtp: null,
+          oauth_only: false,
+          provider_name: "Proton Mail",
+          no_imap: "Proton Mail lets mail apps in only through its Proton Mail Bridge app, which Regards does not support yet.",
+        };
+      }
       if (domain === "outlook.com" || domain === "hotmail.com") {
         // Microsoft's consumer mail takes no password: only signing in with Microsoft.
-        return { source: "known", imap: null, smtp: null, oauth: "microsoft", oauth_only: true };
+        return { source: "known", imap: null, smtp: null, oauth: "microsoft", oauth_only: true, provider_name: "Outlook.com" };
       }
       if (domain === "gmail.com") {
         return {
@@ -894,6 +913,17 @@ function handle(cmd: string, args: Args): unknown {
           oauth: "google",
           oauth_only: false,
           password_help: "Gmail takes an app password, not your Google password.",
+          provider_name: "Gmail",
+        };
+      }
+      if (domain === "ik.me" || domain === "infomaniak.com") {
+        return {
+          source: "known",
+          imap: { host: "mail.infomaniak.com", port: 993, security: "tls" },
+          smtp: { host: "mail.infomaniak.com", port: 465, security: "tls" },
+          oauth_only: false,
+          password_help: "With two-step sign-in on, make a password for Regards in the Infomaniak Manager.",
+          provider_name: "Infomaniak",
         };
       }
       return domain.includes(".")
