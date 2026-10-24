@@ -84,7 +84,8 @@ export function AddAccount({
   const [input, setInput] = useState<AccountInput>(blank(""));
   // Server fields the person typed: the lookup leaves them alone.
   const typed = useRef(new Set<keyof AccountInput>());
-  const asked = useRef<string | null>(null);
+  // The last address looked up, and its lookup.
+  const asked = useRef<{ address: string; result: Promise<Discovered | null> } | null>(null);
   // The address the fields were filled for.
   const filledFor = useRef("");
 
@@ -137,29 +138,35 @@ export function AddAccount({
     return (now) => ({ ...now, email: clean, username: null, password: "" });
   };
 
-  // The address is looked up after a pause in typing, and on leaving the field.
-  const lookUp = useCallback(async (address: string): Promise<Discovered | null> => {
+  // The address is looked up after a pause in typing, and on leaving the
+  // field; asked again while it is under way, the same lookup answers.
+  // Null when another address was asked for meanwhile.
+  const lookUp = useCallback((address: string): Promise<Discovered | null> => {
     const clean = address.trim();
-    if (!COMPLETE.test(clean)) return null;
-    if (asked.current === clean) return null;
-    asked.current = clean;
-    setLooking(true);
-    try {
-      const result = await discoverAccount(clean);
-      if (asked.current !== clean) return null;
-      setFound(result);
-      const start = startFor(clean);
-      setInput((now) => fill(start(now), result, typed.current));
-      return result;
-    } catch {
-      if (asked.current === clean) {
-        setFound({ source: null, imap: null, smtp: null, oauth_only: false });
+    if (!COMPLETE.test(clean)) return Promise.resolve(null);
+    if (asked.current?.address === clean) return asked.current.result;
+    const current = () => asked.current?.address === clean;
+    const result = (async () => {
+      setLooking(true);
+      try {
+        const discovered = await discoverAccount(clean);
+        if (!current()) return null;
+        setFound(discovered);
+        const start = startFor(clean);
+        setInput((now) => fill(start(now), discovered, typed.current));
+        return discovered;
+      } catch {
+        if (!current()) return null;
+        const none: Discovered = { source: null, imap: null, smtp: null, oauth_only: false };
+        setFound(none);
         setInput(startFor(clean));
+        return none;
+      } finally {
+        if (current()) setLooking(false);
       }
-      return null;
-    } finally {
-      if (asked.current === clean) setLooking(false);
-    }
+    })();
+    asked.current = { address: clean, result };
+    return result;
   }, []);
   useEffect(() => {
     if (!COMPLETE.test(email.trim())) return;
@@ -167,16 +174,18 @@ export function AddAccount({
     return () => window.clearTimeout(timer);
   }, [email, lookUp]);
 
-  const known = found && asked.current === email.trim() ? found : null;
-  const provider = known?.oauth && providers.includes(known.oauth) ? known.oauth : null;
+  const known = found && asked.current?.address === email.trim() ? found : null;
+  const offered = (result: Discovered | null) => (result?.oauth && providers.includes(result.oauth) ? result.oauth : null);
+  const provider = offered(known);
   const blocked = known?.oauth_only === true && provider === null;
 
   const proceed = async () => {
     const clean = email.trim();
-    const result = known ?? (await lookUp(clean)) ?? found;
-    if (!result || blocked) return;
+    const result = known ?? (await lookUp(clean));
+    if (!result || (result.oauth_only && !offered(result))) return;
     setInput((now) => ({ ...now, email: clean }));
-    if (result.oauth && providers.includes(result.oauth)) go({ kind: "provider", provider: result.oauth });
+    const way = offered(result);
+    if (way) go({ kind: "provider", provider: way });
     else if (result.source === null || !result.imap) go({ kind: "servers", then: "password" });
     else go({ kind: "password" });
   };
