@@ -12,9 +12,9 @@ use regards_core::secret::Secret;
 use regards_daemon::Daemon;
 use regards_imap::TlsOptions;
 use regards_ipc::protocol::{
-    AccountAddParams, AccountLoginParams, AccountRef, AccountRemoveParams, AccountSummary, ClientKind,
-    ConnectionSecurity, DiscoverParams, DiscoverResult, DiscoverSource, MailboxListResult, Provider, ServerSettings,
-    SyncResult, codes, methods,
+    AccountAddParams, AccountCheckFailure, AccountLoginParams, AccountRef, AccountRemoveParams, AccountSummary,
+    CheckedServer, ClientKind, ConnectionSecurity, DiscoverParams, DiscoverResult, DiscoverSource, MailboxListResult,
+    Provider, ServerCheckParams, ServerCheckResult, ServerSettings, SyncResult, codes, methods,
 };
 use regards_ipc::{Client, ClientError, Endpoint, UiToken};
 use regards_vault::{SecretKey, SecretKind, Vault};
@@ -687,4 +687,89 @@ async fn real_domains_by_their_mx_and_their_usual_names() {
     );
     assert!(other.imap.as_ref().unwrap().host.ends_with("mailbox.org"));
     println!("{hosted:?}\n{other:?}");
+}
+
+#[tokio::test]
+async fn one_server_is_checked_before_any_password() {
+    let imap_pki = pki(&["localhost"]);
+    let (imap_port, mut logins) = fake_server(&imap_pki, "* OK ready\r\n", PASSWORD).await;
+    let smtp_pki = fake_smtp::pki();
+    let (smtp_port, _) = fake_smtp::serve(
+        &smtp_pki,
+        fake_smtp::Script::new(fake_smtp::Mode::StartTls {
+            offer: true,
+            inject: false,
+        }),
+    )
+    .await;
+    let running = start(
+        TlsOptions::platform()
+            .with_extra_roots_pem(imap_pki.ca_pem.as_bytes())
+            .unwrap()
+            .with_extra_roots_pem(smtp_pki.ca_pem.as_bytes())
+            .unwrap(),
+    )
+    .await;
+    let mut desktop = running.desktop().await;
+    let settings = |host: &str, port, security| ServerSettings {
+        host: host.into(),
+        port,
+        security,
+    };
+    let imap = |port| ServerCheckParams {
+        server: CheckedServer::Imap,
+        settings: settings("localhost", port, ConnectionSecurity::Tls),
+    };
+    let smtp = |security| ServerCheckParams {
+        server: CheckedServer::Smtp,
+        settings: settings("127.0.0.1", smtp_port, security),
+    };
+
+    // It answers, and nothing signs in.
+    let answered: ServerCheckResult = desktop
+        .call(methods::ACCOUNT_CHECK_SERVER, imap(imap_port))
+        .await
+        .unwrap();
+    assert_eq!(answered, ServerCheckResult::default());
+    assert_eq!(logins.next().await, None, "no LOGIN");
+
+    // Nothing there.
+    let closed = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let nothing: ServerCheckResult = desktop.call(methods::ACCOUNT_CHECK_SERVER, imap(closed)).await.unwrap();
+    assert_eq!(nothing.reason, Some(AccountCheckFailure::Connect));
+
+    // The right sending port with the wrong security: the right one is offered.
+    let wrong: ServerCheckResult = desktop
+        .call(methods::ACCOUNT_CHECK_SERVER, smtp(ConnectionSecurity::Tls))
+        .await
+        .unwrap();
+    assert!(wrong.reason.is_some());
+    assert_eq!(
+        wrong.suggestion,
+        Some(settings("127.0.0.1", smtp_port, ConnectionSecurity::Starttls))
+    );
+    let right: ServerCheckResult = desktop
+        .call(methods::ACCOUNT_CHECK_SERVER, smtp(ConnectionSecurity::Starttls))
+        .await
+        .unwrap();
+    assert_eq!(right, ServerCheckResult::default(), "nothing to offer when it answers");
+
+    // Receiving is TLS only; and it reaches out to servers: the app's to ask.
+    let starttls = ServerCheckParams {
+        settings: settings("localhost", imap_port, ConnectionSecurity::Starttls),
+        ..imap(imap_port)
+    };
+    let (code, _) = rpc_error(desktop.call::<_, Value>(methods::ACCOUNT_CHECK_SERVER, starttls).await);
+    assert_eq!(code, codes::INVALID_PARAMS);
+    let mut agent = Client::connect(&running.endpoint, ClientKind::Cli).await.unwrap();
+    let (code, _) = rpc_error(
+        agent
+            .call::<_, Value>(methods::ACCOUNT_CHECK_SERVER, imap(imap_port))
+            .await,
+    );
+    assert_eq!(code, codes::FORBIDDEN);
 }

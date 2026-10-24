@@ -364,7 +364,8 @@ struct Validated {
     skip_send_check: bool,
 }
 
-const IMAP_TLS_ONLY: &str = "IMAP over STARTTLS is not supported yet; use the server's TLS port (usually 993)";
+pub(crate) const IMAP_TLS_ONLY: &str =
+    "IMAP over STARTTLS is not supported yet; use the server's TLS port (usually 993)";
 
 fn validate(params: AccountAddParams) -> Result<Validated, RpcError> {
     let email = params.email.trim().to_owned();
@@ -523,7 +524,22 @@ pub(crate) async fn vault(state: &State) -> Result<Vault, RpcError> {
 
 /// A refused IMAP check, after trying `tried` as the user name.
 pub(crate) fn check_failed(error: ImapError, tried: &[String]) -> RpcError {
-    let reason = match error {
+    refused(error.to_string(), imap_failure(&error), CheckedServer::Imap, tried)
+}
+
+/// A refused SMTP check: the account receives, but could not send.
+fn send_check_failed(error: SubmitError, tried: &[String]) -> RpcError {
+    refused(
+        format!("checking the sending server: {error}"),
+        smtp_failure(&error),
+        CheckedServer::Smtp,
+        tried,
+    )
+}
+
+/// Why an IMAP server turned a check down.
+pub(crate) fn imap_failure(error: &ImapError) -> AccountCheckFailure {
+    match error {
         ImapError::Connect(_) => AccountCheckFailure::Connect,
         ImapError::Tls(_) => AccountCheckFailure::Tls,
         ImapError::Timeout(_) => AccountCheckFailure::Timeout,
@@ -531,25 +547,18 @@ pub(crate) fn check_failed(error: ImapError, tried: &[String]) -> RpcError {
         ImapError::AuthFailed(_) => AccountCheckFailure::AuthFailed,
         ImapError::LoginDisabled => AccountCheckFailure::LoginDisabled,
         ImapError::Protocol(_) => AccountCheckFailure::Protocol,
-    };
-    refused(error.to_string(), reason, CheckedServer::Imap, tried)
+    }
 }
 
-/// A refused SMTP check: the account receives, but could not send.
-fn send_check_failed(error: SubmitError, tried: &[String]) -> RpcError {
-    let reason = match &error {
+/// Why an SMTP server turned a check down.
+pub(crate) fn smtp_failure(error: &SubmitError) -> AccountCheckFailure {
+    match error {
         SubmitError::SignIn(_) => AccountCheckFailure::AuthFailed,
         error if error.is_certificate() => AccountCheckFailure::Tls,
         // Offline, a timeout, or a refusal for now.
         SubmitError::NotSent { retry: true, .. } => AccountCheckFailure::Connect,
         SubmitError::NotSent { .. } | SubmitError::Uncertain(_) => AccountCheckFailure::Protocol,
-    };
-    refused(
-        format!("checking the sending server: {error}"),
-        reason,
-        CheckedServer::Smtp,
-        tried,
-    )
+    }
 }
 
 fn refused(message: String, reason: AccountCheckFailure, server: CheckedServer, tried: &[String]) -> RpcError {

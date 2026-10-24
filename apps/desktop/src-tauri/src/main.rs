@@ -30,24 +30,25 @@ use regards_ipc::launcher::{self, Connected, LaunchError, Launcher};
 use regards_ipc::protocol::{
     AccountAddParams, AccountLoginParams, AccountRef, AccountRemoveParams, AccountSummary, AccountUpdateParams,
     AgentAccess, AgentAccessParams, AgentActivityParams, AgentActivityResult, AgentSendParams, AsideParams,
-    AttachmentFiles, AttachmentPreview, AttachmentRef, AttachmentSaveAllParams, AttachmentSaveParams, ClientKind,
-    ConnectionSecurity, ConversationIdsResult, DeleteResult, DiscoverParams, DiscoverResult, DraftAttachFileParams,
-    DraftAttachImageParams, DraftCreateParams, DraftDetachParams, DraftForwardParams, DraftImageAttached,
-    DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams, DraftSendParams, DraftSendResult,
-    DraftSetFromParams, DraftUpdateParams, DraftView, ExplainResult, HoldApproveParams, HoldListParams, HoldListResult,
-    HoldRef, HoldView, IdentityListResult, IdentityRef, IdentitySaveParams, IdentitySetSignatureParams,
-    IdentitySetVoiceParams, IdentityView, LabelsResult, MailboxCreateParams, MailboxListResult, MailboxRef,
-    MailboxRenameParams, MailboxSummary, MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams,
-    MessageListResult, MessageRef, MoveParams, MoveResult, NoteAddParams, NoteAddResult, NoteListParams,
-    NoteListResult, NoteRef, NoteRemoved, NoteSetEnabledParams, NoteSettings, NoteUpdateParams, NoteView,
-    NotesForgotten, OauthFlowRef, OauthProvidersResult, OauthStartParams, OauthStartResult, OutboxListResult,
-    OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams, SavedSearchListResult,
-    SavedSearchOrderParams, SavedSearchRef, SavedSearchSaveParams, SavedSearchView, Screening, ScreeningParams,
-    SearchParams, SearchResult, Section, SenderBlockParams, SenderImagesParams, SenderImagesResult, SenderSetParams,
-    SenderSetResult, ServerSearchResult, ServerSettings, SetFlagsParams, SetFlagsResult, SetLabelsParams,
-    SetLabelsResult, SignatureListResult, SignatureRef, SignatureSaveParams, SignatureView, SmartOverviewResult,
-    SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView,
-    UndoParams, UndoResult, UnsubscribeParams, UnsubscribeResult, View, ViewParams, codes, methods,
+    AttachmentFiles, AttachmentPreview, AttachmentRef, AttachmentSaveAllParams, AttachmentSaveParams, CheckedServer,
+    ClientKind, ConnectionSecurity, ConversationIdsResult, DeleteResult, DiscoverParams, DiscoverResult,
+    DraftAttachFileParams, DraftAttachImageParams, DraftCreateParams, DraftDetachParams, DraftForwardParams,
+    DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams,
+    DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView, ExplainResult,
+    HoldApproveParams, HoldListParams, HoldListResult, HoldRef, HoldView, IdentityListResult, IdentityRef,
+    IdentitySaveParams, IdentitySetSignatureParams, IdentitySetVoiceParams, IdentityView, LabelsResult,
+    MailboxCreateParams, MailboxListResult, MailboxRef, MailboxRenameParams, MailboxSummary, MarkResult, MessageCursor,
+    MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageRef, MoveParams, MoveResult, NoteAddParams,
+    NoteAddResult, NoteListParams, NoteListResult, NoteRef, NoteRemoved, NoteSetEnabledParams, NoteSettings,
+    NoteUpdateParams, NoteView, NotesForgotten, OauthFlowRef, OauthProvidersResult, OauthStartParams, OauthStartResult,
+    OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams,
+    SavedSearchListResult, SavedSearchOrderParams, SavedSearchRef, SavedSearchSaveParams, SavedSearchView, Screening,
+    ScreeningParams, SearchParams, SearchResult, Section, SenderBlockParams, SenderImagesParams, SenderImagesResult,
+    SenderSetParams, SenderSetResult, ServerCheckParams, ServerCheckResult, ServerSearchResult, ServerSettings,
+    SetFlagsParams, SetFlagsResult, SetLabelsParams, SetLabelsResult, SignatureListResult, SignatureRef,
+    SignatureSaveParams, SignatureView, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef,
+    TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, UnsubscribeParams, UnsubscribeResult, View,
+    ViewParams, codes, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -410,6 +411,21 @@ async fn account_discover(bridge: State<'_, Bridge>, email: String) -> Result<Di
     let mut client = bridge.connect().await?.client;
     client
         .call(methods::ACCOUNT_DISCOVER, DiscoverParams { email })
+        .await
+        .map_err(describe)
+}
+
+/// Whether one server answers (nothing signs in); for a sending server that
+/// does not, other settings on the same host that do.
+#[tauri::command]
+async fn account_check_server(
+    bridge: State<'_, Bridge>,
+    server: CheckedServer,
+    settings: ServerSettings,
+) -> Result<ServerCheckResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::ACCOUNT_CHECK_SERVER, ServerCheckParams { server, settings })
         .await
         .map_err(describe)
 }
@@ -2029,6 +2045,7 @@ fn main() {
             account_list,
             account_add,
             account_discover,
+            account_check_server,
             background_settings,
             set_start_at_login,
             set_close_to_tray,

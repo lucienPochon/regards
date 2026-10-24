@@ -875,6 +875,9 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return owner.account;
     }
+    case "account_check_server":
+      // Every server answers in the preview.
+      return {};
     case "account_discover": {
       const domain = String(args.email ?? "").split("@")[1]?.toLowerCase() ?? "";
       // A host whose servers can't be found: "unknown" in its name.
