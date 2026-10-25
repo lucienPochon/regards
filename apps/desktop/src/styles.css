@@ -6492,6 +6492,37 @@ button.sender-row:hover:not(:disabled) {
   border-radius: 12px;
 }
 
+/* Settings › Shortcuts: each message action, its keys, and changing them. */
+.my-keys {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.my-keys li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto 3.5em;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.my-keys-keys {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.my-keys .key-capture {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.my-keys-reset {
+  margin: 4px 0 8px;
+}
+
 .shortcut-list {
   display: grid;
   margin: 0 0 12px;
