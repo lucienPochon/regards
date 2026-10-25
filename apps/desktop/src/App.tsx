@@ -89,6 +89,7 @@ import {
 import { openUrl } from "./background";
 import { type Anchor, Menu, type MenuEntry, type MenuRequest } from "./Menu";
 import { type Bundle, type InboxCard, ListHeader, MessageList, type Screener } from "./MessageList";
+import { useSearchGroups } from "./search-groups";
 import { SenderCard, type SenderRequest } from "./SenderCard";
 import { SECTION_LABELS, type Screening, type Section, blockSender, screening, setSender } from "./smart";
 import { ViewChooser } from "./ViewChooser";
@@ -1255,6 +1256,13 @@ export function App() {
   }, []);
   useEffect(loadSaved, [loadSaved]);
   useChanges(loadSaved);
+  // Those shown as groups of the Smart Inbox: of the one account whose inbox is open, or all.
+  const searchGroups = useSearchGroups(
+    savedSearches,
+    appPrefs.searchGroups,
+    !inInbox && accountInbox ? accountInbox.account.id : null,
+    smartOn,
+  );
   const openSaved = (saved: SavedSearch) => {
     if (layout.mode === "single") setOpen(null);
     setSearch({ query: saved.query, accountId: saved.account_id });
@@ -1277,7 +1285,18 @@ export function App() {
   const savedMenu = (saved: SavedSearch): MenuEntry[] => {
     const change = (fields: Partial<{ name: string; query: string; color: string | null }>) =>
       saveSearch({ id: saved.id, name: saved.name, query: saved.query, accountId: saved.account_id, color: saved.color, ...fields });
+    const grouped = appPrefs.searchGroups.includes(saved.id);
     return [
+      {
+        label: grouped ? "Stop showing as a group in the inbox" : "Show as a group in the inbox",
+        icon: "sections",
+        onSelect: () =>
+          setPrefs({
+            searchGroups: grouped
+              ? appPrefs.searchGroups.filter((id) => id !== saved.id)
+              : [...appPrefs.searchGroups, saved.id],
+          }),
+      },
       {
         label: "Rename…",
         icon: "compose",
@@ -1762,6 +1781,20 @@ export function App() {
             newest: invitationItems[0]?.listed_at,
             onOpen: () => changeView({ kind: "marked", mark: "invitations" }),
           },
+          // Saved searches the person shows as groups: what each finds in the inbox.
+          ...searchGroups.map(
+            (group): Bundle => ({
+              key: `search-${group.saved.id}`,
+              label: group.saved.name,
+              icon: "search",
+              colour: group.saved.color,
+              count: group.messages.length,
+              unread: group.messages.some((message) => !message.seen),
+              messages: group.messages,
+              newest: group.messages[0]?.listed_at,
+              onOpen: () => openSaved(group.saved),
+            }),
+          ),
           {
             key: "pinned",
             label: "Pinned",
@@ -1773,7 +1806,7 @@ export function App() {
             onOpen: () => changeView({ kind: "marked", mark: "pinned" }),
           },
           ] satisfies Bundle[]
-        ).filter((bundle) => appPrefs.grouped[bundle.key as keyof typeof appPrefs.grouped]),
+        ).filter((bundle) => bundle.key.startsWith("search-") || appPrefs.grouped[bundle.key as keyof typeof appPrefs.grouped]),
       }
     : null;
   const cardOf = (section: Section, label: string, items: ListItem[]): InboxCard => ({

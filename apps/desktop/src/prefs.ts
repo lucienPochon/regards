@@ -38,6 +38,8 @@ export interface Prefs {
   groupsPosition: "today" | "chronological";
   /** Each group as one row, or its mail shown with everyone else's. */
   grouped: { notifications: boolean; newsletters: boolean; invitations: boolean; pinned: boolean };
+  /** Saved searches shown as groups of the Smart Inbox, by id. */
+  searchGroups: number[];
   /** The account a new message is from, unless one is open or chosen; null: the one in view; "last": the last used. */
   defaultFrom: string | null;
   /** The account the last message was sent from, for defaultFrom "last". */
@@ -102,6 +104,7 @@ export const DEFAULT_PREFS: Prefs = {
   priorityRows: 3,
   groupsPosition: "today",
   grouped: { notifications: true, newsletters: true, invitations: true, pinned: true },
+  searchGroups: [],
   defaultFrom: null,
   lastFrom: null,
   replyOpens: "panel",

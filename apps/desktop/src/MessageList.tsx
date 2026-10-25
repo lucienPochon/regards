@@ -81,6 +81,8 @@ export interface Bundle {
   unread: boolean;
   /** Its newest messages, for the senders' chips. */
   messages: { from: Person | null }[];
+  /** A saved search's colour, for its icon. */
+  colour?: string | null;
   /** When its newest message came: where the group sits when groups follow the dates. */
   newest?: number;
   onOpen: () => void;
@@ -913,7 +915,10 @@ function BundleRow({ bundle }: { bundle: Bundle }) {
       <button type="button" className="row-main" onClick={bundle.onOpen}>
         <span className="dot" />
         <span className="row-avatar">
-          <span className={`smart-icon ${bundle.key}`}>
+          <span
+            className={`smart-icon ${bundle.key.startsWith("search-") ? "search" : bundle.key}`}
+            style={bundle.colour ? { color: bundle.colour } : undefined}
+          >
             <Icon name={bundle.icon} size={14} />
           </span>
         </span>

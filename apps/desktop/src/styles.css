@@ -4626,6 +4626,12 @@ button.list-title:hover {
   color: var(--accent);
 }
 
+/* A saved search shown as a group: in its own colour, if it has one. */
+.smart-icon.search {
+  background: var(--chip);
+  color: var(--text-2);
+}
+
 .smart-icon.new {
   background: var(--pill-strong);
   color: var(--accent);

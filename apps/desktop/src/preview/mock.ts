@@ -56,6 +56,7 @@ let nextId = 10_000;
 // Saved searches (Smart Folders), as the sidebar lists them.
 let savedSearches: Array<{ id: number; name: string; query: string; account_id: string | null; color: string | null }> = [
   { id: 9_001, name: "Receipts", query: "receipt has:attachment", account_id: null, color: "#1d7a61" },
+  { id: 9_002, name: "Garden", query: "garden", account_id: null, color: "#3b7dd8" },
 ];
 // Checking for updates: not asked yet (`?updates=on` or `off` answers it), and what a check found.
 let updateChecks: boolean | null = params.get("updates") === "on" ? true : params.get("updates") === "off" ? false : null;
