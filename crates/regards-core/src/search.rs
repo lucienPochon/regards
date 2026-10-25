@@ -3,9 +3,9 @@
 //! - Words match anywhere (subject, people, text); the last one also as a
 //!   prefix, so results come as one types. `"a phrase"` matches as written,
 //!   `-word` leaves out.
-//! - `from:` `to:` `subject:` look in one place; `has:attachment`,
-//!   `has:pdf` (`image`, `document`, `spreadsheet`, `presentation`,
-//!   `archive`), `filename:<part of a name>`,
+//! - `from:` `to:` (To or Cc) `cc:` (Cc only) `subject:` look in one
+//!   place; `has:attachment`, `has:pdf` (`image`, `document`,
+//!   `spreadsheet`, `presentation`, `archive`), `filename:<part of a name>`,
 //!   `is:unread` / `is:read` / `is:flagged` (`is:starred`), `is:pinned`,
 //!   `in:<folder>` and `before:` / `after:` (`YYYY-MM-DD`, UTC days)
 //!   filter; with a clock ([`parse_at`]), so do "today", "last week" and
@@ -169,7 +169,9 @@ fn parse_with(input: &str, clock: Option<Clock>) -> Query {
             Token::Phrase { text, negated, field } => {
                 let words: Vec<String> = text.split_whitespace().map(str::to_owned).collect();
                 if !words.is_empty() {
-                    parts.push(term(field, &format!("\"{}\"", escape(&words.join(" "))), negated));
+                    if !cc_left_out(field, negated) {
+                        parts.push(term(field, &format!("\"{}\"", escape(&words.join(" "))), negated));
+                    }
                     query.terms.push(Term {
                         text: words.join(" "),
                         field,
@@ -194,7 +196,7 @@ fn parse_with(input: &str, clock: Option<Clock>) -> Query {
                     negated,
                     prefix: typing && !negated,
                 });
-                for piece in pieces(&text) {
+                for piece in pieces(&text).into_iter().filter(|_| !cc_left_out(field, negated)) {
                     let prefix = if typing && piece.chars().nth(1).is_some() {
                         "*"
                     } else {
@@ -215,6 +217,12 @@ fn parse_with(input: &str, clock: Option<Clock>) -> Query {
         query.excluded = Some(any.join(" OR "));
     }
     query
+}
+
+/// `-cc:x` leaves out mail copied to x, not mail written to x: not a matter
+/// for the index, whose recipients are To and Cc together.
+fn cc_left_out(field: Option<Field>, negated: bool) -> bool {
+    negated && field == Some(Field::Cc)
 }
 
 /// `has:` `is:` `in:` `before:` `after:`; `false` if `text` is not one.
@@ -259,12 +267,15 @@ fn apply(query: &mut Query, text: &str) -> bool {
     true
 }
 
-/// Where `from:` `to:` `subject:` look.
+/// Where `from:` `to:` `cc:` `subject:` look.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field {
     Sender,
     /// To or Cc.
     Recipients,
+    /// Cc only: among the recipients in the index, then checked against the
+    /// message's Cc ([`Query::terms`]).
+    Cc,
     Subject,
 }
 
@@ -272,7 +283,7 @@ impl Field {
     fn column(self) -> &'static str {
         match self {
             Self::Sender => "sender",
-            Self::Recipients => "recipients",
+            Self::Recipients | Self::Cc => "recipients",
             Self::Subject => "subject",
         }
     }
@@ -320,7 +331,8 @@ fn tokens(input: &str) -> Vec<Token> {
             .strip_suffix(':')
             .and_then(|key| match key.to_lowercase().as_str() {
                 "from" => Some(Field::Sender),
-                "to" | "cc" => Some(Field::Recipients),
+                "to" => Some(Field::Recipients),
+                "cc" => Some(Field::Cc),
                 "subject" => Some(Field::Subject),
                 _ => None,
             });
@@ -611,6 +623,13 @@ mod tests {
         );
         assert_eq!(text("plan -from:shop"), Some(r#""plan"* NOT sender : "shop"*"#.into()));
         assert_eq!(text("-from:shop"), None);
+        // cc: narrows to the recipients here, the store keeps those copied;
+        // leaving out a copied person is the store's alone.
+        assert_eq!(text("cc:lena"), Some(r#"recipients : "lena"*"#.into()));
+        assert_eq!(parse("cc:lena").terms[0].field, Some(Field::Cc));
+        assert_eq!(text("plan -cc:lena"), Some(r#""plan"*"#.into()));
+        let left_out = parse("-cc:lena");
+        assert!(left_out.text.is_none() && left_out.excluded.is_none() && !left_out.is_empty());
     }
 
     #[test]

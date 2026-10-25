@@ -473,6 +473,18 @@ fn filters(query: &Query, m: &str) -> String {
             " AND EXISTS (SELECT 1 FROM main.message_files f WHERE f.message_id = {m}.id AND ({any}))"
         ));
     }
+    // `cc:` (Field::Cc): in the message's Cc, by name or address.
+    for term in query
+        .terms
+        .iter()
+        .filter(|term| term.field == Some(regards_core::search::Field::Cc))
+    {
+        let hex: String = term.text.as_bytes().iter().map(|byte| format!("{byte:02X}")).collect();
+        let test = if term.negated { "=" } else { ">" };
+        sql.push_str(&format!(
+            " AND instr(lower({m}.cc_json), lower(CAST(X'{hex}' AS TEXT))) {test} 0"
+        ));
+    }
     for name in &query.file_names {
         let hex: String = name.as_bytes().iter().map(|byte| format!("{byte:02X}")).collect();
         sql.push_str(&format!(
@@ -974,6 +986,25 @@ mod tests {
         // And its kept text, once a while has passed.
         let forgotten = store.write(|tx| forget_texts(tx, 10)).await.unwrap().value;
         assert_eq!(forgotten, 1);
+    }
+
+    #[tokio::test]
+    async fn cc_finds_mail_copied_to_someone_and_to_finds_both() {
+        let (_temp, store, [inbox, _, _]) = store().await;
+        store
+            .write(move |tx| {
+                let mut copied = mail(1, "Copied", person("Ann", "ann@example.org"), 1_000);
+                copied.headers.cc = vec![person("Lena Okafor", "lena@example.net")];
+                let mut written = mail(2, "Written", person("Ann", "ann@example.org"), 2_000);
+                written.headers.to = vec![person("Lena Okafor", "lena@example.net")];
+                messages::upsert(tx, inbox, &[copied, written])
+            })
+            .await
+            .unwrap();
+        assert_eq!(find(&store, "to:lena").await, ["Written", "Copied"]);
+        assert_eq!(find(&store, "cc:lena").await, ["Copied"]);
+        assert_eq!(find(&store, "cc:\"lena okafor\"").await, ["Copied"]);
+        assert_eq!(find(&store, "ann -cc:lena").await, ["Written"]);
     }
 
     #[tokio::test]
