@@ -439,9 +439,14 @@ mod tests {
         assert!(page.starts_with("<html><body><p>Hi</p><script nonce=\"n1\">"), "{page}");
         assert!(page.ends_with("</script></BODY></html>"), "{page}");
         assert!(
-            ["regardsMailHeight", "regardsMailKey", "regardsMailLink", "regardsMailFind"]
-                .iter()
-                .all(|part| page.contains(part)),
+            [
+                "regardsMailHeight",
+                "regardsMailKey",
+                "regardsMailLink",
+                "regardsMailFind"
+            ]
+            .iter()
+            .all(|part| page.contains(part)),
             "one script: the height, keys, where links go, and find"
         );
         assert!(!RELAY.contains("searchParams.get('t')"), "never the link token");
