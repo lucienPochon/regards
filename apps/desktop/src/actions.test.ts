@@ -7,6 +7,7 @@ const invoke = vi.fn(async (command: string, args?: { ids?: number[] }) => {
   if (command === "message_set_flags") return { changed: args?.ids?.length ?? 0 };
   if (command === "message_mute") return { changed: args?.ids?.length ?? 0, undo: null };
   if (command === "message_copy") return { copied: args?.ids?.length ?? 0 };
+  if (command === "draft_again") return { id: 9 };
   return null;
 });
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
