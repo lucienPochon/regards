@@ -9,13 +9,18 @@ use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 pub const BODY_MAX: usize = 5_000;
 /// Characters a signature's name may have at most.
 pub const NAME_MAX: usize = 100;
+/// Bytes a signature's formatted version may have at most, its pictures included.
+pub const HTML_MAX: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signature {
     pub id: i64,
     pub name: String,
-    /// Plain text, added below what is written and above a quote.
+    /// Plain text, added below what is written and above a quote; with
+    /// `html`, its plain-text version.
     pub body: String,
+    /// The formatted version, sanitised, its pictures embedded (`data:`).
+    pub html: Option<String>,
     pub updated_at: i64,
 }
 
@@ -24,9 +29,10 @@ pub struct Signature {
 pub struct Fields {
     pub name: String,
     pub body: String,
+    pub html: Option<String>,
 }
 
-const COLUMNS: &str = "id, name, body, updated_at";
+const COLUMNS: &str = "id, name, body, updated_at, html";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<Signature> {
     Ok(Signature {
@@ -34,6 +40,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Signature> {
         name: row.get(1)?,
         body: row.get(2)?,
         updated_at: row.get(3)?,
+        html: row.get(4)?,
     })
 }
 
@@ -69,8 +76,8 @@ pub fn with_body(conn: &Connection, body: &str) -> Result<Option<Signature>, Sto
 
 pub fn add(tx: &Transaction<'_>, fields: &Fields, now: i64) -> Result<i64, StoreError> {
     tx.execute(
-        "INSERT INTO signatures (name, body, created_at, updated_at) VALUES (?1, ?2, ?3, ?3)",
-        params![fields.name, fields.body, now],
+        "INSERT INTO signatures (name, body, html, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?4)",
+        params![fields.name, fields.body, fields.html, now],
     )?;
     Ok(tx.last_insert_rowid())
 }
@@ -78,8 +85,8 @@ pub fn add(tx: &Transaction<'_>, fields: &Fields, now: i64) -> Result<i64, Store
 /// `false` if there is no such signature.
 pub fn update(tx: &Transaction<'_>, id: i64, fields: &Fields, now: i64) -> Result<bool, StoreError> {
     Ok(tx.execute(
-        "UPDATE signatures SET name = ?2, body = ?3, updated_at = ?4 WHERE id = ?1",
-        params![id, fields.name, fields.body, now],
+        "UPDATE signatures SET name = ?2, body = ?3, html = ?4, updated_at = ?5 WHERE id = ?1",
+        params![id, fields.name, fields.body, fields.html, now],
     )? == 1)
 }
 
@@ -102,6 +109,7 @@ mod tests {
         let fields = |name: &str, body: &str| Fields {
             name: name.into(),
             body: body.into(),
+            html: None,
         };
         let (short, formal) = (fields("short", "Ada"), fields("Formal", "Ada Lovelace\nEngines Ltd"));
         let (short, formal) = store

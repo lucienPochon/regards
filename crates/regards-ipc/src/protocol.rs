@@ -1829,8 +1829,11 @@ pub struct SignatureView {
     pub id: i64,
     /// For the person only: "Formal", "Short".
     pub name: String,
-    /// Plain text.
+    /// Plain text; with `html`, its plain-text version.
     pub body: String,
+    /// The formatted version, sanitised, its pictures embedded (`data:`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub html: Option<String>,
     pub updated_at: i64,
 }
 
@@ -1848,6 +1851,10 @@ pub struct SignatureSaveParams {
     pub id: Option<i64>,
     pub name: String,
     pub body: String,
+    /// With formatting: its HTML, from which `body` is made (sanitised,
+    /// pictures embedded as `data:`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub html: Option<String>,
 }
 
 /// Names a signature: [`methods::SIGNATURE_REMOVE`].

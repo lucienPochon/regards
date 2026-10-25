@@ -23,16 +23,18 @@ import {
   fillPlaceholders,
   insertTemplateHtml,
   setDraftFrom,
-  swapSignatureHtml,
+  swapSignatureBlocks,
+  textSignature,
   textToHtml,
   touchDraft,
 } from "./compose";
 import { type UndoInfo, listAccounts } from "./accounts";
 import { type Identity, listIdentities } from "./identities";
-import { type Signature, listSignatures, signatureIn } from "./signatures";
+import { type Signature, editorSignature, listSignatures, signatureIn } from "./signatures";
 import {
   IMAGE_TYPES,
   attachImage,
+  attachPictures,
   coloursAsMarks,
   coloursAsStyles,
   draftImages,
@@ -200,18 +202,40 @@ export function Composer({
     listSignatures().then(setSignatures, () => setSignatures([]));
   }, []);
 
-  // The signature a draft has, recognised by its text once both are known.
+  // The signature a draft has, recognised by its text once both are known. A
+  // draft just started has a formatted signature's text only (the daemon puts
+  // text in): the formatted one takes its place, its pictures attached.
   useEffect(() => {
     if (!draft || signatureKnown.current || signatures.length === 0) return;
     signatureKnown.current = true;
-    setSignatureId(signatureIn(draft.body, signatures)?.id ?? null);
+    const found = signatureIn(draft.body, signatures);
+    setSignatureId(found?.id ?? null);
+    if (!found?.html || !isUntouched(draft.id)) return;
+    attachPictures(draft.id, editorSignature(found)).then(
+      (formatted) => {
+        setFields((now) => {
+          if (!now) return now;
+          const next = { ...now, html: swapSignatureBlocks(now.html, textSignature(found.body), formatted) };
+          // Still as it opened: closed as it is, it is not kept.
+          if (initialFields.current === JSON.stringify(now)) initialFields.current = JSON.stringify(next);
+          return next;
+        });
+        setEditorKey((key) => key + 1);
+      },
+      (failure: unknown) => setError(String(failure)),
+    );
   }, [draft, signatures]);
 
-  /** The text of the signature the message has now. */
-  const currentSignature = () =>
-    signatures.find((signature) => signature.id === signatureId)?.body ??
-    identities.find((identity) => identity.id === draft?.identity_id)?.signature ??
-    "";
+  /** The signature the message has now, as the editor has it. */
+  const currentSignature = () => {
+    const chosen = signatures.find((signature) => signature.id === signatureId);
+    if (chosen) return editorSignature(chosen);
+    return textSignature(identities.find((identity) => identity.id === draft?.identity_id)?.signature ?? "");
+  };
+
+  /** Another signature (or none, `null`) as the editor puts it in: formatted ones with their pictures attached. */
+  const signatureToPut = async (draftId: number, signature: Signature | null, text = "") =>
+    signature ? attachPictures(draftId, editorSignature(signature)) : textSignature(text);
 
   /** Send it from another identity: its signature takes the old one's place. */
   const changeFrom = async (identityId: number) => {
@@ -223,8 +247,11 @@ export function Composer({
     setError(null);
     try {
       const old = currentSignature();
-      setDraft(await setDraftFrom(draft.id, next.id));
-      setFields({ ...fields, html: swapSignatureHtml(fields.html, old, next.signature) });
+      const moved = await setDraftFrom(draft.id, next.id);
+      const chosen = signatures.find((signature) => signature.id === next.signature_id) ?? null;
+      const put = await signatureToPut(moved.id, chosen, next.signature);
+      setDraft(moved);
+      setFields({ ...fields, html: swapSignatureBlocks(fields.html, old, put) });
       setSignatureId(next.signature_id);
       setEditorKey((key) => key + 1);
     } catch (failure) {
@@ -261,12 +288,17 @@ export function Composer({
   };
 
   /** Another signature, or none: it takes the old one's place in the text. */
-  const changeSignature = (value: string) => {
-    if (!fields) return;
+  const changeSignature = async (value: string) => {
+    if (!fields || !draft) return;
     const next = signatures.find((signature) => String(signature.id) === value) ?? null;
-    setFields({ ...fields, html: swapSignatureHtml(fields.html, currentSignature(), next?.body ?? "") });
-    setSignatureId(next?.id ?? null);
-    setEditorKey((key) => key + 1);
+    try {
+      const put = await signatureToPut(draft.id, next);
+      setFields({ ...fields, html: swapSignatureBlocks(fields.html, currentSignature(), put) });
+      setSignatureId(next?.id ?? null);
+      setEditorKey((key) => key + 1);
+    } catch (failure) {
+      setError(String(failure));
+    }
   };
 
   // Start where the writing goes: the address for a new message (the editor
@@ -651,7 +683,7 @@ export function Composer({
           aria-label="Signature"
           title="Signature"
           value={signatureId ?? ""}
-          onChange={(event) => changeSignature(event.target.value)}
+          onChange={(event) => void changeSignature(event.target.value)}
           disabled={locked}
         >
           <option value="">No signature</option>

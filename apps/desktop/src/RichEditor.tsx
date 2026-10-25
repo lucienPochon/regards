@@ -206,9 +206,9 @@ export function RichEditor({
           }}
         >
           <option value={0}>Text</option>
-          <option value={1}>Large heading</option>
+          <option value={1}>Title</option>
           <option value={2}>Heading</option>
-          <option value={3}>Small heading</option>
+          <option value={3}>Subheading</option>
         </select>
         {button("B", active?.bold ?? false, () => chain().toggleBold().run(), "Bold")}
         {button("I", active?.italic ?? false, () => chain().toggleItalic().run(), "Italic")}

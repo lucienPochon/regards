@@ -111,6 +111,46 @@ pub fn render_with(raw: &[u8], allow_remote: bool, links: Option<&str>, clean_li
 /// (scripts, other styles, images from the web, frames, forms, event
 /// handlers) is removed before sending.
 pub fn sanitize_outgoing(html: &str) -> String {
+    written(html, Pictures::Attached)
+}
+
+/// A signature's formatting, as [`sanitize_outgoing`] keeps a message's,
+/// its pictures embedded instead: `data:` PNG, JPEG, GIF or WebP, each
+/// [`SIGNATURE_PICTURE_MAX`] bytes of base64 at most. They become the
+/// message's own images when the signature goes into one.
+pub fn sanitize_signature(html: &str) -> String {
+    written(html, Pictures::Embedded)
+}
+
+/// Base64 characters a signature's picture may have at most.
+pub const SIGNATURE_PICTURE_MAX: usize = 256 * 1024;
+
+/// Where written HTML's pictures may come from.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Pictures {
+    /// The message's own images, by Content-ID.
+    Attached,
+    /// Inside the HTML, as a signature keeps them.
+    Embedded,
+}
+
+/// A `data:` URI of a picture a signature may embed.
+fn embedded_picture(value: &str) -> bool {
+    ["image/png", "image/jpeg", "image/gif", "image/webp"]
+        .iter()
+        .any(|mime| {
+            value
+                .strip_prefix("data:")
+                .and_then(|rest| rest.strip_prefix(mime))
+                .and_then(|rest| rest.strip_prefix(";base64,"))
+                .is_some_and(|data| {
+                    data.len() <= SIGNATURE_PICTURE_MAX
+                        && data.bytes().all(|b| b.is_ascii_alphanumeric() || b"+/=".contains(&b))
+                })
+        })
+}
+
+fn written(html: &str, pictures: Pictures) -> String {
     let clean = Builder::empty()
         .add_tags([
             "p",
@@ -140,11 +180,13 @@ pub fn sanitize_outgoing(html: &str) -> String {
         .add_tag_attributes("span", ["style"])
         // `type="cite"`: quoted history, which readers fold (fold_quotes).
         .add_tag_attributes("blockquote", ["type"])
-        .add_url_schemes(["http", "https", "mailto", "cid"])
+        .add_url_schemes(["http", "https", "mailto", "cid", "data"])
         // An image is one of the message's own, never fetched from the web.
-        .attribute_filter(|element, attribute, value| match (element, attribute) {
-            ("img", "src") if !value.starts_with("cid:") => None,
+        .attribute_filter(move |element, attribute, value| match (element, attribute) {
+            ("img", "src") if pictures == Pictures::Attached && !value.starts_with("cid:") => None,
+            ("img", "src") if pictures == Pictures::Embedded && !embedded_picture(value) => None,
             ("img", "width" | "height") => pixels(value).map(Into::into),
+            ("a", "href") if value.starts_with("data:") => None,
             ("span", "style") => colours(value).map(Into::into),
             ("blockquote", "type") if value != "cite" => None,
             ("a", "href") if value.starts_with("cid:") => None,
@@ -836,6 +878,34 @@ mod tests {
         assert!(
             text.contains("Hello Bob") && text.contains("one") && text.contains("quoted"),
             "{text}"
+        );
+    }
+
+    #[test]
+    fn a_signature_keeps_its_embedded_pictures_and_formatting_only() {
+        let signature = "<p><strong>Ada</strong> <span style=\"color: #1565c0\">Engines Ltd</span></p>\
+            <p><img src=\"data:image/png;base64,iVBORw0KGgo=\" alt=\"Logo\" width=\"120\"></p>\
+            <img src=\"https://tracker.test/p.gif\"><img src=\"cid:x@regards\">\
+            <img src=\"data:text/html;base64,PHNjcmlwdD4=\"><img src=\"data:image/svg+xml;base64,PHN2Zz4=\">\
+            <a href=\"data:text/html,hi\">bad link</a><script>steal()</script>";
+        let clean = sanitize_signature(signature);
+        assert!(
+            clean.contains("<img src=\"data:image/png;base64,iVBORw0KGgo=\" alt=\"Logo\" width=\"120\">"),
+            "{clean}"
+        );
+        assert!(
+            clean.contains("<strong>Ada</strong>") && clean.contains("color: #1565c0"),
+            "{clean}"
+        );
+        for gone in ["tracker", "cid:", "text/html", "svg", "href", "script", "steal"] {
+            assert!(!clean.contains(gone), "{gone} survived: {clean}");
+        }
+        assert!(clean.contains("bad link"), "the words stay: {clean}");
+        // A message's own HTML still takes no embedded pictures.
+        assert!(
+            !sanitize_outgoing(signature).contains("data:"),
+            "{}",
+            sanitize_outgoing(signature)
         );
     }
 
