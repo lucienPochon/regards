@@ -31,7 +31,7 @@ import {
 } from "./accounts";
 import { type Action, type ActionHost, type Target, choose, messageActions, newSendersOf } from "./actions";
 import { AddAccountDialog } from "./AddAccount";
-import { usePendingHolds } from "./AgentHolds";
+import { HoldsDialog, usePendingHolds } from "./AgentHolds";
 import { AskUpdates, useUpdateStatus } from "./UpdateCheck";
 import { Avatar } from "./Avatar";
 import { Composer } from "./Composer";
@@ -102,7 +102,7 @@ import { ShortcutHelp } from "./ShortcutHelp";
 import { NameDialog, type NameRequest } from "./NameDialog";
 import { useLabels } from "./labels";
 import { useOnline } from "./online";
-import { type Template, listTemplates, saveTemplate } from "./templates";
+import { type Template, type Written, listTemplates, saveWritten } from "./templates";
 import { type AssistantJob, AssistantDialog, useAssistantKind } from "./AssistantDialog";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { type DragPayload, Sidebar } from "./Sidebar";
@@ -288,6 +288,8 @@ export function App() {
   const [chooser, setChooser] = useState<Anchor | null>(null);
   // What agents asked for and is waiting for the person (Settings › Agents).
   const holds = usePendingHolds();
+  // What agents wait for, decided over the mail (the "Agents are waiting" bubble).
+  const [holdsOpen, setHoldsOpen] = useState(false);
   // Checking for updates: asked once, and a newer version shown when one is found.
   const updates = useUpdateStatus();
   const refreshUpdates = updates.refresh;
@@ -719,7 +721,7 @@ export function App() {
    * what is written as one (named after its subject; renamed in Settings).
    */
   const pickTemplate = useCallback(
-    (_anchor: Anchor, written: { subject: string; html: string }) =>
+    (_anchor: Anchor, written: Written) =>
       listTemplates().then(
         (templates) =>
           new Promise<Template | null>((resolve) => {
@@ -733,7 +735,7 @@ export function App() {
                     detail: name,
                     onSelect: () => {
                       resolve(null);
-                      saveTemplate({ id: null, name, subject: written.subject, body: "", html: written.html }).then(
+                      saveWritten(name, written).then(
                         (saved) => setSaid(`Saved as the template “${saved.name}”`),
                         failed,
                       );
@@ -2259,7 +2261,7 @@ export function App() {
               type="button"
               className="aside-bubble agent-waiting"
               title={holds.map((hold) => hold.description).join("\n")}
-              onClick={() => setSettings("agents")}
+              onClick={() => setHoldsOpen(true)}
             >
               <Icon name="agent" size={15} />
               {holds.length === 1 ? "An agent is waiting for you" : `Agents are waiting for you: ${holds.length}`}
@@ -2388,6 +2390,16 @@ export function App() {
             setSenderCard(null);
             setSettings("agents");
           }}
+        />
+      )}
+      {holdsOpen && (
+        <HoldsDialog
+          accounts={accounts.map(({ account }) => ({ id: account.id, email: account.email }))}
+          onSettings={() => {
+            setHoldsOpen(false);
+            setSettings("agents");
+          }}
+          onClose={() => setHoldsOpen(false)}
         />
       )}
       {picking && (

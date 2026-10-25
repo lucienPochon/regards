@@ -5428,6 +5428,24 @@ button.sender-row:hover:not(:disabled) {
   width: min(540px, 100%);
 }
 
+/* What agents wait for, decided over the mail. */
+.holds-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(620px, 100%);
+  overflow: hidden;
+}
+
+/* The requests scroll; the buttons stay at the foot. */
+.holds-dialog > .agent-holds {
+  min-height: 0;
+  overflow: auto;
+}
+
+.holds-dialog .dialog-actions .spacer {
+  flex: 1;
+}
+
 .help h3 {
   margin-bottom: 12px;
   font-size: 17px;
@@ -6530,6 +6548,20 @@ button.sender-row:hover:not(:disabled) {
 
 .template-form textarea {
   resize: vertical;
+}
+
+/* The files a template keeps, each to take off. */
+.template-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.template-files .chip {
+  gap: 6px;
+  height: 26px;
+  padding-right: 2px;
 }
 
 /* Welcome */

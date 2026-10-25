@@ -34,9 +34,9 @@ use regards_ipc::protocol::{
     ClientKind, ConnectionSecurity, ConversationIdsResult, CopyResult, DeleteResult, DiscoverParams, DiscoverResult,
     DraftAttachFileParams, DraftAttachImageParams, DraftCreateParams, DraftDetachParams, DraftForwardParams,
     DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams,
-    DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView, ExplainResult,
-    HoldApproveParams, HoldListParams, HoldListResult, HoldRef, HoldView, IdentityListResult, IdentityRef,
-    IdentitySaveParams, IdentitySetSignatureParams, IdentitySetVoiceParams, IdentityView, LabelsResult,
+    DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftUseTemplateParams, DraftView,
+    ExplainResult, HoldApproveParams, HoldListParams, HoldListResult, HoldRef, HoldView, IdentityListResult,
+    IdentityRef, IdentitySaveParams, IdentitySetSignatureParams, IdentitySetVoiceParams, IdentityView, LabelsResult,
     MailboxCreateParams, MailboxListResult, MailboxRef, MailboxRenameParams, MailboxSummary, MarkResult, MessageCursor,
     MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageLocateParams, MessageLocateResult,
     MessageRef, MoveParams, MoveResult, MuteParams, NoteAddParams, NoteAddResult, NoteListParams, NoteListResult,
@@ -1592,6 +1592,19 @@ async fn template_save(bridge: State<'_, Bridge>, template: TemplateSaveParams) 
     client.call(methods::TEMPLATE_SAVE, template).await.map_err(describe)
 }
 
+/// Put a template's files on a draft (those it has not); the draft then.
+#[tauri::command]
+async fn draft_use_template(bridge: State<'_, Bridge>, draft_id: i64, template_id: i64) -> Result<DraftView, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::DRAFT_USE_TEMPLATE,
+            DraftUseTemplateParams { draft_id, template_id },
+        )
+        .await
+        .map_err(describe)
+}
+
 #[tauri::command]
 async fn template_remove(bridge: State<'_, Bridge>, id: i64) -> Result<Value, String> {
     let mut client = bridge.connect().await?.client;
@@ -2219,6 +2232,7 @@ fn main() {
             saved_search_remove,
             template_list,
             template_save,
+            draft_use_template,
             template_remove,
             identity_save,
             identity_remove,
