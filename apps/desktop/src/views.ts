@@ -1,5 +1,6 @@
 import type { MailboxSummary, MessageView, Role } from "./accounts";
 import type { IconName } from "./icons";
+import { t, tc } from "./i18n";
 import type { Section } from "./smart";
 
 /**
@@ -20,11 +21,11 @@ export type View =
   | { kind: "outbox" };
 
 export const MARKED_LABELS: Record<MessageView, string> = {
-  pinned: "Pinned",
-  snoozed: "Snoozed",
-  reminders: "Reminders",
-  aside: "Set aside",
-  invitations: "Invitations",
+  pinned: t("Pinned"),
+  snoozed: t("Snoozed"),
+  reminders: t("Reminders"),
+  aside: t("Set aside"),
+  invitations: t("Invitations"),
 };
 
 export const MARKED_ICONS: Record<MessageView, IconName> = {
@@ -41,14 +42,14 @@ export const MARKED_VIEWS: MessageView[] = ["pinned", "snoozed", "reminders", "a
 export const INBOX: View = { kind: "role", role: "inbox" };
 
 export const ROLE_LABELS: Record<Role, string> = {
-  inbox: "Inbox",
-  drafts: "Drafts",
-  sent: "Sent",
-  archive: "Archive",
-  all: "All mail",
-  flagged: "Flagged",
-  junk: "Junk",
-  trash: "Trash",
+  inbox: t("Inbox"),
+  drafts: t("Drafts"),
+  sent: t("Sent"),
+  archive: tc("folder", "Archive"),
+  all: t("All mail"),
+  flagged: t("Flagged"),
+  junk: t("Junk"),
+  trash: t("Trash"),
 };
 
 export const ROLE_ICONS: Record<Role, IconName> = {

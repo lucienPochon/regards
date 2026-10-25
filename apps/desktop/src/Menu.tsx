@@ -1,6 +1,7 @@
 import { type KeyboardEvent, useLayoutEffect, useRef, useState, useId } from "react";
 import { Icon, type IconName } from "./icons";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
+import { t } from "./i18n";
 
 export interface MenuItem {
   label: string;
@@ -238,7 +239,7 @@ export function Menu({ request, onClose }: { request: MenuRequest; onClose: () =
           )}
           {request.filter && query && items.length === 0 && (
             <p className="menu-empty" role="status">
-              Nothing matches.
+              {t("Nothing matches.")}
             </p>
           )}
         </div>

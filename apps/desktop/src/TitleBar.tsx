@@ -2,6 +2,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
 import { Icon } from "./icons";
 import { type Anchor, anchorOf } from "./Menu";
+import { t } from "./i18n";
 
 /** Which window frame the app draws around itself (see tauri.windows.conf.json and tauri.macos.conf.json). */
 export const PLATFORM: "windows" | "mac" | "linux" = navigator.userAgent.includes("Windows")
@@ -41,13 +42,13 @@ export function TitleBar({ onAppMenu }: { onAppMenu?: (anchor: Anchor) => void }
   }, []);
   if (PLATFORM !== "windows") return null;
   return (
-    <div className="caption" role="toolbar" aria-label="Window">
+    <div className="caption" role="toolbar" aria-label={t("Window")}>
       {onAppMenu && (
-        <button type="button" className="caption-btn" title="Menu" aria-label="Menu" aria-haspopup="menu" onClick={(event) => onAppMenu(anchorOf(event.currentTarget, "end"))}>
+        <button type="button" className="caption-btn" title={t("Menu")} aria-label={t("Menu")} aria-haspopup="menu" onClick={(event) => onAppMenu(anchorOf(event.currentTarget, "end"))}>
           <Icon name="chevronDown" size={13} />
         </button>
       )}
-      <button type="button" className="caption-btn" title="Minimise" aria-label="Minimise" onClick={() => void currentWindow()?.minimize()}>
+      <button type="button" className="caption-btn" title={t("Minimise")} aria-label={t("Minimise")} onClick={() => void currentWindow()?.minimize()}>
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
           <path d="M0 5.5h10" stroke="currentColor" />
         </svg>
@@ -55,8 +56,8 @@ export function TitleBar({ onAppMenu }: { onAppMenu?: (anchor: Anchor) => void }
       <button
         type="button"
         className="caption-btn"
-        title={maximized ? "Restore" : "Maximise"}
-        aria-label={maximized ? "Restore" : "Maximise"}
+        title={maximized ? t("Restore") : t("Maximise")}
+        aria-label={maximized ? t("Restore") : t("Maximise")}
         onClick={() => void currentWindow()?.toggleMaximize()}
       >
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" fill="none" stroke="currentColor">
@@ -70,7 +71,7 @@ export function TitleBar({ onAppMenu }: { onAppMenu?: (anchor: Anchor) => void }
           )}
         </svg>
       </button>
-      <button type="button" className="caption-btn close" title="Close" aria-label="Close" onClick={() => void currentWindow()?.close()}>
+      <button type="button" className="caption-btn close" title={t("Close")} aria-label={t("Close")} onClick={() => void currentWindow()?.close()}>
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
           <path d="M0 0l10 10M10 0 0 10" stroke="currentColor" />
         </svg>

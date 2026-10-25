@@ -21,6 +21,7 @@ import type { Opened } from "./recent-opened";
 import { SEARCH_CHIPS, hasTerm, toggleTerm } from "./search";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { DRAG_TYPE, type DragPayload } from "./Sidebar";
+import { t, tn } from "./i18n";
 
 /** "Someday" in the daemon: no time to come back (regards_store::marks::SOMEDAY). */
 const SOMEDAY = 32_503_680_000_000;
@@ -56,7 +57,7 @@ export function ListHeader({
   return (
     <header className="list-head" data-tauri-drag-region>
       {onBack && (
-        <button type="button" className="icon-btn list-back" title="Back to the inbox (Esc)" aria-label="Back to the inbox" onClick={onBack}>
+        <button type="button" className="icon-btn list-back" title={t("Back to the inbox (Esc)")} aria-label={t("Back to the inbox")} onClick={onBack}>
           <Icon name="back" size={17} />
         </button>
       )}
@@ -173,11 +174,11 @@ export interface Screener {
 function ScreenAll({ screener }: { screener: Screener }) {
   return (
     <span className="screen-all">
-      <button type="button" className="screen-all-accept" title="Accept every new sender: their mail goes to People" onClick={screener.acceptAll}>
-        Accept all
+      <button type="button" className="screen-all-accept" title={t("Accept every new sender: their mail goes to People")} onClick={screener.acceptAll}>
+        {t("Accept all")}
       </button>
-      <button type="button" className="screen-all-block" title="Block every new sender: their mail goes to Junk" onClick={screener.blockAll}>
-        Block all
+      <button type="button" className="screen-all-block" title={t("Block every new sender: their mail goes to Junk")} onClick={screener.blockAll}>
+        {t("Block all")}
       </button>
     </span>
   );
@@ -186,14 +187,14 @@ function ScreenAll({ screener }: { screener: Screener }) {
 /** A row's marks in words, for screen readers: the dot, pin, flag and the rest are pictures. */
 function rowState(item: ListItem, snoozedUntil: number | null): string {
   const marks = [
-    item.seen ? null : "Unread",
-    item.pinned ? "pinned" : null,
-    item.flagged ? "flagged" : null,
-    item.has_attachments ? "attachment" : null,
-    item.answered ? "answered" : null,
-    item.reminded ? "no reply yet" : item.remind_at !== null ? "reminder set" : null,
-    item.thread_size !== undefined && item.thread_size > 1 ? `${item.thread_size} messages` : null,
-    snoozedUntil !== null ? `snoozed until ${laterDate(snoozedUntil)}` : null,
+    item.seen ? null : t("Unread"),
+    item.pinned ? t("pinned") : null,
+    item.flagged ? t("flagged") : null,
+    item.has_attachments ? t("attachment") : null,
+    item.answered ? t("answered") : null,
+    item.reminded ? t("no reply yet") : item.remind_at !== null ? t("reminder set") : null,
+    item.thread_size !== undefined && item.thread_size > 1 ? tn(item.thread_size, "1 message", "{count} messages") : null,
+    snoozedUntil !== null ? t("snoozed until {when}", { when: laterDate(snoozedUntil) }) : null,
   ].filter(Boolean);
   return marks.length > 0 ? `${marks.join(", ")}: ` : "";
 }
@@ -351,7 +352,7 @@ export function MessageList({
   const palette = (targets: ListItem[]) =>
     onPalette(
       actionsFor(targets),
-      targets.length > 1 ? `${targets.length} messages` : targets[0].subject || "(no subject)",
+      targets.length > 1 ? tn(targets.length, "1 message", "{count} messages") : targets[0].subject || t("(no subject)"),
       targets.length === 1 ? targets[0] : undefined,
     );
 
@@ -437,7 +438,7 @@ export function MessageList({
   const bundles = showSmart ? (smart?.bundles ?? []).filter((bundle) => bundle.count > 0) : [];
   const bundlesIn = new Map<string, Bundle[]>();
   for (const bundle of bundles) {
-    let label = "Today";
+    let label = t("Today");
     if (prefs.groupsPosition === "chronological" && bundle.newest !== undefined) {
       label = dateSection(bundle.newest);
       if (!sections.some((section) => section.label === label)) {
@@ -445,8 +446,8 @@ export function MessageList({
         const at = sections.findIndex((section) => (section.items[0]?.listed_at ?? Number.MAX_SAFE_INTEGER) < (bundle.newest ?? 0));
         sections.splice(at === -1 ? sections.length : at, 0, { label, items: [] });
       }
-    } else if (sections[0]?.label !== "Today") {
-      if (!sections.some((section) => section.label === "Today")) sections.unshift({ label: "Today", items: [] });
+    } else if (sections[0]?.label !== t("Today")) {
+      if (!sections.some((section) => section.label === t("Today"))) sections.unshift({ label: t("Today"), items: [] });
     }
     bundlesIn.set(label, [...(bundlesIn.get(label) ?? []), bundle]);
   }
@@ -493,7 +494,7 @@ export function MessageList({
         {/* Done, read/unread and delete, stacked in place of the dot. */}
         <span className="row-gutter">
           {isPicked ? (
-            <button type="button" className="gutter-check" aria-label="Unselect" aria-pressed onClick={() => toggle(item)}>
+            <button type="button" className="gutter-check" aria-label={t("Unselect")} aria-pressed onClick={() => toggle(item)}>
               <Icon name="check" size={11} />
             </button>
           ) : (
@@ -519,7 +520,7 @@ export function MessageList({
           <span className="subject">
             {item.pinned && <Icon name="pinFilled" size={13} className="pinned" />}
             {item.muted && (
-              <span className="muted-mark" title="Muted: new mail here tells of nothing">
+              <span className="muted-mark" title={t("Muted: new mail here tells of nothing")}>
                 <Icon name="bellOff" size={13} />
               </span>
             )}
@@ -528,11 +529,11 @@ export function MessageList({
                 {label.name}
               </span>
             ))}
-            {item.subject || "(no subject)"}
+            {item.subject || t("(no subject)")}
           </span>
           <span className="marks">
             {item.thread_size !== undefined && item.thread_size > 1 && (
-              <span className="thread-count" title={`${item.thread_size} messages`}>
+              <span className="thread-count" title={tn(item.thread_size ?? 0, "1 message", "{count} messages")}>
                 {item.thread_size}
               </span>
             )}
@@ -540,7 +541,7 @@ export function MessageList({
             {(item.reminded || item.remind_at !== null) && (
               <span
                 className={item.reminded ? "reminder due" : "reminder"}
-                title={item.reminded ? "No reply yet" : `Reminds you ${laterDate(item.remind_at ?? 0)} if nobody replies`}
+                title={item.reminded ? t("No reply yet") : t("Reminds you {when} if nobody replies", { when: laterDate(item.remind_at ?? 0) })}
               >
                 <Icon name="bell" size={14} />
               </span>
@@ -549,7 +550,7 @@ export function MessageList({
             {item.flagged && <Icon name="flagFilled" size={14} className="flagged" />}
           </span>
           {snoozedUntil !== null ? (
-            <span className="date snoozed" title="Comes back then">
+            <span className="date snoozed" title={t("Comes back then")}>
               <Icon name="clock" size={13} />
               {laterDate(snoozedUntil)}
             </span>
@@ -561,13 +562,13 @@ export function MessageList({
         {screen && screener && (
           // A new sender: let them in (People), or block them (their mail goes to Junk).
           <span className="screen-actions">
-            <button type="button" className="screen-btn accept" title="Accept: their mail goes to People" onClick={() => screener.accept(item)}>
+            <button type="button" className="screen-btn accept" title={t("Accept: their mail goes to People")} onClick={() => screener.accept(item)}>
               <Icon name="thumbUp" size={14} />
-              Accept
+              {t("Accept")}
             </button>
-            <button type="button" className="screen-btn block" title="Block: their mail goes to Junk" onClick={() => screener.block(item)}>
+            <button type="button" className="screen-btn block" title={t("Block: their mail goes to Junk")} onClick={() => screener.block(item)}>
               <Icon name="thumbDown" size={14} />
-              Block
+              {t("Block")}
             </button>
           </span>
         )}
@@ -580,8 +581,8 @@ export function MessageList({
             <button
               type="button"
               className="icon-btn small"
-              title={`More (${MOD_KEY}+K)`}
-              aria-label="More"
+              title={t("More ({key})", { key: `${MOD_KEY}+K` })}
+              aria-label={t("More")}
               onClick={() => palette(targetsFor(item))}
             >
               <Icon name="more" size={16} />
@@ -620,23 +621,23 @@ export function MessageList({
           <button
             type="button"
             className="icon-btn"
-            title={`${showDone.on ? "Hide" : "Show"} Done mail (${MOD_KEY}+E)`}
-            aria-label="Show Done mail"
+            title={(showDone.on ? t("Hide Done mail ({key})") : t("Show Done mail ({key})")).replace("{key}", `${MOD_KEY}+E`)}
+            aria-label={t("Show Done mail")}
             aria-pressed={showDone.on}
             onClick={showDone.toggle}
           >
             <Icon name="check" size={17} />
           </button>
         )}
-        <button type="button" className="icon-btn" title={`Search (${MOD_KEY}+F)`} aria-label="Search" onClick={() => search.onQuery("")}>
+        <button type="button" className="icon-btn" title={t("Search ({key})", { key: `${MOD_KEY}+F` })} aria-label={t("Search")} onClick={() => search.onQuery("")}>
           <Icon name="search" size={17} />
         </button>
         {onMarkAllRead && (
-          <button type="button" className="icon-btn" title="Mark everything here read" aria-label="Mark everything here read" onClick={onMarkAllRead}>
+          <button type="button" className="icon-btn" title={t("Mark everything here read")} aria-label={t("Mark everything here read")} onClick={onMarkAllRead}>
             <Icon name="mailOpen" size={17} />
           </button>
         )}
-        <button type="button" className="icon-btn" title="New message (c)" aria-label="New message" onClick={onCompose} disabled={!canCompose}>
+        <button type="button" className="icon-btn" title={t("New message (c)")} aria-label={t("New message")} onClick={onCompose} disabled={!canCompose}>
           <Icon name="compose" size={17} />
         </button>
       </ListHeader>
@@ -661,7 +662,7 @@ export function MessageList({
           </p>
         )}
         {searching && query && (
-          <div className="search-chips" role="group" aria-label="Narrow the search">
+          <div className="search-chips" role="group" aria-label={t("Narrow the search")}>
             {SEARCH_CHIPS.map((chip) => {
               const on = hasTerm(query, chip.term);
               return (
@@ -670,7 +671,7 @@ export function MessageList({
                   type="button"
                   className={on ? "chip chosen" : "chip"}
                   aria-pressed={on}
-                  title={on ? `Remove ${chip.term} from the search` : `Add ${chip.term} to the search`}
+                  title={on ? t("Remove {term} from the search", { term: chip.term }) : t("Add {term} to the search", { term: chip.term })}
                   onClick={() => {
                     search.onQuery(toggleTerm(query, chip.term));
                     field.current?.focus();
@@ -703,10 +704,10 @@ export function MessageList({
         ) : nothing && !feed.error ? (
           searching ? (
             <div className="empty list-empty" role="status">
-              <h2>Nothing found for “{query}”</h2>
+              <h2>{t("Nothing found for “{query}”", { query })}</h2>
               {search.suggestion && (
                 <p className="search-suggestion">
-                  Did you mean{" "}
+                  {t("Did you mean")}{" "}
                   <button
                     type="button"
                     onClick={() => {
@@ -721,12 +722,12 @@ export function MessageList({
               )}
               <p>
                 {search.indexing > 0
-                  ? "Recent mail is still being indexed and may be missing. Try again in a moment."
-                  : "Search looks at subjects, people and text. Try fewer words, or in:anywhere to include Trash and Junk."}
+                  ? t("Recent mail is still being indexed and may be missing. Try again in a moment.")
+                  : t("Search looks at subjects, people and text. Try fewer words, or in:anywhere to include Trash and Junk.")}
               </p>
               {search.indexing > 0 && (
                 <button type="button" className="btn small" onClick={search.onRetry}>
-                  Search again
+                  {t("Search again")}
                 </button>
               )}
               <p className="server-search alone">
@@ -751,16 +752,16 @@ export function MessageList({
                   {feed.more ? "+" : ""} {items.length === 1 && !feed.more ? "result" : "results"}
                 </span>
                 {search.onSave && query && (
-                  <button type="button" className="search-save" title="Keep this search in the sidebar" onClick={search.onSave}>
+                  <button type="button" className="search-save" title={t("Keep this search in the sidebar")} onClick={search.onSave}>
                     <Icon name="star" size={13} />
-                    Save this search
+                    {t("Save this search")}
                   </button>
                 )}
                 {search.indexing > 0 && (
                   <span className="search-indexing">
-                    Still indexing: recent mail may be missing.
+                    {t("Still indexing: recent mail may be missing.")}
                     <button type="button" onClick={search.onRetry}>
-                      Search again
+                      {t("Search again")}
                     </button>
                   </span>
                 )}
@@ -769,13 +770,13 @@ export function MessageList({
             )}
             {screenAll && screener && items.length > 0 && !searching && (
               <div className="screen-all-bar">
-                <span className="muted">Accept them into People, or block them: their mail goes to Junk.</span>
+                <span className="muted">{t("Accept them into People, or block them: their mail goes to Junk.")}</span>
                 <ScreenAll screener={screener} />
               </div>
             )}
             {searching && search.top.length > 0 && items.length > TOP_AFTER && (
-              <section className="day top-results" aria-label="Top results">
-                <h3 className="day-head">Top results</h3>
+              <section className="day top-results" aria-label={t("Top results")}>
+                <h3 className="day-head">{t("Top results")}</h3>
                 <ul>{search.top.map((item) => row(item))}</ul>
               </section>
             )}
@@ -785,43 +786,43 @@ export function MessageList({
                 <span className="smart-icon new">
                   <Icon name="people" size={15} />
                 </span>
-                <strong>New senders</strong>
-                <span className="muted">{newSenders.total} waiting for you to accept or block</span>
+                <strong>{t("New senders")}</strong>
+                <span className="muted">{tn(newSenders.total, "1 waiting for you to accept or block", "{count} waiting for you to accept or block")}</span>
                 <Icon name="chevronRight" size={16} />
               </button>
             )}
             {newSenders && newSenders.total > 0 && !newSenders.held && (
-              <section className="day" aria-label="New senders">
+              <section className="day" aria-label={t("New senders")}>
                 <h3 className="day-head category-head">
-                  New senders
+                  {t("New senders")}
                   <span className="category-count">{newSenders.total}</span>
                   {screener && <ScreenAll screener={screener} />}
                 </h3>
                 <ul>{newSenders.items.map((item) => row(item, true))}</ul>
                 {newSenders.total > newSenders.items.length && (
                   <button type="button" className="category-more" onClick={newSenders.onAll}>
-                    View all {newSenders.total}
+                    {t("View all {count}", { count: newSenders.total })}
                   </button>
                 )}
               </section>
             )}
             {priority && priority.items.length > 0 && (
-              <section className="day" aria-label="Priority">
+              <section className="day" aria-label={t("Priority")}>
                 <h3 className="day-head category-head">
-                  Priority
+                  {t("Priority")}
                   <span className="category-count">{priority.total}</span>
                 </h3>
                 <ul>{priority.items.map((item) => row(item))}</ul>
                 {priority.total > priority.items.length && (
                   <button type="button" className="category-more" onClick={priority.onAll}>
-                    View all {priority.total}
+                    {t("View all {count}", { count: priority.total })}
                   </button>
                 )}
               </section>
             )}
             {showCards && (
               <>
-                {unreadCards.length === 0 && <p className="category-empty">Nothing unread.</p>}
+                {unreadCards.length === 0 && <p className="category-empty">{t("Nothing unread.")}</p>}
                 {unreadCards.map((card) => (
                   <section key={card.key} className="day" aria-label={card.label}>
                     <h3 className="day-head category-head">
@@ -832,8 +833,8 @@ export function MessageList({
                         <button
                           type="button"
                           className="category-read"
-                          title="Mark all read"
-                          aria-label={"Mark all " + card.label + " read"}
+                          title={t("Mark all read")}
+                          aria-label={t("Mark all {category} read", { category: card.label })}
                           onClick={card.onRead}
                         >
                           <Icon name="check" size={12} />
@@ -843,14 +844,14 @@ export function MessageList({
                     <ul>{card.items.map((item) => row(item, card.screen))}</ul>
                     {card.total > card.items.length && (
                       <button type="button" className="category-more" onClick={card.onAll}>
-                        View all {card.total}
+                        {t("View all {count}", { count: card.total })}
                       </button>
                     )}
                   </section>
                 ))}
                 {items.length > 0 && (
-                  <section className="day" aria-label="Seen">
-                    <h3 className="day-head">Seen</h3>
+                  <section className="day" aria-label={t("Seen")}>
+                    <h3 className="day-head">{t("Seen")}</h3>
                     <ul>{items.map((item) => row(item))}</ul>
                   </section>
                 )}
@@ -876,7 +877,7 @@ export function MessageList({
               <div className="server-more">
                 <button type="button" className="btn small" onClick={search.server.onSearch}>
                   <Icon name="search" size={14} />
-                  More from {search.server.many ? "the servers" : "the server"}
+                  {search.server.many ? t("More from the servers") : t("More from the server")}
                 </button>
               </div>
             )}
@@ -889,7 +890,7 @@ export function MessageList({
         )}
       </div>
       {onSplit && (
-        <button type="button" className="split-handle" title="Show messages beside the list" aria-label="Split view" onClick={onSplit}>
+        <button type="button" className="split-handle" title={t("Show messages beside the list")} aria-label={t("Split view")} onClick={onSplit}>
           <Icon name="chevronLeft" size={14} />
         </button>
       )}
@@ -899,7 +900,7 @@ export function MessageList({
 
 /** Done with everything under a heading or in a group: shown on hover, at the right. */
 function DoneAll({ count, what, onDone }: { count: number; what: string; onDone: () => void }) {
-  const label = `Done with ${what}: archive ${count === 1 ? "1 message" : `${count} messages`}`;
+  const label = tn(count, "Done with {what}: archive 1 message", "Done with {what}: archive {count} messages", { what });
   return (
     <button type="button" className="done-all" title={label} aria-label={label} onClick={onDone}>
       <Icon name="check" size={12} />
@@ -967,8 +968,8 @@ function SelectionBar({
   onMore: () => void;
 }) {
   return (
-    <header className="list-head selection" role="toolbar" aria-label="Selected messages">
-      <button type="button" className="icon-btn" title="Clear the selection (Esc)" aria-label="Clear the selection" onClick={onClear}>
+    <header className="list-head selection" role="toolbar" aria-label={t("Selected messages")}>
+      <button type="button" className="icon-btn" title={t("Clear the selection (Esc)")} aria-label={t("Clear the selection")} onClick={onClear}>
         <Icon name="close" size={16} />
       </button>
       <span className="selection-count">
@@ -988,7 +989,7 @@ function SelectionBar({
             <Icon name={action.icon} size={17} />
           </button>
         ))}
-        <button type="button" className="icon-btn" title={`More (${MOD_KEY}+K)`} aria-label="More" onClick={onMore}>
+        <button type="button" className="icon-btn" title={t("More ({key})", { key: `${MOD_KEY}+K` })} aria-label={t("More")} onClick={onMore}>
           <Icon name="more" size={17} />
         </button>
       </div>
@@ -1023,8 +1024,8 @@ function SearchBar({
           ref={field}
           autoFocus
           value={query}
-          placeholder={one ? `Search ${one.label}` : "Search all mail"}
-          aria-label="Search mail"
+          placeholder={one ? t("Search {account}", { account: one.label }) : t("Search all mail")}
+          aria-label={t("Search mail")}
           spellCheck={false}
           onChange={(event) => onQuery(event.target.value)}
           onKeyDown={(event) => {
@@ -1044,11 +1045,11 @@ function SearchBar({
         {scope && (
           <select
             className="search-scope"
-            aria-label="Which accounts to search"
+            aria-label={t("Which accounts to search")}
             value={scope.accountId ?? ""}
             onChange={(event) => scope.onScope(event.target.value || null)}
           >
-            <option value="">All accounts</option>
+            <option value="">{t("All accounts")}</option>
             {scope.accounts.map((account) => (
               <option key={account.id} value={account.id}>
                 {account.label}
@@ -1059,8 +1060,8 @@ function SearchBar({
         <button
           type="button"
           className="search-clear"
-          title={query ? "Clear" : "Close the search (Esc)"}
-          aria-label={query ? "Clear the search" : "Close the search"}
+          title={query ? t("Clear") : t("Close the search (Esc)")}
+          aria-label={query ? t("Clear the search") : t("Close the search")}
           onClick={() => {
             if (query) {
               onQuery("");
@@ -1080,12 +1081,12 @@ function SearchBar({
  * not on this device yet, or could not be reached), or why it failed.
  */
 function ServerRow({ server }: { server: ServerSearch }) {
-  const where = server.many ? "the servers" : "the server";
+  const many = server.many;
   if (server.state === "idle") {
     return (
-      <button type="button" className="server-ask" title="Finds words in mail not opened on this device" onClick={server.onSearch}>
+      <button type="button" className="server-ask" title={t("Finds words in mail not opened on this device")} onClick={server.onSearch}>
         <Icon name="search" size={13} />
-        Search on {where}
+        {many ? t("Search on the servers") : t("Search on the server")}
       </button>
     );
   }
@@ -1093,7 +1094,7 @@ function ServerRow({ server }: { server: ServerSearch }) {
     return (
       <span className="server-status">
         <span className="spinner small" aria-hidden="true" />
-        Asking {where}…
+        {many ? t("Asking the servers…") : t("Asking the server…")}
       </span>
     );
   }
@@ -1101,23 +1102,39 @@ function ServerRow({ server }: { server: ServerSearch }) {
     return (
       <span className="server-status failed">
         <span className="server-words">
-          {server.many ? "The servers" : "The server"} could not be searched: {server.error}{" "}
+          {many
+            ? t("The servers could not be searched: {error}", { error: server.error ?? "" })
+            : t("The server could not be searched: {error}", { error: server.error ?? "" })}{" "}
           <button type="button" onClick={server.onSearch}>
-            Try again
+            {t("Try again")}
           </button>
         </span>
       </span>
     );
   }
-  const parts = [server.added > 0 ? `${server.added} more from ${where}` : `Nothing more on ${where}`];
-  if (server.notHere > 0) parts.push(`${server.notHere} more on ${where}, not on this device yet`);
+  const parts = [
+    server.added > 0
+      ? many
+        ? tn(server.added, "1 more from the servers", "{count} more from the servers")
+        : tn(server.added, "1 more from the server", "{count} more from the server")
+      : many
+        ? t("Nothing more on the servers")
+        : t("Nothing more on the server"),
+  ];
+  if (server.notHere > 0) {
+    parts.push(
+      many
+        ? tn(server.notHere, "1 more on the servers, not on this device yet", "{count} more on the servers, not on this device yet")
+        : tn(server.notHere, "1 more on the server, not on this device yet", "{count} more on the server, not on this device yet"),
+    );
+  }
   return (
     <span className="server-status">
       <Icon name="check" size={13} />
       <span className="server-words">
         {parts.join(" · ")}
         {server.unreachable.length > 0 && (
-          <span className="server-unreachable">Couldn't reach {server.unreachable.join(", ")}</span>
+          <span className="server-unreachable">{t("Couldn't reach {accounts}", { accounts: server.unreachable.join(", ") })}</span>
         )}
       </span>
     </span>
@@ -1126,17 +1143,17 @@ function ServerRow({ server }: { server: ServerSearch }) {
 
 /** What search understands, as examples to click into the field. */
 const TIPS: { icon: IconName; term: string; example: string; text: string }[] = [
-  { icon: "user", term: "from:", example: "from:lena", text: "From someone, by name or address" },
-  { icon: "send", term: "to:", example: "to:marco", text: "To someone; cc:marco for copied only" },
-  { icon: "text", term: "subject:", example: "subject:invoice", text: "Words in the subject" },
-  { icon: "folder", term: "in:", example: "in:sent", text: "In one folder; in:anywhere adds Trash and Junk" },
-  { icon: "paperclip", term: "has:attachment ", example: "has:attachment", text: "With files attached" },
-  { icon: "text", term: "has:pdf ", example: "has:pdf", text: "A kind of file: pdf, image, document, spreadsheet" },
-  { icon: "paperclip", term: "filename:", example: "filename:invoice", text: "A file whose name has these letters" },
-  { icon: "mail", term: "is:unread ", example: "is:unread", text: "Unread, read, flagged or pinned (is:pinned)" },
-  { icon: "clock", term: "last week ", example: "yesterday · last 3 days", text: "Today, this week, last month… in English or French" },
-  { icon: "calendar", term: "after:", example: "after:2026-09-01", text: "After or before a day" },
-  { icon: "quote", term: '"', example: '"exact words" -word', text: "A phrase as written; leave a word out" },
+  { icon: "user", term: "from:", example: "from:lena", text: t("From someone, by name or address") },
+  { icon: "send", term: "to:", example: "to:marco", text: t("To someone; cc:marco for copied only") },
+  { icon: "text", term: "subject:", example: "subject:invoice", text: t("Words in the subject") },
+  { icon: "folder", term: "in:", example: "in:sent", text: t("In one folder; in:anywhere adds Trash and Junk") },
+  { icon: "paperclip", term: "has:attachment ", example: "has:attachment", text: t("With files attached") },
+  { icon: "text", term: "has:pdf ", example: "has:pdf", text: t("A kind of file: pdf, image, document, spreadsheet") },
+  { icon: "paperclip", term: "filename:", example: "filename:invoice", text: t("A file whose name has these letters") },
+  { icon: "mail", term: "is:unread ", example: "is:unread", text: t("Unread, read, flagged or pinned (is:pinned)") },
+  { icon: "clock", term: "last week ", example: "yesterday · last 3 days", text: t("Today, this week, last month… in English or French") },
+  { icon: "calendar", term: "after:", example: "after:2026-09-01", text: t("After or before a day") },
+  { icon: "quote", term: '"', example: '"exact words" -word', text: t("A phrase as written; leave a word out") },
 ];
 
 /** Under the field before anything is typed: recent searches, messages opened lately, then tips. */
@@ -1159,7 +1176,7 @@ function SearchTips({
     <div className="search-start">
       {recents.length > 0 && (
         <>
-          <h3 className="day-head">Recent searches</h3>
+          <h3 className="day-head">{t("Recent searches")}</h3>
           <ul className="search-recents">
             {recents.map((recent) => (
               <li key={recent}>
@@ -1170,8 +1187,8 @@ function SearchTips({
                 <button
                   type="button"
                   className="icon-btn small search-forget"
-                  title="Remove from recent searches"
-                  aria-label={`Remove “${recent}” from recent searches`}
+                  title={t("Remove from recent searches")}
+                  aria-label={t("Remove “{search}” from recent searches", { search: recent })}
                   onClick={() => onForget(recent)}
                 >
                   <Icon name="close" size={12} />
@@ -1183,13 +1200,13 @@ function SearchTips({
       )}
       {opened.length > 0 && (
         <>
-          <h3 className="day-head">Recently opened</h3>
+          <h3 className="day-head">{t("Recently opened")}</h3>
           <ul className="search-recents search-opened">
             {opened.map((entry) => (
               <li key={entry.link}>
                 <button type="button" className="search-recent" onClick={() => onOpened(entry)}>
                   <Icon name="mail" size={15} />
-                  <span>{entry.subject || "(no subject)"}</span>
+                  <span>{entry.subject || t("(no subject)")}</span>
                   {entry.from && <span className="muted">{personName(entry.from)}</span>}
                 </button>
               </li>
@@ -1197,7 +1214,7 @@ function SearchTips({
           </ul>
         </>
       )}
-      <h3 className="day-head">Tips</h3>
+      <h3 className="day-head">{t("Tips")}</h3>
       <ul className="search-tips">
         {TIPS.map((tip) => (
           <li key={tip.example}>
@@ -1212,7 +1229,7 @@ function SearchTips({
         ))}
       </ul>
       <p className="search-hint muted">
-        Combine them, as in <code>from:lena has:attachment after:2026-09-01</code>. Accents need not be typed.
+        {t("Combine them, as in")} <code>from:lena has:attachment after:2026-09-01</code>. {t("Accents need not be typed.")}
       </p>
     </div>
   );
@@ -1220,7 +1237,7 @@ function SearchTips({
 
 function Skeleton({ mode }: { mode: "single" | "split" }) {
   return (
-    <div className={`rows ${mode === "single" ? "wide" : "tall"}`} aria-label="Loading messages" aria-busy="true">
+    <div className={`rows ${mode === "single" ? "wide" : "tall"}`} aria-label={t("Loading messages")} aria-busy="true">
       <ul>
         {Array.from({ length: 10 }, (_, index) => (
           <li key={index} className="row skeleton">

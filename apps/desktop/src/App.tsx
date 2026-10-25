@@ -134,6 +134,7 @@ import {
 } from "./views";
 import { Welcome } from "./Welcome";
 import { Launch } from "./AppMark";
+import { t, tn } from "./i18n";
 
 /** How long an error notice stays. */
 const NOTICE_MS = 8000;
@@ -372,12 +373,12 @@ export function App() {
         const changed = results.reduce((sum, result) => sum + result.changed, 0);
         const undos = results.flatMap((result) => (result.undo ? [result.undo] : []));
         if (changed === 0 || undos.length === 0) {
-          setSaid("Nothing unread here");
+          setSaid(t("Nothing unread here"));
           return;
         }
         setUndo({
           id: undos[0].id,
-          description: undos.length === 1 ? undos[0].description : `Marked ${changed} messages read`,
+          description: undos.length === 1 ? undos[0].description : tn(changed, "Marked 1 message read", "Marked {count} messages read"),
           also: undos.slice(1).map((one) => one.id),
         });
       })
@@ -632,13 +633,13 @@ export function App() {
         setMenu({
           anchor: { x: 0, y: 0 },
           variant: "palette",
-          title: purpose === "copy" ? "Copy to" : "Move to",
-          label: purpose === "copy" ? "Copy to folder" : "Move to folder",
-          filter: "Type a folder name",
+          title: purpose === "copy" ? t("Copy to") : t("Move to"),
+          label: purpose === "copy" ? t("Copy to folder") : t("Move to folder"),
+          filter: t("Type a folder name"),
           entries: [
             ...recent.map((folder) => ({
               label: leafName(folder),
-              detail: "Recent",
+              detail: t("Recent"),
               icon: icon(folder),
               quick: true,
               onSelect: () => pick(folder.id),
@@ -707,7 +708,7 @@ export function App() {
             })),
             "separator" as const,
             {
-              label: "Pick a date and time…",
+              label: t("Pick a date and time…"),
               icon: "plus" as const,
               onSelect: () =>
                 setPicking({ title, confirm: confirmLabel, initial: Date.now() + 24 * 3600_000, resolve: (time) => resolve(time) }),
@@ -718,10 +719,10 @@ export function App() {
       }),
     [],
   );
-  const pickSnooze = useCallback(() => pickTime("Snooze until", "Snooze", presets(new Date(), getPrefs().snoozePresets)), [pickTime]);
+  const pickSnooze = useCallback(() => pickTime(t("Snooze until"), t("Snooze"), presets(new Date(), getPrefs().snoozePresets)), [pickTime]);
   const pickReminder = useCallback(
     () =>
-      pickTime("Remind me if no reply by", "Remind me", reminderPresets(new Date(), getPrefs().reminderPresets)).then((time) =>
+      pickTime(t("Remind me if no reply by"), t("Remind me"), reminderPresets(new Date(), getPrefs().reminderPresets)).then((time) =>
         typeof time === "number" ? time : null,
       ),
     [pickTime],
@@ -740,13 +741,13 @@ export function App() {
             const keep: MenuEntry[] = hasText
               ? [
                   {
-                    label: "Save this message as a template",
+                    label: t("Save this message as a template"),
                     icon: "plus",
                     detail: name,
                     onSelect: () => {
                       resolve(null);
                       saveWritten(name, written).then(
-                        (saved) => setSaid(`Saved as the template “${saved.name}”`),
+                        (saved) => setSaid(t("Saved as the template “{name}”", { name: saved.name })),
                         failed,
                       );
                     },
@@ -756,9 +757,9 @@ export function App() {
             setMenu({
               anchor: { x: 0, y: 0 },
               variant: "palette",
-              title: "Templates",
-              label: "Insert a template",
-              filter: "Type a template's name",
+              title: t("Templates"),
+              label: t("Insert a template"),
+              filter: t("Type a template's name"),
               entries: [
                 ...templates.map(
                   (template): MenuEntry => ({
@@ -771,7 +772,7 @@ export function App() {
                 ...(templates.length > 0 ? ["separator" as const] : []),
                 ...keep,
                 {
-                  label: templates.length > 0 ? "Edit templates…" : "Write a template…",
+                  label: templates.length > 0 ? t("Edit templates…") : t("Write a template…"),
                   icon: "settings",
                   onSelect: () => {
                     resolve(null);
@@ -786,7 +787,7 @@ export function App() {
     [failed],
   );
   const pickSendTime = useCallback(
-    () => pickTime("Send at", "Schedule", sendPresets(new Date(), getPrefs().sendPresets)).then((time) => (typeof time === "number" ? time : null)),
+    () => pickTime(t("Send at"), t("Schedule"), sendPresets(new Date(), getPrefs().sendPresets)).then((time) => (typeof time === "number" ? time : null)),
     [pickTime],
   );
   const junkFolder = useCallback((accountId: string) => folderOf(accountId, "junk"), [folderOf]);
@@ -812,9 +813,9 @@ export function App() {
     (id: number, from: Person | null) => {
       const who = from?.name || from?.address || "this sender";
       void confirm({
-        title: `Unsubscribe from ${who}?`,
-        body: "Regards asks them to stop sending to you: in one click where they take it, otherwise by an email (which you can undo) or on their own page.",
-        confirm: "Unsubscribe",
+        title: t("Unsubscribe from {who}?", { who }),
+        body: t("Regards asks them to stop sending to you: in one click where they take it, otherwise by an email (which you can undo) or on their own page."),
+        confirm: t("Unsubscribe"),
       })
         .then(async (ok) => {
           if (!ok) return;
@@ -823,13 +824,13 @@ export function App() {
             setQueued(result.queued);
           } else if (result.kind === "web") {
             await openUrl(result.url);
-            setSaid(`Finish on ${who}'s page, in your browser`);
+            setSaid(t("Finish on {who}'s page, in your browser", { who }));
           } else {
             const address = from?.address;
             setOffer(
               address
-                ? { text: `Unsubscribed from ${who}`, label: "Archive their mail", run: () => void archiveFrom(address).catch(failed) }
-                : { text: `Unsubscribed from ${who}` },
+                ? { text: t("Unsubscribed from {who}", { who }), label: t("Archive their mail"), run: () => void archiveFrom(address).catch(failed) }
+                : { text: t("Unsubscribed from {who}", { who }) },
             );
           }
         })
@@ -873,9 +874,9 @@ export function App() {
       setMenu({
         anchor: { x: 0, y: 0 },
         variant: "palette",
-        title: ids.length === 1 ? "Labels" : `Labels of ${ids.length} messages`,
-        label: "Labels",
-        filter: "Find a label",
+        title: ids.length === 1 ? t("Labels") : t("Labels of {count} messages", { count: ids.length }),
+        label: t("Labels"),
+        filter: t("Find a label"),
         entries: [
           ...(folders.get(accountId) ?? []).map((folder) => ({
             label: folder.delimiter ? folder.name.split(folder.delimiter).join(" › ") : folder.name,
@@ -884,14 +885,14 @@ export function App() {
           })),
           "separator",
           {
-            label: "New label…",
+            label: t("New label…"),
             icon: "plus",
             onSelect: () =>
               setNaming({
-                title: "New label",
-                label: "Label name",
+                title: t("New label"),
+                label: t("Label name"),
                 value: "",
-                confirm: "Create",
+                confirm: t("Create"),
                 onSave: (name) => createFolder(accountId, null, name).then((made) => change([made.id], [])),
               }),
           },
@@ -904,8 +905,8 @@ export function App() {
   const copied = useCallback(
     (count: number, mailboxId: number) => {
       const folder = accounts.flatMap((entry) => entry.mailboxes).find((mailbox) => mailbox.id === mailboxId);
-      const name = folder ? leafName(folder) : "the folder";
-      setNotice(count === 0 ? `Already in ${name}` : count === 1 ? `Copied to ${name}` : `${count} messages copied to ${name}`);
+      const name = folder ? leafName(folder) : t("the folder");
+      setNotice(count === 0 ? t("Already in {folder}", { folder: name }) : tn(count, "Copied to {folder}", "{count} messages copied to {folder}", { folder: name }));
     },
     [accounts],
   );
@@ -965,14 +966,14 @@ export function App() {
     if (link.kind === "draft") {
       getDraft(link.id).then(
         (draft) => setComposer({ id: draft.id, mode: "full" }),
-        () => setNotice("That draft is no longer here."),
+        () => setNotice(t("That draft is no longer here.")),
       );
       return;
     }
     if (link.kind === "message_id") {
       locateMessage(link.message_id).then(
-        (id) => (id === null ? setNotice("That message is no longer on this computer.") : openLink({ kind: "message", id })),
-        () => setNotice("That message is no longer on this computer."),
+        (id) => (id === null ? setNotice(t("That message is no longer on this computer.")) : openLink({ kind: "message", id })),
+        () => setNotice(t("That message is no longer on this computer.")),
       );
       return;
     }
@@ -985,7 +986,7 @@ export function App() {
         changeView({ kind: "mailbox", mailboxId: mailbox.id, accountId: owner.account.id });
         setOpen({ ...detail.message, mailboxId: mailbox.id, accountId: owner.account.id, role: mailbox.role });
       })
-      .catch(() => setNotice("That message is no longer on this computer."));
+      .catch(() => setNotice(t("That message is no longer on this computer.")));
   };
   const linkTo = useRef(openLink);
   linkTo.current = openLink;
@@ -995,7 +996,7 @@ export function App() {
     setPicked(new Set());
     const gone = () => {
       forgetOpened(entry.link);
-      setNotice("That message is no longer on this computer.");
+      setNotice(t("That message is no longer on this computer."));
     };
     const link = linkOf(entry.link);
     if (!link) gone();
@@ -1035,7 +1036,7 @@ export function App() {
         attachDropped(draft.id, drop.id).then((result) => {
           setComposer({ id: draft.id, mode: "full" });
           if (result.refused.length > 0) {
-            setNotice(`Not attached: ${result.refused.map((file) => `${file.name} (${file.error})`).join(", ")}`);
+            setNotice(t("Not attached: {files}", { files: result.refused.map((file) => `${file.name} (${file.error})`).join(", ") }));
           }
         }),
       )
@@ -1073,7 +1074,7 @@ export function App() {
   const writeFromLink = (link: Extract<OpenLink, { kind: "compose" }>) => {
     const from = defaultFrom ?? accounts[0]?.account.id;
     if (!from) {
-      setNotice("Add an account first: then email links open a new message here.");
+      setNotice(t("Add an account first: then email links open a new message here."));
       return;
     }
     const people = (addresses: string[]): Person[] => addresses.map((address) => ({ name: null, address }));
@@ -1115,7 +1116,7 @@ export function App() {
     });
   };
   const senderEntry = (about: ListItem): MenuEntry => ({
-    label: "The sender, and why this is here…",
+    label: t("The sender, and why this is here…"),
     icon: "info",
     onSelect: () => aboutSender(about),
   });
@@ -1126,7 +1127,7 @@ export function App() {
   const busy = syncing || accounts.some((entry) => entry.sync?.running);
   const syncProblem =
     accounts
-      .map((entry) => entry.error ?? entry.sync?.last_error ?? (entry.sync?.push_error && `Live updates stopped: ${entry.sync.push_error}`))
+      .map((entry) => entry.error ?? entry.sync?.last_error ?? (entry.sync?.push_error && t("Live updates stopped: {problem}", { problem: entry.sync.push_error })))
       .find(Boolean) ?? null;
   const syncNow = () => {
     setSyncing(true);
@@ -1164,14 +1165,14 @@ export function App() {
       ? (accounts.find((entry) => entry.account.id === target.accountId)?.mailboxes.find((m) => m.id === target.mailboxId) ?? null)
       : null;
   const howMany = (count: number) =>
-    count >= ALL_AT_ONCE ? `More than ${ALL_AT_ONCE} messages` : count === 1 ? "1 message" : `${count} messages`;
+    count >= ALL_AT_ONCE ? t("More than {count} messages", { count: ALL_AT_ONCE }) : tn(count, "1 message", "{count} messages");
   /** A new folder in an account, inside `parent` or at its top; opened once made. */
   const newFolder = (accountId: string, parent: MailboxSummary | null) =>
     setNaming({
-      title: parent ? `New folder in ${leafName(parent)}` : "New folder",
-      label: "Folder name",
+      title: parent ? t("New folder in {folder}", { folder: leafName(parent) }) : t("New folder"),
+      label: t("Folder name"),
       value: "",
-      confirm: "Create",
+      confirm: t("Create"),
       onSave: (name) =>
         createFolder(accountId, parent?.id ?? null, name).then((made) => changeView({ kind: "mailbox", mailboxId: made.id, accountId })),
     });
@@ -1195,14 +1196,19 @@ export function App() {
     // Counted first, so the question says how much mail goes.
     allOf(views.flatMap((target) => sourcesFor(accounts, target)))
       .then(async (list) => {
-        const what =
-          inside.length === 0
-            ? `“${leafName(folder)}”`
-            : `“${leafName(folder)}” and the ${inside.length === 1 ? "folder" : `${inside.length} folders`} inside it`;
+        const mail = list.length === 0 ? t("no mail") : howMany(list.length).toLowerCase();
         const ok = await confirm({
-          title: `Delete “${leafName(folder)}”?`,
-          body: `${what}, with ${list.length === 0 ? "no mail" : howMany(list.length).toLowerCase()}, ${inside.length === 0 ? "is" : "are"} deleted on the server. This cannot be undone.`,
-          confirm: "Delete folder",
+          title: t("Delete “{folder}”?", { folder: leafName(folder) }),
+          body:
+            inside.length === 0
+              ? t("“{folder}”, with {mail}, is deleted on the server. This cannot be undone.", { folder: leafName(folder), mail })
+              : tn(
+                  inside.length,
+                  "“{folder}” and the folder inside it, with {mail}, are deleted on the server. This cannot be undone.",
+                  "“{folder}” and the {count} folders inside it, with {mail}, are deleted on the server. This cannot be undone.",
+                  { folder: leafName(folder), mail },
+                ),
+          confirm: t("Delete folder"),
           danger: true,
         });
         if (!ok) return;
@@ -1228,13 +1234,20 @@ export function App() {
     allOf(sources)
       .then(async (list) => {
         if (list.length === 0) {
-          setSaid(`${label} is empty`);
+          setSaid(t("{folder} is empty", { folder: label }));
           return;
         }
         const ok = await confirm({
-          title: `Empty ${label}?`,
-          body: `${howMany(list.length)} ${list.length === 1 ? "is" : "are"} deleted for good on the server. This cannot be undone.`,
-          confirm: `Empty ${label}`,
+          title: t("Empty {folder}?", { folder: label }),
+          body:
+            list.length >= ALL_AT_ONCE
+              ? t("More than {count} messages are deleted for good on the server. This cannot be undone.", { count: ALL_AT_ONCE })
+              : tn(
+                  list.length,
+                  "1 message is deleted for good on the server. This cannot be undone.",
+                  "{count} messages are deleted for good on the server. This cannot be undone.",
+                ),
+          confirm: t("Empty {folder}", { folder: label }),
           danger: true,
         });
         if (!ok) return;
@@ -1244,7 +1257,7 @@ export function App() {
           null,
         );
         const deleted = results.reduce((sum, result) => sum + result.deleted, 0);
-        setSaid(deleted === 1 ? "Deleted 1 message for good" : `Deleted ${deleted} messages for good`);
+        setSaid(tn(deleted, "Deleted 1 message for good", "Deleted {count} messages for good"));
       })
       .catch(failed);
   };
@@ -1255,22 +1268,22 @@ export function App() {
     const folder = mailboxOf(target);
     if (!folder || target.kind !== "mailbox") return [];
     const { accountId } = target;
-    const entries: MenuEntry[] = [{ label: "New folder inside…", icon: "folder", onSelect: () => newFolder(accountId, folder) }];
+    const entries: MenuEntry[] = [{ label: t("New folder inside…"), icon: "folder", onSelect: () => newFolder(accountId, folder) }];
     if (!folder.role) {
       entries.push(
         {
-          label: "Rename…",
+          label: t("Rename…"),
           icon: "compose",
           onSelect: () =>
             setNaming({
-              title: `Rename “${leafName(folder)}”`,
-              label: "Folder name",
+              title: t("Rename “{name}”", { name: leafName(folder) }),
+              label: t("Folder name"),
               value: leafName(folder),
-              confirm: "Rename",
+              confirm: t("Rename"),
               onSave: (name) => renameFolder(folder.id, name),
             }),
         },
-        { label: "Delete folder…", icon: "trash", danger: true, onSelect: () => deleteFolderAsked(accountId, folder) },
+        { label: t("Delete folder…"), icon: "trash", danger: true, onSelect: () => deleteFolderAsked(accountId, folder) },
       );
     }
     return entries;
@@ -1301,12 +1314,12 @@ export function App() {
     if (!query) return;
     const accountId = search?.accountId ?? null;
     setNaming({
-      title: "Save this search",
-      label: "Name",
+      title: t("Save this search"),
+      label: t("Name"),
       value: "",
-      confirm: "Save",
+      confirm: t("Save"),
       onSave: (name) =>
-        saveSearch({ name, query, accountId }).then(() => setSaid(`Saved: “${name}” is in the sidebar`)),
+        saveSearch({ name, query, accountId }).then(() => setSaid(t("Saved: “{name}” is in the sidebar", { name }))),
     });
   };
   const savedMenu = (saved: SavedSearch): MenuEntry[] => {
@@ -1315,7 +1328,7 @@ export function App() {
     const grouped = appPrefs.searchGroups.includes(saved.id);
     return [
       {
-        label: grouped ? "Stop showing as a group in the inbox" : "Show as a group in the inbox",
+        label: grouped ? t("Stop showing as a group in the inbox") : t("Show as a group in the inbox"),
         icon: "sections",
         onSelect: () =>
           setPrefs({
@@ -1325,34 +1338,34 @@ export function App() {
           }),
       },
       {
-        label: "Rename…",
+        label: t("Rename…"),
         icon: "compose",
         onSelect: () =>
-          setNaming({ title: `Rename “${saved.name}”`, label: "Name", value: saved.name, confirm: "Rename", onSave: (name) => change({ name }) }),
+          setNaming({ title: t("Rename “{name}”", { name: saved.name }), label: t("Name"), value: saved.name, confirm: t("Rename"), onSave: (name) => change({ name }) }),
       },
       {
-        label: "Edit the search…",
+        label: t("Edit the search…"),
         icon: "search",
         onSelect: () =>
           setNaming({
-            title: `What “${saved.name}” looks for`,
-            label: "Search for",
+            title: t("What “{name}” looks for", { name: saved.name }),
+            label: t("Search for"),
             value: saved.query,
-            confirm: "Save",
+            confirm: t("Save"),
             onSave: (query) => change({ query }),
           }),
       },
       {
-        label: "Colour…",
+        label: t("Colour…"),
         icon: "sun",
         onSelect: () =>
           setMenu({
             anchor: { x: 0, y: 0 },
             variant: "palette",
-            title: `Colour of “${saved.name}”`,
-            label: "Colour",
+            title: t("Colour of “{name}”", { name: saved.name }),
+            label: t("Colour"),
             entries: [
-              { label: "No colour", onSelect: () => void change({ color: null }).catch(failed) },
+              { label: t("No colour"), onSelect: () => void change({ color: null }).catch(failed) },
               ...ACCOUNT_COLOURS.map((colour) => ({
                 label: COLOUR_NAMES[colour] ?? colour,
                 onSelect: () => void change({ color: colour }).catch(failed),
@@ -1362,14 +1375,14 @@ export function App() {
       },
       "separator",
       {
-        label: "Forget it…",
+        label: t("Forget it…"),
         icon: "trash",
         danger: true,
         onSelect: () =>
           void confirm({
             title: `Forget “${saved.name}”?`,
-            body: "The saved search goes from the sidebar. Its mail stays where it is.",
-            confirm: "Forget",
+            body: t("The saved search goes from the sidebar. Its mail stays where it is."),
+            confirm: t("Forget"),
             danger: true,
           }).then((ok) => {
             if (ok) removeSavedSearch(saved.id).catch(failed);
@@ -1401,7 +1414,7 @@ export function App() {
       else toRole(target.role);
     } else if (target.kind === "mailbox") {
       if (payload.accounts.some((account) => account !== target.accountId)) {
-        failed("Messages can only be moved to a folder of their own account.");
+        failed(t("Messages can only be moved to a folder of their own account."));
         return;
       }
       moveMessages(ids, target.mailboxId)
@@ -1427,9 +1440,9 @@ export function App() {
     setMenu({
       anchor: { x: 0, y: 0 },
       variant: "palette",
-      title: "Go to folder",
-      label: "Go to folder",
-      filter: "Type a folder name",
+      title: t("Go to folder"),
+      label: t("Go to folder"),
+      filter: t("Type a folder name"),
       entries: accounts.flatMap((entry) =>
         sortFolders(entry.mailboxes.filter((m) => m.selectable)).map((mailbox) => ({
           label: leafName(mailbox),
@@ -1455,9 +1468,9 @@ export function App() {
     const entries: MenuEntry[] = [];
     if (actions) {
       for (const action of choose(actions, ...PALETTE_ACTIONS)) {
-        const done = action.id === "archive" && action.label === "Archive";
+        const done = action.id === "archive" && action.label === t("Archive");
         entries.push({
-          label: done ? "Done (archive)" : action.label,
+          label: done ? t("Done (archive)") : action.label,
           icon: done ? "check" : action.icon,
           keys: action.keys[0],
           danger: action.danger,
@@ -1473,13 +1486,13 @@ export function App() {
     go({ kind: "drafts" }, "Drafts", "draft");
     for (const role of ["sent", "archive", "junk", "trash"] as const) go({ kind: "role", role }, ROLE_LABELS[role], ROLE_ICONS[role]);
     go({ kind: "outbox" }, "Outbox", "outbox");
-    entries.push({ label: "Go to folder…", icon: "folder", keys: standardKeys ? "Mod+Shift+G" : undefined, onSelect: goToFolder });
+    entries.push({ label: t("Go to folder…"), icon: "folder", keys: standardKeys ? "Mod+Shift+G" : undefined, onSelect: goToFolder });
     entries.push("separator");
-    if (readTargets().length > 0) entries.push({ label: "Mark everything here read", icon: "mailOpen", onSelect: markAllHere });
+    if (readTargets().length > 0) entries.push({ label: t("Mark everything here read"), icon: "mailOpen", onSelect: markAllHere });
     entries.push(
-      { label: "New message", icon: "compose", keys: "c", onSelect: writeNew },
+      { label: t("New message"), icon: "compose", keys: "c", onSelect: writeNew },
       {
-        label: "Search mail",
+        label: t("Search mail"),
         icon: "search",
         keys: "Mod+f",
         onSelect: () => {
@@ -1487,26 +1500,26 @@ export function App() {
           setSearch({ query: "", accountId: null });
         },
       },
-      ...(search?.query.trim() && !savedNow ? [{ label: "Save this search…", icon: "star" as const, onSelect: saveThisSearch }] : []),
+      ...(search?.query.trim() && !savedNow ? [{ label: t("Save this search…"), icon: "star" as const, onSelect: saveThisSearch }] : []),
       ...savedSearches.map((saved) => ({ label: `Search: ${saved.name}`, icon: "search" as const, detail: saved.query, onSelect: () => openSaved(saved) })),
-      { label: "Check for new mail", icon: "refresh", keys: standardKeys ? "Mod+r" : undefined, onSelect: syncNow },
-      { label: layout.locked ? "Fold the sidebar" : "Show the sidebar", icon: "sidebar", keys: "/", onSelect: toggleSidebar },
+      { label: t("Check for new mail"), icon: "refresh", keys: standardKeys ? "Mod+r" : undefined, onSelect: syncNow },
+      { label: layout.locked ? t("Fold the sidebar") : t("Show the sidebar"), icon: "sidebar", keys: "/", onSelect: toggleSidebar },
       // Back beside the list from here; leaving it is chosen in Settings › Appearance, not by a stray pick.
       ...(layout.mode === "single"
-        ? [{ label: "Open messages beside the list", icon: "split" as const, onSelect: () => setLayout({ mode: "split" }) }]
+        ? [{ label: t("Open messages beside the list"), icon: "split" as const, onSelect: () => setLayout({ mode: "split" }) }]
         : []),
-      { label: "Light theme", icon: "sun", onSelect: () => applyTheme("light", true) },
-      { label: "Dark theme", icon: "moon", onSelect: () => applyTheme("dark", true) },
-      { label: "Theme as the system", icon: "sun", onSelect: () => applyTheme("system", true) },
-      { label: "Settings", icon: "settings", keys: "Mod+,", onSelect: () => setSettings("accounts") },
-      { label: "Keyboard shortcuts", icon: "keyboard", keys: "?", onSelect: () => setHelp(true) },
+      { label: t("Light theme"), icon: "sun", onSelect: () => applyTheme("light", true) },
+      { label: t("Dark theme"), icon: "moon", onSelect: () => applyTheme("dark", true) },
+      { label: t("Theme as the system"), icon: "sun", onSelect: () => applyTheme("system", true) },
+      { label: t("Settings"), icon: "settings", keys: "Mod+,", onSelect: () => setSettings("accounts") },
+      { label: t("Keyboard shortcuts"), icon: "keyboard", keys: "?", onSelect: () => setHelp(true) },
     );
     setMenu({
       anchor: { x: 0, y: 0 },
       variant: "palette",
-      title: title ?? "Actions",
-      filter: "Type a command, or “go to”",
-      label: "Commands",
+      title: title ?? t("Actions"),
+      filter: t("Type a command, or “go to”"),
+      label: t("Commands"),
       entries,
     });
   };
@@ -1518,16 +1531,16 @@ export function App() {
   const appMenu = (anchor: Anchor) =>
     setMenu({
       anchor,
-      label: "Regards",
+      label: t("Regards"),
       entries: [
-        { label: "About Regards", onSelect: () => setSettings("support") },
+        { label: t("About Regards"), onSelect: () => setSettings("support") },
         "separator",
-        { label: "Settings…", hint: `${MOD_KEY}+,`, onSelect: () => setSettings("accounts") },
-        { label: "Accounts…", onSelect: () => setSettings("accounts") },
-        { label: "Add an account…", icon: "plus", onSelect: () => setAddingAccount(true) },
-        { label: "Keyboard shortcuts", hint: "?", onSelect: () => setHelp(true) },
+        { label: t("Settings…"), hint: `${MOD_KEY}+,`, onSelect: () => setSettings("accounts") },
+        { label: t("Accounts…"), onSelect: () => setSettings("accounts") },
+        { label: t("Add an account…"), icon: "plus", onSelect: () => setAddingAccount(true) },
+        { label: t("Keyboard shortcuts"), hint: "?", onSelect: () => setHelp(true) },
         "separator",
-        { label: "Quit Regards", hint: `${MOD_KEY}+Q`, onSelect: quit },
+        { label: t("Quit Regards"), hint: `${MOD_KEY}+Q`, onSelect: quit },
       ],
     });
 
@@ -1596,7 +1609,7 @@ export function App() {
       className="side-resizer"
       role="separator"
       aria-orientation="vertical"
-      aria-label="Resize the sidebar"
+      aria-label={t("Resize the sidebar")}
       aria-valuenow={layout.sidebarWidth}
       aria-valuemin={SIDE_MIN}
       aria-valuemax={SIDE_MAX}
@@ -1629,16 +1642,16 @@ export function App() {
 
   const service =
     check.state === "failed"
-      ? `Could not reach the background service: ${check.message}`
+      ? t("Could not reach the background service: {problem}", { problem: check.message })
       : check.state === "done" && (check.status.error || !check.status.running)
-        ? `The background service is not running. ${check.status.error ?? ""}`
+        ? `${t("The background service is not running.")} ${check.status.error ?? ""}`
         : null;
   const banner = service && (
     <div className="banner" role="alert">
       <Icon name="alert" size={16} />
       <span>{service}</span>
       <button type="button" className="btn small" onClick={recheck}>
-        Try again
+        {t("Try again")}
       </button>
     </div>
   );
@@ -1714,10 +1727,10 @@ export function App() {
           : view.kind === "outbox"
             ? `${outbox.length} waiting`
             : smartOn
-              ? "By priority"
+              ? t("By priority")
               : cardsOn
-                ? "By category"
-                : "By date";
+                ? t("By category")
+                : t("By date");
   // An account's mail still coming in for the first time: its folders are
   // not empty, the messages are not here yet.
   const arriving =
@@ -1729,28 +1742,28 @@ export function App() {
     );
   const empty = arriving
     ? {
-        title: "Your mail is coming in",
-        body: "Messages show here as they download. The first time can take a few minutes.",
+        title: t("Your mail is coming in"),
+        body: t("Messages show here as they download. The first time can take a few minutes."),
         arriving: true,
       }
     : view.kind === "role" && view.role === "inbox"
-      ? { title: "You're all caught up", body: "New mail shows here as it arrives." }
+      ? { title: t("You're all caught up"), body: t("New mail shows here as it arrives.") }
       : view.kind === "section"
         ? view.section === "new_senders"
-          ? { title: "No new senders", body: "Mail from people you haven't written to yet waits here to be accepted or blocked." }
-          : { title: `Nothing in ${SECTION_LABELS[view.section]}`, body: "This part of the inbox is empty." }
+          ? { title: t("No new senders"), body: t("Mail from people you haven't written to yet waits here to be accepted or blocked.") }
+          : { title: t("Nothing in {section}", { section: SECTION_LABELS[view.section] }), body: t("This part of the inbox is empty.") }
       : view.kind === "marked"
         ? {
-            pinned: { title: "Nothing pinned", body: "Pin a message (p) to keep it in reach here." },
-            snoozed: { title: "Nothing snoozed", body: "Snooze a message (b) and it comes back as new at the time you pick." },
+            pinned: { title: t("Nothing pinned"), body: t("Pin a message (p) to keep it in reach here.") },
+            snoozed: { title: t("Nothing snoozed"), body: t("Snooze a message (b) and it comes back as new at the time you pick.") },
             reminders: {
-              title: "No reminders",
-              body: "Remind yourself (Shift+R) about a message you sent: if nobody replies by then, it comes back to the inbox.",
+              title: t("No reminders"),
+              body: t("Remind yourself (Shift+R) about a message you sent: if nobody replies by then, it comes back to the inbox."),
             },
-            aside: { title: "Nothing set aside", body: "Set a message aside (Shift+A) to take it out of the inbox until you need it." },
-            invitations: { title: "No invitations to answer", body: "Invitations by email wait here until you accept or decline them." },
+            aside: { title: t("Nothing set aside"), body: t("Set a message aside (Shift+A) to take it out of the inbox until you need it.") },
+            invitations: { title: t("No invitations to answer"), body: t("Invitations by email wait here until you accept or decline them.") },
           }[view.mark]
-        : { title: "Nothing here", body: "This folder has no messages." };
+        : { title: t("Nothing here"), body: t("This folder has no messages.") };
   const folders = openItem
     ? (accounts.find((entry) => entry.account.id === openItem.accountId)?.mailboxes ?? []).filter((m) => m.selectable)
     : [];
@@ -1765,9 +1778,9 @@ export function App() {
       ? (anchor: Anchor) =>
           setMenu({
             anchor,
-            label: "Accounts",
+            label: t("Accounts"),
             entries: [
-              { label: "All accounts", icon: "inbox", onSelect: () => changeView({ kind: "role", role }) },
+              { label: t("All accounts"), icon: "inbox", onSelect: () => changeView({ kind: "role", role }) },
               "separator",
               ...accounts.flatMap((entry) => {
                 const mailbox = entry.mailboxes.find((m) => m.role === role && m.selectable);
@@ -1817,7 +1830,7 @@ export function App() {
           [
           {
             key: "notifications",
-            label: "Notifications",
+            label: t("Notifications"),
             icon: "bell",
             count: overview.notifications?.total ?? 0,
             unread: (overview.notifications?.unread ?? 0) > 0,
@@ -1828,7 +1841,7 @@ export function App() {
           },
           {
             key: "newsletters",
-            label: "Newsletters",
+            label: t("Newsletters"),
             icon: "newspaper",
             count: overview.newsletters?.total ?? 0,
             unread: (overview.newsletters?.unread ?? 0) > 0,
@@ -1839,7 +1852,7 @@ export function App() {
           },
           {
             key: "invitations",
-            label: "Invitations",
+            label: t("Invitations"),
             icon: "calendar",
             count: invitationItems.length,
             unread: invitationItems.some((message) => !message.seen),
@@ -1863,7 +1876,7 @@ export function App() {
           ),
           {
             key: "pinned",
-            label: "Pinned",
+            label: t("Pinned"),
             icon: "pin",
             count: pinnedItems.length,
             unread: pinnedItems.some((message) => !message.seen),
@@ -1894,14 +1907,14 @@ export function App() {
   });
   const cards: InboxCard[] | null = cardsOn
     ? [
-        ...(screen === "section" ? [cardOf("new_senders", "New senders", cardNewSenders)] : []),
+        ...(screen === "section" ? [cardOf("new_senders", t("New senders"), cardNewSenders)] : []),
         cardOf("priority", "Priority", cardPriority),
         cardOf("people", "People", cardPeople),
         cardOf("notifications", "Notifications", cardNotifications),
         cardOf("newsletters", "Newsletters", cardNewsletters),
         {
           key: "pinned",
-          label: "Pinned",
+          label: t("Pinned"),
           items: cardPinnedRows,
           total: Math.max(cardPinned.length, cardPinnedRows.length),
           onAll: () => changeView({ kind: "marked", mark: "pinned" }),
@@ -1927,7 +1940,7 @@ export function App() {
     }
     return [...senders.values()];
   };
-  const someone = (count: number) => (count === 1 ? "1 sender" : `${count} senders`);
+  const someone = (count: number) => tn(count, "1 sender", "{count} senders");
   const screener: Screener = {
     accept: (item) => {
       const address = item.from?.address;
@@ -1941,7 +1954,7 @@ export function App() {
       newSendersAll()
         .then(async (senders) => {
           await Promise.all(senders.map((sender) => setSender(sender.accountId, sender.address, { policy: "people", priority: false })));
-          if (senders.length > 0) setSaid(`Accepted ${someone(senders.length)}: their mail is in People`);
+          if (senders.length > 0) setSaid(t("Accepted {senders}: their mail is in People", { senders: someone(senders.length) }));
         })
         .catch(failed);
     },
@@ -1952,8 +1965,8 @@ export function App() {
           if (senders.length === 0) return;
           const ok = await confirm({
             title: `Block ${someone(senders.length)}?`,
-            body: "Their mail goes to Junk, and so does what they send later. Undo brings it all back.",
-            confirm: "Block all",
+            body: t("Their mail goes to Junk, and so does what they send later. Undo brings it all back."),
+            confirm: t("Block all"),
             danger: true,
           });
           if (!ok) return;
@@ -1976,16 +1989,16 @@ export function App() {
 
   const listPane =
     view.kind === "drafts" ? (
-      <section className="list-pane" aria-label="Drafts">
+      <section className="list-pane" aria-label={t("Drafts")}>
         <ListHeader title={title} subtitle={subtitle}>
-          <button type="button" className="icon-btn" title="New message (c)" aria-label="New message" onClick={writeNew}>
+          <button type="button" className="icon-btn" title={t("New message (c)")} aria-label={t("New message")} onClick={writeNew}>
             <Icon name="compose" size={17} />
           </button>
         </ListHeader>
         <DraftsList drafts={drafts} open={composer?.id ?? null} onOpen={editDraft} onFailed={failed} onUndo={setUndo} />
       </section>
     ) : view.kind === "outbox" ? (
-      <section className="list-pane" aria-label="Outbox">
+      <section className="list-pane" aria-label={t("Outbox")}>
         <ListHeader title={title} subtitle={subtitle} />
         <OutboxList
           entries={outbox}
@@ -2090,14 +2103,14 @@ export function App() {
         onMenu: (anchor) =>
           setMenu({
             anchor,
-            label: "Assistant",
+            label: t("Assistant"),
             entries: assistantKind
               ? [
-                  { label: "Summarise this conversation…", icon: "text", onSelect: () => setAssistantJob({ messageId: openItem.id, kind: "summary" }) },
-                  { label: "Draft a reply…", icon: "reply", onSelect: () => setAssistantJob({ messageId: openItem.id, kind: "reply" }) },
+                  { label: t("Summarise this conversation…"), icon: "text", onSelect: () => setAssistantJob({ messageId: openItem.id, kind: "summary" }) },
+                  { label: t("Draft a reply…"), icon: "reply", onSelect: () => setAssistantJob({ messageId: openItem.id, kind: "reply" }) },
                 ]
               : // Off until a provider is chosen: the button leads there.
-                [{ label: "Set up the assistant…", icon: "settings", onSelect: () => setSettings("assistant") }],
+                [{ label: t("Set up the assistant…"), icon: "settings", onSelect: () => setSettings("assistant") }],
           }),
       }}
       onClose={() => setOpen(null)}
@@ -2118,7 +2131,7 @@ export function App() {
           className="splitter"
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize the message list"
+          aria-label={t("Resize the message list")}
           aria-valuenow={layout.listWidth}
           aria-valuemin={LIST_MIN}
           aria-valuemax={LIST_MAX}
@@ -2133,8 +2146,8 @@ export function App() {
                 <span />
                 <span>{picked.size}</span>
               </div>
-              <h2>{picked.size === 1 ? "1 message selected" : `${picked.size} messages selected`}</h2>
-              <p>The actions at the top of the list apply to all of them.</p>
+              <h2>{tn(picked.size, "1 message selected", "{count} messages selected")}</h2>
+              <p>{t("The actions at the top of the list apply to all of them.")}</p>
             </div>
           ) : (
             (reader ?? (
@@ -2142,9 +2155,9 @@ export function App() {
                 <span className="zero-mark" aria-hidden="true">
                   <Icon name="mail" size={30} />
                 </span>
-                <h2>{view.kind === "drafts" ? "Pick a draft to keep writing" : "No message open"}</h2>
+                <h2>{view.kind === "drafts" ? t("Pick a draft to keep writing") : t("No message open")}</h2>
                 <p>
-                  Choose a message to read it here. <kbd>j</kbd> and <kbd>k</kbd> move through the list.
+                  {t("Choose a message to read it here.")} <kbd>j</kbd> {t("and")} <kbd>k</kbd> {t("move through the list.")}
                 </p>
               </div>
             ))
@@ -2231,7 +2244,7 @@ export function App() {
           <div className="window-drop" aria-hidden="true">
             <span>
               <Icon name="paperclip" size={22} />
-              Drop to write a new message with these files
+              {t("Drop to write a new message with these files")}
             </span>
           </div>
         )}
@@ -2264,8 +2277,8 @@ export function App() {
             onAdded={(account) => {
               setAddingAccount(false);
               setOffer({
-                text: `${account.email} is added. Its mail is coming in.`,
-                label: "Open its Inbox",
+                text: t("{account} is added. Its mail is coming in.", { account: account.email }),
+                label: t("Open its Inbox"),
                 run: () => openInboxOf(account.id),
               });
             }}
@@ -2277,7 +2290,7 @@ export function App() {
             onClose={() => setAssistantJob(null)}
             onDraft={(draft) => {
               startDraft(Promise.resolve(draft), getPrefs().replyOpens);
-              setSaid("Drafted by the assistant: check it before sending");
+              setSaid(t("Drafted by the assistant: check it before sending"));
             }}
           />
         )}
@@ -2287,8 +2300,10 @@ export function App() {
               <Icon name="alert" size={16} />
               <span>
                 {unsentNow.state === "uncertain"
-                  ? `“${unsentNow.subject || "(no subject)"}” may not have been sent. Check before sending it again.`
-                  : `“${unsentNow.subject || "(no subject)"}” was not sent${unsentNow.last_error ? `: ${unsentNow.last_error}` : "."}`}
+                  ? t("“{subject}” may not have been sent. Check before sending it again.", { subject: unsentNow.subject || t("(no subject)") })
+                  : unsentNow.last_error
+                    ? t("“{subject}” was not sent: {problem}", { subject: unsentNow.subject || t("(no subject)"), problem: unsentNow.last_error })
+                    : t("“{subject}” was not sent.", { subject: unsentNow.subject || t("(no subject)") })}
               </span>
               <button
                 type="button"
@@ -2297,10 +2312,10 @@ export function App() {
                   changeView({ kind: "outbox" });
                 }}
               >
-                Outbox
+                {t("Outbox")}
               </button>
               <button type="button" onClick={() => setUnsent(null)}>
-                Dismiss
+                {t("Dismiss")}
               </button>
             </div>
           )}
@@ -2309,7 +2324,7 @@ export function App() {
               <Icon name="alert" size={16} />
               <span>{notice}</span>
               <button type="button" onClick={() => setNotice(null)}>
-                Dismiss
+                {t("Dismiss")}
               </button>
             </div>
           )}
@@ -2329,7 +2344,7 @@ export function App() {
                 </button>
               )}
               <button type="button" onClick={() => setOffer(null)}>
-                Dismiss
+                {t("Dismiss")}
               </button>
             </div>
           )}
@@ -2359,18 +2374,20 @@ export function App() {
           {updates.status?.available && composer?.mode !== "full" && (
             <button type="button" className="aside-bubble update" onClick={() => setSettings("support")}>
               <Icon name="refresh" size={15} />
-              Regards {updates.status.available.version} is available
+              {t("Regards {version} is available", { version: updates.status.available.version })}
             </button>
           )}
           {signedOut.length > 0 && composer?.mode !== "full" && (
             <button
               type="button"
               className="aside-bubble signed-out"
-              title="Its mail doesn't sync, and nothing is sent from it, until you sign in again"
+              title={t("Its mail doesn't sync, and nothing is sent from it, until you sign in again")}
               onClick={() => setSettings("accounts")}
             >
               <Icon name="alert" size={15} />
-              {signedOut.length === 1 ? `Sign in again: ${signedOut[0].account.email}` : `${signedOut.length} accounts need you to sign in again`}
+              {signedOut.length === 1
+                ? t("Sign in again: {account}", { account: signedOut[0].account.email })
+                : t("{count} accounts need you to sign in again", { count: signedOut.length })}
             </button>
           )}
           {holds.length > 0 && composer?.mode !== "full" && (
@@ -2381,14 +2398,14 @@ export function App() {
               onClick={() => setHoldsOpen(true)}
             >
               <Icon name="agent" size={15} />
-              {holds.length === 1 ? "An agent is waiting for you" : `Agents are waiting for you: ${holds.length}`}
+              {holds.length === 1 ? t("An agent is waiting for you") : t("Agents are waiting for you: {count}", { count: holds.length })}
             </button>
           )}
           {showBubble && (
             <button
               type="button"
               className="aside-bubble"
-              title="Set aside (Shift+A to add)"
+              title={t("Set aside (Shift+A to add)")}
               onClick={() => changeView({ kind: "marked", mark: "aside" })}
             >
               <span className="faces">
@@ -2396,7 +2413,7 @@ export function App() {
                   <Avatar key={message.id} person={message.from} size="xs" />
                 ))}
               </span>
-              {aside.length} set aside
+              {t("{count} set aside", { count: aside.length })}
             </button>
           )}
         </div>
@@ -2482,7 +2499,7 @@ export function App() {
           accounts={
             accounts.length > 1
               ? [
-                  { label: "All accounts", active: inInbox, onSelect: () => changeView(INBOX) },
+                  { label: t("All accounts"), active: inInbox, onSelect: () => changeView(INBOX) },
                   ...accounts.flatMap((entry) => {
                     const inbox = entry.mailboxes.find((m) => m.role === "inbox" && m.selectable);
                     return inbox

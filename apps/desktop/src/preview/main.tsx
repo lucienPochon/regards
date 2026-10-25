@@ -14,6 +14,7 @@ import { LAYOUT_KEY, LAYOUT_VERSION } from "../layout";
 import { type Theme, applyTheme, savedTheme } from "../theme";
 import { Tour } from "./Tour";
 import "../styles.css";
+import { spoken } from "../i18n";
 
 const params = new URLSearchParams(window.location.search);
 const theme = params.get("theme");
@@ -34,6 +35,8 @@ if (params.has("layout") || params.has("sidebar") || params.has("view")) {
   window.localStorage.removeItem(LAYOUT_KEY);
 }
 
+// Screen readers and spelling follow the app's language.
+document.documentElement.lang = spoken();
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root element");
 // `?compose=<draft id>`: a message in a window of its own (a tab here).

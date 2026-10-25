@@ -65,6 +65,8 @@ export interface Prefs {
    * Shortcuts): in place of the key set's; an empty list for none.
    */
   myKeys: Record<string, string[]>;
+  /** The language of the app (Settings › General): the system's, when Regards speaks it, or one chosen. */
+  language: Language;
   /** The unread counts beside the folders. */
   sidebarCounts: boolean;
   /** The Agents button at the foot of the sidebar: recipes and the agents on this computer. */
@@ -80,6 +82,8 @@ export interface Prefs {
  * R reply all, Shift+R reply). "classic": the keys of earlier Regards versions.
  */
 export type KeySet = "standard" | "classic";
+/** "system": French on a French system, English otherwise. */
+export type Language = "system" | "en" | "fr";
 
 export type MarkRead = "now" | "2s" | "5s" | "never";
 
@@ -119,6 +123,8 @@ export const DEFAULT_PREFS: Prefs = {
   singleKeys: true,
   keySet: "standard",
   myKeys: {},
+  // English until every screen speaks French; then the system's.
+  language: "en",
   sidebarCounts: true,
   agentsButton: true,
   snoozePresets: {},

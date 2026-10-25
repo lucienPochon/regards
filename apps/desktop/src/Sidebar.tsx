@@ -8,6 +8,7 @@ import { type Anchor, type MenuEntry, type MenuRequest, anchorOf } from "./Menu"
 import { type SidebarChanges, type SidebarPrefs, arranged } from "./sidebar-prefs";
 import { accountColour, accountLabel, usePrefs } from "./prefs";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
+import { t } from "./i18n";
 import { useOnline } from "./online";
 import { MARKED_ICONS, MARKED_LABELS, ROLE_ICONS, ROLE_LABELS, type View, depth, leafName, sameView, viewKey } from "./views";
 import { useDialogFocus } from "./dialogFocus";
@@ -27,10 +28,10 @@ interface Row {
   label: string;
 }
 
-const INBOX: Row = { view: { kind: "role", role: "inbox" }, icon: "inbox", label: "Inbox" };
+const INBOX: Row = { view: { kind: "role", role: "inbox" }, icon: "inbox", label: t("Inbox") };
 const PINNED: Row = { view: { kind: "marked", mark: "pinned" }, icon: "pin", label: MARKED_LABELS.pinned };
-const DRAFTS: Row = { view: { kind: "drafts" }, icon: "draft", label: "Drafts" };
-const OUTBOX: Row = { view: { kind: "outbox" }, icon: "outbox", label: "Outbox" };
+const DRAFTS: Row = { view: { kind: "drafts" }, icon: "draft", label: t("Drafts") };
+const OUTBOX: Row = { view: { kind: "outbox" }, icon: "outbox", label: t("Outbox") };
 const role = (r: Role): Row => ({ view: { kind: "role", role: r }, icon: ROLE_ICONS[r], label: ROLE_LABELS[r] });
 const marked = (mark: "snoozed" | "reminders" | "aside"): Row => ({
   view: { kind: "marked", mark },
@@ -137,9 +138,9 @@ export function Sidebar({
   // Offline, or a sync that fails: said at the foot, and on the rail.
   const online = useOnline();
   const status = !online
-    ? { label: "Offline", detail: "Mail you send waits in the Outbox and goes when you're back online." }
+    ? { label: t("Offline"), detail: t("Mail you send waits in the Outbox and goes when you're back online.") }
     : syncProblem
-      ? { label: "Sync problem", detail: syncProblem }
+      ? { label: t("Sync problem"), detail: syncProblem }
       : null;
 
   const roleExists = (r: Role) => accounts.some((a) => a.mailboxes.some((m) => m.role === r && m.selectable));
@@ -200,7 +201,7 @@ export function Sidebar({
     const all: MenuEntry[] = own.length > 0 && entries.length > 0 ? [...own, "separator", ...entries] : [...own, ...entries];
     if (all.length === 0) return;
     event.preventDefault();
-    onMenu({ anchor: { x: event.clientX, y: event.clientY }, entries: all, label: "Folder" });
+    onMenu({ anchor: { x: event.clientX, y: event.clientY }, entries: all, label: t("Folder") });
   };
 
   // From the keyboard, too: Move up and Move down in a row's menu.
@@ -213,8 +214,8 @@ export function Sidebar({
       changes.arrange(next);
     };
     return [
-      ...(at > 0 ? [{ label: "Move up", onSelect: () => move(at - 1) }] : []),
-      ...(at >= 0 && at < keys.length - 1 ? [{ label: "Move down", onSelect: () => move(at + 1) }] : []),
+      ...(at > 0 ? [{ label: t("Move up"), onSelect: () => move(at - 1) }] : []),
+      ...(at >= 0 && at < keys.length - 1 ? [{ label: t("Move down"), onSelect: () => move(at + 1) }] : []),
     ];
   };
 
@@ -265,7 +266,7 @@ export function Sidebar({
           <button
             type="button"
             className="side-chevron"
-            aria-label={open.has(options.chevron) ? "Hide accounts" : "Show accounts"}
+            aria-label={open.has(options.chevron) ? t("Hide accounts") : t("Show accounts")}
             aria-expanded={open.has(options.chevron)}
             onClick={() =>
               setOpen((now) => {
@@ -324,14 +325,14 @@ export function Sidebar({
             <button
               type="button"
               className={active ? "side-item active" : "side-item"}
-              title={expanded ? (first ? "Its mail is coming in" : undefined) : nameOf(account.account)}
+              title={expanded ? (first ? t("Its mail is coming in") : undefined) : nameOf(account.account)}
               onClick={() => target && go(target)}
               {...(target ? dragProps(target) : {})}
             >
               <Avatar person={person} size="xs" ring colour={accountColour(appPrefs, account.account.id)} />
               {expanded && <span className="label">{nameOf(account.account)}</span>}
               {expanded && r === "inbox" && first ? (
-                <span className="spinner small side-first-sync" role="img" aria-label="Its mail is coming in" />
+                <span className="spinner small side-first-sync" role="img" aria-label={t("Its mail is coming in")} />
               ) : expanded && r === "inbox" && mailbox?.unread ? (
                 <span className="count unread-count">{mailbox.unread}</span>
               ) : null}
@@ -344,20 +345,20 @@ export function Sidebar({
           <button
             type="button"
             className="side-item side-add"
-            title={expanded ? undefined : "Add an account…"}
-            aria-label={expanded ? undefined : "Add an account…"}
+            title={expanded ? undefined : t("Add an account…")}
+            aria-label={expanded ? undefined : t("Add an account…")}
             onClick={onAddAccount}
           >
             <span className="side-add-mark" aria-hidden="true">
               <Icon name="plus" size={11} />
             </span>
-            {expanded && <span className="label">Add an account…</span>}
+            {expanded && <span className="label">{t("Add an account…")}</span>}
           </button>
         </li>
       ),
     ];
 
-  const hideMenu = (row: Row): MenuEntry[] => [{ label: "Remove from sidebar", onSelect: () => changes.hide(row.view) }];
+  const hideMenu = (row: Row): MenuEntry[] => [{ label: t("Remove from sidebar"), onSelect: () => changes.hide(row.view) }];
   const rowKey = (row: Row) => viewKey(row.view);
   const top = arranged(
     TOP.filter((row) => !hidden.has(viewKey(row.view)) && exists(row)),
@@ -367,14 +368,14 @@ export function Sidebar({
 
   if (!expanded) {
     return (
-      <nav className="sidebar rail" aria-label="Folders">
+      <nav className="sidebar rail" aria-label={t("Folders")}>
         <ul className="side-list">
           {item(INBOX, { chevron: "inbox" })}
           {perAccount("inbox")}
           <li className="rail-gap" aria-hidden="true" />
           {top.map((row) => item(row, { menu: hideMenu(row), section: top }))}
           <li className="side-entry">
-            <button type="button" className="side-item" title="Show the sidebar (/)" aria-label="Show the sidebar" onClick={onExpand}>
+            <button type="button" className="side-item" title={t("Show the sidebar (/)")} aria-label={t("Show the sidebar")} onClick={onExpand}>
               <Icon name="menu" size={19} />
             </button>
           </li>
@@ -397,14 +398,14 @@ export function Sidebar({
             <button
               type="button"
               className="rail-me"
-              title="Agents"
-              aria-label="Agents"
+              title={t("Agents")}
+              aria-label={t("Agents")}
               onClick={(event) => onAgents(anchorOf(event.currentTarget))}
             >
               <Icon name="agent" size={19} />
             </button>
           )}
-          <button type="button" className="rail-me" title="Settings" aria-label="Settings" onClick={onSettings}>
+          <button type="button" className="rail-me" title={t("Settings")} aria-label={t("Settings")} onClick={onSettings}>
             {me ? <Avatar person={{ name: me.display_name, address: me.email }} size="xs" /> : <Icon name="settings" size={19} />}
           </button>
         </div>
@@ -423,13 +424,13 @@ export function Sidebar({
   const recents = prefs.recents.map(folderName).filter((row): row is Row => row !== null);
 
   return (
-    <nav className={overlay ? "sidebar expanded overlay" : "sidebar expanded"} aria-label="Folders">
+    <nav className={overlay ? "sidebar expanded overlay" : "sidebar expanded"} aria-label={t("Folders")}>
       <div className="side-top" data-tauri-drag-region>
         <button
           type="button"
           className={syncing ? "side-tool spinning" : "side-tool"}
-          title={syncProblem ? `Sync problem: ${syncProblem}` : "Check for new mail"}
-          aria-label="Check for new mail"
+          title={syncProblem ? t("Sync problem: {problem}", { problem: syncProblem }) : t("Check for new mail")}
+          aria-label={t("Check for new mail")}
           aria-describedby={syncProblem ? "sync-problem" : undefined}
           onClick={onSync}
           disabled={syncing}
@@ -438,13 +439,13 @@ export function Sidebar({
           {syncProblem && <span className="side-alert" aria-hidden="true" />}
         </button>
         <span id="sync-problem" className="sr-only" role="status">
-          {syncProblem ? `Sync problem: ${syncProblem}` : ""}
+          {syncProblem ? t("Sync problem: {problem}", { problem: syncProblem }) : ""}
         </span>
         <button
           type="button"
           className="side-tool"
-          title={locked ? "Fold the sidebar (/)" : "Keep the sidebar open"}
-          aria-label={locked ? "Fold the sidebar" : "Keep the sidebar open"}
+          title={locked ? t("Fold the sidebar (/)") : t("Keep the sidebar open")}
+          aria-label={locked ? t("Fold the sidebar") : t("Keep the sidebar open")}
           aria-pressed={locked}
           onClick={onToggleLock}
         >
@@ -464,7 +465,7 @@ export function Sidebar({
             ];
           })}
         </ul>
-        <h2 className="side-heading">Folders</h2>
+        <h2 className="side-heading">{t("Folders")}</h2>
         <ul className="side-list">
           {folders.map((row) =>
             item(row, {
@@ -472,7 +473,7 @@ export function Sidebar({
               menu:
                 row === ARCHIVE
                   ? hideMenu(row)
-                  : [{ label: "Remove from sidebar", onSelect: () => changes.unstar(row.view) }],
+                  : [{ label: t("Remove from sidebar"), onSelect: () => changes.unstar(row.view) }],
             }),
           )}
           <li className="side-entry">
@@ -483,7 +484,7 @@ export function Sidebar({
               onClick={() => setPanel(!panel)}
             >
               <Icon name="more" size={19} />
-              <span className="label">More</span>
+              <span className="label">{t("More")}</span>
             </button>
           </li>
         </ul>
@@ -493,10 +494,10 @@ export function Sidebar({
             <div className="side-heading with-tools">
               <button type="button" className="side-fold" aria-expanded={recentsOpen} onClick={() => setRecentsOpen(!recentsOpen)}>
                 <Icon name={recentsOpen ? "chevronDown" : "chevronRight"} size={12} />
-                Recents
+                {t("Recents")}
               </button>
               <button type="button" className="side-clear" onClick={changes.clearRecents}>
-                Clear
+                {t("Clear")}
               </button>
             </div>
             {recentsOpen && (
@@ -504,8 +505,8 @@ export function Sidebar({
                 {recents.map((row) =>
                   item(row, {
                     menu: [
-                      { label: "Pin to the top", onSelect: () => changes.star(row.view) },
-                      { label: "Remove from sidebar", onSelect: () => changes.forget(row.view) },
+                      { label: t("Pin to the top"), onSelect: () => changes.star(row.view) },
+                      { label: t("Remove from sidebar"), onSelect: () => changes.forget(row.view) },
                     ],
                   }),
                 )}
@@ -519,7 +520,7 @@ export function Sidebar({
           <button
             type="button"
             className="side-status"
-            title={online ? "Try again" : status.detail}
+            title={online ? t("Try again") : status.detail}
             onClick={online ? onSync : undefined}
           >
             <Icon name={online ? "alert" : "offline"} size={17} />
@@ -532,12 +533,12 @@ export function Sidebar({
         {onAgents && appPrefs.agentsButton && (
           <button type="button" className="side-item" onClick={(event) => onAgents(anchorOf(event.currentTarget))}>
             <Icon name="agent" size={19} />
-            <span className="label">Agents</span>
+            <span className="label">{t("Agents")}</span>
           </button>
         )}
         <button type="button" className="side-item" onClick={onSettings}>
           {me ? <Avatar person={{ name: me.display_name, address: me.email }} size="xs" /> : <Icon name="settings" size={19} />}
-          <span className="label">Settings</span>
+          <span className="label">{t("Settings")}</span>
         </button>
       </div>
       {panel && (
@@ -622,7 +623,7 @@ function FolderPanel({
           const entries = folderMenu?.(target) ?? [];
           if (entries.length === 0) return;
           event.preventDefault();
-          onMenu({ anchor: { x: event.clientX, y: event.clientY }, entries, label: "Folder" });
+          onMenu({ anchor: { x: event.clientX, y: event.clientY }, entries, label: t("Folder") });
         }}
       >
         <button
@@ -637,8 +638,8 @@ function FolderPanel({
         <button
           type="button"
           className={on ? "panel-star on" : "panel-star"}
-          title={on ? "Remove from the sidebar" : "Add to the sidebar"}
-          aria-label={`${label} in the sidebar`}
+          title={on ? t("Remove from the sidebar") : t("Add to the sidebar")}
+          aria-label={t("{name} in the sidebar", { name: label })}
           aria-pressed={on}
           onClick={() => toggle(target)}
         >
@@ -656,15 +657,15 @@ function FolderPanel({
   return (
     <>
       <div className="panel-catcher" onMouseDown={onClose} aria-hidden="true" />
-      <aside ref={panel} className="folder-panel" role="dialog" aria-label="All folders" tabIndex={-1}>
+      <aside ref={panel} className="folder-panel" role="dialog" aria-label={t("All folders")} tabIndex={-1}>
         <div className="panel-scroll">
-          <h2 className="panel-head">All folders</h2>
+          <h2 className="panel-head">{t("All folders")}</h2>
           <ul>{system.map((entry) => row(entry.view, entry.icon, entry.label))}</ul>
           {saved && saved.searches.length > 0 && (
             <section className="panel-account">
               <h3 className="panel-head account">
                 <Icon name="search" size={15} />
-                <span className="label">Saved searches</span>
+                <span className="label">{t("Saved searches")}</span>
               </h3>
               <ul>
                 {saved.searches.map((search) => (
@@ -699,8 +700,8 @@ function FolderPanel({
                   <button
                     type="button"
                     className="panel-new"
-                    title={`New folder in ${account.account.email} (${MOD_KEY}+Shift+U)`}
-                    aria-label={`New folder in ${account.account.email}`}
+                    title={t("New folder in {account} ({key})", { account: account.account.email, key: `${MOD_KEY}+Shift+U` })}
+                    aria-label={t("New folder in {account}", { account: account.account.email })}
                     onClick={() => onNewFolder(account.account.id)}
                   >
                     <Icon name="plus" size={14} />
@@ -725,8 +726,7 @@ function FolderPanel({
           ))}
         </div>
         <p className="panel-hint">
-          Hold <strong>Ctrl</strong> and click to add several folders to the sidebar. Right-click a folder to rename or
-          delete it.
+          {t("Ctrl+click adds several folders to the sidebar. Right-click a folder to rename or delete it.")}
         </p>
       </aside>
     </>
@@ -764,7 +764,7 @@ function SavedSearches({ saved, onMenu, onOpened }: { saved: SavedList; onMenu: 
   };
   return (
     <section className="side-saved">
-      <h2 className="side-heading">Saved searches</h2>
+      <h2 className="side-heading">{t("Saved searches")}</h2>
       <ul className="side-list">
         {saved.searches.map((search) => (
           <li
@@ -794,7 +794,7 @@ function SavedSearches({ saved, onMenu, onOpened }: { saved: SavedList; onMenu: 
               }}
               onContextMenu={(event) => {
                 event.preventDefault();
-                onMenu({ anchor: { x: event.clientX, y: event.clientY }, entries: saved.menu(search), label: "Saved search" });
+                onMenu({ anchor: { x: event.clientX, y: event.clientY }, entries: saved.menu(search), label: t("Saved search") });
               }}
             >
               <Icon name="search" size={19} className={search.color ? "saved-colour" : undefined} />

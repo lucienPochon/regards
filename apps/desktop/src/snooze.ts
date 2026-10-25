@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { MarkResult } from "./accounts";
+import { appLocale, t } from "./i18n";
 
 /**
  * Snooze until `until` (Unix ms), "someday" (`until: "someday"`), or end a
@@ -34,26 +35,26 @@ export interface PresetDef {
 export type PresetPrefs = Partial<Record<string, { on?: boolean; time?: string }>>;
 
 export const SNOOZE_PRESETS: PresetDef[] = [
-  { id: "later", label: "Later today", when: "In about three hours, while it is still today" },
-  { id: "evening", label: "This evening", time: "18:00", when: "Until an hour before" },
-  { id: "tomorrow", label: "Tomorrow", time: "08:00", when: "Every day" },
-  { id: "weekend", label: "This weekend", time: "09:00", when: "Saturday, offered Monday to Thursday" },
-  { id: "nextweek", label: "Next week", time: "08:00", when: "Monday, unless tomorrow is Monday" },
-  { id: "someday", label: "Someday", when: "No time: it waits in Snoozed until you bring it back" },
+  { id: "later", label: t("Later today"), when: t("In about three hours, while it is still today") },
+  { id: "evening", label: t("This evening"), time: "18:00", when: t("Until an hour before") },
+  { id: "tomorrow", label: t("Tomorrow"), time: "08:00", when: t("Every day") },
+  { id: "weekend", label: t("This weekend"), time: "09:00", when: t("Saturday, offered Monday to Thursday") },
+  { id: "nextweek", label: t("Next week"), time: "08:00", when: t("Monday, unless tomorrow is Monday") },
+  { id: "someday", label: t("Someday"), when: t("No time: it waits in Snoozed until you bring it back") },
 ];
 
 export const SEND_PRESETS: PresetDef[] = [
-  { id: "later", label: "Later today", when: "In about three hours, while it is still today" },
-  { id: "evening", label: "This evening", time: "18:00", when: "Until an hour before" },
-  { id: "tomorrow", label: "Tomorrow morning", time: "08:00", when: "Every day" },
-  { id: "monday", label: "Monday morning", time: "08:00", when: "Unless tomorrow is Monday" },
+  { id: "later", label: t("Later today"), when: t("In about three hours, while it is still today") },
+  { id: "evening", label: t("This evening"), time: "18:00", when: t("Until an hour before") },
+  { id: "tomorrow", label: t("Tomorrow morning"), time: "08:00", when: t("Every day") },
+  { id: "monday", label: t("Monday morning"), time: "08:00", when: t("Unless tomorrow is Monday") },
 ];
 
 export const REMINDER_PRESETS: PresetDef[] = [
-  { id: "tomorrow", label: "Tomorrow", time: "08:00", when: "A day after" },
-  { id: "days2", label: "In 2 days", time: "08:00", when: "Two days after" },
-  { id: "days3", label: "In 3 days", time: "08:00", when: "Three days after" },
-  { id: "week", label: "In a week", time: "08:00", when: "A week after" },
+  { id: "tomorrow", label: t("Tomorrow"), time: "08:00", when: t("A day after") },
+  { id: "days2", label: t("In 2 days"), time: "08:00", when: t("Two days after") },
+  { id: "days3", label: t("In 3 days"), time: "08:00", when: t("Three days after") },
+  { id: "week", label: t("In a week"), time: "08:00", when: t("A week after") },
 ];
 
 /** One picker's presets with the person's choices: whether each shows, and its time. */
@@ -133,8 +134,8 @@ export function reminderPresets(now: Date = new Date(), prefs: PresetPrefs = {})
 export function timeHint(until: number | "someday"): string | undefined {
   if (until === "someday") return undefined;
   const date = new Date(until);
-  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const time = date.toLocaleTimeString(appLocale(), { hour: "2-digit", minute: "2-digit" });
   return date.toDateString() === new Date().toDateString()
     ? time
-    : `${date.toLocaleDateString([], { weekday: "short" })} ${time}`;
+    : `${date.toLocaleDateString(appLocale(), { weekday: "short" })} ${time}`;
 }

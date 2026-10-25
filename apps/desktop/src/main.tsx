@@ -7,9 +7,12 @@ import { ThreadWindow } from "./ThreadWindow";
 import { threadWindowMessage } from "./thread-window";
 import { applyTheme, savedTheme } from "./theme";
 import "./styles.css";
+import { spoken } from "./i18n";
 
 applyTheme(savedTheme());
 
+// Screen readers and spelling follow the app's language.
+document.documentElement.lang = spoken();
 const root = document.getElementById("root");
 if (!root) {
   throw new Error("missing #root element");

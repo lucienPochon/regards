@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { useShortcuts } from "./shortcuts";
 import { useDialogFocus } from "./dialogFocus";
+import { t } from "./i18n";
 
 /** "2026-10-21T09:00" for a datetime-local field, in local time. */
 function localValue(time: number): string {
@@ -49,13 +50,13 @@ export function TimePicker({
           onKeyDown={(event) => {
             if (event.key === "Enter" && valid) onAnswer(time);
           }}
-          aria-label="Date and time"
+          aria-label={t("Date and time")}
           autoFocus
         />
-        {!valid && value && <p className="muted small">Choose a time in the future.</p>}
+        {!valid && value && <p className="muted small">{t("Choose a time in the future.")}</p>}
         <div className="dialog-actions">
           <button type="button" className="btn" onClick={() => onAnswer(null)}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button type="button" className="btn primary" disabled={!valid} onClick={() => onAnswer(time)}>
             {confirm}

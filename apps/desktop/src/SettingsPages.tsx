@@ -31,6 +31,7 @@ import type { Layout } from "./layout";
 import { type NewMail, type NotificationSettings, notificationSettings, setNotificationSettings } from "./notifications";
 import type { ServiceCheck } from "./mail";
 import { ACCOUNT_COLOURS, COLOUR_NAMES, type Prefs, ZOOMS, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
+import { t } from "./i18n";
 import { MOD_KEY } from "./shortcuts";
 import { LinkRow, Option, Select, SubPageHead, Toggle } from "./SettingsControls";
 import { SignaturesPage } from "./SignaturesPage";
@@ -73,8 +74,24 @@ export function GeneralPage({ accounts }: { accounts: AccountSummary[] }) {
   if (senders) return <ImageSendersPage accounts={accounts} onBack={() => setSenders(false)} />;
   return (
     <>
-      <h3>General</h3>
+      <h3>{t("General")}</h3>
       {error && <p className="error" role="alert">{error}</p>}
+      <Option icon="text" label={t("Language")} description={t("Regards in English or in French. Some screens are still in English.")}>
+        <Select
+          label={t("Language")}
+          value={prefs.language}
+          options={[
+            { id: "system", label: t("Like this computer") },
+            { id: "en", label: "English" },
+            { id: "fr", label: "Français" },
+          ]}
+          onChange={(language) => {
+            setPrefs({ language });
+            // Every screen in the new language at once.
+            window.location.reload();
+          }}
+        />
+      </Option>
       <Option
         icon="logo"
         label="Start Regards when you log in"

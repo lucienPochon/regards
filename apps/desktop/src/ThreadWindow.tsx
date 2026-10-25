@@ -17,6 +17,7 @@ import { TimePicker } from "./TimePicker";
 import { PLATFORM, TitleBar } from "./TitleBar";
 import { TYPED_TIME_HINT, typedTimeEntries } from "./typedTime";
 import { ROLE_ICONS, depth, leafName, sortFolders } from "./views";
+import { t } from "./i18n";
 
 /** The palette's message actions in a conversation's own window, in order. */
 const ACTIONS = ["archive", "snooze", "pin", "aside", "flag", "read", "unread", "move", "copy", "junk", "delete", "reply", "replyAll", "forward", "remind", "mute"] as const;
@@ -56,7 +57,7 @@ export function ThreadWindow({ messageId }: { messageId: number }) {
         const owner = accounts.find((entry) => entry.mailboxes.some((m) => m.id === detail.mailbox_id));
         const folder = owner?.mailboxes.find((m) => m.id === detail.mailbox_id);
         if (!owner || !folder) {
-          setProblem("That message is no longer on this computer.");
+          setProblem(t("That message is no longer on this computer."));
           return;
         }
         setItem({ ...detail.message, mailboxId: folder.id, accountId: owner.account.id, role: folder.role });
@@ -66,7 +67,7 @@ export function ThreadWindow({ messageId }: { messageId: number }) {
           document.title = detail.message.subject || "(no subject)";
         }
       },
-      () => setProblem("That message is no longer on this computer."),
+      () => setProblem(t("That message is no longer on this computer.")),
     );
   }, [messageId, accounts]);
 
@@ -97,7 +98,7 @@ export function ThreadWindow({ messageId }: { messageId: number }) {
           })),
           "separator" as const,
           {
-            label: "Pick a date and time…",
+            label: t("Pick a date and time…"),
             icon: "plus" as const,
             onSelect: () => setPicking({ title, confirm, initial: Date.now() + 24 * 3600_000, resolve }),
           },
@@ -129,11 +130,11 @@ export function ThreadWindow({ messageId }: { messageId: number }) {
         setMenu({
           anchor: { x: 0, y: 0 },
           variant: "palette",
-          title: purpose === "copy" ? "Copy to" : "Move to",
-          label: purpose === "copy" ? "Copy to folder" : "Move to folder",
-          filter: "Type a folder name",
+          title: purpose === "copy" ? t("Copy to") : t("Move to"),
+          label: purpose === "copy" ? t("Copy to folder") : t("Move to folder"),
+          filter: t("Type a folder name"),
           entries: [
-            ...recent.map((folder) => ({ label: leafName(folder), detail: "Recent", icon: icon(folder), quick: true, onSelect: () => pick(folder.id) })),
+            ...recent.map((folder) => ({ label: leafName(folder), detail: t("Recent"), icon: icon(folder), quick: true, onSelect: () => pick(folder.id) })),
             ...(recent.length > 0 ? ["separator" as const] : []),
             ...sortFolders(choices).map((folder) => ({ label: leafName(folder), icon: icon(folder), depth: depth(folder), onSelect: () => pick(folder.id) })),
           ],
@@ -141,9 +142,9 @@ export function ThreadWindow({ messageId }: { messageId: number }) {
         });
       }),
     copied: () => setProblem(null),
-    pickSnooze: () => pickTime("Snooze until", "Snooze", presets(new Date(), getPrefs().snoozePresets)),
+    pickSnooze: () => pickTime(t("Snooze until"), t("Snooze"), presets(new Date(), getPrefs().snoozePresets)),
     pickReminder: () =>
-      pickTime("Remind me if no reply by", "Remind me", reminderPresets(new Date(), getPrefs().reminderPresets)).then((time) =>
+      pickTime(t("Remind me if no reply by"), t("Remind me"), reminderPresets(new Date(), getPrefs().reminderPresets)).then((time) =>
         typeof time === "number" ? time : null,
       ),
     junkFolder: () => folders.find((folder) => folder.role === "junk")?.id ?? null,
@@ -156,7 +157,7 @@ export function ThreadWindow({ messageId }: { messageId: number }) {
       variant: "palette",
       title,
       label: title,
-      filter: "Type an action",
+      filter: t("Type an action"),
       entries: [
         ...choose(actions, ...ACTIONS).map(
           (action): MenuEntry => ({

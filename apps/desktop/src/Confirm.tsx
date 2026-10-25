@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { useShortcuts } from "./shortcuts";
 import { useDialogFocus } from "./dialogFocus";
+import { t } from "./i18n";
 
 export interface ConfirmRequest {
   title: string;
@@ -31,7 +32,7 @@ export function Confirm({ request, onAnswer }: { request: ConfirmRequest; onAnsw
         <p id="confirm-body">{request.body}</p>
         <div className="dialog-actions">
           <button type="button" className="btn" onClick={() => onAnswer(false)} autoFocus>
-            Cancel
+            {t("Cancel")}
           </button>
           <button
             type="button"

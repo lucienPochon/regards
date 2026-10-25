@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { personName } from "./format";
 import { Icon } from "./icons";
 import { type Invitation, type InvitationAnswer, answerInvitation, getInvitation, whenText } from "./invitations";
+import { t } from "./i18n";
 
 const ANSWERS: { answer: InvitationAnswer; label: string; done: string }[] = [
-  { answer: "accepted", label: "Accept", done: "You accepted" },
-  { answer: "tentative", label: "Maybe", done: "You said maybe" },
-  { answer: "declined", label: "Decline", done: "You declined" },
+  { answer: "accepted", label: t("Accept"), done: t("You accepted") },
+  { answer: "tentative", label: t("Maybe"), done: t("You said maybe") },
+  { answer: "declined", label: t("Decline"), done: t("You declined") },
 ];
 
 /**
@@ -44,16 +45,16 @@ export function InvitationCard({ messageId, onFailed }: { messageId: number; onF
   const others = Math.max(0, invitation.attendees - 1);
 
   return (
-    <section className={cancelled ? "invitation cancelled" : "invitation"} aria-label="Invitation">
+    <section className={cancelled ? "invitation cancelled" : "invitation"} aria-label={t("Invitation")}>
       <span className="invitation-icon" aria-hidden="true">
         <Icon name="calendar" size={20} />
       </span>
       <div className="invitation-what">
-        <strong>{invitation.summary || "(no title)"}</strong>
+        <strong>{invitation.summary || t("(no title)")}</strong>
         <span>
-          {cancelled ? "Cancelled · " : ""}
+          {cancelled ? t("Cancelled · ") : ""}
           {whenText(invitation.start, invitation.end)}
-          {invitation.repeats ? " · repeats" : ""}
+          {invitation.repeats ? t(" · repeats") : ""}
         </span>
         {invitation.location && <span className="muted">{invitation.location}</span>}
         <span className="muted small">
@@ -62,7 +63,7 @@ export function InvitationCard({ messageId, onFailed }: { messageId: number; onF
         </span>
       </div>
       {answerable && (
-        <div className="invitation-answers" role="group" aria-label="Your answer">
+        <div className="invitation-answers" role="group" aria-label={t("Your answer")}>
           {chosen && (
             <span className="invitation-answered" role="status">
               {chosen.done}
@@ -75,7 +76,7 @@ export function InvitationCard({ messageId, onFailed }: { messageId: number; onF
               className={option.answer === invitation.answered ? "btn small primary" : "btn small"}
               aria-pressed={option.answer === invitation.answered}
               disabled={busy}
-              title={`${option.label}: a reply goes to ${organizer ?? "the organizer"}`}
+              title={organizer ? t("{answer}: a reply goes to {organizer}", { answer: option.label, organizer }) : t("{answer}: a reply goes to the organizer", { answer: option.label })}
               onClick={() => answer(option.answer)}
             >
               {option.label}

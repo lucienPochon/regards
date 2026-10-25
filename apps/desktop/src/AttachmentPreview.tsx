@@ -6,6 +6,7 @@ import { useDialogFocus } from "./dialogFocus";
 import { fileKind, fileSize } from "./format";
 import { Icon } from "./icons";
 import { useShortcuts } from "./shortcuts";
+import { t } from "./i18n";
 
 /** An attachment and its place in the message's list (inline ones count). */
 export interface Placed {
@@ -30,10 +31,12 @@ export function loadPreview(messageId: number, index: number): Promise<Attachmen
   return found;
 }
 
-export const SAVE_ONLY_TEXT =
-  "This file could run a program, so Regards doesn't open it. Save it, and open it yourself only if you trust the sender.";
-const WARN_TEXT =
-  "Files like this can run scripts or macros, or hold other files. Open it only if you expected it from this sender.";
+export const SAVE_ONLY_TEXT = t(
+  "This file could run a program, so Regards doesn't open it. Save it, and open it yourself only if you trust the sender.",
+);
+const WARN_TEXT = t(
+  "Files like this can run scripts or macros, or hold other files. Open it only if you expected it from this sender.",
+);
 
 type Shown = { state: "none" } | { state: "loading" } | { state: "ready"; preview: AttachmentPreview } | { state: "failed"; message: string };
 
@@ -94,7 +97,7 @@ export function AttachmentViewer({
   const save = () => {
     setError(null);
     saveAttachment(messageId, index, name).then(
-      (saved) => saved && setStatus(`Saved as “${saved}”`),
+      (saved) => saved && setStatus(t("Saved as “{name}”", { name: saved })),
       (failure: unknown) => setError(String(failure)),
     );
   };
@@ -103,14 +106,14 @@ export function AttachmentViewer({
     openAttachment(messageId, index).catch((failure: unknown) => setError(String(failure)));
   };
   const open = () => {
-    if (attachment.risk === "warn") setConfirm({ title: `Open “${name}”?`, body: WARN_TEXT, confirm: "Open" });
+    if (attachment.risk === "warn") setConfirm({ title: t("Open “{name}”?", { name }), body: WARN_TEXT, confirm: t("Open") });
     else reallyOpen();
   };
 
   const image = shown.state === "ready" && shown.preview.kind === "image" ? shown.preview : null;
   let stage;
   if (shown.state === "loading") {
-    stage = <p className="viewer-note">Loading…</p>;
+    stage = <p className="viewer-note">{t("Loading…")}</p>;
   } else if (image) {
     stage = <img className={actual ? "actual" : undefined} src={imageSource(image)} alt={name} decoding="async" />;
   } else if (shown.state === "ready" && shown.preview.kind === "text") {
@@ -119,7 +122,7 @@ export function AttachmentViewer({
         <pre tabIndex={0} aria-label={name}>
           {shown.preview.text}
         </pre>
-        {shown.preview.truncated && <p className="viewer-note">Only the first megabyte is shown. Open or save the file to see it all.</p>}
+        {shown.preview.truncated && <p className="viewer-note">{t("Only the first megabyte is shown. Open or save the file to see it all.")}</p>}
       </div>
     );
   } else {
@@ -130,7 +133,7 @@ export function AttachmentViewer({
           ? SAVE_ONLY_TEXT
           : attachment.risk === "warn"
             ? WARN_TEXT
-            : "Regards can't show this kind of file. Open it with its program, or save it.";
+            : t("Regards can't show this kind of file. Open it with its program, or save it.");
     stage = (
       <div className="viewer-none">
         <span className="viewer-face" aria-hidden="true">
@@ -167,8 +170,8 @@ export function AttachmentViewer({
               <button
                 type="button"
                 className="viewer-btn square"
-                aria-label={actual ? "Fit to the window" : "Actual size"}
-                title={actual ? "Fit to the window" : "Actual size"}
+                aria-label={actual ? t("Fit to the window") : t("Actual size")}
+                title={actual ? t("Fit to the window") : t("Actual size")}
                 aria-pressed={actual}
                 onClick={() => setActual(!actual)}
               >
@@ -178,14 +181,14 @@ export function AttachmentViewer({
             {attachment.risk !== "save_only" && (
               <button type="button" className="viewer-btn" onClick={open}>
                 <Icon name="external" size={15} />
-                Open
+                {t("Open")}
               </button>
             )}
             <button type="button" className="viewer-btn" onClick={save}>
               <Icon name="download" size={15} />
-              Save as…
+              {t("Save as…")}
             </button>
-            <button type="button" className="viewer-btn square" aria-label="Close" title="Close (Esc)" onClick={onClose}>
+            <button type="button" className="viewer-btn square" aria-label={t("Close")} title={t("Close (Esc)")} onClick={onClose}>
               <Icon name="close" size={18} />
             </button>
           </header>
@@ -201,13 +204,13 @@ export function AttachmentViewer({
                 <button
                   type="button"
                   className="viewer-nav previous"
-                  aria-label="Previous attachment"
-                  title="Previous (←)"
+                  aria-label={t("Previous attachment")}
+                  title={t("Previous (←)")}
                   onClick={() => go(-1)}
                 >
                   <Icon name="chevronLeft" size={22} />
                 </button>
-                <button type="button" className="viewer-nav next" aria-label="Next attachment" title="Next (→)" onClick={() => go(1)}>
+                <button type="button" className="viewer-nav next" aria-label={t("Next attachment")} title={t("Next (→)")} onClick={() => go(1)}>
                   <Icon name="chevronRight" size={22} />
                 </button>
               </>
