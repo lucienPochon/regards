@@ -6467,6 +6467,20 @@ button.sender-row:hover:not(:disabled) {
   resize: vertical;
 }
 
+/* The files a template keeps, each to take off. */
+.template-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.template-files .chip {
+  gap: 6px;
+  height: 26px;
+  padding-right: 2px;
+}
+
 /* Welcome */
 
 .welcome {

@@ -131,12 +131,12 @@ impl Blobs {
     }
 }
 
-/// The names the database still points to: message sources and files
-/// attached to drafts.
+/// The names the database still points to: message sources, and files
+/// attached to drafts or kept with templates.
 pub fn referenced(conn: &Connection) -> Result<HashSet<String>, StoreError> {
     let mut statement = conn.prepare(
         "SELECT blob_hash FROM messages WHERE blob_hash IS NOT NULL \
-         UNION SELECT blob_hash FROM draft_attachments",
+         UNION SELECT blob_hash FROM draft_attachments UNION SELECT blob_hash FROM template_attachments",
     )?;
     let names = statement.query_map([], |row| row.get(0))?;
     Ok(names.collect::<Result<_, _>>()?)

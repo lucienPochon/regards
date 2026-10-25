@@ -8,8 +8,12 @@ mod fake_smtp;
 #[path = "support/world.rs"]
 mod world;
 
+use regards_core::headers::Person;
 use regards_daemon::DEFAULT_LATE_SEND_GRACE;
-use regards_ipc::protocol::{TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, codes, methods};
+use regards_ipc::protocol::{
+    DraftAttachFileParams, DraftCreateParams, DraftUseTemplateParams, DraftView, TemplateListResult, TemplateRef,
+    TemplateSaveParams, TemplateView, codes, methods,
+};
 use regards_ipc::{Client, ClientError};
 use serde_json::Value;
 use world::{Running, World};
@@ -45,6 +49,7 @@ async fn templates_are_kept_sanitised_and_by_name() {
                 subject: "Your booking".into(),
                 body: String::new(),
                 html: Some("<p>Thanks, <b>see you</b> then.</p><script>steal()</script>".into()),
+                ..TemplateSaveParams::default()
             },
         )
         .await
@@ -63,6 +68,7 @@ async fn templates_are_kept_sanitised_and_by_name() {
                 subject: String::new(),
                 body: "Sorry for the wait.".into(),
                 html: None,
+                ..TemplateSaveParams::default()
             },
         )
         .await
@@ -80,6 +86,7 @@ async fn templates_are_kept_sanitised_and_by_name() {
                 subject: String::new(),
                 body: "Sorry for the wait.".into(),
                 html: None,
+                ..TemplateSaveParams::default()
             },
         )
         .await
@@ -91,6 +98,7 @@ async fn templates_are_kept_sanitised_and_by_name() {
         subject: String::new(),
         body: "x".into(),
         html: None,
+        ..TemplateSaveParams::default()
     };
     assert_eq!(
         code(desktop.call::<_, TemplateView>(methods::TEMPLATE_SAVE, nameless).await),
@@ -106,6 +114,100 @@ async fn templates_are_kept_sanitised_and_by_name() {
         code(
             desktop
                 .call::<_, Value>(methods::TEMPLATE_REMOVE, TemplateRef { id: saved.id })
+                .await
+        ),
+        codes::NOT_FOUND
+    );
+    handle.abort();
+}
+
+#[tokio::test]
+async fn a_template_keeps_recipients_and_files_and_puts_the_files_on_a_draft() {
+    let world = World::new(DEFAULT_LATE_SEND_GRACE).await;
+    let Running {
+        mut desktop, handle, ..
+    } = world.start().await;
+    let account = world.add_account(&mut desktop).await;
+    let draft = |subject: &str| DraftCreateParams {
+        account_id: account.id.clone(),
+        subject: subject.into(),
+        ..DraftCreateParams::default()
+    };
+    let written: DraftView = desktop.call(methods::DRAFT_CREATE, draft("Booking")).await.unwrap();
+    let terms = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(terms.path(), b"Terms and conditions").unwrap();
+    let attached: DraftView = desktop
+        .call(
+            methods::DRAFT_ATTACH_FILE,
+            DraftAttachFileParams {
+                draft_id: written.id,
+                path: terms.path().to_string_lossy().into_owned(),
+                inline: false,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(attached.attachments.len(), 1);
+
+    // Saved from the draft: its recipients and its file.
+    let desk = Person {
+        name: Some("Desk".into()),
+        address: Some("desk@example.test".into()),
+    };
+    let saved: TemplateView = desktop
+        .call(
+            methods::TEMPLATE_SAVE,
+            TemplateSaveParams {
+                name: "Booking".into(),
+                body: "Here are the terms.".into(),
+                to: vec![desk.clone()],
+                files_of_draft: Some(written.id),
+                ..TemplateSaveParams::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(saved.to, [desk]);
+    assert_eq!(saved.files.len(), 1);
+    assert!(!saved.files[0].inline);
+
+    // Put on a new draft, once: the same file, twice asked.
+    let fresh: DraftView = desktop.call(methods::DRAFT_CREATE, draft("Another")).await.unwrap();
+    let used = DraftUseTemplateParams {
+        draft_id: fresh.id,
+        template_id: saved.id,
+    };
+    let with: DraftView = desktop.call(methods::DRAFT_USE_TEMPLATE, used).await.unwrap();
+    assert_eq!(with.attachments.len(), 1);
+    assert_eq!(with.attachments[0].size, 20);
+    let again: DraftView = desktop.call(methods::DRAFT_USE_TEMPLATE, used).await.unwrap();
+    assert_eq!(again.attachments.len(), 1, "not twice");
+
+    // Taken off the template: drafts keep theirs.
+    let trimmed: TemplateView = desktop
+        .call(
+            methods::TEMPLATE_SAVE,
+            TemplateSaveParams {
+                id: Some(saved.id),
+                name: "Booking".into(),
+                body: "Here are the terms.".into(),
+                remove_files: vec![saved.files[0].id],
+                ..TemplateSaveParams::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert!(trimmed.files.is_empty() && trimmed.to.is_empty());
+    assert_eq!(
+        code(
+            desktop
+                .call::<_, DraftView>(
+                    methods::DRAFT_USE_TEMPLATE,
+                    DraftUseTemplateParams {
+                        draft_id: fresh.id,
+                        template_id: 999
+                    }
+                )
                 .await
         ),
         codes::NOT_FOUND
