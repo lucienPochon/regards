@@ -99,6 +99,7 @@ import { ConnectDialog, type ConnectId } from "./ConnectDialog";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { NameDialog, type NameRequest } from "./NameDialog";
 import { useLabels } from "./labels";
+import { useOnline } from "./online";
 import { type Template, listTemplates, saveTemplate } from "./templates";
 import { type AssistantJob, AssistantDialog, useAssistantKind } from "./AssistantDialog";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
@@ -1052,6 +1053,17 @@ export function App() {
       .catch(failed)
       .finally(() => setSyncing(false));
   };
+
+  // Back online: check for mail at once, so connections and sends waiting to
+  // try again don't sit out their delay. Quietly: the network may still flap.
+  const online = useOnline();
+  const wasOnline = useRef(online);
+  useEffect(() => {
+    if (online && !wasOnline.current) {
+      void Promise.allSettled(accounts.map((entry) => syncAccount(entry.account.id)));
+    }
+    wasOnline.current = online;
+  }, [online]);
 
   const toggleSidebar = () => {
     if (layout.locked) setLayout({ locked: false });
