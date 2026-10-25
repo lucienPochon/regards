@@ -5,6 +5,7 @@ const layout = (accountViews: Layout["accountViews"]): Layout => ({
   mode: "split",
   locked: true,
   listWidth: 460,
+  sidebarWidth: 238,
   inboxView: "date",
   accountViews,
   handle: true,

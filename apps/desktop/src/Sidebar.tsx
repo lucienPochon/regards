@@ -1,11 +1,11 @@
-import { type DragEvent, type MouseEvent, useEffect, useRef, useState } from "react";
+import { type DragEvent, type MouseEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import type { MailboxSummary, Role } from "./accounts";
 import { Avatar } from "./Avatar";
 import type { OutboxEntry } from "./compose";
 import { Icon, type IconName } from "./icons";
 import type { AccountMail, MailState } from "./mail";
 import { type Anchor, type MenuEntry, type MenuRequest, anchorOf } from "./Menu";
-import type { SidebarChanges, SidebarPrefs } from "./sidebar-prefs";
+import { type SidebarChanges, type SidebarPrefs, arranged } from "./sidebar-prefs";
 import { accountColour, accountLabel, usePrefs } from "./prefs";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { t } from "./i18n";
@@ -39,7 +39,10 @@ const marked = (mark: "snoozed" | "reminders" | "aside"): Row => ({
   label: MARKED_LABELS[mark],
 });
 
-/** The top section, under the inbox, in this order. */
+/** What dragging a row within its section carries: its view key. */
+const ROW_TYPE = "application/x-regards-sidebar-row";
+
+/** The top section, under the inbox, in this order (unless the person moved some). */
 const TOP: Row[] = [PINNED, DRAFTS, role("sent"), role("trash"), OUTBOX];
 /** Under the Folders header before any starred folder. Archive is where Done mail goes, so it shows a check. */
 const ARCHIVE: Row = { ...role("archive"), icon: "check" };
@@ -77,6 +80,7 @@ export function Sidebar({
   onNewFolder,
   onAddAccount,
   saved,
+  resizer,
 }: {
   mail: MailState;
   outbox: OutboxEntry[];
@@ -108,11 +112,15 @@ export function Sidebar({
   /** Adding another account: the last row under the Inbox chevron. */
   onAddAccount?: () => void;
   saved?: SavedList;
+  /** The edge that makes the open sidebar wider or narrower. */
+  resizer?: ReactNode;
 }) {
   const [open, setOpen] = useState<Set<Role>>(() => new Set());
   const [panel, setPanel] = useState(false);
   const [recentsOpen, setRecentsOpen] = useState(true);
   const [dropOn, setDropOn] = useState<string | null>(null);
+  // A row being dragged to another place in its section, and the row it is over.
+  const [rowOver, setRowOver] = useState<string | null>(null);
   const accounts = mail.state === "ready" ? mail.accounts : [];
   const many = accounts.length > 1;
   // Each account under a chevron: with several; under Inbox also with one, for "Add an account…".
@@ -196,14 +204,64 @@ export function Sidebar({
     onMenu({ anchor: { x: event.clientX, y: event.clientY }, entries: all, label: t("Folder") });
   };
 
+  // From the keyboard, too: Move up and Move down in a row's menu.
+  const moveMenu = (row: Row, section: Row[]): MenuEntry[] => {
+    const keys = section.map((one) => viewKey(one.view));
+    const at = keys.indexOf(viewKey(row.view));
+    const move = (to: number) => {
+      const next = keys.filter((_, index) => index !== at);
+      next.splice(to, 0, keys[at]);
+      changes.arrange(next);
+    };
+    return [
+      ...(at > 0 ? [{ label: t("Move up"), onSelect: () => move(at - 1) }] : []),
+      ...(at >= 0 && at < keys.length - 1 ? [{ label: t("Move down"), onSelect: () => move(at + 1) }] : []),
+    ];
+  };
+
   const item = (
     row: Row,
-    options: { count?: { value: number; alert: boolean; unread?: boolean } | null; chevron?: Role; menu?: MenuEntry[]; indent?: number } = {},
+    options: {
+      count?: { value: number; alert: boolean; unread?: boolean } | null;
+      chevron?: Role;
+      menu?: MenuEntry[];
+      indent?: number;
+      /** The rows of its section, as shown: it can be dragged among them. */
+      section?: Row[];
+    } = {},
   ) => {
     const active = sameView(view, row.view);
     const key = viewKey(row.view);
+    const section = options.section;
+    const moving = section
+      ? {
+          draggable: true,
+          onDragStart: (event: DragEvent) => {
+            event.dataTransfer.setData(ROW_TYPE, key);
+            event.dataTransfer.effectAllowed = "move";
+          },
+          onDragOver: (event: DragEvent) => {
+            if (!event.dataTransfer.types.includes(ROW_TYPE)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            setRowOver(key);
+          },
+          onDragLeave: () => setRowOver((now) => (now === key ? null : now)),
+          onDrop: (event: DragEvent) => {
+            const moved = event.dataTransfer.getData(ROW_TYPE);
+            setRowOver(null);
+            const keys = section.map((one) => viewKey(one.view));
+            if (!moved || moved === key || !keys.includes(moved)) return;
+            event.preventDefault();
+            const next = keys.filter((one) => one !== moved);
+            next.splice(next.indexOf(key), 0, moved);
+            changes.arrange(next);
+          },
+        }
+      : {};
+    const menu = section ? [...moveMenu(row, section), ...(options.menu ?? [])] : (options.menu ?? []);
     return (
-      <li key={key} className="side-entry">
+      <li key={key} className="side-entry" {...moving}>
         {options.chevron && listed(options.chevron) && (
           <button
             type="button"
@@ -228,13 +286,13 @@ export function Sidebar({
           className={[
             "side-item",
             active ? "active" : "",
-            dropOn === key ? "drop" : "",
+            dropOn === key || rowOver === key ? "drop" : "",
             options.indent ? `depth-${Math.min(options.indent, 4)}` : "",
           ].join(" ")}
           aria-current={active ? "page" : undefined}
           title={expanded ? undefined : row.label}
           onClick={() => go(row.view)}
-          onContextMenu={(event) => rowMenu(event, options.menu ?? [], row.view)}
+          onContextMenu={(event) => rowMenu(event, menu, row.view)}
           {...dragProps(row.view)}
         >
           <Icon name={row.icon} size={19} />
@@ -301,16 +359,21 @@ export function Sidebar({
     ];
 
   const hideMenu = (row: Row): MenuEntry[] => [{ label: t("Remove from sidebar"), onSelect: () => changes.hide(row.view) }];
-  const top = TOP.filter((row) => !hidden.has(viewKey(row.view)) && exists(row));
+  const rowKey = (row: Row) => viewKey(row.view);
+  const top = arranged(
+    TOP.filter((row) => !hidden.has(viewKey(row.view)) && exists(row)),
+    rowKey,
+    prefs.order,
+  );
 
   if (!expanded) {
     return (
-      <nav className="sidebar rail" aria-label="Folders">
+      <nav className="sidebar rail" aria-label={t("Folders")}>
         <ul className="side-list">
           {item(INBOX, { chevron: "inbox" })}
           {perAccount("inbox")}
           <li className="rail-gap" aria-hidden="true" />
-          {top.map((row) => item(row, { menu: hideMenu(row) }))}
+          {top.map((row) => item(row, { menu: hideMenu(row), section: top }))}
           <li className="side-entry">
             <button type="button" className="side-item" title={t("Show the sidebar (/)")} aria-label={t("Show the sidebar")} onClick={onExpand}>
               <Icon name="menu" size={19} />
@@ -350,14 +413,18 @@ export function Sidebar({
     );
   }
 
-  const folders = [
-    ...(hidden.has(viewKey(ARCHIVE.view)) || !exists(ARCHIVE) ? [] : [ARCHIVE]),
-    ...prefs.starred.map(folderName).filter((row): row is Row => row !== null),
-  ];
+  const folders = arranged(
+    [
+      ...(hidden.has(viewKey(ARCHIVE.view)) || !exists(ARCHIVE) ? [] : [ARCHIVE]),
+      ...prefs.starred.map(folderName).filter((row): row is Row => row !== null),
+    ],
+    rowKey,
+    prefs.order,
+  );
   const recents = prefs.recents.map(folderName).filter((row): row is Row => row !== null);
 
   return (
-    <nav className={overlay ? "sidebar expanded overlay" : "sidebar expanded"} aria-label="Folders">
+    <nav className={overlay ? "sidebar expanded overlay" : "sidebar expanded"} aria-label={t("Folders")}>
       <div className="side-top" data-tauri-drag-region>
         <button
           type="button"
@@ -393,7 +460,7 @@ export function Sidebar({
           {top.map((row) => {
             const chevron = row.view.kind === "role" && PER_ACCOUNT.includes(row.view.role) ? row.view.role : undefined;
             return [
-              item(row, { count: count(row), chevron, menu: hideMenu(row) }),
+              item(row, { count: count(row), chevron, menu: hideMenu(row), section: top }),
               chevron ? perAccount(chevron) : null,
             ];
           })}
@@ -402,6 +469,7 @@ export function Sidebar({
         <ul className="side-list">
           {folders.map((row) =>
             item(row, {
+              section: folders,
               menu:
                 row === ARCHIVE
                   ? hideMenu(row)
@@ -490,6 +558,7 @@ export function Sidebar({
           saved={saved}
         />
       )}
+      {!overlay && resizer}
     </nav>
   );
 }

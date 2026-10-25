@@ -107,12 +107,87 @@ function typing(target: EventTarget | null): boolean {
   return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
-/** For the help panel: the shortcuts of each key set. */
-export function shortcutList(set: KeySet): { keys: string; action: string }[] {
-  return set === "classic" ? CLASSIC : STANDARD;
+/** A line of the help panel; `ids`: the message actions whose keys it shows. */
+interface Shortcut {
+  keys: string;
+  action: string;
+  ids?: string[];
 }
 
-const STANDARD: { keys: string; action: string }[] = [
+/**
+ * For the help panel: the shortcuts of each key set, with the keys the
+ * person chose for message actions (`mine`, by action) in place of the
+ * set's; `keys` are every action's keys now, `labels` their names.
+ */
+export function shortcutList(
+  set: KeySet,
+  mine: Record<string, string[]> = {},
+  keys: Record<string, string[]> = {},
+  labels: Record<string, string> = {},
+): { keys: string; action: string }[] {
+  const changed = (id: string) => Array.isArray(mine[id]);
+  const shown = (ids: string[]) =>
+    [...new Set(ids.flatMap((id) => keys[id] ?? []))].map((name) => (name === " " ? "Space" : keyText(name))).join(" / ");
+  const listed = new Set<string>();
+  const lines: { keys: string; action: string }[] = [];
+  for (const line of set === "classic" ? CLASSIC : STANDARD) {
+    for (const id of line.ids ?? []) listed.add(id);
+    if (!line.ids?.some(changed)) lines.push({ keys: line.keys, action: line.action });
+    else if (shown(line.ids)) lines.push({ keys: shown(line.ids), action: line.action });
+  }
+  for (const id of Object.keys(mine)) {
+    if (!listed.has(id) && shown([id])) lines.push({ keys: shown([id]), action: labels[id] ?? id });
+  }
+  return lines;
+}
+
+/**
+ * Keys that do something other than a message action, by what they do:
+ * not to be given to one (Settings › Shortcuts). `p` prints in the
+ * standard set.
+ */
+export function takenKey(set: KeySet, name: string): string | null {
+  if (set === "standard" && name === "p") return "Print the open message";
+  return TAKEN[name] ?? null;
+}
+
+const TAKEN: Record<string, string> = {
+  j: "Next message",
+  k: "Previous message",
+  ArrowDown: "Next message",
+  ArrowUp: "Previous message",
+  ArrowRight: "Next message",
+  ArrowLeft: "Previous message",
+  Enter: "Open the highlighted message",
+  Escape: "Back to the list",
+  Tab: "Moving between controls",
+  "Shift+Tab": "Moving between controls",
+  "/": "Show or fold the sidebar",
+  "Mod+/": "Show or fold the sidebar",
+  "Mod+k": "Commands",
+  "Mod+f": "Search the list",
+  "Mod+Shift+F": "Find in the open message",
+  " ": "Preview the attachments",
+  x: "Select the open message",
+  "Mod+a": "Select every message",
+  z: "Undo",
+  c: "New message",
+  o: "Fold the older messages",
+  "Shift+O": "Open every message of the conversation",
+  "Mod+g": "Go to Set aside",
+  "Mod+d": "Go to Pinned",
+  "Mod+s": "Go to Snoozed",
+  "Mod+Shift+G": "Go to a folder",
+  "Mod+Shift+U": "New folder",
+  "Mod+r": "Check for new mail",
+  "Mod+Enter": "Send",
+  "Mod+Shift+T": "Insert a template",
+  "Mod+e": "Show Done mail",
+  "Mod+,": "Settings",
+  "?": "Show these shortcuts",
+};
+
+const STANDARD: Shortcut[] = [
   { keys: `${MOD_KEY}+K`, action: "Commands: everything, by name" },
   { keys: "j / ↓ / →", action: "Next message" },
   { keys: "k / ↑ / ←", action: "Previous message" },
@@ -122,22 +197,22 @@ const STANDARD: { keys: string; action: string }[] = [
   { keys: `${MOD_KEY}+F`, action: "Search the list" },
   { keys: `${MOD_KEY}+Shift+F`, action: "Find in the open message" },
   { keys: "Space", action: "Preview the open message's attachments; again to close" },
-  { keys: "e", action: "Done (archive); a new sender is accepted too" },
-  { keys: "Delete / Backspace", action: "Delete (in Trash or Junk: for good, after confirming)" },
-  { keys: "i", action: "Flag or unflag" },
-  { keys: "d", action: "Pin or unpin" },
-  { keys: "s", action: "Snooze, or bring back a snoozed message" },
-  { keys: "g", action: "Set aside, or bring back to the inbox" },
-  { keys: "u", action: "Mark read or unread" },
-  { keys: "Shift+1", action: "Mark as junk" },
-  { keys: `${MOD_KEY}+Shift+M`, action: "Move to a folder" },
+  { keys: "e", action: "Done (archive); a new sender is accepted too", ids: ["archive"] },
+  { keys: "Delete / Backspace", action: "Delete (in Trash or Junk: for good, after confirming)", ids: ["delete"] },
+  { keys: "i", action: "Flag or unflag", ids: ["flag"] },
+  { keys: "d", action: "Pin or unpin", ids: ["pin"] },
+  { keys: "s", action: "Snooze, or bring back a snoozed message", ids: ["snooze"] },
+  { keys: "g", action: "Set aside, or bring back to the inbox", ids: ["aside"] },
+  { keys: "u", action: "Mark read or unread", ids: ["read", "unread"] },
+  { keys: "Shift+1", action: "Mark as junk", ids: ["junk"] },
+  { keys: `${MOD_KEY}+Shift+M`, action: "Move to a folder", ids: ["move"] },
   { keys: "p", action: "Print the open message" },
-  { keys: "l", action: "Labels: add or remove them (Gmail)" },
+  { keys: "l", action: "Labels: add or remove them (Gmail)", ids: ["label"] },
   { keys: "x", action: "Select or unselect the open message" },
   { keys: `${MOD_KEY}+A`, action: "Select every message in the list" },
   { keys: "z", action: "Undo, while the undo bar shows (also undo send)" },
   { keys: "c", action: "New message" },
-  { keys: "Shift+R / r / f", action: "Reply, reply all, forward" },
+  { keys: "Shift+R / r / f", action: "Reply, reply all, forward", ids: ["reply", "replyAll", "forward"] },
   { keys: "Shift+O / o", action: "Open every message of the conversation, or fold the older ones" },
   { keys: `${MOD_KEY}+G / ${MOD_KEY}+D / ${MOD_KEY}+S`, action: "Go to Set aside, Pinned, Snoozed" },
   { keys: `${MOD_KEY}+Shift+G`, action: "Go to a folder" },
@@ -151,7 +226,7 @@ const STANDARD: { keys: string; action: string }[] = [
   { keys: "?", action: "Show or hide these shortcuts" },
 ];
 
-const CLASSIC: { keys: string; action: string }[] = [
+const CLASSIC: Shortcut[] = [
   { keys: `${MOD_KEY}+K`, action: "Commands: everything, by name" },
   { keys: "j / ↓", action: "Next message" },
   { keys: "k / ↑", action: "Previous message" },
@@ -161,22 +236,22 @@ const CLASSIC: { keys: string; action: string }[] = [
   { keys: `${MOD_KEY}+F`, action: "Search the list" },
   { keys: `${MOD_KEY}+Shift+F`, action: "Find in the open message" },
   { keys: "Space", action: "Preview the open message's attachments; again to close" },
-  { keys: "e", action: "Archive" },
-  { keys: "# / Delete", action: "Delete (in Trash or Junk: for good, after confirming)" },
-  { keys: "s", action: "Flag or unflag" },
-  { keys: "p", action: "Pin or unpin" },
-  { keys: "b", action: "Snooze, or bring back a snoozed message" },
-  { keys: "Shift+R", action: "Remind me if nobody replies, or remove the reminder" },
-  { keys: "Shift+A", action: "Set aside, or bring back to the inbox" },
-  { keys: "v", action: "Move to a folder" },
-  { keys: "Shift+U", action: "Mark unread" },
-  { keys: "Shift+I", action: "Mark read" },
-  { keys: "l", action: "Labels: add or remove them (Gmail)" },
+  { keys: "e", action: "Archive", ids: ["archive"] },
+  { keys: "# / Delete", action: "Delete (in Trash or Junk: for good, after confirming)", ids: ["delete"] },
+  { keys: "s", action: "Flag or unflag", ids: ["flag"] },
+  { keys: "p", action: "Pin or unpin", ids: ["pin"] },
+  { keys: "b", action: "Snooze, or bring back a snoozed message", ids: ["snooze"] },
+  { keys: "Shift+R", action: "Remind me if nobody replies, or remove the reminder", ids: ["remind"] },
+  { keys: "Shift+A", action: "Set aside, or bring back to the inbox", ids: ["aside"] },
+  { keys: "v", action: "Move to a folder", ids: ["move"] },
+  { keys: "Shift+U", action: "Mark unread", ids: ["unread"] },
+  { keys: "Shift+I", action: "Mark read", ids: ["read"] },
+  { keys: "l", action: "Labels: add or remove them (Gmail)", ids: ["label"] },
   { keys: "x", action: "Select or unselect the open message" },
   { keys: `${MOD_KEY}+A`, action: "Select every message in the list" },
   { keys: "z", action: "Undo, while the undo bar shows (also undo send)" },
   { keys: "c", action: "New message" },
-  { keys: "r / a / f", action: "Reply, reply all, forward" },
+  { keys: "r / a / f", action: "Reply, reply all, forward", ids: ["reply", "replyAll", "forward"] },
   { keys: "Shift+O / o", action: "Open every message of the conversation, or fold the older ones" },
   { keys: `${MOD_KEY}+Enter`, action: "Send, in the composer" },
   { keys: `${MOD_KEY}+Shift+T`, action: "Insert a template, in the composer" },

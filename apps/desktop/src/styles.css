@@ -1032,7 +1032,7 @@ button.link:hover {
 }
 
 .app.locked {
-  grid-template-columns: 238px minmax(0, 1fr);
+  grid-template-columns: var(--side-w, 238px) minmax(0, 1fr);
 }
 
 /* On Windows and macOS the app draws the window's top band itself: the caption buttons, or room for the traffic lights. */
@@ -1206,7 +1206,7 @@ button.link:hover {
   bottom: 0;
   left: 0;
   z-index: 45;
-  width: 238px;
+  width: var(--side-w, 238px);
   box-shadow: 10px 0 30px rgb(0 0 0 / 0.28);
   animation: slide-in 0.16s ease-out;
 }
@@ -1654,6 +1654,25 @@ button.link:hover {
   --band: 32px;
 }
 
+/* A conversation in a window of its own: the reader alone, under the window's band. */
+.thread-own {
+  --band: 0px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding-top: var(--band);
+  background: var(--reader-bg);
+}
+
+.thread-own.framed {
+  --band: 32px;
+}
+
+.thread-own-problem {
+  margin: 12px 16px 0;
+}
+
 .list-pane {
   position: relative;
   display: flex;
@@ -1675,6 +1694,42 @@ button.link:hover {
   min-width: 0;
   min-height: 0;
   background: var(--reader-bg);
+}
+
+/* The open sidebar's edge: dragged (or arrows) to make it wider or narrower. */
+.side-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  z-index: 6;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.side-resizer::after {
+  position: absolute;
+  top: 50%;
+  left: 1px;
+  width: 6px;
+  height: 56px;
+  border-radius: 4px;
+  background: var(--accent);
+  content: "";
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 0.12s;
+}
+
+.side-resizer:hover::after,
+.side-resizer:focus-visible::after,
+.side-resizer.dragging::after {
+  opacity: 1;
+}
+
+.side-resizer:focus-visible {
+  outline: none;
 }
 
 .splitter {
@@ -4636,6 +4691,12 @@ button.list-title:hover {
   color: var(--accent);
 }
 
+/* A saved search shown as a group: in its own colour, if it has one. */
+.smart-icon.search {
+  background: var(--chip);
+  color: var(--text-2);
+}
+
 .smart-icon.new {
   background: var(--pill-strong);
   color: var(--accent);
@@ -4934,6 +4995,15 @@ button.list-title:hover {
   color: var(--text);
   font-size: 13.5px;
   text-align: left;
+}
+
+/* Everyone at their domain: what is chosen for all of them. */
+.sender-domain > span {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
 }
 
 .sender-row > .icon {
@@ -6490,6 +6560,37 @@ button.sender-row:hover:not(:disabled) {
   padding: 4px 18px 18px;
   border: 1px solid var(--border);
   border-radius: 12px;
+}
+
+/* Settings › Shortcuts: each message action, its keys, and changing them. */
+.my-keys {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.my-keys li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto 3.5em;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.my-keys-keys {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.my-keys .key-capture {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.my-keys-reset {
+  margin: 4px 0 8px;
 }
 
 .shortcut-list {

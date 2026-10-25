@@ -67,6 +67,8 @@ export interface Explanation {
   reason: Reason;
   /** None for a message without a sender's address. */
   sender: Sender | null;
+  /** The choices for everyone at their domain (`@example.org`), which `sender` includes. */
+  domain?: Sender | null;
 }
 
 /**

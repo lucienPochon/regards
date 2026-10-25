@@ -8,6 +8,8 @@ import { createRoot } from "react-dom/client";
 import { App } from "../App";
 import { composerWindowDraft } from "../compose";
 import { ComposerWindow } from "../ComposerWindow";
+import { ThreadWindow } from "../ThreadWindow";
+import { threadWindowMessage } from "../thread-window";
 import { LAYOUT_KEY, LAYOUT_VERSION } from "../layout";
 import { type Theme, applyTheme, savedTheme } from "../theme";
 import { Tour } from "./Tour";
@@ -39,7 +41,9 @@ const root = document.getElementById("root");
 if (!root) throw new Error("missing #root element");
 // `?compose=<draft id>`: a message in a window of its own (a tab here).
 const draftId = composerWindowDraft();
-createRoot(root).render(<StrictMode>{draftId === null ? <App /> : <ComposerWindow draftId={draftId} />}</StrictMode>);
+// A conversation in a window of its own (thread-<message id>): the reader alone.
+const threadId = threadWindowMessage();
+createRoot(root).render(<StrictMode>{draftId !== null ? <ComposerWindow draftId={draftId} /> : threadId !== null ? <ThreadWindow messageId={threadId} /> : <App />}</StrictMode>);
 
 // The Tour panel, in its own root beside the app.
 const tour = document.createElement("div");

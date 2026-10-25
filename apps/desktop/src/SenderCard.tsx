@@ -85,7 +85,16 @@ export function SenderCard({
     blockSender(accountId, address, !sender?.blocked).then(onBlocked, onFailed);
   };
   // Everyone at their company or service; not offered for gmail.com and the like.
-  const domain = sender?.blocked ? null : blockableDomain(address);
+  const company = blockableDomain(address);
+  const domain = sender?.blocked ? null : company;
+  const everyone = explanation?.domain ?? null;
+  // Their domain's choice, as one value: a section, priority, or the rules.
+  const domainChoice = everyone?.policy ?? (everyone?.priority ? "priority" : "auto");
+  const chooseForDomain = (value: string) => {
+    if (!company) return;
+    const policy = value === "auto" || value === "priority" ? null : (value as Policy);
+    setSender(accountId, company, { policy, priority: value === "priority" }).then(load, onFailed);
+  };
   const blockDomain = () => {
     if (!domain) return;
     onClose();
@@ -161,13 +170,39 @@ export function SenderCard({
             className="sender-row"
             role="switch"
             aria-checked={sender?.priority ?? false}
-            disabled={!sender}
             onClick={() => choose(sender?.policy ?? null, !(sender?.priority ?? false))}
+            disabled={!sender || everyone?.priority === true}
           >
             <Icon name="bolt" size={16} />
-            <span>{t("Priority sender")}</span>
+            <span>
+              {t("Priority sender")}
+              {everyone?.priority && (
+                <span className="muted sender-row-detail">{t("Everyone at {domain} is", { domain: company?.slice(1) ?? "" })}</span>
+              )}
+            </span>
             <span className={sender?.priority ? "toggle on" : "toggle"} aria-hidden="true" />
           </button>
+          {company && (
+            <div className="sender-row sender-domain">
+              <Icon name="people" size={16} />
+              <span>
+                <span>{t("Everyone at {domain}", { domain: company.slice(1) })}</span>
+                <select
+                className="sender-section"
+                aria-label={t("Where mail from everyone at {domain} goes", { domain: company.slice(1) })}
+                value={domainChoice}
+                disabled={!explanation}
+                onChange={(event) => chooseForDomain(event.target.value)}
+              >
+                <option value="auto">{t("Sorted automatically")}</option>
+                <option value="priority">{t("Priority")}</option>
+                <option value="people">{t("Always People")}</option>
+                <option value="notifications">{t("Always Notifications")}</option>
+                  <option value="newsletters">{t("Always Newsletters")}</option>
+                </select>
+              </span>
+            </div>
+          )}
           <button
             type="button"
             className="sender-row"

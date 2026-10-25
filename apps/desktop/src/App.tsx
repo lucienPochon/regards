@@ -53,7 +53,7 @@ import {
 import { Confirm, type ConfirmRequest } from "./Confirm";
 import { DraftsList } from "./DraftsList";
 import { Icon, type IconName } from "./icons";
-import { type Layout, LIST_MAX, LIST_MIN, clampList, inboxViewOf, useLayout } from "./layout";
+import { type Layout, LIST_MAX, LIST_MIN, SIDE_MAX, SIDE_MIN, clampList, clampSide, inboxViewOf, useLayout } from "./layout";
 import {
   type ListItem,
   type MessageFeed,
@@ -77,6 +77,7 @@ import { type OpenLink, onOpenLink, takeLink } from "./links";
 import { recentFolders, rememberFolder } from "./recent-folders";
 import { type Opened, forgetOpened, linkOf, useOpened } from "./recent-opened";
 import { useRecentSearches } from "./recent-searches";
+import { UNDO_ELSEWHERE, openThreadWindow } from "./thread-window";
 import {
   type SavedSearch,
   listSavedSearches,
@@ -90,6 +91,7 @@ import {
 import { openUrl } from "./background";
 import { type Anchor, Menu, type MenuEntry, type MenuRequest } from "./Menu";
 import { type Bundle, type InboxCard, ListHeader, MessageList, type Screener } from "./MessageList";
+import { useSearchGroups } from "./search-groups";
 import { SenderCard, type SenderRequest } from "./SenderCard";
 import { SECTION_LABELS, type Screening, type Section, blockSender, screening, setSender } from "./smart";
 import { ViewChooser } from "./ViewChooser";
@@ -1050,6 +1052,11 @@ export function App() {
     const stop = listen<SentElsewhere>("composer_queued", (event) => sentElsewhere.current(event.payload));
     return () => void stop.then((unlisten) => unlisten()).catch(() => {});
   }, []);
+  // What was done in a conversation's own window: its undo shows here.
+  useEffect(() => {
+    const stop = listen<UndoInfo>(UNDO_ELSEWHERE, (event) => setUndo(event.payload));
+    return () => void stop.then((unlisten) => unlisten()).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const stops = [onFilesDrag(setFilesOver), onFilesDropped((drop) => dropped.current(drop))];
@@ -1189,13 +1196,18 @@ export function App() {
     // Counted first, so the question says how much mail goes.
     allOf(views.flatMap((target) => sourcesFor(accounts, target)))
       .then(async (list) => {
-        const what =
-          inside.length === 0
-            ? `“${leafName(folder)}”`
-            : `“${leafName(folder)}” and the ${inside.length === 1 ? "folder" : `${inside.length} folders`} inside it`;
+        const mail = list.length === 0 ? t("no mail") : howMany(list.length).toLowerCase();
         const ok = await confirm({
           title: t("Delete “{folder}”?", { folder: leafName(folder) }),
-          body: `${what}, with ${list.length === 0 ? "no mail" : howMany(list.length).toLowerCase()}, ${inside.length === 0 ? "is" : "are"} deleted on the server. This cannot be undone.`,
+          body:
+            inside.length === 0
+              ? t("“{folder}”, with {mail}, is deleted on the server. This cannot be undone.", { folder: leafName(folder), mail })
+              : tn(
+                  inside.length,
+                  "“{folder}” and the folder inside it, with {mail}, are deleted on the server. This cannot be undone.",
+                  "“{folder}” and the {count} folders inside it, with {mail}, are deleted on the server. This cannot be undone.",
+                  { folder: leafName(folder), mail },
+                ),
           confirm: t("Delete folder"),
           danger: true,
         });
@@ -1222,12 +1234,19 @@ export function App() {
     allOf(sources)
       .then(async (list) => {
         if (list.length === 0) {
-          setSaid(`${label} is empty`);
+          setSaid(t("{folder} is empty", { folder: label }));
           return;
         }
         const ok = await confirm({
           title: t("Empty {folder}?", { folder: label }),
-          body: `${howMany(list.length)} ${list.length === 1 ? "is" : "are"} deleted for good on the server. This cannot be undone.`,
+          body:
+            list.length >= ALL_AT_ONCE
+              ? t("More than {count} messages are deleted for good on the server. This cannot be undone.", { count: ALL_AT_ONCE })
+              : tn(
+                  list.length,
+                  "1 message is deleted for good on the server. This cannot be undone.",
+                  "{count} messages are deleted for good on the server. This cannot be undone.",
+                ),
           confirm: t("Empty {folder}", { folder: label }),
           danger: true,
         });
@@ -1277,6 +1296,13 @@ export function App() {
   }, []);
   useEffect(loadSaved, [loadSaved]);
   useChanges(loadSaved);
+  // Those shown as groups of the Smart Inbox: of the one account whose inbox is open, or all.
+  const searchGroups = useSearchGroups(
+    savedSearches,
+    appPrefs.searchGroups,
+    !inInbox && accountInbox ? accountInbox.account.id : null,
+    smartOn,
+  );
   const openSaved = (saved: SavedSearch) => {
     if (layout.mode === "single") setOpen(null);
     setSearch({ query: saved.query, accountId: saved.account_id });
@@ -1299,7 +1325,18 @@ export function App() {
   const savedMenu = (saved: SavedSearch): MenuEntry[] => {
     const change = (fields: Partial<{ name: string; query: string; color: string | null }>) =>
       saveSearch({ id: saved.id, name: saved.name, query: saved.query, accountId: saved.account_id, color: saved.color, ...fields });
+    const grouped = appPrefs.searchGroups.includes(saved.id);
     return [
+      {
+        label: grouped ? t("Stop showing as a group in the inbox") : t("Show as a group in the inbox"),
+        icon: "sections",
+        onSelect: () =>
+          setPrefs({
+            searchGroups: grouped
+              ? appPrefs.searchGroups.filter((id) => id !== saved.id)
+              : [...appPrefs.searchGroups, saved.id],
+          }),
+      },
       {
         label: t("Rename…"),
         icon: "compose",
@@ -1564,6 +1601,45 @@ export function App() {
     },
   };
 
+  // The open sidebar's edge, the same way.
+  const appRoot = useRef<HTMLDivElement>(null);
+  const sideDrag = useRef<{ x: number; width: number } | null>(null);
+  const sideResizer = (
+    <div
+      className="side-resizer"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={t("Resize the sidebar")}
+      aria-valuenow={layout.sidebarWidth}
+      aria-valuemin={SIDE_MIN}
+      aria-valuemax={SIDE_MAX}
+      tabIndex={0}
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        sideDrag.current = { x: event.clientX, width: layout.sidebarWidth };
+        event.currentTarget.classList.add("dragging");
+      }}
+      onPointerMove={(event) => {
+        if (!sideDrag.current) return;
+        const width = clampSide(sideDrag.current.width + event.clientX - sideDrag.current.x);
+        appRoot.current?.style.setProperty("--side-w", `${width}px`);
+      }}
+      onPointerUp={(event) => {
+        if (!sideDrag.current) return;
+        event.currentTarget.classList.remove("dragging");
+        setLayout({ sidebarWidth: clampSide(sideDrag.current.width + event.clientX - sideDrag.current.x) });
+        sideDrag.current = null;
+      }}
+      onDoubleClick={() => setLayout({ sidebarWidth: 238 })}
+      onKeyDown={(event) => {
+        const by = event.key === "ArrowLeft" ? -16 : event.key === "ArrowRight" ? 16 : 0;
+        if (!by) return;
+        event.preventDefault();
+        setLayout({ sidebarWidth: clampSide(layout.sidebarWidth + by) });
+      }}
+    />
+  );
+
   const service =
     check.state === "failed"
       ? t("Could not reach the background service: {problem}", { problem: check.message })
@@ -1784,6 +1860,20 @@ export function App() {
             newest: invitationItems[0]?.listed_at,
             onOpen: () => changeView({ kind: "marked", mark: "invitations" }),
           },
+          // Saved searches the person shows as groups: what each finds in the inbox.
+          ...searchGroups.map(
+            (group): Bundle => ({
+              key: `search-${group.saved.id}`,
+              label: group.saved.name,
+              icon: "search",
+              colour: group.saved.color,
+              count: group.messages.length,
+              unread: group.messages.some((message) => !message.seen),
+              messages: group.messages,
+              newest: group.messages[0]?.listed_at,
+              onOpen: () => openSaved(group.saved),
+            }),
+          ),
           {
             key: "pinned",
             label: t("Pinned"),
@@ -1795,7 +1885,7 @@ export function App() {
             onOpen: () => changeView({ kind: "marked", mark: "pinned" }),
           },
           ] satisfies Bundle[]
-        ).filter((bundle) => appPrefs.grouped[bundle.key as keyof typeof appPrefs.grouped]),
+        ).filter((bundle) => bundle.key.startsWith("search-") || appPrefs.grouped[bundle.key as keyof typeof appPrefs.grouped]),
       }
     : null;
   const cardOf = (section: Section, label: string, items: ListItem[]): InboxCard => ({
@@ -1998,6 +2088,7 @@ export function App() {
       labels={labelsOf(openItem)}
       onLabel={(mailboxId) => changeView({ kind: "mailbox", mailboxId, accountId: openItem.accountId })}
       onDraft={editDraft}
+      onOwnWindow={() => void openThreadWindow(openItem.id, openItem.subject).catch(failed)}
       stepped={openedByStep}
       folders={folders}
       mode={layout.mode}
@@ -2119,6 +2210,8 @@ export function App() {
 
   return (
     <div
+      ref={appRoot}
+      style={{ "--side-w": `${layout.sidebarWidth}px` } as CSSProperties}
       className={[
         "app",
         layout.locked ? "locked" : "",
@@ -2136,6 +2229,7 @@ export function App() {
         {...sidebarProps}
         expanded={layout.locked}
         locked={layout.locked}
+        resizer={layout.locked ? sideResizer : undefined}
         onToggleLock={() => setLayout({ locked: !layout.locked })}
         onExpand={() => setOverlay(true)}
       />

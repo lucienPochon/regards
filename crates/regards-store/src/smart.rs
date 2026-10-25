@@ -32,8 +32,9 @@ pub fn sender(conn: &Connection, account_id: &str, address: &str) -> Result<Send
     })
 }
 
-/// One entry of the senders table, by address or `@domain` key.
-fn entry(conn: &Connection, account_id: &str, key: &str) -> Result<Sender, StoreError> {
+/// One entry of the senders table, by address or `@domain` key: its own
+/// choices, without its domain's.
+pub fn entry(conn: &Connection, account_id: &str, key: &str) -> Result<Sender, StoreError> {
     let found = conn
         .prepare_cached(
             "SELECT policy, priority, written_to_at, blocked, quiet FROM senders WHERE account_id = ?1 AND address = lower(?2)",

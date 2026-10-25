@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { composerWindowDraft } from "./compose";
 import { ComposerWindow } from "./ComposerWindow";
+import { ThreadWindow } from "./ThreadWindow";
+import { threadWindowMessage } from "./thread-window";
 import { applyTheme, savedTheme } from "./theme";
 import "./styles.css";
 import { spoken } from "./i18n";
@@ -18,4 +20,6 @@ if (!root) {
 
 // A message in a window of its own (its label is compose-<draft id>): the composer alone.
 const draftId = composerWindowDraft();
-createRoot(root).render(<StrictMode>{draftId === null ? <App /> : <ComposerWindow draftId={draftId} />}</StrictMode>);
+// A conversation in a window of its own (thread-<message id>): the reader alone.
+const threadId = threadWindowMessage();
+createRoot(root).render(<StrictMode>{draftId !== null ? <ComposerWindow draftId={draftId} /> : threadId !== null ? <ThreadWindow messageId={threadId} /> : <App />}</StrictMode>);
