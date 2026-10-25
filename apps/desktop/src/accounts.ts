@@ -334,6 +334,8 @@ export interface SyncState {
   last_error: string | null;
   /** A push connection is waiting for new mail. */
   push_active: boolean;
+  /** Why the push connection keeps failing, until it works again: new mail then arrives only when synced. */
+  push_error?: string;
 }
 
 export interface MailboxListResult {
