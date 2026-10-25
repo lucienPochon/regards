@@ -3965,6 +3965,7 @@ dependencies = [
  "tauri-plugin-window-state",
  "tauri-winrt-notification",
  "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

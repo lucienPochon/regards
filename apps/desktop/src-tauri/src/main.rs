@@ -21,6 +21,7 @@ mod lang;
 mod links;
 mod mail_frame;
 mod notify;
+mod snap;
 mod support;
 mod system;
 mod thread_window;
@@ -2167,6 +2168,7 @@ fn main() {
             compose_window::composer_window,
             compose_window::composer_window_open,
             background::set_language,
+            snap::snap_layouts,
             thread_window::thread_window,
             draft_check,
             reading_settings,
