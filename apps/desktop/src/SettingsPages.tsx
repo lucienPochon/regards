@@ -33,7 +33,7 @@ import { ACCOUNT_COLOURS, COLOUR_NAMES, type Prefs, ZOOMS, accountColour, accoun
 import { MOD_KEY } from "./shortcuts";
 import { LinkRow, Option, Select, SubPageHead, Toggle } from "./SettingsControls";
 import { SignaturesPage } from "./SignaturesPage";
-import { senderImages, setSenderImages } from "./smart";
+import { blockSender, blockedSenders, senderImages, setSenderImages } from "./smart";
 import { exportDiagnostics, setConnectionLog, setDetailedLogs, supportSettings } from "./support";
 import { type PresetDef, type PresetPrefs, REMINDER_PRESETS, SEND_PRESETS, SNOOZE_PRESETS } from "./snooze";
 import { type Theme, applyTheme, savedTheme } from "./theme";
@@ -762,6 +762,64 @@ function PresetsPage({ picker, onBack }: { picker: Picker; onBack: () => void })
       <button type="button" className="btn small" onClick={() => setPrefs({ [key]: {} } as Partial<Prefs>)}>
         Back to the usual times
       </button>
+    </>
+  );
+}
+
+/** Inbox › Blocked senders: the senders and domains whose mail goes to Junk, per account; each can be unblocked. */
+export function BlockedSendersPage({ accounts, onBack }: { accounts: AccountSummary[]; onBack: () => void }) {
+  const prefs = usePrefs();
+  const [lists, setLists] = useState<Record<string, string[]> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    Promise.all(accounts.map((account) => blockedSenders(account.id).then((list) => [account.id, list] as const))).then(
+      (entries) => setLists(Object.fromEntries(entries)),
+      (failure: unknown) => setError(String(failure)),
+    );
+  }, [accounts]);
+  const unblock = (accountId: string, who: string) => {
+    setError(null);
+    blockSender(accountId, who, false).then(
+      () => setLists((now) => now && { ...now, [accountId]: (now[accountId] ?? []).filter((one) => one !== who) }),
+      (failure: unknown) => setError(String(failure)),
+    );
+  };
+  const none = lists !== null && accounts.every((account) => (lists[account.id] ?? []).length === 0);
+  return (
+    <>
+      <SubPageHead title="Blocked senders" onBack={onBack} />
+      <p className="muted settings-note">
+        Their mail goes to Junk, and so does what they send later. Unblocking lets their new mail in; what is already in
+        Junk stays there. To block someone, open a message from them and choose Block.
+      </p>
+      {error && <p className="error" role="alert">{error}</p>}
+      {lists === null && !error && <p className="muted">Loading…</p>}
+      {none && <p className="muted">Nobody is blocked.</p>}
+      {lists !== null &&
+        accounts.map((account) => {
+          const list = lists[account.id] ?? [];
+          if (list.length === 0) return null;
+          return (
+            <section key={account.id} aria-label={accountLabel(prefs, account)}>
+              {accounts.length > 1 && <h4 className="settings-subhead plain">{accountLabel(prefs, account)}</h4>}
+              {list.map((who) => (
+                <div key={who} className="option">
+                  <span className="option-icon">
+                    <Icon name={who.startsWith("@") ? "people" : "user"} size={18} />
+                  </span>
+                  <span className="option-text">
+                    <strong>{who.startsWith("@") ? `Anyone at ${who.slice(1)}` : who}</strong>
+                  </span>
+                  <span className="option-control">
+                    <button type="button" className="btn small" onClick={() => unblock(account.id, who)}>
+                      Unblock
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </section>
+          );
+        })}
     </>
   );
 }

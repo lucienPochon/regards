@@ -11,8 +11,8 @@ use regards_imap::SearchTerm;
 use regards_ipc::protocol::{
     AccountRef, ConnectionLogSettings, ConversationIdsResult, MessageCursor, MessageDetail, MessageHtml,
     MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef, MessageSource, MessageSummary,
-    ReadingSettings, RpcError, SearchParams, SearchResult, SenderImagesParams, SenderImagesResult, ServerSearchResult,
-    ThreadEntry, ThreadView, View, ViewParams, codes,
+    ReadingSettings, RpcError, SearchParams, SearchResult, SenderBlockedResult, SenderImagesParams, SenderImagesResult,
+    ServerSearchResult, ThreadEntry, ThreadView, View, ViewParams, codes,
 };
 use regards_store::mailboxes::Mailbox;
 use regards_store::marks::{self, Mark, Marks};
@@ -646,6 +646,17 @@ pub(crate) async fn sender_images_list(state: &State, params: AccountRef) -> Res
         .await
         .map_err(store_error)?;
     Ok(json!(SenderImagesResult { senders }))
+}
+
+/// `sender.blocked`: an account's blocked senders and domains, to unblock from a list.
+pub(crate) async fn blocked_senders(state: &State, params: AccountRef) -> Result<Value, RpcError> {
+    let account_id = params.account_id;
+    let senders = state
+        .store
+        .read(move |conn| regards_store::smart::blocked(conn, &account_id))
+        .await
+        .map_err(store_error)?;
+    Ok(json!(SenderBlockedResult { senders }))
 }
 
 /// What one message's summary needs.

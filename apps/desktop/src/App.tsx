@@ -28,7 +28,7 @@ import {
   syncAccount,
   trashMessages,
 } from "./accounts";
-import { type Action, type ActionHost, type Target, choose, messageActions } from "./actions";
+import { type Action, type ActionHost, type Target, choose, messageActions, newSendersOf } from "./actions";
 import { AddAccountDialog } from "./AddAccount";
 import { usePendingHolds } from "./AgentHolds";
 import { AskUpdates, useUpdateStatus } from "./UpdateCheck";
@@ -179,6 +179,7 @@ function targetOf(items: ListItem[]): Target {
     done: items.length > 0 && items.every((item) => item.done === true),
     // Rows stand for their conversations.
     conversation: true,
+    accept: newSendersOf(items),
   };
 }
 

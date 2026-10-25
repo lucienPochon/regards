@@ -18,6 +18,7 @@ import type { ConfirmRequest } from "./Confirm";
 import type { IconName } from "./icons";
 import type { Anchor } from "./Menu";
 import { type Shortcuts, keyText } from "./shortcuts";
+import { setSender } from "./smart";
 import { snoozeMessages } from "./snooze";
 
 /** The messages an action applies to, and what they have in common. */
@@ -55,6 +56,25 @@ export interface Target {
    * folder too. Not for one message of a conversation (a card's ⋯).
    */
   conversation?: boolean;
+  /** Senders still to screen among them (New senders): Done accepts them first, "accept and Done". */
+  accept?: { accountId: string; address: string }[];
+}
+
+/** Accept new senders: their mail goes to People from then on. */
+const acceptSenders = (senders: { accountId: string; address: string }[]) =>
+  Promise.all(senders.map((sender) => setSender(sender.accountId, sender.address, { policy: "people", priority: false })));
+
+/** The senders of these New senders mail, once each: Done accepts them. */
+export function newSendersOf(
+  messages: { accountId: string; section?: string | null; from: Person | null }[],
+): { accountId: string; address: string }[] {
+  const seen = new Map<string, { accountId: string; address: string }>();
+  for (const message of messages) {
+    const address = message.from?.address;
+    if (message.section !== "new_senders" || !address) continue;
+    seen.set(`${message.accountId} ${address.toLowerCase()}`, { accountId: message.accountId, address });
+  }
+  return [...seen.values()];
 }
 
 /** What actions need from the app around them. */
@@ -272,11 +292,14 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       keys: keys.archive,
       shown: true,
       // Settings › General: archiving a pinned message can also unpin it.
+      // New senders are accepted first: Done on their mail is "accept and Done".
       run: () =>
         move(() =>
-          target.pinned && getPrefs().pinnedArchive === "unpin"
-            ? pinMessages(ids, false).then(all).then(archiveMessages)
-            : all().then(archiveMessages),
+          acceptSenders(target.accept ?? []).then(() =>
+            target.pinned && getPrefs().pinnedArchive === "unpin"
+              ? pinMessages(ids, false).then(all).then(archiveMessages)
+              : all().then(archiveMessages),
+          ),
         ),
     },
   );

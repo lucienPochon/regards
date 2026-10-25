@@ -120,7 +120,7 @@ const STANDARD: { keys: string; action: string }[] = [
   { keys: "Esc", action: "Back to the list, or close the message" },
   { keys: `/ or ${MOD_KEY}+/`, action: "Show or fold the sidebar" },
   { keys: `${MOD_KEY}+F`, action: "Search the list" },
-  { keys: "e", action: "Done (archive)" },
+  { keys: "e", action: "Done (archive); a new sender is accepted too" },
   { keys: "Delete / Backspace", action: "Delete (in Trash or Junk: for good, after confirming)" },
   { keys: "i", action: "Flag or unflag" },
   { keys: "d", action: "Pin or unpin" },
