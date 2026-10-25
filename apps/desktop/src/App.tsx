@@ -107,6 +107,7 @@ import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { type DragPayload, Sidebar } from "./Sidebar";
 import { useSidebarPrefs } from "./sidebar-prefs";
 import { presets, reminderPresets, sendPresets, snoozeMessages, timeHint } from "./snooze";
+import { TYPED_TIME_HINT, typedTimeEntries } from "./typedTime";
 import { ACCOUNT_COLOURS, COLOUR_NAMES, accountLabel, getPrefs, setPrefs, usePrefs, zoomStep } from "./prefs";
 import { useChanges } from "./changes";
 import { applyTheme } from "./theme";
@@ -658,6 +659,8 @@ export function App() {
           variant: "palette",
           title,
           label: title,
+          filter: TYPED_TIME_HINT,
+          typed: (query) => typedTimeEntries(query, resolve),
           entries: [
             ...choices.map((choice) => ({
               label: choice.label,
