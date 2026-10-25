@@ -541,6 +541,10 @@ impl Session {
                 self.require_ui()?;
                 templates::remove(&self.state, params(request)?).await
             }
+            methods::DRAFT_USE_TEMPLATE => {
+                self.require_ui()?;
+                templates::use_on_draft(&self.state, params(request)?).await
+            }
             methods::IDENTITY_LIST => {
                 self.require_ui()?;
                 identities::list(&self.state, params(request)?).await

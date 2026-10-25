@@ -167,6 +167,10 @@ const templates: Template[] = [
     subject: "Away until Monday",
     body: "Thanks for your message. I'm away until Monday and will reply then.",
     html: null,
+    to: [],
+    cc: [],
+    bcc: [],
+    files: [],
     updated_at: started,
   },
   {
@@ -175,6 +179,10 @@ const templates: Template[] = [
     subject: "",
     body: "Thank you, I'll read it this week and come back to you.",
     html: null,
+    to: [],
+    cc: [],
+    bcc: [],
+    files: [],
     updated_at: started,
   },
 ];
@@ -1987,10 +1995,13 @@ function handle(cmd: string, args: Args): unknown {
       savedSearches = savedSearches.filter((s) => s.id !== args.id);
       changed();
       return null;
+    case "draft_use_template":
+      // The preview's templates keep no files.
+      return drafts.find((d) => d.id === args.draftId);
     case "template_list":
       return { templates: [...templates].sort((a, b) => a.name.localeCompare(b.name)) };
     case "template_save": {
-      const given = args.template as { id?: number; name: string; subject: string; body: string; html?: string };
+      const given = args.template as { id?: number; name: string; subject: string; body: string; html?: string; to?: Person[]; cc?: Person[]; bcc?: Person[] };
       const name = given.name.trim();
       if (!name) throw new Error("give the template a name");
       // As the daemon does: with formatting, the text is derived from it.
@@ -2001,6 +2012,11 @@ function handle(cmd: string, args: Args): unknown {
         subject: given.subject,
         body,
         html: given.html ?? null,
+        to: given.to ?? [],
+        cc: given.cc ?? [],
+        bcc: given.bcc ?? [],
+        // The preview keeps no files: a template saved here has none.
+        files: [],
         updated_at: Date.now(),
       };
       const index = templates.findIndex((t) => t.id === saved.id);

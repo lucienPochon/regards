@@ -271,6 +271,10 @@ pub mod methods {
     /// Add a template (without `id`) or change one.
     pub const TEMPLATE_SAVE: &str = "template.save";
     pub const TEMPLATE_REMOVE: &str = "template.remove";
+    /// Put a template's files (and the images in its text) on a draft, but
+    /// those it has ([`DraftUseTemplateParams`] → [`DraftView`]). Its text
+    /// and recipients the app puts in itself. `ui` only.
+    pub const DRAFT_USE_TEMPLATE: &str = "draft.use_template";
     /// Put an image in a draft's text (pasted, say): stored with a
     /// Content-ID, which the HTML refers to as `cid:`. `ui` only.
     pub const DRAFT_ATTACH_IMAGE: &str = "draft.attach_image";
@@ -2160,6 +2164,15 @@ pub struct TemplateView {
     /// The formatted version, sanitised.
     #[serde(default)]
     pub html: Option<String>,
+    #[serde(default)]
+    pub to: Vec<Person>,
+    #[serde(default)]
+    pub cc: Vec<Person>,
+    #[serde(default)]
+    pub bcc: Vec<Person>,
+    /// The files it keeps, as they were added.
+    #[serde(default)]
+    pub files: Vec<TemplateFile>,
     pub updated_at: i64,
 }
 
@@ -2170,7 +2183,7 @@ pub struct TemplateListResult {
 }
 
 /// Parameters of [`methods::TEMPLATE_SAVE`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct TemplateSaveParams {
     /// The template to change; none to add one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2183,6 +2196,36 @@ pub struct TemplateSaveParams {
     pub body: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub html: Option<String>,
+    #[serde(default)]
+    pub to: Vec<Person>,
+    #[serde(default)]
+    pub cc: Vec<Person>,
+    #[serde(default)]
+    pub bcc: Vec<Person>,
+    /// Keep this draft's files with it (saving a message as a template).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files_of_draft: Option<i64>,
+    /// Files it keeps no longer (their ids).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub remove_files: Vec<i64>,
+}
+
+/// A file a template keeps.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TemplateFile {
+    pub id: i64,
+    pub name: String,
+    pub mime: String,
+    pub size: u64,
+    /// An image in its text, not a file beside it.
+    pub inline: bool,
+}
+
+/// Parameters of [`methods::DRAFT_USE_TEMPLATE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftUseTemplateParams {
+    pub draft_id: i64,
+    pub template_id: i64,
 }
 
 /// Names a template: [`methods::TEMPLATE_REMOVE`].

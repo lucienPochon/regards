@@ -7,7 +7,7 @@ import { type Anchor, Menu, type MenuEntry, type MenuRequest } from "./Menu";
 import { getPrefs } from "./prefs";
 import { reminderPresets, sendPresets, timeHint } from "./snooze";
 import { TYPED_TIME_HINT, typedTimeEntries } from "./typedTime";
-import { type Template, listTemplates, saveTemplate } from "./templates";
+import { type Template, type Written, listTemplates, saveWritten } from "./templates";
 import { TimePicker } from "./TimePicker";
 import { PLATFORM, TitleBar } from "./TitleBar";
 
@@ -88,7 +88,7 @@ export function ComposerWindow({ draftId }: { draftId: number }) {
   );
   /** The templates to start from, and keeping what is written as one; editing them is in the main window's Settings. */
   const pickTemplate = useCallback(
-    (_anchor: Anchor, written: { subject: string; html: string }) =>
+    (_anchor: Anchor, written: Written) =>
       listTemplates().then(
         (templates) =>
           new Promise<Template | null>((resolve) => {
@@ -102,7 +102,7 @@ export function ComposerWindow({ draftId }: { draftId: number }) {
                     detail: name,
                     onSelect: () => {
                       resolve(null);
-                      void saveTemplate({ id: null, name, subject: written.subject, body: "", html: written.html });
+                      void saveWritten(name, written);
                     },
                   },
                 ]
