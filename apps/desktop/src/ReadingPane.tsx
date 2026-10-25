@@ -25,6 +25,7 @@ import { type Anchor, type MenuEntry, anchorOf } from "./Menu";
 import { MARK_READ_AFTER, STEP_DWELL, getPrefs, usePrefs } from "./prefs";
 import { senderImages, setSenderImages } from "./smart";
 import { asMarkdown, printMessage, printMessages, textParts } from "./messageText";
+import { rememberOpened } from "./recent-opened";
 import { openUrl } from "./background";
 import { useDark } from "./theme";
 import { SourceDialog } from "./SourceDialog";
@@ -161,6 +162,16 @@ export function ReadingPane({
   }, [thread.length]);
 
   const detail = load.state === "ready" ? load.detail : null;
+  // Remembered for the search page's "Recently opened".
+  useEffect(() => {
+    if (!detail) return;
+    rememberOpened({
+      link: detail.link ?? `regards://message/${detail.message.id}`,
+      subject: detail.message.subject,
+      from: detail.message.from,
+      at: Date.now(),
+    });
+  }, [detail]);
   const message = detail?.message ?? item;
   const mailboxId = detail?.mailbox_id ?? item.mailboxId;
   const folder = folders.find((f) => f.id === mailboxId);

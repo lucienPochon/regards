@@ -17,6 +17,7 @@ import { Icon, type IconName } from "./icons";
 import type { ListItem, MessageFeed } from "./mail";
 import { type Anchor, anchorOf } from "./Menu";
 import { accountColour, usePrefs } from "./prefs";
+import type { Opened } from "./recent-opened";
 import { SEARCH_CHIPS, hasTerm, toggleTerm } from "./search";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { DRAG_TYPE, type DragPayload } from "./Sidebar";
@@ -98,6 +99,9 @@ export interface SearchControls {
   recents: string[];
   onRemember: (query: string) => void;
   onForget: (query: string) => void;
+  /** Messages opened lately, listed before anything is typed. */
+  opened: Opened[];
+  onOpened: (entry: Opened) => void;
   /** The best few matches, shown on their own when the results run long. */
   top: ListItem[];
   /** Changes not indexed yet: recent mail may be missing. */
@@ -684,6 +688,8 @@ export function MessageList({
               search.onRemember(recent);
             }}
             onForget={search.onForget}
+            opened={search.opened}
+            onOpened={search.onOpened}
             onTerm={(term) => {
               const now = search.query ?? "";
               search.onQuery(now === "" || now.endsWith(" ") ? now + term : `${now} ${term}`);
@@ -1128,37 +1134,24 @@ const TIPS: { icon: IconName; term: string; example: string; text: string }[] = 
   { icon: "quote", term: '"', example: '"exact words" -word', text: "A phrase as written; leave a word out" },
 ];
 
-/** Under the field before anything is typed: tips, then recent searches. */
+/** Under the field before anything is typed: recent searches, messages opened lately, then tips. */
 function SearchTips({
   recents,
   onRecent,
   onForget,
+  opened,
+  onOpened,
   onTerm,
 }: {
   recents: string[];
   onRecent: (query: string) => void;
   onForget: (query: string) => void;
+  opened: Opened[];
+  onOpened: (entry: Opened) => void;
   onTerm: (term: string) => void;
 }) {
   return (
     <div className="search-start">
-      <h3 className="day-head">Tips</h3>
-      <ul className="search-tips">
-        {TIPS.map((tip) => (
-          <li key={tip.example}>
-            <button type="button" className="search-tip" onClick={() => onTerm(tip.term)}>
-              <Icon name={tip.icon} size={17} />
-              <span>
-                <strong>{tip.example}</strong>
-                <span className="muted">{tip.text}</span>
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      <p className="search-hint muted">
-        Combine them, as in <code>from:lena has:attachment after:2026-09-01</code>. Accents need not be typed.
-      </p>
       {recents.length > 0 && (
         <>
           <h3 className="day-head">Recent searches</h3>
@@ -1183,6 +1176,39 @@ function SearchTips({
           </ul>
         </>
       )}
+      {opened.length > 0 && (
+        <>
+          <h3 className="day-head">Recently opened</h3>
+          <ul className="search-recents search-opened">
+            {opened.map((entry) => (
+              <li key={entry.link}>
+                <button type="button" className="search-recent" onClick={() => onOpened(entry)}>
+                  <Icon name="mail" size={15} />
+                  <span>{entry.subject || "(no subject)"}</span>
+                  {entry.from && <span className="muted">{personName(entry.from)}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <h3 className="day-head">Tips</h3>
+      <ul className="search-tips">
+        {TIPS.map((tip) => (
+          <li key={tip.example}>
+            <button type="button" className="search-tip" onClick={() => onTerm(tip.term)}>
+              <Icon name={tip.icon} size={17} />
+              <span>
+                <strong>{tip.example}</strong>
+                <span className="muted">{tip.text}</span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="search-hint muted">
+        Combine them, as in <code>from:lena has:attachment after:2026-09-01</code>. Accents need not be typed.
+      </p>
     </div>
   );
 }

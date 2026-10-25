@@ -75,6 +75,7 @@ import {
 } from "./mail";
 import { type OpenLink, onOpenLink, takeLink } from "./links";
 import { recentFolders, rememberFolder } from "./recent-folders";
+import { type Opened, forgetOpened, linkOf, useOpened } from "./recent-opened";
 import { useRecentSearches } from "./recent-searches";
 import {
   type SavedSearch,
@@ -281,6 +282,7 @@ export function App() {
   const [search, setSearch] = useState<{ query: string; accountId: string | null } | null>(null);
   const [searchRound, setSearchRound] = useState(0);
   const [recentSearches, rememberSearch, forgetSearch] = useRecentSearches();
+  const opened = useOpened();
   const typed = search?.query.trim() ?? "";
   const [searchFor, setSearchFor] = useState("");
   useEffect(() => {
@@ -982,6 +984,20 @@ export function App() {
   };
   const linkTo = useRef(openLink);
   linkTo.current = openLink;
+  // Recently opened, from the search page: the message wherever it is now.
+  const openRecent = (entry: Opened) => {
+    setSearch(null);
+    setPicked(new Set());
+    const gone = () => {
+      forgetOpened(entry.link);
+      setNotice("That message is no longer on this computer.");
+    };
+    const link = linkOf(entry.link);
+    if (!link) gone();
+    else if (link.kind === "message_id") {
+      locateMessage(link.message_id).then((id) => (id === null ? gone() : openLink({ kind: "message", id })), gone);
+    } else openLink(link);
+  };
   useEffect(() => {
     const stop = onOpenLink((link) => linkTo.current(link));
     return () => void stop.then((unlisten) => unlisten()).catch(() => {});
@@ -1947,6 +1963,8 @@ export function App() {
           recents: recentSearches,
           onRemember: rememberSearch,
           onForget: forgetSearch,
+          opened,
+          onOpened: openRecent,
           top: found.top,
           indexing: found.indexing,
           onRetry: () => setSearchRound((round) => round + 1),
