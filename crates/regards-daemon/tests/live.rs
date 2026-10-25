@@ -1815,6 +1815,8 @@ async fn live_an_invitation_is_read_and_answered_to_its_organizer() {
     assert!(data.contains("Subject: Accepted: Garden plot"), "{data}");
     assert!(data.contains("In-Reply-To: <invite-1@example.net>"), "{data}");
     let reply = regards_core::calendar::in_message(data.as_bytes()).expect("a calendar part");
+    // Lines are folded at 75 octets: a long address goes over two.
+    let reply = reply.replace("\r\n ", "").replace("\n ", "");
     assert!(
         reply.contains("METHOD:REPLY") && reply.contains("UID:plot-7@example.net"),
         "{reply}"
