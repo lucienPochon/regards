@@ -173,6 +173,14 @@ fn walk(
             match &body.specific {
                 SpecificFields::Text { subtype, .. } if !attached => {
                     let subtype = lower(subtype.as_ref());
+                    // An invitation: listed with its files, to find it by, though it shows no paperclip.
+                    if subtype == "calendar" {
+                        shape.files.push(FilePart {
+                            mime: "text/calendar".to_owned(),
+                            params: pairs(&body.basic.parameter_list),
+                        });
+                        return;
+                    }
                     let part = || TextPart {
                         section: section.clone(),
                         html: subtype == "html",
@@ -310,5 +318,22 @@ mod tests {
         assert_eq!(text.section, [1]);
         assert!(text.html);
         assert_eq!(text.charset.as_deref(), Some("iso-8859-1"));
+    }
+
+    #[test]
+    fn an_invitation_is_listed_with_the_files_without_a_paperclip() {
+        let calendar =
+            r#"("TEXT" "CALENDAR" ("CHARSET" "UTF-8" "METHOD" "REQUEST") NIL NIL "7BIT" 900 20 NIL NIL NIL NIL)"#;
+        let alternative = format!(r#"({PLAIN}{HTML}{calendar} "ALTERNATIVE" ("BOUNDARY" "a") NIL NIL NIL)"#);
+        let found = shape(&alternative);
+        assert!(!found.has_attachments, "an invitation is not a file to save");
+        assert_eq!(found.files.len(), 1);
+        assert_eq!(found.files[0].mime, "text/calendar");
+        assert!(
+            found.files[0]
+                .params
+                .contains(&("method".to_owned(), "REQUEST".to_owned()))
+        );
+        assert_eq!(found.text.unwrap().section, [1], "the text is still the plain one");
     }
 }

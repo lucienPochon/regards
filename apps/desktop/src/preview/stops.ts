@@ -88,6 +88,7 @@ export const TOUR: Group[] = [
       { id: "reader-single", label: "A message in place of the list", note: "Settings › Appearance › Layout: in place of the list.", params: { link: NEWSLETTER, layout: "single" } },
       { id: "thread", label: "A conversation", note: "Older messages fold to one line each.", steps: openRow("Garden plot") },
       { id: "thread-open", label: "A conversation, unfolded", note: "Settings › General › Fold older messages, off.", prefs: { collapseOlder: false }, steps: openRow("Garden plot") },
+      { id: "invitation", label: "An invitation", note: "When, where and from whom, in your time; Accept, Maybe or Decline answers the organizer by email.", steps: openRow("Plot planning") },
       { id: "thread-draft", label: "A reply being written", note: "An unsent reply shows under its conversation; it opens to go on writing.", steps: openRow("Book club") },
       { id: "find", label: "Find in this message", note: "Ctrl+Shift+F, or the message's ⋯ menu. Enter and Shift+Enter step through the matches.", steps: [...openRow("Garden plot"), "wait:700", "key:Mod+Shift+F", "wait:300", "type:the"] },
       { id: "sender-card", label: "About the sender", note: "Why it is here, and what to do with this sender's mail.", params: { link: NEWSLETTER }, steps: ["wait:900", "click:.mail-avatar"] },

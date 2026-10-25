@@ -36,20 +36,20 @@ use regards_ipc::protocol::{
     DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams,
     DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView, ExplainResult,
     HoldApproveParams, HoldListParams, HoldListResult, HoldRef, HoldView, IdentityListResult, IdentityRef,
-    IdentitySaveParams, IdentitySetSignatureParams, IdentitySetVoiceParams, IdentityView, LabelsResult,
-    MailboxCreateParams, MailboxListResult, MailboxRef, MailboxRenameParams, MailboxSummary, MarkResult, MessageCursor,
-    MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageLocateParams, MessageLocateResult,
-    MessageRef, MoveParams, MoveResult, NoteAddParams, NoteAddResult, NoteListParams, NoteListResult, NoteRef,
-    NoteRemoved, NoteSetEnabledParams, NoteSettings, NoteUpdateParams, NoteView, NotesForgotten, OauthFlowRef,
-    OauthProvidersResult, OauthStartParams, OauthStartResult, OutboxListResult, OutboxRef, OutboxRescheduleParams,
-    OutboxUndoResult, PinParams, Principal, RemindParams, SavedSearchListResult, SavedSearchOrderParams,
-    SavedSearchRef, SavedSearchSaveParams, SavedSearchView, Screening, ScreeningParams, SearchParams, SearchResult,
-    Section, SenderBlockParams, SenderBlockedResult, SenderImagesParams, SenderImagesResult, SenderSetParams,
-    SenderSetResult, ServerCheckParams, ServerCheckResult, ServerSearchResult, ServerSettings, SetFlagsParams,
-    SetFlagsResult, SetLabelsParams, SetLabelsResult, SignatureListResult, SignatureRef, SignatureSaveParams,
-    SignatureView, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams,
-    TemplateView, ThreadView, UndoParams, UndoResult, UnsubscribeParams, UnsubscribeResult, View, ViewParams, codes,
-    methods,
+    IdentitySaveParams, IdentitySetSignatureParams, IdentitySetVoiceParams, IdentityView, InvitationAnswer,
+    InvitationRespondParams, InvitationView, LabelsResult, MailboxCreateParams, MailboxListResult, MailboxRef,
+    MailboxRenameParams, MailboxSummary, MarkResult, MessageCursor, MessageDetail, MessageIds, MessageListParams,
+    MessageListResult, MessageLocateParams, MessageLocateResult, MessageRef, MoveParams, MoveResult, NoteAddParams,
+    NoteAddResult, NoteListParams, NoteListResult, NoteRef, NoteRemoved, NoteSetEnabledParams, NoteSettings,
+    NoteUpdateParams, NoteView, NotesForgotten, OauthFlowRef, OauthProvidersResult, OauthStartParams, OauthStartResult,
+    OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams,
+    SavedSearchListResult, SavedSearchOrderParams, SavedSearchRef, SavedSearchSaveParams, SavedSearchView, Screening,
+    ScreeningParams, SearchParams, SearchResult, Section, SenderBlockParams, SenderBlockedResult, SenderImagesParams,
+    SenderImagesResult, SenderSetParams, SenderSetResult, ServerCheckParams, ServerCheckResult, ServerSearchResult,
+    ServerSettings, SetFlagsParams, SetFlagsResult, SetLabelsParams, SetLabelsResult, SignatureListResult,
+    SignatureRef, SignatureSaveParams, SignatureView, SmartOverviewResult, SnoozeParams, SyncResult,
+    TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult,
+    UnsubscribeParams, UnsubscribeResult, View, ViewParams, codes, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -974,6 +974,33 @@ async fn message_get(bridge: State<'_, Bridge>, id: i64) -> Result<MessageDetail
     let mut client = bridge.connect().await?.client;
     client
         .call(methods::MESSAGE_GET, MessageRef { id })
+        .await
+        .map_err(describe)
+}
+
+/// The invitation a message carries, if it carries one.
+#[tauri::command]
+async fn invitation_get(bridge: State<'_, Bridge>, id: i64) -> Result<Option<InvitationView>, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::INVITATION_GET, MessageRef { id })
+        .await
+        .map_err(describe)
+}
+
+/// Answer an invitation: a reply to its organizer goes at once.
+#[tauri::command]
+async fn invitation_respond(
+    bridge: State<'_, Bridge>,
+    message_id: i64,
+    answer: InvitationAnswer,
+) -> Result<InvitationView, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(
+            methods::INVITATION_RESPOND,
+            InvitationRespondParams { message_id, answer },
+        )
         .await
         .map_err(describe)
 }
@@ -2157,6 +2184,8 @@ fn main() {
             smart_set_screening,
             message_get,
             message_locate,
+            invitation_get,
+            invitation_respond,
             thread_get,
             message_conversation_ids,
             message_labels,

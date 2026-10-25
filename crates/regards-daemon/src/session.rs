@@ -2,8 +2,8 @@
 
 use crate::{
     State, access, accounts, actions, agents, assistant, attachments, audit, compose, context, discover, draft_sync,
-    erase, folders, holds, identities, labels, mail, notes, notices, oauth, people, prefetch, saved, scheduler,
-    signatures, smart, templates, unsubscribe, voice,
+    erase, folders, holds, identities, invitations, labels, mail, notes, notices, oauth, people, prefetch, saved,
+    scheduler, signatures, smart, templates, unsubscribe, voice,
 };
 use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
@@ -384,6 +384,14 @@ impl Session {
                 let params: SearchParams = params(request)?;
                 let scope = self.search_scope(params.account_id.as_deref()).await?;
                 mail::search_server(&self.state, params, scope).await
+            }
+            methods::INVITATION_GET => {
+                self.require_ui()?;
+                invitations::get(&self.state, params(request)?).await
+            }
+            methods::INVITATION_RESPOND => {
+                self.require_ui()?;
+                invitations::respond(&self.state, params(request)?).await
             }
             methods::MESSAGE_LOCATE => {
                 self.require_ui()?;

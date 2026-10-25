@@ -10,6 +10,7 @@ pub mod attachment;
 pub mod autoconfig;
 pub mod body;
 pub mod build_info;
+pub mod calendar;
 pub mod compose;
 pub mod encoding;
 pub mod executor;

@@ -23,6 +23,7 @@ mod feed;
 mod folders;
 mod holds;
 mod identities;
+mod invitations;
 mod labels;
 mod limits;
 mod mail;

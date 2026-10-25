@@ -1012,6 +1012,7 @@ fn outgoing(
         in_reply_to: draft.in_reply_to.clone(),
         references: draft.references.clone(),
         date,
+        calendar: None,
     }
 }
 
@@ -1122,6 +1123,34 @@ fn sender(identity: &Identity) -> Person {
     Person {
         name: Some(identity.name.clone()).filter(|name| name != &identity.email && !name.trim().is_empty()),
         address: Some(identity.email.clone()),
+    }
+}
+
+/// A message that is no draft (an answer to an invitation): from `identity`
+/// to `to`, in reply to `in_reply_to`, carrying the iCalendar `calendar`.
+pub(crate) fn outgoing_from(
+    identity: &Identity,
+    to: Vec<Person>,
+    subject: String,
+    text: String,
+    in_reply_to: Option<String>,
+    date: i64,
+    calendar: String,
+) -> Outgoing {
+    Outgoing {
+        from: sender(identity),
+        to,
+        cc: Vec::new(),
+        bcc: Vec::new(),
+        subject,
+        text,
+        message_id: compose::new_message_id(&identity.email),
+        references: in_reply_to.iter().cloned().collect(),
+        in_reply_to,
+        date,
+        html: None,
+        attachments: Vec::new(),
+        calendar: Some(calendar),
     }
 }
 

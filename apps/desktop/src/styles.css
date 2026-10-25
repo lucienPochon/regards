@@ -3140,6 +3140,64 @@ button.list-title:hover {
   color: #000;
 }
 
+/* An invitation over its message's text: what, when, where, and its answers. */
+.invitation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--pill);
+}
+
+.invitation.cancelled {
+  background: transparent;
+  border-style: dashed;
+}
+
+.invitation.cancelled .invitation-what strong {
+  text-decoration: line-through;
+}
+
+.invitation-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  background: var(--bg-elev);
+  color: var(--accent);
+}
+
+.invitation-what {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 200px;
+}
+
+.invitation-what strong {
+  font-size: 15px;
+}
+
+.invitation-answers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.invitation-answered {
+  margin-right: 4px;
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
 /* Where the link under the pointer goes: kept in view at the bottom of the pane, taking no room. */
 .link-goes {
   position: sticky;

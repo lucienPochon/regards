@@ -10,6 +10,7 @@
 use crate::headers::Person;
 use mail_builder::MessageBuilder;
 use mail_builder::headers::address::Address;
+use mail_builder::headers::content_type::ContentType;
 use mail_builder::mime::{BodyPart, MimePart};
 use serde::{Deserialize, Serialize};
 
@@ -73,6 +74,9 @@ pub struct Outgoing {
     /// `text` is then its plain-text version.
     pub html: Option<String>,
     pub attachments: Vec<Attachment>,
+    /// An answer to an invitation (iMIP, RFC 6047): this iCalendar REPLY goes
+    /// beside the text, as `text/calendar; method=REPLY`; no HTML or files then.
+    pub calendar: Option<String>,
 }
 
 /// A file going with the message.
@@ -148,6 +152,19 @@ impl Outgoing {
         };
         // Files beside the text. Images are only in formatted text.
         let files: Vec<&Attachment> = self.attachments.iter().filter(|a| a.content_id.is_none()).collect();
+        if let Some(calendar) = &self.calendar {
+            let reply = ContentType::new("text/calendar")
+                .attribute("method", "REPLY")
+                .attribute("charset", "utf-8");
+            builder = builder.body(MimePart::new(
+                "multipart/alternative",
+                vec![
+                    MimePart::new("text/plain", BodyPart::Text(normalise(&self.text).into())),
+                    MimePart::new(reply, BodyPart::Text(calendar.as_str().into())),
+                ],
+            ));
+            return Ok(self.finish(builder, draft));
+        }
         let document = self.html.as_ref().map(|html| {
             format!("<!doctype html><html><head><meta charset=\"utf-8\"></head><body>{html}</body></html>")
         });
@@ -193,6 +210,11 @@ impl Outgoing {
                 }
             }
         }
+        Ok(self.finish(builder, draft))
+    }
+
+    /// Its recipients and where it stands in a conversation, then its bytes.
+    fn finish<'x>(&'x self, mut builder: MessageBuilder<'x>, draft: bool) -> Vec<u8> {
         if !self.to.is_empty() {
             builder = builder.to(list(&self.to));
         }
@@ -208,7 +230,7 @@ impl Outgoing {
         if !self.references.is_empty() {
             builder = builder.references(self.references.clone());
         }
-        Ok(builder.write_to_vec().expect("writing to memory cannot fail"))
+        builder.write_to_vec().expect("writing to memory cannot fail")
     }
 }
 
@@ -833,7 +855,41 @@ mod tests {
             date: 1_792_317_900_000,
             html: None,
             attachments: vec![],
+            calendar: None,
         }
+    }
+
+    #[test]
+    fn an_answer_to_an_invitation_carries_its_reply_beside_the_text() {
+        use mail_parser::MimeHeaders;
+        let answer = Outgoing {
+            html: Some("<p>Not sent: a reply is text and its calendar part</p>".into()),
+            calendar: Some("BEGIN:VCALENDAR\r\nMETHOD:REPLY\r\nEND:VCALENDAR\r\n".into()),
+            ..outgoing()
+        };
+        let mime = answer.build().unwrap();
+        let text = String::from_utf8_lossy(&mime);
+        assert!(text.contains("multipart/alternative"), "{text}");
+        assert!(
+            text.contains("text/calendar") && text.contains("method=\"REPLY\"") || text.contains("method=REPLY"),
+            "{text}"
+        );
+        assert!(!text.contains("text/html"), "{text}");
+        let parsed = mail_parser::MessageParser::default().parse(&mime).unwrap();
+        let calendar = parsed
+            .parts
+            .iter()
+            .find(|part| {
+                part.content_type()
+                    .is_some_and(|kind| kind.subtype() == Some("calendar"))
+            })
+            .expect("a calendar part");
+        assert!(calendar.text_contents().unwrap().contains("METHOD:REPLY"));
+        assert_eq!(
+            parsed.in_reply_to().as_text(),
+            Some("parent@example.test"),
+            "still in the conversation"
+        );
     }
 
     #[test]
@@ -1142,6 +1198,7 @@ mod tests {
             date: 0,
             html: None,
             attachments: vec![],
+            calendar: None,
         };
         let copy = String::from_utf8(draft.build_draft().unwrap()).unwrap();
         assert!(

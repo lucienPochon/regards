@@ -238,6 +238,13 @@ const SPECS: Spec[] = [
   },
   {
     mailbox: 1,
+    ago: 25 * HOUR,
+    from: lena,
+    subject: "Invitation: Plot planning @ Fri 30 Oct 10:00–11:00",
+    text: "Lena Okafor has invited you to Plot planning.\n\nFriday 30 October, 10:00–11:00, at the shed.",
+  },
+  {
+    mailbox: 1,
     ago: 26 * HOUR,
     from: hannah,
     subject: "Book club: next pick",
