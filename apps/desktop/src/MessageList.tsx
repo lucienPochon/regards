@@ -17,6 +17,8 @@ import { Icon, type IconName } from "./icons";
 import type { ListItem, MessageFeed } from "./mail";
 import { type Anchor, anchorOf } from "./Menu";
 import { accountColour, usePrefs } from "./prefs";
+import type { Opened } from "./recent-opened";
+import { SEARCH_CHIPS, hasTerm, toggleTerm } from "./search";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { DRAG_TYPE, type DragPayload } from "./Sidebar";
 
@@ -97,6 +99,9 @@ export interface SearchControls {
   recents: string[];
   onRemember: (query: string) => void;
   onForget: (query: string) => void;
+  /** Messages opened lately, listed before anything is typed. */
+  opened: Opened[];
+  onOpened: (entry: Opened) => void;
   /** The best few matches, shown on their own when the results run long. */
   top: ListItem[];
   /** Changes not indexed yet: recent mail may be missing. */
@@ -653,6 +658,28 @@ export function MessageList({
             <Icon name="alert" size={16} /> {feed.error}
           </p>
         )}
+        {searching && query && (
+          <div className="search-chips" role="group" aria-label="Narrow the search">
+            {SEARCH_CHIPS.map((chip) => {
+              const on = hasTerm(query, chip.term);
+              return (
+                <button
+                  key={chip.term}
+                  type="button"
+                  className={on ? "chip chosen" : "chip"}
+                  aria-pressed={on}
+                  title={on ? `Remove ${chip.term} from the search` : `Add ${chip.term} to the search`}
+                  onClick={() => {
+                    search.onQuery(toggleTerm(query, chip.term));
+                    field.current?.focus();
+                  }}
+                >
+                  {chip.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {searching && !query ? (
           <SearchTips
             recents={search.recents}
@@ -661,6 +688,8 @@ export function MessageList({
               search.onRemember(recent);
             }}
             onForget={search.onForget}
+            opened={search.opened}
+            onOpened={search.onOpened}
             onTerm={(term) => {
               const now = search.query ?? "";
               search.onQuery(now === "" || now.endsWith(" ") ? now + term : `${now} ${term}`);
@@ -1093,7 +1122,7 @@ function ServerRow({ server }: { server: ServerSearch }) {
 /** What search understands, as examples to click into the field. */
 const TIPS: { icon: IconName; term: string; example: string; text: string }[] = [
   { icon: "user", term: "from:", example: "from:lena", text: "From someone, by name or address" },
-  { icon: "send", term: "to:", example: "to:marco", text: "To someone" },
+  { icon: "send", term: "to:", example: "to:marco", text: "To someone; cc:marco for copied only" },
   { icon: "text", term: "subject:", example: "subject:invoice", text: "Words in the subject" },
   { icon: "folder", term: "in:", example: "in:sent", text: "In one folder; in:anywhere adds Trash and Junk" },
   { icon: "paperclip", term: "has:attachment ", example: "has:attachment", text: "With files attached" },
@@ -1105,37 +1134,24 @@ const TIPS: { icon: IconName; term: string; example: string; text: string }[] = 
   { icon: "quote", term: '"', example: '"exact words" -word', text: "A phrase as written; leave a word out" },
 ];
 
-/** Under the field before anything is typed: tips, then recent searches. */
+/** Under the field before anything is typed: recent searches, messages opened lately, then tips. */
 function SearchTips({
   recents,
   onRecent,
   onForget,
+  opened,
+  onOpened,
   onTerm,
 }: {
   recents: string[];
   onRecent: (query: string) => void;
   onForget: (query: string) => void;
+  opened: Opened[];
+  onOpened: (entry: Opened) => void;
   onTerm: (term: string) => void;
 }) {
   return (
     <div className="search-start">
-      <h3 className="day-head">Tips</h3>
-      <ul className="search-tips">
-        {TIPS.map((tip) => (
-          <li key={tip.example}>
-            <button type="button" className="search-tip" onClick={() => onTerm(tip.term)}>
-              <Icon name={tip.icon} size={17} />
-              <span>
-                <strong>{tip.example}</strong>
-                <span className="muted">{tip.text}</span>
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      <p className="search-hint muted">
-        Combine them, as in <code>from:lena has:attachment after:2026-09-01</code>. Accents need not be typed.
-      </p>
       {recents.length > 0 && (
         <>
           <h3 className="day-head">Recent searches</h3>
@@ -1160,6 +1176,39 @@ function SearchTips({
           </ul>
         </>
       )}
+      {opened.length > 0 && (
+        <>
+          <h3 className="day-head">Recently opened</h3>
+          <ul className="search-recents search-opened">
+            {opened.map((entry) => (
+              <li key={entry.link}>
+                <button type="button" className="search-recent" onClick={() => onOpened(entry)}>
+                  <Icon name="mail" size={15} />
+                  <span>{entry.subject || "(no subject)"}</span>
+                  {entry.from && <span className="muted">{personName(entry.from)}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <h3 className="day-head">Tips</h3>
+      <ul className="search-tips">
+        {TIPS.map((tip) => (
+          <li key={tip.example}>
+            <button type="button" className="search-tip" onClick={() => onTerm(tip.term)}>
+              <Icon name={tip.icon} size={17} />
+              <span>
+                <strong>{tip.example}</strong>
+                <span className="muted">{tip.text}</span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="search-hint muted">
+        Combine them, as in <code>from:lena has:attachment after:2026-09-01</code>. Accents need not be typed.
+      </p>
     </div>
   );
 }

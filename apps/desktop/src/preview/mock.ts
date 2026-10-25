@@ -5,6 +5,7 @@
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { MessageSummary, Person } from "../accounts";
+import type { BadgeSettings } from "../badge";
 import type { Draft, OutboxEntry } from "../compose";
 import type { Identity } from "../identities";
 import type { Note } from "../notes";
@@ -819,7 +820,7 @@ function parseLink(link: string) {
   const [kind, id] = link.split(":");
   return { kind, id: Number(id) };
 }
-let badgeChoices: { on: boolean; accounts: string[] | null } = { on: true, accounts: null };
+let badgeChoices: BadgeSettings = { on: true, accounts: null, count: "inbox" };
 
 let notificationChoices = {
   new_mail: {} as Record<string, string>,
@@ -1685,6 +1686,15 @@ function handle(cmd: string, args: Args): unknown {
       return newDraftFor(accountOfMailbox(message.mailboxId)?.account.id ?? "", {
         subject: `Fwd: ${message.subject}`,
         body: `\n\n---------- Forwarded message ----------\nFrom: ${message.from.name} <${message.from.address}>\nSubject: ${message.subject}\n\n${message.text}`,
+      });
+    }
+    case "draft_again": {
+      const message = byId(args.messageId as number);
+      return newDraftFor(accountOfMailbox(message.mailboxId)?.account.id ?? "", {
+        to: message.to,
+        cc: message.cc,
+        subject: message.subject,
+        body: message.text,
       });
     }
     case "draft_list":

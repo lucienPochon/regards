@@ -128,6 +128,8 @@ export const TOUR: Group[] = [
     stops: [
       { id: "mark-all-read", label: "Mark everything read", note: "Every unread message here, read at once, with Undo.", steps: ["wait:800", "click:[aria-label='Mark everything here read']", "wait:400"] },
       { id: "search", label: "Search the list", note: "Ctrl+F, then words; subjects, people and text.", steps: ["wait:700", "key:Mod+f", "type:garden"] },
+      { id: "recently-opened", label: "Recently opened", note: "Before anything is typed, search lists the messages opened lately, to open again wherever they are now.", steps: [...openRow("Garden plot"), "wait:600", ...openRow("Photos from Sunday"), "wait:600", "key:Mod+f"] },
+      { id: "search-chips", label: "Narrow a search", note: "The chips under the field add is:unread, has:attachment and the like to the search; a second click takes them out.", steps: ["wait:700", "key:Mod+f", "type:garden", "wait:400", "text:.search-chips button=With files"] },
       { id: "did-you-mean", label: "Did you mean", note: "A misspelt word, mended.", steps: ["wait:700", "key:Mod+f", "type:gardn"] },
       { id: "server-search", label: "Search on the server", note: "Nothing here: the server can look further back.", steps: ["wait:700", "key:Mod+f", "type:zebra"] },
       { id: "indexing", label: "Still indexing", note: "Recent mail may be missing while it is indexed.", params: { indexing: "40" }, steps: ["wait:700", "key:Mod+f", "type:zebra"] },
@@ -189,6 +191,7 @@ export const TOUR: Group[] = [
       { id: "signup-oauth-only", label: "Sign-up › Outlook.com", note: "Microsoft's own sign-in only.", params: { accounts: "0" }, steps: [...signUp("ada@outlook.com"), "text:button=Continue"] },
       { id: "signup-no-imap", label: "Sign-up › No mail apps", note: "Proton Mail, Tuta, HEY: said under the address, before any password.", params: { accounts: "0" }, steps: signUp("ada@proton.me") },
       { id: "accounts", label: "Accounts", note: "Sync, addresses and signatures, details, remove.", params: { accounts: "2" }, steps: settings("Accounts") },
+      { id: "inbox-views", label: "An inbox view per account", note: "Settings › Inbox: each account's own inbox can look its own way; the inbox's view chooser sets it too.", params: { accounts: "2" }, steps: settings("Inbox") },
       { id: "account-details", label: "An account's details", note: "Your name, its label in Regards, colour, and the unified inbox.", params: { accounts: "2" }, steps: settings("Accounts", "text:button=Details") },
       { id: "identities", label: "Addresses", note: "Send as an alias.", steps: settings("Accounts", "text:button=Addresses") },
       { id: "add-from-menu", label: "Add an account › From the ⌄ menu", note: "Under Accounts…: the same steps, in a window over the mail.", steps: ["wait:600", "click:.caption-btn[aria-label=Menu]"] },

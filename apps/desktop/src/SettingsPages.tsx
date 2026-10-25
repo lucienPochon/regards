@@ -657,6 +657,20 @@ export function NotificationsPage({ accounts }: { accounts: AccountSummary[] }) 
           <Option icon="inbox" label={`Unread count on the ${DOCK}`} description={BADGE_NOTE}>
             <Toggle label={`Unread count on the ${DOCK}`} on={badge.on} onChange={(on) => changeBadge({ ...badge, on })} />
           </Option>
+          {badge.on && (
+            <Option icon="people" label="What it counts" description="Unread mail in the inbox: all of it, or only some.">
+              <Select
+                label="What it counts"
+                value={badge.count}
+                options={[
+                  { id: "inbox", label: "All unread mail" },
+                  { id: "people", label: "Unread from people" },
+                  { id: "priority", label: "Unread priority mail" },
+                ]}
+                onChange={(count) => changeBadge({ ...badge, count })}
+              />
+            </Option>
+          )}
           {badge.on &&
             accounts.length > 1 &&
             accounts.map((account) => {

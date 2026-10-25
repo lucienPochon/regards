@@ -489,6 +489,7 @@ fn server_terms(query: &Query) -> Vec<SearchTerm> {
                 None => SearchTerm::Text(text),
                 Some(Field::Sender) => SearchTerm::From(text),
                 Some(Field::Recipients) => SearchTerm::To(text),
+                Some(Field::Cc) => SearchTerm::Cc(text),
                 Some(Field::Subject) => SearchTerm::Subject(text),
             };
             if term.negated {
