@@ -498,17 +498,21 @@ function AccountRow({
   };
 
   const problem = error ?? oauth.error ?? entry.error ?? sync?.last_error ?? null;
+  // The push connection keeps failing: new mail arrives only when synced, until it works again.
+  const pushStopped = !problem && !sync?.push_active && sync?.push_error ? sync.push_error : null;
   const status = account.needs_sign_in
     ? "Signed out: sign in again to sync and send"
     : syncing || sync?.running
       ? "Syncing…"
       : problem
         ? `Sync failed: ${problem}`
-        : sync?.push_active
-          ? "Live: new mail arrives as it comes in"
-          : sync?.last_success_at
-            ? `Synced at ${new Date(sync.last_success_at).toLocaleTimeString()}`
-            : "Not synced yet";
+        : pushStopped
+          ? `Live updates stopped: ${pushStopped}. Trying again…`
+          : sync?.push_active
+            ? "Live: new mail arrives as it comes in"
+            : sync?.last_success_at
+              ? `Synced at ${new Date(sync.last_success_at).toLocaleTimeString()}`
+              : "Not synced yet";
 
   return (
     <>
@@ -518,7 +522,7 @@ function AccountRow({
         <strong>{account.display_name || account.email}</strong>
         <span className="muted">{account.email}</span>
         {provider && <span className="small muted">Signs in with {PROVIDERS[provider].label}</span>}
-        <span className={problem || account.needs_sign_in ? "small error" : "small muted"}>{status}</span>
+        <span className={problem || pushStopped || account.needs_sign_in ? "small error" : "small muted"}>{status}</span>
       </div>
       <div className="account-buttons">
         {account.needs_sign_in && provider && (

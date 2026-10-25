@@ -82,9 +82,28 @@ impl Tracker {
         self.feed.bump();
     }
 
-    /// Record whether a push connection is waiting for new mail.
+    /// Record whether a push connection is waiting for new mail; once it is,
+    /// a failure noted before is over.
     pub(crate) fn set_push(&self, account_id: &str, active: bool) {
-        self.lock().entry(account_id.to_owned()).or_default().push_active = active;
+        let mut states = self.lock();
+        let state = states.entry(account_id.to_owned()).or_default();
+        state.push_active = active;
+        if active {
+            state.push_error = None;
+        }
+        drop(states);
+        self.feed.bump();
+    }
+
+    /// The push connection keeps failing: say why until it works again.
+    pub(crate) fn note_push_error(&self, account_id: &str, message: &str) {
+        let mut states = self.lock();
+        let state = states.entry(account_id.to_owned()).or_default();
+        if state.push_error.as_deref() == Some(message) {
+            return;
+        }
+        state.push_error = Some(message.to_owned());
+        drop(states);
         self.feed.bump();
     }
 
@@ -678,5 +697,20 @@ mod tests {
         assert!(plan.reset);
         assert_eq!(plan.new, Some(MessageSet::Sequence("1:*".into())));
         assert_eq!((plan.flags, plan.check_deletions), (None, false));
+    }
+
+    #[test]
+    fn a_push_failure_shows_until_the_connection_waits_for_mail_again() {
+        let tracker = Tracker::new(Arc::new(Feed::new(0)));
+        tracker.note_push_error("a", "could not connect");
+        let state = tracker.get("a");
+        assert_eq!(state.push_error.as_deref(), Some("could not connect"));
+        assert!(!state.push_active);
+        tracker.set_push("a", true);
+        let state = tracker.get("a");
+        assert!(state.push_active && state.push_error.is_none());
+        // Stopping (an IDLE refresh, the account removed) is no failure.
+        tracker.set_push("a", false);
+        assert!(tracker.get("a").push_error.is_none());
     }
 }

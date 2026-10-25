@@ -1047,7 +1047,10 @@ export function App() {
   const viewAccounts = [...new Set(sources.map((source) => source.accountId))];
   const syncAccounts = viewAccounts.length > 0 ? viewAccounts : accounts.map((entry) => entry.account.id);
   const busy = syncing || accounts.some((entry) => entry.sync?.running);
-  const syncProblem = accounts.map((entry) => entry.error ?? entry.sync?.last_error).find(Boolean) ?? null;
+  const syncProblem =
+    accounts
+      .map((entry) => entry.error ?? entry.sync?.last_error ?? (entry.sync?.push_error && `Live updates stopped: ${entry.sync.push_error}`))
+      .find(Boolean) ?? null;
   const syncNow = () => {
     setSyncing(true);
     Promise.all(syncAccounts.map((id) => syncAccount(id)))

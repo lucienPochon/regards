@@ -1007,6 +1007,10 @@ pub struct SyncState {
     /// A push connection is waiting for new mail (IMAP IDLE), so changes arrive within seconds.
     #[serde(default)]
     pub push_active: bool,
+    /// Why the push connection keeps failing (after a few tries in a row), until
+    /// it waits for new mail again: new mail arrives only on a sync meanwhile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub push_error: Option<String>,
 }
 
 /// A mailbox as clients see it.

@@ -21,6 +21,8 @@ const IDLE_REFRESH: Duration = Duration::from_secs(25 * 60);
 const POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
 /// Reconnect delays: 1 s, doubling, at most this.
 const MAX_BACKOFF: Duration = Duration::from_secs(5 * 60);
+/// Failed connections in a row before the person is told (about 7 s of trying).
+const FAILURES_SHOWN: u32 = 3;
 
 /// The running watchers, by account.
 #[derive(Default)]
@@ -97,6 +99,8 @@ impl Watchers {
 
 async fn run(state: &Arc<State>, account_id: &str, mut stopped: watch::Receiver<bool>) {
     let mut backoff = Duration::from_secs(1);
+    // Failed tries in a row: the first few are often a passing blip.
+    let mut failures = 0u32;
     loop {
         let mut connected = false;
         match watch_once(state, account_id, &mut stopped, &mut connected).await {
@@ -106,6 +110,11 @@ async fn run(state: &Arc<State>, account_id: &str, mut stopped: watch::Receiver<
                 if connected {
                     // It worked for a while: this is a new problem, not the same one again.
                     backoff = Duration::from_secs(1);
+                    failures = 0;
+                }
+                failures += 1;
+                if failures >= FAILURES_SHOWN {
+                    state.sync.note_push_error(account_id, &error.to_string());
                 }
                 tracing::warn!(account = %account_id, %error, retry_in = ?backoff, "push connection failed");
                 tokio::select! {
