@@ -128,6 +128,7 @@ export const TOUR: Group[] = [
     stops: [
       { id: "mark-all-read", label: "Mark everything read", note: "Every unread message here, read at once, with Undo.", steps: ["wait:800", "click:[aria-label='Mark everything here read']", "wait:400"] },
       { id: "search", label: "Search the list", note: "Ctrl+F, then words; subjects, people and text.", steps: ["wait:700", "key:Mod+f", "type:garden"] },
+      { id: "recently-opened", label: "Recently opened", note: "Before anything is typed, search lists the messages opened lately, to open again wherever they are now.", steps: [...openRow("Garden plot"), "wait:600", ...openRow("Photos from Sunday"), "wait:600", "key:Mod+f"] },
       { id: "did-you-mean", label: "Did you mean", note: "A misspelt word, mended.", steps: ["wait:700", "key:Mod+f", "type:gardn"] },
       { id: "server-search", label: "Search on the server", note: "Nothing here: the server can look further back.", steps: ["wait:700", "key:Mod+f", "type:zebra"] },
       { id: "indexing", label: "Still indexing", note: "Recent mail may be missing while it is indexed.", params: { indexing: "40" }, steps: ["wait:700", "key:Mod+f", "type:zebra"] },

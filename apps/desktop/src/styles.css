@@ -1962,6 +1962,16 @@ button.list-title:hover {
   white-space: nowrap;
 }
 
+/* A message opened lately: its subject, then who sent it, which gives way first. */
+.search-opened .search-recent span:not(.muted) {
+  flex: none;
+  max-width: 70%;
+}
+
+.search-opened .search-recent .muted {
+  font-size: 12.5px;
+}
+
 .search-forget {
   margin-right: 6px;
   color: var(--muted);
