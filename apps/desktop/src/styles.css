@@ -6562,7 +6562,7 @@ button.sender-row:hover:not(:disabled) {
   border-radius: 12px;
 }
 
-/* Settings › Shortcuts: each message action, its keys, and changing them. */
+/* Settings › Shortcuts: everything a key does, by part, its keys, and changing them. */
 .my-keys {
   margin: 0 0 8px;
   padding: 0;
@@ -6610,6 +6610,13 @@ button.sender-row:hover:not(:disabled) {
 .shortcut-list dt,
 .shortcut-list dd {
   margin: 0;
+}
+
+/* One key cap per key: "/" and "Ctrl+/" read apart. */
+.shortcut-list dt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .about-head {

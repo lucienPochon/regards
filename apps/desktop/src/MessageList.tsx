@@ -19,7 +19,7 @@ import { type Anchor, anchorOf } from "./Menu";
 import { accountColour, usePrefs } from "./prefs";
 import type { Opened } from "./recent-opened";
 import { SEARCH_CHIPS, hasTerm, toggleTerm } from "./search";
-import { MOD_KEY, useShortcuts } from "./shortcuts";
+import { useShortcuts, withKey } from "./shortcuts";
 import { DRAG_TYPE, type DragPayload } from "./Sidebar";
 import { t, tn } from "./i18n";
 
@@ -374,17 +374,17 @@ export function MessageList({
   }
   useShortcuts({
     ...actionShortcuts,
-    j: () => step(1),
+    next: () => step(1),
     ArrowDown: () => step(1),
-    k: () => step(-1),
+    previous: () => step(-1),
     ArrowUp: () => step(-1),
     ...(prefs.keySet === "standard" ? { ArrowRight: () => step(1), ArrowLeft: () => step(-1) } : {}),
-    x: () => {
+    select: () => {
       const item = current();
       if (item) toggle(item);
     },
-    "Mod+a": () => onPick(new Set(all.map((item) => item.id))),
-    "Mod+f": () => {
+    selectAll: () => onPick(new Set(all.map((item) => item.id))),
+    search: () => {
       search.onQuery(search.query ?? "");
       field.current?.focus();
     },
@@ -581,7 +581,7 @@ export function MessageList({
             <button
               type="button"
               className="icon-btn small"
-              title={t("More ({key})", { key: `${MOD_KEY}+K` })}
+              title={withKey(t("More"), "commands")}
               aria-label={t("More")}
               onClick={() => palette(targetsFor(item))}
             >
@@ -621,7 +621,7 @@ export function MessageList({
           <button
             type="button"
             className="icon-btn"
-            title={(showDone.on ? t("Hide Done mail ({key})") : t("Show Done mail ({key})")).replace("{key}", `${MOD_KEY}+E`)}
+            title={withKey(showDone.on ? t("Hide Done mail") : t("Show Done mail"), "showDone")}
             aria-label={t("Show Done mail")}
             aria-pressed={showDone.on}
             onClick={showDone.toggle}
@@ -629,7 +629,7 @@ export function MessageList({
             <Icon name="check" size={17} />
           </button>
         )}
-        <button type="button" className="icon-btn" title={t("Search ({key})", { key: `${MOD_KEY}+F` })} aria-label={t("Search")} onClick={() => search.onQuery("")}>
+        <button type="button" className="icon-btn" title={withKey(t("Search"), "search")} aria-label={t("Search")} onClick={() => search.onQuery("")}>
           <Icon name="search" size={17} />
         </button>
         {onMarkAllRead && (
@@ -989,7 +989,7 @@ function SelectionBar({
             <Icon name={action.icon} size={17} />
           </button>
         ))}
-        <button type="button" className="icon-btn" title={t("More ({key})", { key: `${MOD_KEY}+K` })} aria-label={t("More")} onClick={onMore}>
+        <button type="button" className="icon-btn" title={withKey(t("More"), "commands")} aria-label={t("More")} onClick={onMore}>
           <Icon name="more" size={17} />
         </button>
       </div>

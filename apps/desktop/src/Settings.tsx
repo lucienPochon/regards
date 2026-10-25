@@ -20,9 +20,9 @@ import type { Layout } from "./layout";
 import { type Screening, setScreening } from "./smart";
 import { TemplatesEditor } from "./TemplatesEditor";
 import type { AccountMail, MailState, ServiceCheck } from "./mail";
-import { KEYED_ACTIONS, type ActionId, keysFor } from "./actions";
-import { MOD_KEY, keyName, keyText, placeName, shortcutList, takenKey, useShortcuts } from "./shortcuts";
-import { ACCOUNT_COLOURS, COLOUR_NAMES, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
+import { KEYED_ACTIONS, keysFor } from "./actions";
+import { COMMANDS, MOD_KEY, commandHint, commandKeys, keyText, pressedNames, refusedKey, shortcutList, useShortcuts } from "./shortcuts";
+import { ACCOUNT_COLOURS, COLOUR_NAMES, type Prefs, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
 import { Choice, LinkRow, Option, Select, Toggle } from "./SettingsControls";
 import {
   AccessibilityPage,
@@ -738,14 +738,17 @@ function InboxTab({
 
 /** Text to start a message with: written here, or kept from the composer. */
 function TemplatesTab() {
+  const key = commandHint("template");
   return (
     <>
       <h3>{t("Templates")}</h3>
       <p className="muted settings-lead">
-        {t(
-          "Start a message from one with the templates button in the composer, or {key}. The same list also keeps what you have written as a new template.",
-          { key: `${MOD_KEY}+Shift+T` },
-        )}
+        {key
+          ? t(
+              "Start a message from one with the templates button in the composer, or {key}. The same list also keeps what you have written as a new template.",
+              { key },
+            )
+          : t("Start a message from one with the templates button in the composer. The same list also keeps what you have written as a new template.")}
       </p>
       <div className="template-hint">
         <strong>{t("Filled in when the template is used")}</strong>
@@ -766,11 +769,18 @@ function TemplatesTab() {
   );
 }
 
-/** The keys: the key set, the person's own keys for message actions (in Settings), and the full list. */
+/** Every action's and command's keys now, by id, and their names. */
+function allKeys(prefs: Prefs): { keys: Record<string, string[]>; labels: Record<string, string> } {
+  return {
+    keys: { ...keysFor(prefs.keySet, prefs.myKeys), ...commandKeys(prefs.keySet, prefs.myKeys) },
+    labels: Object.fromEntries([...KEYED_ACTIONS, ...COMMANDS].map((one) => [one.id, one.label])),
+  };
+}
+
+/** The keys: the key set, the person's own keys (in Settings), and the full list. */
 export function ShortcutsTab({ editable = false }: { editable?: boolean }) {
   const prefs = usePrefs();
-  const keys = keysFor(prefs.keySet, prefs.myKeys);
-  const labels = Object.fromEntries(KEYED_ACTIONS.map((one) => [one.id, one.label]));
+  const { keys, labels } = allKeys(prefs);
   return (
     <>
       <h3>{t("Keyboard shortcuts")}</h3>
@@ -796,10 +806,12 @@ export function ShortcutsTab({ editable = false }: { editable?: boolean }) {
       )}
       {editable && <MyKeys />}
       <dl className="shortcut-list">
-        {shortcutList(prefs.keySet, prefs.myKeys, keys, labels).map((shortcut) => (
-          <div key={shortcut.keys}>
+        {shortcutList(prefs.keySet, keys, labels).map((shortcut) => (
+          <div key={shortcut.action}>
             <dt>
-              <kbd>{shortcut.keys}</kbd>
+              {shortcut.keys.map((key) => (
+                <kbd key={key}>{key}</kbd>
+              ))}
             </dt>
             <dd>{shortcut.action}</dd>
           </div>
@@ -813,21 +825,34 @@ export function ShortcutsTab({ editable = false }: { editable?: boolean }) {
 /** Keys that only ever modify another. */
 const MODIFIERS = ["Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock", "OS"];
 /** Read and unread are one toggle's halves: they may share a key. */
-const halves = (one: ActionId, other: ActionId) =>
-  (one === "read" && other === "unread") || (one === "unread" && other === "read");
+const halves = (one: string, other: string) => (one === "read" && other === "unread") || (one === "unread" && other === "read");
 
-/** Settings › Shortcuts: the person's own key for each message action. */
+/** Settings › Shortcuts, by part: the message actions with what else acts on messages, then the commands. */
+const KEY_PARTS: { title: string; ids: string[] }[] = [
+  { title: t("Moving around"), ids: COMMANDS.filter((one) => one.part === "moving").map((one) => one.id) },
+  {
+    title: t("Message actions"),
+    ids: [...KEYED_ACTIONS.map((one) => one.id), ...COMMANDS.filter((one) => one.part === "messages").map((one) => one.id)],
+  },
+  { title: t("Writing"), ids: COMMANDS.filter((one) => one.part === "writing").map((one) => one.id) },
+  { title: t("The app"), ids: COMMANDS.filter((one) => one.part === "app").map((one) => one.id) },
+];
+
+/**
+ * Settings › Shortcuts: the person's own key for everything a key does.
+ * Escape, Enter, Tab, the arrows and Ctrl+C/X/V keep theirs.
+ */
 function MyKeys() {
   const prefs = usePrefs();
-  const [capturing, setCapturing] = useState<ActionId | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const keys = keysFor(prefs.keySet, prefs.myKeys);
-  const shown = (name: string) => (name === " " ? "Space" : keyText(name));
-  const choose = (id: ActionId, chosen: string[] | null) => {
+  const [capturing, setCapturing] = useState<string | null>(null);
+  // What the last change said, shown under its part.
+  const [note, setNote] = useState<{ id: string; text: string } | null>(null);
+  const { keys, labels } = allKeys(prefs);
+  const choose = (id: string, chosen: string[] | null) => {
     const { [id]: _left, ...rest } = prefs.myKeys;
     setPrefs({ myKeys: chosen === null ? rest : { ...rest, [id]: chosen } });
   };
-  const capture = (id: ActionId, label: string) => (event: React.KeyboardEvent) => {
+  const capture = (id: string) => (event: React.KeyboardEvent) => {
     if (MODIFIERS.includes(event.key)) return;
     event.preventDefault();
     event.stopPropagation();
@@ -835,87 +860,95 @@ function MyKeys() {
       setCapturing(null);
       return;
     }
-    const name = keyName(event.nativeEvent) ?? placeName(event.nativeEvent);
-    if (!name) {
-      setNote(t("That combination cannot be a shortcut. Try a key alone, with Shift, or with {key}.", { key: MOD_KEY }));
+    const names = pressedNames(event.nativeEvent);
+    if (names.length === 0) {
+      setNote({ id, text: t("That combination cannot be a shortcut. Try a key alone, with Shift, or with {key}.", { key: MOD_KEY }) });
       return;
     }
-    const taken = takenKey(prefs.keySet, name);
-    if (taken) {
-      setNote(t("{key} is taken: {what}. Try another key.", { key: shown(name), what: taken }));
+    const refused = refusedKey(id, names);
+    if (refused) {
+      setNote({ id, text: refused });
       return;
     }
-    // A key another action had moves here.
-    const next = { ...prefs.myKeys, [id]: [name] };
+    // A key something else had moves here.
+    const next = { ...prefs.myKeys, [id]: [names[0]] };
     const from: string[] = [];
-    for (const other of KEYED_ACTIONS) {
-      if (other.id === id || halves(id, other.id) || !keys[other.id].includes(name)) continue;
-      next[other.id] = keys[other.id].filter((key) => key !== name);
-      from.push(other.label);
+    for (const other of Object.keys(keys)) {
+      if (other === id || halves(id, other) || !keys[other].some((key) => names.includes(key))) continue;
+      next[other] = keys[other].filter((key) => !names.includes(key));
+      from.push(labels[other]);
     }
     setPrefs({ myKeys: next });
     setCapturing(null);
-    setNote(from.length > 0 ? t("{key} is now {action}, no longer {before}.", { key: shown(name), action: label, before: from.join(", ") }) : null);
+    setNote(
+      from.length > 0
+        ? { id, text: t("{key} is now {action}, no longer {before}.", { key: keyText(names[0]), action: labels[id], before: from.join(", ") }) }
+        : null,
+    );
   };
   return (
     <>
-      <h4 className="settings-subhead">{t("Message actions")}</h4>
-      <ul className="my-keys">
-        {KEYED_ACTIONS.map(({ id, label }) => (
-          <li key={id}>
-            <span className="my-keys-what">{label}</span>
-            <span className="my-keys-keys">
-              {keys[id].length > 0 ? keys[id].map((name) => <kbd key={name}>{shown(name)}</kbd>) : <span className="muted">{t("No key")}</span>}
-            </span>
-            {capturing === id ? (
-              <button
-                type="button"
-                className="btn small key-capture"
-                ref={(element) => element?.focus()}
-                onKeyDown={capture(id, label)}
-                onBlur={() => setCapturing(null)}
-              >
-                {t("Press a key…")}
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="btn small"
-                aria-label={t("Change the key of {action}", { action: label })}
-                onClick={() => {
-                  setNote(null);
-                  setCapturing(id);
-                }}
-              >
-                {t("Change")}
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn small"
-              aria-label={t("No key for {action}", { action: label })}
-              disabled={keys[id].length === 0}
-              onClick={() => choose(id, [])}
-            >
-              {t("Clear")}
-            </button>
-            <button
-              type="button"
-              className="link"
-              aria-label={t("{action}: back to the key set's key", { action: label })}
-              hidden={!Array.isArray(prefs.myKeys[id])}
-              onClick={() => choose(id, null)}
-            >
-              {t("Reset")}
-            </button>
-          </li>
-        ))}
-      </ul>
-      {note && (
-        <p className="muted settings-note" role="status">
-          {note}
-        </p>
-      )}
+      {KEY_PARTS.map((part) => (
+        <section key={part.title} className="my-keys-part">
+          <h4 className="settings-subhead">{part.title}</h4>
+          <ul className="my-keys">
+            {part.ids.map((id) => (
+              <li key={id}>
+                <span className="my-keys-what">{labels[id]}</span>
+                <span className="my-keys-keys">
+                  {keys[id].length > 0 ? keys[id].map((name) => <kbd key={name}>{keyText(name)}</kbd>) : <span className="muted">{t("No key")}</span>}
+                </span>
+                {capturing === id ? (
+                  <button
+                    type="button"
+                    className="btn small key-capture"
+                    ref={(element) => element?.focus()}
+                    onKeyDown={capture(id)}
+                    onBlur={() => setCapturing(null)}
+                  >
+                    {t("Press a key…")}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn small"
+                    aria-label={t("Change the key of {action}", { action: labels[id] })}
+                    onClick={() => {
+                      setNote(null);
+                      setCapturing(id);
+                    }}
+                  >
+                    {t("Change")}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn small"
+                  aria-label={t("No key for {action}", { action: labels[id] })}
+                  disabled={keys[id].length === 0}
+                  onClick={() => choose(id, [])}
+                >
+                  {t("Clear")}
+                </button>
+                <button
+                  type="button"
+                  className="link"
+                  aria-label={t("{action}: back to the key set's key", { action: labels[id] })}
+                  hidden={!Array.isArray(prefs.myKeys[id])}
+                  onClick={() => choose(id, null)}
+                >
+                  {t("Reset")}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {note && part.ids.includes(note.id) && (
+            <p className="muted settings-note" role="status">
+              {note.text}
+            </p>
+          )}
+        </section>
+      ))}
       {Object.keys(prefs.myKeys).length > 0 && (
         <button type="button" className="btn small my-keys-reset" onClick={() => setPrefs({ myKeys: {} })}>
           {t("Back to the key set's keys")}

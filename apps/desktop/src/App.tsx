@@ -107,7 +107,7 @@ import { useLabels } from "./labels";
 import { useOnline } from "./online";
 import { type Template, type Written, listTemplates, saveWritten } from "./templates";
 import { type AssistantJob, AssistantDialog, useAssistantKind } from "./AssistantDialog";
-import { MOD_KEY, useShortcuts } from "./shortcuts";
+import { commandHint, commandOf, firstKey, keyText, useShortcuts } from "./shortcuts";
 import { type DragPayload, Sidebar } from "./Sidebar";
 import { useSidebarPrefs } from "./sidebar-prefs";
 import { presets, reminderPresets, sendPresets, snoozeMessages, timeHint } from "./snooze";
@@ -322,26 +322,17 @@ export function App() {
     if (noAccounts) setWelcoming(true);
   }, [noAccounts]);
   const appPrefs = usePrefs();
-  const standardKeys = appPrefs.keySet === "standard";
   // Settings › Accessibility: the whole window larger or smaller.
   useEffect(() => {
     document.documentElement.style.setProperty("zoom", appPrefs.zoom === 1 ? "" : String(appPrefs.zoom));
   }, [appPrefs.zoom]);
-  // Ctrl + / Ctrl − / Ctrl 0 (Cmd on a Mac): zoom from anywhere, a field included.
+  // Zoom from anywhere, a field included: Ctrl + / Ctrl − / Ctrl 0 (Cmd on a Mac), or the keys chosen instead.
   useEffect(() => {
     const keys = (event: globalThis.KeyboardEvent) => {
-      const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? event.metaKey : event.ctrlKey;
-      if (!mod || event.altKey) return;
+      const command = commandOf(event, ["zoomIn", "zoomOut", "zoomReset"]);
+      if (command === null) return;
       const now = getPrefs().zoom;
-      const zoom =
-        event.key === "+" || event.key === "="
-          ? zoomStep(now, 1)
-          : event.key === "-"
-            ? zoomStep(now, -1)
-            : event.key === "0"
-              ? 1
-              : null;
-      if (zoom === null) return;
+      const zoom = command === "zoomIn" ? zoomStep(now, 1) : command === "zoomOut" ? zoomStep(now, -1) : 1;
       event.preventDefault();
       setPrefs({ zoom });
       setSaid(`Zoom ${Math.round(zoom * 100)} %`);
@@ -1486,15 +1477,15 @@ export function App() {
     go({ kind: "drafts" }, "Drafts", "draft");
     for (const role of ["sent", "archive", "junk", "trash"] as const) go({ kind: "role", role }, ROLE_LABELS[role], ROLE_ICONS[role]);
     go({ kind: "outbox" }, "Outbox", "outbox");
-    entries.push({ label: t("Go to folder…"), icon: "folder", keys: standardKeys ? "Mod+Shift+G" : undefined, onSelect: goToFolder });
+    entries.push({ label: t("Go to folder…"), icon: "folder", keys: firstKey("goFolder"), onSelect: goToFolder });
     entries.push("separator");
     if (readTargets().length > 0) entries.push({ label: t("Mark everything here read"), icon: "mailOpen", onSelect: markAllHere });
     entries.push(
-      { label: t("New message"), icon: "compose", keys: "c", onSelect: writeNew },
+      { label: t("New message"), icon: "compose", keys: firstKey("compose"), onSelect: writeNew },
       {
         label: t("Search mail"),
         icon: "search",
-        keys: "Mod+f",
+        keys: firstKey("search"),
         onSelect: () => {
           if (layout.mode === "single") setOpen(null);
           setSearch({ query: "", accountId: null });
@@ -1502,8 +1493,8 @@ export function App() {
       },
       ...(search?.query.trim() && !savedNow ? [{ label: t("Save this search…"), icon: "star" as const, onSelect: saveThisSearch }] : []),
       ...savedSearches.map((saved) => ({ label: `Search: ${saved.name}`, icon: "search" as const, detail: saved.query, onSelect: () => openSaved(saved) })),
-      { label: t("Check for new mail"), icon: "refresh", keys: standardKeys ? "Mod+r" : undefined, onSelect: syncNow },
-      { label: layout.locked ? t("Fold the sidebar") : t("Show the sidebar"), icon: "sidebar", keys: "/", onSelect: toggleSidebar },
+      { label: t("Check for new mail"), icon: "refresh", keys: firstKey("sync"), onSelect: syncNow },
+      { label: layout.locked ? t("Fold the sidebar") : t("Show the sidebar"), icon: "sidebar", keys: firstKey("sidebar"), onSelect: toggleSidebar },
       // Back beside the list from here; leaving it is chosen in Settings › Appearance, not by a stray pick.
       ...(layout.mode === "single"
         ? [{ label: t("Open messages beside the list"), icon: "split" as const, onSelect: () => setLayout({ mode: "split" }) }]
@@ -1511,8 +1502,8 @@ export function App() {
       { label: t("Light theme"), icon: "sun", onSelect: () => applyTheme("light", true) },
       { label: t("Dark theme"), icon: "moon", onSelect: () => applyTheme("dark", true) },
       { label: t("Theme as the system"), icon: "sun", onSelect: () => applyTheme("system", true) },
-      { label: t("Settings"), icon: "settings", keys: "Mod+,", onSelect: () => setSettings("accounts") },
-      { label: t("Keyboard shortcuts"), icon: "keyboard", keys: "?", onSelect: () => setHelp(true) },
+      { label: t("Settings"), icon: "settings", keys: firstKey("settings"), onSelect: () => setSettings("accounts") },
+      { label: t("Keyboard shortcuts"), icon: "keyboard", keys: firstKey("help"), onSelect: () => setHelp(true) },
     );
     setMenu({
       anchor: { x: 0, y: 0 },
@@ -1535,42 +1526,37 @@ export function App() {
       entries: [
         { label: t("About Regards"), onSelect: () => setSettings("support") },
         "separator",
-        { label: t("Settings…"), hint: `${MOD_KEY}+,`, onSelect: () => setSettings("accounts") },
+        { label: t("Settings…"), hint: commandHint("settings"), onSelect: () => setSettings("accounts") },
         { label: t("Accounts…"), onSelect: () => setSettings("accounts") },
         { label: t("Add an account…"), icon: "plus", onSelect: () => setAddingAccount(true) },
-        { label: t("Keyboard shortcuts"), hint: "?", onSelect: () => setHelp(true) },
+        { label: t("Keyboard shortcuts"), hint: commandHint("help"), onSelect: () => setHelp(true) },
         "separator",
-        { label: t("Quit Regards"), hint: `${MOD_KEY}+Q`, onSelect: quit },
+        { label: t("Quit Regards"), hint: commandHint("quit"), onSelect: quit },
       ],
     });
 
   useShortcuts({
-    "?": () => setHelp(true),
-    c: writeNew,
-    "Mod+,": () => setSettings("accounts"),
-    "Mod+k": () => palette(openItem ? actionsForItems([openItem]) : null, openItem?.subject || undefined),
+    help: () => setHelp(true),
+    compose: writeNew,
+    settings: () => setSettings("accounts"),
+    commands: () => palette(openItem ? actionsForItems([openItem]) : null, openItem?.subject || undefined),
     // The list handles it when shown; here when a message covers it.
-    "Mod+f": () => {
+    search: () => {
       if (layout.mode === "single") setOpen(null);
       setSearch((now) => now ?? { query: "", accountId: null });
     },
-    "Mod+q": quit,
-    "Mod+Shift+U": newFolderHere,
-    ...(inboxByDate ? { "Mod+e": () => setShowDone((now) => !now) } : {}),
-    "/": toggleSidebar,
-    ...(standardKeys
-      ? {
-          "Mod+g": () => changeView({ kind: "marked", mark: "aside" }),
-          "Mod+d": () => changeView({ kind: "marked", mark: "pinned" }),
-          "Mod+s": () => changeView({ kind: "marked", mark: "snoozed" }),
-          "Mod+Shift+G": goToFolder,
-          "Mod+Alt+1": () => inboxBy("smart"),
-          "Mod+Alt+2": () => inboxBy("cards"),
-          "Mod+Alt+3": () => inboxBy("date"),
-          "Mod+/": toggleSidebar,
-          "Mod+r": syncNow,
-        }
-      : {}),
+    quit,
+    newFolder: newFolderHere,
+    ...(inboxByDate ? { showDone: () => setShowDone((now) => !now) } : {}),
+    sidebar: toggleSidebar,
+    goAside: () => changeView({ kind: "marked", mark: "aside" }),
+    goPinned: () => changeView({ kind: "marked", mark: "pinned" }),
+    goSnoozed: () => changeView({ kind: "marked", mark: "snoozed" }),
+    goFolder: goToFolder,
+    inboxPriority: () => inboxBy("smart"),
+    inboxCategory: () => inboxBy("cards"),
+    inboxDate: () => inboxBy("date"),
+    sync: syncNow,
     ...(overlay ? { Escape: () => setOverlay(false) } : {}),
   });
 
@@ -2157,7 +2143,8 @@ export function App() {
                 </span>
                 <h2>{view.kind === "drafts" ? t("Pick a draft to keep writing") : t("No message open")}</h2>
                 <p>
-                  {t("Choose a message to read it here.")} <kbd>j</kbd> {t("and")} <kbd>k</kbd> {t("move through the list.")}
+                  {t("Choose a message to read it here.")} <kbd>{keyText(firstKey("next") ?? "ArrowDown")}</kbd> {t("and")}{" "}
+                  <kbd>{keyText(firstKey("previous") ?? "ArrowUp")}</kbd> {t("move through the list.")}
                 </p>
               </div>
             ))

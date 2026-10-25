@@ -46,7 +46,7 @@ export function SendToast({
       setError(String(failure));
     }
   };
-  useShortcuts(left > 0 && !error ? { z: undo, "Mod+z": undo } : {});
+  useShortcuts(left > 0 && !error ? { undo } : {});
 
   return (
     <div className="toast">

@@ -31,7 +31,7 @@ export function UndoToast({ undo, onDone }: { undo: UndoBar; onDone: () => void 
       setError(String(failure));
     }
   };
-  useShortcuts(error ? {} : { z: revert, "Mod+z": revert });
+  useShortcuts(error ? {} : { undo: revert });
 
   return (
     <div

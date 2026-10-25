@@ -6,7 +6,7 @@ import { t } from "./i18n";
 
 /** The list of keyboard shortcuts; while it shows, other shortcuts are paused. */
 export function ShortcutHelp({ onClose }: { onClose: () => void }) {
-  useShortcuts({ Escape: onClose, "?": onClose }, { modal: true });
+  useShortcuts({ Escape: onClose, help: onClose }, { modal: true });
   const box = useRef<HTMLElement>(null);
   useDialogFocus(box);
   return (

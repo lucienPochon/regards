@@ -32,7 +32,7 @@ import { type NewMail, type NotificationSettings, notificationSettings, setNotif
 import type { ServiceCheck } from "./mail";
 import { ACCOUNT_COLOURS, COLOUR_NAMES, type Prefs, ZOOMS, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
 import { t } from "./i18n";
-import { MOD_KEY } from "./shortcuts";
+import { MOD_KEY, commandHint } from "./shortcuts";
 import { LinkRow, Option, Select, SubPageHead, Toggle } from "./SettingsControls";
 import { SignaturesPage } from "./SignaturesPage";
 import { blockSender, blockedSenders, senderImages, setSenderImages } from "./smart";
@@ -1148,13 +1148,18 @@ export function ComposerPage({
 /** Accessibility: the whole window larger or smaller. */
 export function AccessibilityPage() {
   const prefs = usePrefs();
+  const [larger, smaller, actual] = [commandHint("zoomIn"), commandHint("zoomOut"), commandHint("zoomReset")];
   return (
     <>
       <h3>{t("Accessibility")}</h3>
       <Option
         icon="search"
         label={t("Zoom")}
-        description={t("Makes everything in the window larger or smaller. {key} + and {key} − change it from anywhere; {key} 0 goes back to 100 %.", { key: MOD_KEY })}
+        description={
+          larger && smaller && actual
+            ? t("Makes everything in the window larger or smaller. {larger} and {smaller} change it from anywhere; {actual} goes back to 100 %.", { larger, smaller, actual })
+            : t("Makes everything in the window larger or smaller.")
+        }
       >
         <Select
           label={t("Zoom")}
