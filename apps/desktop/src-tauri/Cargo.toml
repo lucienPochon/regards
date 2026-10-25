@@ -44,6 +44,15 @@ tokio.workspace = true
 # A click on a notification opens what it is about; the plugin can't tell of
 # clicks. The version the plugin already uses (0.8.1, 2026-07-17).
 tauri-winrt-notification = "=0.8.1"
+# Snap Layouts on the app's own maximise button (snap.rs): the version the
+# workspace already uses, with the parts that press Win+Z and read Windows'
+# version and setting.
+windows-sys = { workspace = true, features = [
+    "Wdk_System_SystemServices",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }
 
 [lints]
 workspace = true

@@ -1,5 +1,6 @@
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "./icons";
 import { type Anchor, anchorOf } from "./Menu";
 
@@ -19,6 +20,9 @@ function currentWindow() {
   }
 }
 
+/** How long the maximise button is hovered before Windows 11 offers its Snap Layouts. */
+const SNAP_AFTER = 450;
+
 /**
  * On Windows the app draws its own caption buttons, over the top right of the
  * window: the app menu, minimise, maximise or restore, and close (which keeps
@@ -27,6 +31,20 @@ function currentWindow() {
  */
 export function TitleBar({ onAppMenu }: { onAppMenu?: (anchor: Anchor) => void }) {
   const [maximized, setMaximized] = useState(false);
+  // Hovered a moment, the maximise button offers Windows' Snap Layouts (snap.rs).
+  const snapTimer = useRef<number | null>(null);
+  const stopSnap = () => {
+    if (snapTimer.current !== null) window.clearTimeout(snapTimer.current);
+    snapTimer.current = null;
+  };
+  const startSnap = () => {
+    stopSnap();
+    snapTimer.current = window.setTimeout(() => {
+      snapTimer.current = null;
+      invoke("snap_layouts").catch(() => {});
+    }, SNAP_AFTER);
+  };
+  useEffect(() => stopSnap, []);
   useEffect(() => {
     const window = currentWindow();
     if (!window) return;
@@ -58,6 +76,9 @@ export function TitleBar({ onAppMenu }: { onAppMenu?: (anchor: Anchor) => void }
         title={maximized ? "Restore" : "Maximise"}
         aria-label={maximized ? "Restore" : "Maximise"}
         onClick={() => void currentWindow()?.toggleMaximize()}
+        onPointerEnter={startSnap}
+        onPointerLeave={stopSnap}
+        onPointerDown={stopSnap}
       >
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" fill="none" stroke="currentColor">
           {maximized ? (

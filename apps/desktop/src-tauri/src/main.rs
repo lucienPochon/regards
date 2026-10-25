@@ -20,6 +20,7 @@ mod drops;
 mod links;
 mod mail_frame;
 mod notify;
+mod snap;
 mod support;
 mod system;
 mod updates;
@@ -2155,6 +2156,7 @@ fn main() {
             people_forget,
             compose_window::composer_window,
             compose_window::composer_window_open,
+            snap::snap_layouts,
             draft_check,
             reading_settings,
             set_reading_settings,
