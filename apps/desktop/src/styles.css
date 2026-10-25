@@ -4594,6 +4594,11 @@ button.list-title:hover {
   color: var(--warm);
 }
 
+.smart-icon.invitations {
+  background: var(--pill-strong);
+  color: var(--accent);
+}
+
 .smart-icon.new {
   background: var(--pill-strong);
   color: var(--accent);

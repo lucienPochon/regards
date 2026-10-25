@@ -36,7 +36,7 @@ export const TOUR: Group[] = [
       {
         id: "smart-inbox",
         label: "Inbox by priority",
-        note: "New senders to accept or block, Priority, then today's mail. Notifications and Newsletters each sit in one row.",
+        note: "New senders to accept or block, Priority, then today's mail. Notifications, Newsletters, Invitations and Pinned each sit in one row.",
         params: { view: "smart" },
       },
       {
@@ -49,8 +49,9 @@ export const TOUR: Group[] = [
       { id: "unified", label: "Two accounts, one inbox", note: "Both accounts' mail together; the sidebar lists each account.", params: { accounts: "2" } },
       { id: "folded-sidebar", label: "Sidebar folded to icons", note: "The / key does the same.", params: { sidebar: "icons" } },
       { id: "folders-more", label: "More folders", note: "Folders beyond the usual ones.", steps: ["wait:700", "text:button=More"] },
-      { id: "group-open", label: "Notifications, opened", note: "A group row opens its own list.", steps: openRow("Notifications") },
+      { id: "group-open", label: "Notifications, opened", note: "A group row opens its own list.", params: { view: "smart" }, steps: openRow("Notifications") },
       { id: "pinned", label: "Pinned", note: "Pinned mail, from the sidebar.", steps: ["wait:700", "text:button=Pinned"] },
+      { id: "invitations-open", label: "Invitations, opened", note: "Invitations not answered yet, as one row of the Smart Inbox; answering one takes it off.", params: { view: "smart" }, steps: openRow("Invitations") },
       { id: "screen-hold", label: "New senders held aside", note: "Settings › Inbox › new senders: held until accepted.", params: { screen: "hold" } },
       { id: "screen-off", label: "New senders not screened", note: "New senders' mail goes straight into the inbox.", params: { screen: "off" } },
       { id: "reminder-due", label: "A reminder came due", note: "Nobody replied in time: the message you sent comes back to the inbox, with a bell.", params: { reminder: "1" }, steps: ["wait:900", "see:.reminder.due="] },
