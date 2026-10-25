@@ -1430,6 +1430,15 @@ async fn draft_forward(
 }
 
 #[tauri::command]
+async fn draft_again(bridge: State<'_, Bridge>, message_id: i64) -> Result<DraftView, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::DRAFT_AGAIN, MessageRef { id: message_id })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
 async fn draft_get(bridge: State<'_, Bridge>, id: i64) -> Result<DraftView, String> {
     let mut client = bridge.connect().await?.client;
     client.call(methods::DRAFT_GET, DraftRef { id }).await.map_err(describe)
@@ -2244,6 +2253,7 @@ fn main() {
             draft_create,
             draft_reply,
             draft_forward,
+            draft_again,
             draft_get,
             draft_list,
             draft_attach_files,

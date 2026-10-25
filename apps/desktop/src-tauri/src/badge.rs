@@ -1,13 +1,13 @@
 //! The unread count on the taskbar or dock: the inboxes' unread mail (not
-//! what is set aside or snoozed) of the accounts chosen, every one by
-//! default, kept current with the change feed. Windows' taskbar takes no
-//! number, only a small picture over the icon: there the count is drawn into
-//! one.
+//! what is set aside or snoozed), all of it or only what is from people or
+//! priority, of the accounts chosen, every one by default, kept current
+//! with the change feed. Windows' taskbar takes no number, only a small
+//! picture over the icon: there the count is drawn into one.
 
 use crate::Bridge;
 use crate::background::Background;
 use regards_core::mailbox::Role;
-use regards_ipc::protocol::{AccountRef, AccountSummary, MailboxListResult, methods};
+use regards_ipc::protocol::{AccountRef, AccountSummary, MailboxListResult, Section, SmartOverviewResult, methods};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
@@ -27,6 +27,8 @@ pub(crate) struct BadgeChoices {
     pub(crate) on: bool,
     /// The accounts counted; `None`: every one.
     pub(crate) accounts: Option<Vec<String>>,
+    /// Which unread mail.
+    pub(crate) count: BadgeCount,
 }
 
 impl Default for BadgeChoices {
@@ -34,8 +36,23 @@ impl Default for BadgeChoices {
         Self {
             on: true,
             accounts: None,
+            count: BadgeCount::Inbox,
         }
     }
+}
+
+/// Which unread mail of the inboxes the badge counts.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum BadgeCount {
+    /// All of it.
+    #[default]
+    Inbox,
+    /// From people: the Smart Inbox's Priority and People (not new
+    /// senders, notifications or newsletters).
+    People,
+    /// Priority mail only.
+    Priority,
 }
 
 impl BadgeChoices {
@@ -87,6 +104,27 @@ async fn unread(app: &AppHandle, choices: &BadgeChoices) -> Result<u32, String> 
         .map_err(|error| error.to_string())?;
     let mut total = 0;
     for account in accounts.iter().filter(|account| choices.counts(&account.id)) {
+        if choices.count != BadgeCount::Inbox {
+            let overview: SmartOverviewResult = client
+                .call(
+                    methods::SMART_OVERVIEW,
+                    AccountRef {
+                        account_id: account.id.clone(),
+                    },
+                )
+                .await
+                .map_err(|error| error.to_string())?;
+            total += overview
+                .sections
+                .iter()
+                .filter(|counted| match choices.count {
+                    BadgeCount::People => matches!(counted.section, Section::Priority | Section::People),
+                    _ => counted.section == Section::Priority,
+                })
+                .map(|counted| counted.unread)
+                .sum::<u32>();
+            continue;
+        }
         let listed: MailboxListResult = client
             .call(
                 methods::MAILBOX_LIST,
@@ -168,5 +206,18 @@ mod tests {
         assert!(choices.on && choices.counts("work"));
         choices.accounts = Some(vec!["home".into()]);
         assert!(choices.counts("home") && !choices.counts("work"));
+    }
+
+    #[test]
+    fn what_it_counts_is_kept_and_all_unread_mail_before_it_was_chosen() {
+        let saved: BadgeChoices = serde_json::from_str(r#"{"on":true,"accounts":null}"#).unwrap();
+        assert_eq!(saved.count, BadgeCount::Inbox);
+        let people = BadgeChoices {
+            count: BadgeCount::People,
+            ..BadgeChoices::default()
+        };
+        let text = serde_json::to_string(&people).unwrap();
+        assert!(text.contains(r#""count":"people""#), "{text}");
+        assert_eq!(serde_json::from_str::<BadgeChoices>(&text).unwrap(), people);
     }
 }

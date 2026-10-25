@@ -25,6 +25,7 @@ import { type Anchor, type MenuEntry, anchorOf } from "./Menu";
 import { MARK_READ_AFTER, STEP_DWELL, getPrefs, usePrefs } from "./prefs";
 import { senderImages, setSenderImages } from "./smart";
 import { asMarkdown, printMessage, printMessages, textParts } from "./messageText";
+import { rememberOpened } from "./recent-opened";
 import { openUrl } from "./background";
 import { useDark } from "./theme";
 import { SourceDialog } from "./SourceDialog";
@@ -161,6 +162,16 @@ export function ReadingPane({
   }, [thread.length]);
 
   const detail = load.state === "ready" ? load.detail : null;
+  // Remembered for the search page's "Recently opened".
+  useEffect(() => {
+    if (!detail) return;
+    rememberOpened({
+      link: detail.link ?? `regards://message/${detail.message.id}`,
+      subject: detail.message.subject,
+      from: detail.message.from,
+      at: Date.now(),
+    });
+  }, [detail]);
   const message = detail?.message ?? item;
   const mailboxId = detail?.mailbox_id ?? item.mailboxId;
   const folder = folders.find((f) => f.id === mailboxId);
@@ -176,6 +187,7 @@ export function ReadingPane({
     disposable: disposable(folder?.role ?? item.role),
     pinned: message.pinned,
     muted: message.muted === true,
+    sent: (folder?.role ?? item.role) === "sent",
     aside: message.aside,
     snoozed: message.snoozed_until !== null,
     reminding: message.remind_at !== null,
@@ -514,6 +526,7 @@ function ThreadMessage({
     snoozed: (ready?.message.snoozed_until ?? message.snoozed_until) !== null,
     reminding: (ready?.message.remind_at ?? message.remind_at) !== null,
     reminded: ready?.message.reminded ?? message.reminded,
+    sent: entry.mailbox_role === "sent",
   });
   // The message's own view options join its actions in the palette.
   const more = () => {
@@ -670,7 +683,7 @@ function ThreadMessage({
       </div>
       {ready && (
         <div className="mail-foot">
-          {choose(actions, "reply", "forward").map((action) => (
+          {choose(actions, "reply", "forward", "again").map((action) => (
             <button
               key={action.id}
               type="button"

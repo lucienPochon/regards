@@ -53,7 +53,7 @@ import {
 import { Confirm, type ConfirmRequest } from "./Confirm";
 import { DraftsList } from "./DraftsList";
 import { Icon, type IconName } from "./icons";
-import { type Layout, LIST_MAX, LIST_MIN, SIDE_MAX, SIDE_MIN, clampList, clampSide, useLayout } from "./layout";
+import { type Layout, LIST_MAX, LIST_MIN, SIDE_MAX, SIDE_MIN, clampList, clampSide, inboxViewOf, useLayout } from "./layout";
 import {
   type ListItem,
   type MessageFeed,
@@ -75,6 +75,7 @@ import {
 } from "./mail";
 import { type OpenLink, onOpenLink, takeLink } from "./links";
 import { recentFolders, rememberFolder } from "./recent-folders";
+import { type Opened, forgetOpened, linkOf, useOpened } from "./recent-opened";
 import { useRecentSearches } from "./recent-searches";
 import {
   type SavedSearch,
@@ -173,6 +174,7 @@ function targetOf(items: ListItem[]): Target {
     disposable: items.length > 0 && items.every(trashLike),
     pinned: items.length > 0 && items.every((item) => item.pinned),
     muted: items.length > 0 && items.every((item) => item.muted === true),
+    sent: items.length === 1 && items[0].role === "sent",
     aside: items.length > 0 && items.every((item) => item.aside),
     snoozed: items.length > 0 && items.every((item) => item.snoozed_until !== null),
     reminding: items.length > 0 && items.every((item) => item.remind_at !== null),
@@ -204,6 +206,7 @@ const PALETTE_ACTIONS = [
   "reply",
   "replyAll",
   "forward",
+  "again",
   "remind",
   "unsubscribe",
   "label",
@@ -279,6 +282,7 @@ export function App() {
   const [search, setSearch] = useState<{ query: string; accountId: string | null } | null>(null);
   const [searchRound, setSearchRound] = useState(0);
   const [recentSearches, rememberSearch, forgetSearch] = useRecentSearches();
+  const opened = useOpened();
   const typed = search?.query.trim() ?? "";
   const [searchFor, setSearchFor] = useState("");
   useEffect(() => {
@@ -389,19 +393,22 @@ export function App() {
             entry.account.id === view.accountId && entry.mailboxes.some((m) => m.id === view.mailboxId && m.role === "inbox"),
         )
       : undefined;
+  // With several accounts, one account's inbox can look its own way.
+  const ownViewOf = accounts.length > 1 && accountInbox ? accountInbox.account.id : null;
+  const inboxView = inboxViewOf(layout, ownViewOf);
   const smartScope = useMemo(
-    () => (layout.inboxView !== "smart" ? null : inInbox ? unified : accountInbox ? [accountInbox] : null),
-    [layout.inboxView, inInbox, unified, accountInbox],
+    () => (inboxView !== "smart" ? null : inInbox ? unified : accountInbox ? [accountInbox] : null),
+    [inboxView, inInbox, unified, accountInbox],
   );
   const smartOn = smartScope !== null && search === null;
   // Show Done (Ctrl+E): the inbox by date with its Done mail mixed in, greyed.
   const [showDone, setShowDone] = useState(false);
-  const inboxByDate = (inInbox || accountInbox !== null) && layout.inboxView === "date" && search === null;
+  const inboxByDate = (inInbox || accountInbox !== null) && inboxView === "date" && search === null;
   const doneShown = showDone && inboxByDate;
   // The inbox as cards: unread mail by kind, then what has been read.
   const cardScope = useMemo(
-    () => (layout.inboxView !== "cards" ? null : inInbox ? unified : accountInbox ? [accountInbox] : null),
-    [layout.inboxView, inInbox, unified, accountInbox],
+    () => (inboxView !== "cards" ? null : inInbox ? unified : accountInbox ? [accountInbox] : null),
+    [inboxView, inInbox, unified, accountInbox],
   );
   const cardsOn = cardScope !== null && search === null;
   const found = useSearch(accounts, search ? searchFor : "", search?.accountId ?? null, searchRound);
@@ -980,6 +987,20 @@ export function App() {
   };
   const linkTo = useRef(openLink);
   linkTo.current = openLink;
+  // Recently opened, from the search page: the message wherever it is now.
+  const openRecent = (entry: Opened) => {
+    setSearch(null);
+    setPicked(new Set());
+    const gone = () => {
+      forgetOpened(entry.link);
+      setNotice("That message is no longer on this computer.");
+    };
+    const link = linkOf(entry.link);
+    if (!link) gone();
+    else if (link.kind === "message_id") {
+      locateMessage(link.message_id).then((id) => (id === null ? gone() : openLink({ kind: "message", id })), gone);
+    } else openLink(link);
+  };
   useEffect(() => {
     const stop = onOpenLink((link) => linkTo.current(link));
     return () => void stop.then((unlisten) => unlisten()).catch(() => {});
@@ -1984,6 +2005,8 @@ export function App() {
           recents: recentSearches,
           onRemember: rememberSearch,
           onForget: forgetSearch,
+          opened,
+          onOpened: openRecent,
           top: found.top,
           indexing: found.indexing,
           onRetry: () => setSearchRound((round) => round + 1),
@@ -2400,8 +2423,22 @@ export function App() {
       {chooser && (
         <ViewChooser
           anchor={chooser}
-          current={layout.inboxView}
-          onChoose={(inboxView) => setLayout({ inboxView })}
+          current={inboxView}
+          onChoose={(choice) =>
+            ownViewOf ? setLayout({ accountViews: { ...layout.accountViews, [ownViewOf]: choice } }) : setLayout({ inboxView: choice })
+          }
+          forAccount={
+            ownViewOf && accountInbox
+              ? {
+                  label: accountLabel(appPrefs, accountInbox.account),
+                  own: layout.accountViews[ownViewOf] !== undefined,
+                  onShared: () => {
+                    const { [ownViewOf]: _left, ...rest } = layout.accountViews;
+                    setLayout({ accountViews: rest });
+                  },
+                }
+              : undefined
+          }
           accounts={
             accounts.length > 1
               ? [

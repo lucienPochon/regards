@@ -7,7 +7,8 @@ import type { MessageCursor, MessageSummary } from "./accounts";
  * - **Words** match the subject, the people and the text; the last one also
  *   as the start of a word, so results come while typing.
  * - `"a phrase"` matches as written; `-word` leaves out.
- * - `from:` `to:` `subject:` look in one place (`from:"Lena Müller"`).
+ * - `from:` `to:` `subject:` look in one place (`from:"Lena Müller"`);
+ *   `cc:` only among those copied.
  * - `has:attachment`, `is:unread` `is:read` `is:flagged` `is:pinned`.
  * - `in:<folder>` by name or role (`in:sent`); Trash and Junk are left out
  *   unless named, or with `in:anywhere`.
@@ -146,3 +147,35 @@ export const reorderSavedSearches = (ids: number[]) =>
 
 /** Forget a saved search; its mail stays where it is. */
 export const removeSavedSearch = (id: number) => invoke<void>("saved_search_remove", { id });
+
+/** A filter offered as a chip under the search field: what it adds to the search. */
+export interface SearchChip {
+  label: string;
+  term: string;
+}
+
+/** The chips, in order: each adds its words to the search, or takes them out. */
+export const SEARCH_CHIPS: SearchChip[] = [
+  { label: "Unread", term: "is:unread" },
+  { label: "Flagged", term: "is:flagged" },
+  { label: "Pinned", term: "is:pinned" },
+  { label: "With files", term: "has:attachment" },
+  { label: "Sent", term: "in:sent" },
+  { label: "Last 7 days", term: "last 7 days" },
+];
+
+/** `term` as whole words of `query`, in any case. */
+const termPattern = (term: string) => {
+  const words = term.split(" ").map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(`(^|\\s)${words.join("\\s+")}(?=\\s|$)`, "i");
+};
+
+/** Whether the search has `term` among its words. */
+export const hasTerm = (query: string, term: string) => termPattern(term).test(query);
+
+/** The search with `term` taken out if it is there, or added at the end. */
+export function toggleTerm(query: string, term: string): string {
+  if (hasTerm(query, term)) return query.replace(termPattern(term), "$1").replace(/\s{2,}/g, " ").trim();
+  const kept = query.trimEnd();
+  return kept === "" ? term : `${kept} ${term}`;
+}
