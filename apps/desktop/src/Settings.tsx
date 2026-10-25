@@ -20,7 +20,8 @@ import type { Layout } from "./layout";
 import { type Screening, setScreening } from "./smart";
 import { TemplatesEditor } from "./TemplatesEditor";
 import type { AccountMail, MailState, ServiceCheck } from "./mail";
-import { MOD_KEY, shortcutList, useShortcuts } from "./shortcuts";
+import { KEYED_ACTIONS, type ActionId, keysFor } from "./actions";
+import { MOD_KEY, keyName, keyText, placeName, shortcutList, takenKey, useShortcuts } from "./shortcuts";
 import { ACCOUNT_COLOURS, COLOUR_NAMES, accountColour, setPrefs, usePrefs } from "./prefs";
 import { Choice, LinkRow, Option, Select, Toggle } from "./SettingsControls";
 import {
@@ -170,7 +171,7 @@ export function Settings({
           {tab === "scheduling" && <SchedulingPage />}
           {tab === "composer" && <ComposerPage accounts={accounts} confirm={confirm} onAccounts={() => onTab("accounts")} />}
           {tab === "accessibility" && <AccessibilityPage />}
-          {tab === "shortcuts" && <ShortcutsTab />}
+          {tab === "shortcuts" && <ShortcutsTab editable />}
           {tab === "support" && <SupportPage service={service} onRecheck={onRecheck} accounts={accounts} confirm={confirm} />}
         </div>
       </section>
@@ -743,8 +744,11 @@ function TemplatesTab() {
   );
 }
 
-export function ShortcutsTab() {
+/** The keys: the key set, the person's own keys for message actions (in Settings), and the full list. */
+export function ShortcutsTab({ editable = false }: { editable?: boolean }) {
   const prefs = usePrefs();
+  const keys = keysFor(prefs.keySet, prefs.myKeys);
+  const labels = Object.fromEntries(KEYED_ACTIONS.map((one) => [one.id, one.label]));
   return (
     <>
       <h3>Keyboard shortcuts</h3>
@@ -769,8 +773,9 @@ export function ShortcutsTab() {
           the arrows, act.
         </p>
       )}
+      {editable && <MyKeys />}
       <dl className="shortcut-list">
-        {shortcutList(prefs.keySet).map((shortcut) => (
+        {shortcutList(prefs.keySet, prefs.myKeys, keys, labels).map((shortcut) => (
           <div key={shortcut.keys}>
             <dt>
               <kbd>{shortcut.keys}</kbd>
@@ -780,6 +785,122 @@ export function ShortcutsTab() {
         ))}
       </dl>
       <p className="muted small">After clicking inside a message's text, click outside it for the keys to work again.</p>
+    </>
+  );
+}
+
+/** Keys that only ever modify another. */
+const MODIFIERS = ["Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock", "OS"];
+/** Read and unread are one toggle's halves: they may share a key. */
+const halves = (one: ActionId, other: ActionId) =>
+  (one === "read" && other === "unread") || (one === "unread" && other === "read");
+
+/** Settings › Shortcuts: the person's own key for each message action. */
+function MyKeys() {
+  const prefs = usePrefs();
+  const [capturing, setCapturing] = useState<ActionId | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const keys = keysFor(prefs.keySet, prefs.myKeys);
+  const shown = (name: string) => (name === " " ? "Space" : keyText(name));
+  const choose = (id: ActionId, chosen: string[] | null) => {
+    const { [id]: _left, ...rest } = prefs.myKeys;
+    setPrefs({ myKeys: chosen === null ? rest : { ...rest, [id]: chosen } });
+  };
+  const capture = (id: ActionId, label: string) => (event: React.KeyboardEvent) => {
+    if (MODIFIERS.includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      setCapturing(null);
+      return;
+    }
+    const name = keyName(event.nativeEvent) ?? placeName(event.nativeEvent);
+    if (!name) {
+      setNote("That combination cannot be a shortcut. Try a key alone, with Shift, or with " + MOD_KEY + ".");
+      return;
+    }
+    const taken = takenKey(prefs.keySet, name);
+    if (taken) {
+      setNote(`${shown(name)} is taken: ${taken}. Try another key.`);
+      return;
+    }
+    // A key another action had moves here.
+    const next = { ...prefs.myKeys, [id]: [name] };
+    const from: string[] = [];
+    for (const other of KEYED_ACTIONS) {
+      if (other.id === id || halves(id, other.id) || !keys[other.id].includes(name)) continue;
+      next[other.id] = keys[other.id].filter((key) => key !== name);
+      from.push(other.label);
+    }
+    setPrefs({ myKeys: next });
+    setCapturing(null);
+    setNote(from.length > 0 ? `${shown(name)} is now ${label}, no longer ${from.join(", ")}.` : null);
+  };
+  return (
+    <>
+      <h4 className="settings-subhead">Message actions</h4>
+      <ul className="my-keys">
+        {KEYED_ACTIONS.map(({ id, label }) => (
+          <li key={id}>
+            <span className="my-keys-what">{label}</span>
+            <span className="my-keys-keys">
+              {keys[id].length > 0 ? keys[id].map((name) => <kbd key={name}>{shown(name)}</kbd>) : <span className="muted">No key</span>}
+            </span>
+            {capturing === id ? (
+              <button
+                type="button"
+                className="btn small key-capture"
+                ref={(element) => element?.focus()}
+                onKeyDown={capture(id, label)}
+                onBlur={() => setCapturing(null)}
+              >
+                Press a key…
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn small"
+                aria-label={`Change the key of ${label}`}
+                onClick={() => {
+                  setNote(null);
+                  setCapturing(id);
+                }}
+              >
+                Change
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn small"
+              aria-label={`No key for ${label}`}
+              disabled={keys[id].length === 0}
+              onClick={() => choose(id, [])}
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              className="link"
+              aria-label={`${label}: back to the key set's key`}
+              hidden={!Array.isArray(prefs.myKeys[id])}
+              onClick={() => choose(id, null)}
+            >
+              Reset
+            </button>
+          </li>
+        ))}
+      </ul>
+      {note && (
+        <p className="muted settings-note" role="status">
+          {note}
+        </p>
+      )}
+      {Object.keys(prefs.myKeys).length > 0 && (
+        <button type="button" className="btn small my-keys-reset" onClick={() => setPrefs({ myKeys: {} })}>
+          Back to the key set's keys
+        </button>
+      )}
+      <h4 className="settings-subhead">Every shortcut</h4>
     </>
   );
 }

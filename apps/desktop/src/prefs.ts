@@ -58,6 +58,11 @@ export interface Prefs {
   singleKeys: boolean;
   /** Which keys do what (Settings › Shortcuts): the standard set, or the earlier Regards one. */
   keySet: KeySet;
+  /**
+   * Keys the person chose for message actions, by action (Settings ›
+   * Shortcuts): in place of the key set's; an empty list for none.
+   */
+  myKeys: Record<string, string[]>;
   /** The unread counts beside the folders. */
   sidebarCounts: boolean;
   /** The Agents button at the foot of the sidebar: recipes and the agents on this computer. */
@@ -110,6 +115,7 @@ export const DEFAULT_PREFS: Prefs = {
   zoom: 1,
   singleKeys: true,
   keySet: "standard",
+  myKeys: {},
   sidebarCounts: true,
   agentsButton: true,
   snoozePresets: {},

@@ -187,6 +187,38 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
   },
 };
 
+/** Each action's keys: the key set's, or the ones the person chose instead. */
+export function keysFor(set: KeySet, mine: Record<string, string[]>): Record<ActionId, string[]> {
+  const keys = { ...ACTION_KEYS[set] };
+  for (const id of Object.keys(keys) as ActionId[]) {
+    const chosen = mine[id];
+    if (Array.isArray(chosen)) keys[id] = chosen;
+  }
+  return keys;
+}
+
+/** The message actions whose keys can be changed, as Settings › Shortcuts names them. */
+export const KEYED_ACTIONS: { id: ActionId; label: string }[] = [
+  { id: "archive", label: "Done (archive)" },
+  { id: "delete", label: "Delete" },
+  { id: "reply", label: "Reply" },
+  { id: "replyAll", label: "Reply all" },
+  { id: "forward", label: "Forward" },
+  { id: "read", label: "Mark read" },
+  { id: "unread", label: "Mark unread" },
+  { id: "flag", label: "Flag or unflag" },
+  { id: "pin", label: "Pin or unpin" },
+  { id: "snooze", label: "Snooze" },
+  { id: "remind", label: "Remind me if nobody replies" },
+  { id: "aside", label: "Set aside" },
+  { id: "move", label: "Move to a folder" },
+  { id: "copy", label: "Copy to a folder" },
+  { id: "label", label: "Labels (Gmail)" },
+  { id: "junk", label: "Mark as junk" },
+  { id: "mute", label: "Mute the conversation" },
+  { id: "unsubscribe", label: "Unsubscribe" },
+];
+
 /** An action's name with its first key, for a tooltip. */
 export const actionTitle = (action: Action) =>
   action.keys.length > 0 ? `${action.label} (${keyText(action.keys[0])})` : action.label;
@@ -210,7 +242,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       .catch(host.failed);
   };
 
-  const keys = ACTION_KEYS[getPrefs().keySet];
+  const keys = keysFor(getPrefs().keySet, getPrefs().myKeys);
   // A key that both marks read and unread belongs to the half that shows.
   const half = (id: "unread" | "read", shown: boolean) =>
     shown ? keys[id] : keys[id].filter((key) => !keys[id === "read" ? "unread" : "read"].includes(key));
