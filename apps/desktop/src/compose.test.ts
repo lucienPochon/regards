@@ -1,7 +1,8 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
-const { fillPlaceholders, insertTemplateHtml, swapSignatureHtml, textToHtml } = await import("./compose");
+const { fillPlaceholders, insertTemplateHtml, swapSignatureBlocks, swapSignatureHtml, textSignature, textToHtml } = await import("./compose");
 
 describe("templates in a draft", () => {
   it("go where one writes: above the signature, in place of the empty first line", () => {
@@ -65,5 +66,24 @@ describe("template placeholders", () => {
     expect(fillPlaceholders("<p>Hi {{name}}</p>", { to: "Bob <& Co>", me: null }, true)).toBe(
       "<p>Hi Bob &lt;&amp; Co&gt;</p>",
     );
+  });
+});
+
+describe("formatted signatures", () => {
+  const formatted = `<p><strong>Ada</strong> <span data-colour="#1565c0">Engines Ltd</span></p><p><img src="data:image/png;base64,AA" data-cid="logo@regards"></p>`;
+
+  it("take a plain one's place, found by its words whatever the formatting", () => {
+    const fresh = `<p></p>${textSignature("Ada Engines Ltd")}`;
+    expect(swapSignatureBlocks(fresh, textSignature("Ada Engines Ltd"), formatted)).toBe(`<p></p>${formatted}`);
+  });
+
+  it("are found again with their pictures, and give way to another", () => {
+    const written = `<p>Yes!</p>${formatted}<p>On Mon, Bob wrote:</p><blockquote><p>Plans?</p></blockquote>`;
+    expect(swapSignatureBlocks(written, formatted, textSignature("Ada"))).toBe(
+      "<p>Yes!</p><p>Ada</p><p>On Mon, Bob wrote:</p><blockquote><p>Plans?</p></blockquote>",
+    );
+    // Edited past recognising: the new one goes above the quote, the old one stays.
+    const edited = written.replace("Engines Ltd", "Engines Limited");
+    expect(swapSignatureBlocks(edited, formatted, "<p>Bea</p>")).toBe(edited.replace("<p>On Mon", "<p>Bea</p><p>On Mon"));
   });
 });

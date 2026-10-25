@@ -134,6 +134,7 @@ async fn an_address_uses_one_of_the_list_and_new_drafts_get_it() {
         id,
         name: name.into(),
         body: body.into(),
+        html: None,
     };
 
     // Kept by name; a name and some text are needed.
@@ -209,6 +210,30 @@ async fn an_address_uses_one_of_the_list_and_new_drafts_get_it() {
     let own = own_identity(&mut desktop, &account.id).await;
     assert_eq!((own.signature_id, own.signature.as_str()), (None, ""));
     assert_eq!(new_draft(&mut desktop, &account.id).await.body, "Hello");
+
+    // With formatting and a picture: kept sanitised, its text made from it.
+    let formatted: SignatureView = desktop
+        .call(
+            methods::SIGNATURE_SAVE,
+            SignatureSaveParams {
+                html: Some(
+                    "<p><strong>Ada</strong> <span style=\"color: #1565c0\">Engines Ltd</span></p>\
+                     <p><img src=\"data:image/png;base64,iVBORw0KGgo=\" alt=\"\"></p>\
+                     <img src=\"https://tracker.test/p.gif\"><script>x()</script>"
+                        .into(),
+                ),
+                ..save(None, "Logo", "Ada Engines Ltd")
+            },
+        )
+        .await
+        .unwrap();
+    let html = formatted.html.unwrap();
+    assert!(
+        html.contains("<strong>Ada</strong>") && html.contains("data:image/png;base64,iVBORw0KGgo="),
+        "{html}"
+    );
+    assert!(!html.contains("tracker") && !html.contains("script"), "{html}");
+    assert_eq!(formatted.body, "Ada Engines Ltd", "its text, as the editor gives it");
 
     // Agents never manage them.
     let mut agent = Client::connect(&endpoint, ClientKind::Mcp).await.unwrap();

@@ -1727,8 +1727,9 @@ function handle(cmd: string, args: Args): unknown {
     case "signature_list":
       return { signatures: [...signatures].sort((a, b) => a.name.localeCompare(b.name)) };
     case "signature_save": {
-      const asked = args.signature as { id?: number; name: string; body: string };
-      const fields = { name: asked.name.trim(), body: asked.body.trimEnd(), updated_at: Date.now() };
+      const asked = args.signature as { id?: number; name: string; body: string; html?: string | null };
+      // The daemon sanitises the HTML; the preview keeps it as the editor gave it.
+      const fields = { name: asked.name.trim(), body: asked.body.trimEnd(), html: asked.html ?? null, updated_at: Date.now() };
       if (!fields.name || !fields.body.trim()) throw new Error("a signature needs a name and some text");
       const existing = signatures.find((s) => s.id === asked.id);
       if (existing) {

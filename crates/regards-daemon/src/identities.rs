@@ -71,6 +71,8 @@ pub(crate) async fn save(state: &State, params: IdentitySaveParams) -> Result<Va
                             let edited = signatures::Fields {
                                 name: own.name,
                                 body: text,
+                                // Edited as text: no formatting from then on.
+                                html: None,
                             };
                             signatures::update(tx, own.id, &edited, now)?;
                             own.id
@@ -79,6 +81,7 @@ pub(crate) async fn save(state: &State, params: IdentitySaveParams) -> Result<Va
                             let named = signatures::Fields {
                                 name: fields.email.clone(),
                                 body: text,
+                                html: None,
                             };
                             signatures::add(tx, &named, now)?
                         }

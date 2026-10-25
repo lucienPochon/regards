@@ -218,7 +218,7 @@ export const TOUR: Group[] = [
       { id: "s-groups", label: "Inbox › Email groups", note: "Where groups sit, each as one row or not, accounts in the unified inbox.", params: { accounts: "2" }, steps: settings("Inbox", "text:.link-row=Email groups") },
       { id: "s-composer", label: "Composer", note: "The account new messages are from, and copies every new message gets.", params: { accounts: "2" }, steps: settings("Composer") },
       { id: "s-signatures", label: "Composer › Signatures", note: "Each address's default, and every signature.", params: { accounts: "2" }, steps: settings("Composer", "text:button=Signatures") },
-      { id: "s-signature-edit", label: "A signature's editor", note: "Its name, for you, and its text.", steps: settings("Composer", "text:button=Signatures", "wait:400", "text:button=Studio") },
+      { id: "s-signature-edit", label: "A signature's editor", note: "Its name, for you, and its text.", steps: settings("Composer", "text:button=Signatures", "wait:700", "text:.link-row=Studio", "wait:900") },
       { id: "s-auto-copy", label: "Composer › Always copy", note: "A blind copy of every new message to an archive address.", params: { autocopy: "bcc" }, steps: settings("Composer") },
       { id: "s-templates", label: "Templates", note: "Write, rename and delete templates.", steps: settings("Templates") },
       { id: "s-accessibility", label: "Accessibility", note: "Zoom up to 200 % (also Ctrl + / − / 0), and single-key shortcuts on or off.", steps: settings("Accessibility") },

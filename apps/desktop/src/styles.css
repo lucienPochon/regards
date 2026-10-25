@@ -7246,13 +7246,20 @@ button.sender-row:hover:not(:disabled) {
   font-weight: 600;
 }
 
-.signature-field textarea {
-  height: auto;
-  min-height: 170px;
-  padding: 10px 12px;
-  font-family: inherit;
-  line-height: 1.55;
-  resize: vertical;
+/* The signature's text, written as a message is: the formatting bar floats at its foot. */
+.signature-text {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 12px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg);
+  font-weight: 400;
+}
+
+.signature-text .compose-body.ProseMirror {
+  min-height: 140px;
+  padding: 8px 0 16px;
 }
 
 .signature-count {
