@@ -48,6 +48,8 @@ export const TOUR: Group[] = [
       { id: "french", label: "In French", note: "Settings › General › Language: Français. Some screens are still in English.", params: { view: "smart" }, prefs: { language: "fr" } },
       { id: "french-settings", label: "Settings, in French", note: "Settings › General, with the language at the top.", prefs: { language: "fr" }, steps: settings("Général") },
       { id: "french-shortcuts", label: "Shortcuts, in French", note: "Settings › Shortcuts in French.", prefs: { language: "fr" }, steps: settings("Raccourcis") },
+      { id: "french-compose", label: "Writing, in French", note: "The composer and its toolbar in French.", prefs: { language: "fr" }, steps: ["wait:700", "key:c"] },
+      { id: "french-signup", label: "Sign-up, in French", note: "Adding an account in French.", params: { accounts: "0" }, prefs: { language: "fr" }, steps: signUp("ada@ik.me") },
       { id: "french-reader", label: "A message, in French", note: "The reader, its menus and dates in French.", prefs: { language: "fr" }, steps: openRow("Garden plot") },
       { id: "by-date", label: "Inbox by date", note: "The default: everything together, newest first.", params: { view: "date" } },
       { id: "unified", label: "Two accounts, one inbox", note: "Both accounts' mail together; the sidebar lists each account.", params: { accounts: "2" } },
