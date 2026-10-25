@@ -3,6 +3,7 @@ import { type UndoInfo, applyUndo } from "./accounts";
 import { Icon } from "./icons";
 import { useShortcuts } from "./shortcuts";
 import { t } from "./i18n";
+import { fromService } from "./i18n-daemon";
 
 /** How long the toast offers undo (ADR-0007: at least 10 seconds). */
 const SHOW_FOR_MS = 10_000;
@@ -41,7 +42,7 @@ export function UndoToast({ undo, onDone }: { undo: UndoBar; onDone: () => void 
       onBlur={() => setHeld(false)}
     >
       <Icon name={error ? "alert" : "check"} size={16} />
-      <span>{error ?? undo.description}</span>
+      <span>{error ?? fromService(undo.description)}</span>
       {!error && (
         <button type="button" onClick={revert}>
           {t("Undo")}

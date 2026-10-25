@@ -123,8 +123,8 @@ export const DEFAULT_PREFS: Prefs = {
   singleKeys: true,
   keySet: "standard",
   myKeys: {},
-  // English until every screen speaks French; then the system's.
-  language: "en",
+  // French on a French system, English otherwise, until one is chosen.
+  language: "system",
   sidebarCounts: true,
   agentsButton: true,
   snoozePresets: {},

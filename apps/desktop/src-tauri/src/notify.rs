@@ -19,6 +19,7 @@
 
 use crate::Bridge;
 use crate::background::Background;
+use crate::lang::{tr, tr_with};
 use regards_core::headers::Person;
 use regards_ipc::protocol::{
     ArrivalView, ArrivedResult, NoticeKind, NoticeListResult, NoticeShownParams, NoticeView, Section, methods,
@@ -277,30 +278,34 @@ fn mail_text(arrival: &ArrivalView) -> Shown {
 
 fn text(notice: &NoticeView) -> Shown {
     let subject = if notice.subject.trim().is_empty() {
-        "(no subject)".to_owned()
+        tr("(no subject)").to_owned()
     } else {
         notice.subject.clone()
     };
     let who = people(&notice.people);
+    let said = |text: &'static str| tr_with(text, &[("who", &who), ("subject", &subject)]);
     let (title, body): (String, String) = match notice.kind {
-        NoticeKind::SnoozeEnded => ("Back from snooze".into(), format!("{who}: {subject}")),
-        NoticeKind::ReminderDue => ("No reply yet".into(), format!("To {who}: {subject}")),
+        NoticeKind::SnoozeEnded => (tr("Back from snooze").into(), format!("{who}: {subject}")),
+        NoticeKind::ReminderDue => (tr("No reply yet").into(), said("To {who}: {subject}")),
         NoticeKind::SendHeld => (
-            "Waiting in the Outbox".into(),
-            format!("“{subject}” was due while this computer was off. Send it now, or edit it."),
+            tr("Waiting in the Outbox").into(),
+            said("“{subject}” was due while this computer was off. Send it now, or edit it."),
         ),
-        NoticeKind::SendFailed => ("Not sent".into(), format!("“{subject}” to {who}. The Outbox says why.")),
+        NoticeKind::SendFailed => (
+            tr("Not sent").into(),
+            said("“{subject}” to {who}. The Outbox says why."),
+        ),
         NoticeKind::SendUncertain => (
-            "It may not have been sent".into(),
-            format!("“{subject}” to {who}. Check before sending it again."),
+            tr("It may not have been sent").into(),
+            said("“{subject}” to {who}. Check before sending it again."),
         ),
         NoticeKind::AgentAsks => (
-            "An agent is waiting for you".into(),
-            format!("{subject}. Approve or reject it in Settings › Agents."),
+            tr("An agent is waiting for you").into(),
+            said("{subject}. Approve or reject it in Settings › Agents."),
         ),
         NoticeKind::AgentSending => (
-            "An agent is sending a message".into(),
-            format!("“{subject}” to {who}. Call it back from the Outbox before it goes."),
+            tr("An agent is sending a message").into(),
+            said("“{subject}” to {who}. Call it back from the Outbox before it goes."),
         ),
     };
     // Back from snooze, or no reply yet: that message. The others are about
@@ -316,37 +321,37 @@ fn text(notice: &NoticeView) -> Shown {
 fn summary(notices: &[NoticeView], new_mail: usize) -> Shown {
     let count = |kinds: &[NoticeKind]| notices.iter().filter(|n| kinds.contains(&n.kind)).count();
     let parts: Vec<String> = [
-        (new_mail, "new message", "new messages"),
+        (new_mail, "1 new message", "{count} new messages"),
         (
             count(&[NoticeKind::SnoozeEnded]),
-            "back from snooze",
-            "back from snooze",
+            "1 back from snooze",
+            "{count} back from snooze",
         ),
-        (count(&[NoticeKind::ReminderDue]), "reminder", "reminders"),
+        (count(&[NoticeKind::ReminderDue]), "1 reminder", "{count} reminders"),
         (
             count(&[NoticeKind::SendHeld]),
-            "message waiting in the Outbox",
-            "messages waiting in the Outbox",
+            "1 message waiting in the Outbox",
+            "{count} messages waiting in the Outbox",
         ),
         (
             count(&[NoticeKind::SendFailed, NoticeKind::SendUncertain]),
-            "message not sent",
-            "messages not sent",
+            "1 message not sent",
+            "{count} messages not sent",
         ),
         (
             count(&[NoticeKind::AgentAsks]),
-            "agent request waiting for you",
-            "agent requests waiting for you",
+            "1 agent request waiting for you",
+            "{count} agent requests waiting for you",
         ),
         (
             count(&[NoticeKind::AgentSending]),
-            "message an agent is sending",
-            "messages an agent is sending",
+            "1 message an agent is sending",
+            "{count} messages an agent is sending",
         ),
     ]
     .into_iter()
     .filter(|(n, _, _)| *n > 0)
-    .map(|(n, one, many)| format!("{n} {}", if n == 1 { one } else { many }))
+    .map(|(n, one, many)| crate::lang::count(n, one, many))
     .collect();
     Shown {
         title: "Regards".into(),
@@ -368,8 +373,11 @@ fn people(people: &[Person]) -> String {
     match people {
         [] => "someone".into(),
         [one] => name(one),
-        [one, two] => format!("{} and {}", name(one), name(two)),
-        [one, rest @ ..] => format!("{} and {} others", name(one), rest.len()),
+        [one, two] => tr_with("{one} and {two}", &[("one", &name(one)), ("two", &name(two))]),
+        [one, rest @ ..] => tr_with(
+            "{one} and {count} others",
+            &[("one", &name(one)), ("count", &rest.len().to_string())],
+        ),
     }
 }
 

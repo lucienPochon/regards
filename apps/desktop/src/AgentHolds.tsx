@@ -9,6 +9,7 @@ import { useDialogFocus } from "./dialogFocus";
 import { VOICE_MAX } from "./identities";
 import { useShortcuts } from "./shortcuts";
 import { t } from "./i18n";
+import { fromService } from "./i18n-daemon";
 
 /** The draft's text shown in full up to this, then cut. */
 const TEXT_SHOWN = 1500;
@@ -162,7 +163,7 @@ function HoldCard({
       <div className="hold-head">
         <Icon name={hold.reason === "sending" ? "send" : hold.reason === "delete" ? "trash" : "agent"} size={16} />
         <span className="hold-what">
-          <strong>{hold.description}</strong>
+          <strong>{fromService(hold.description)}</strong>
           <span className="muted">
             {hold.client === "mcp"
               ? t("An assistant (MCP) asked {when}", { when: fullDate(hold.created_at) })
@@ -341,7 +342,7 @@ function Outcome({ hold, focused = false, onDismiss }: { hold: Hold; focused?: b
       <div className="hold-head">
         <Icon name={hold.status === "approved" ? "check" : hold.status === "failed" ? "alert" : "close"} size={16} />
         <span className="hold-what">
-          <strong>{hold.description}</strong>
+          <strong>{fromService(hold.description)}</strong>
           <span className={hold.status === "failed" ? "error" : "muted"}>{undone ?? said}</span>
           {problem && <span className="error" role="alert">{problem}</span>}
         </span>

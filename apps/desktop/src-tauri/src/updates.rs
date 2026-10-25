@@ -118,8 +118,11 @@ async fn check_and_tell(app: &AppHandle) -> Result<Option<Update>, String> {
                 let _ = app
                     .notification()
                     .builder()
-                    .title(format!("Regards {} is available", update.version))
-                    .body("Open Settings › About to download it.")
+                    .title(crate::lang::tr_with(
+                        "Regards {version} is available",
+                        &[("version", &update.version)],
+                    ))
+                    .body(crate::lang::tr("Open Settings › About to download it."))
                     .show();
             }
         }
