@@ -4,6 +4,7 @@ import {
   type MessageDetail,
   type Person,
   type Role,
+  type ThreadDraft,
   type ThreadEntry,
   conversationIds,
   getMessage,
@@ -16,7 +17,7 @@ import { AttachmentTiles } from "./AttachmentTiles";
 import { FindBar } from "./FindBar";
 import { Avatar } from "./Avatar";
 import { useChanges } from "./changes";
-import { fullDate, peopleFull, personName } from "./format";
+import { fullDate, peopleFull, peopleShort, personName } from "./format";
 import { Icon } from "./icons";
 import type { ListItem } from "./mail";
 import { type Anchor, type MenuEntry, anchorOf } from "./Menu";
@@ -89,6 +90,7 @@ export function ReadingPane({
   onStep,
   labels = [],
   onLabel,
+  onDraft,
   stepped = false,
 }: {
   item: ListItem;
@@ -109,11 +111,14 @@ export function ReadingPane({
   /** Its Gmail labels, each opening its folder. */
   labels?: { id: number; name: string }[];
   onLabel?: (id: number) => void;
+  /** Go on writing a reply being written in the conversation (its draft). */
+  onDraft?: (id: number) => void;
   /** Opened by stepping through the list with the keyboard: read only if one stays. */
   stepped?: boolean;
 }) {
   const load = useDetail(item.id, true);
   const [thread, setThread] = useState<ThreadEntry[]>([]);
+  const [drafts, setDrafts] = useState<ThreadDraft[]>([]);
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set([item.id]));
   const prefs = usePrefs();
   const currentCard = useRef<HTMLLIElement>(null);
@@ -141,7 +146,10 @@ export function ReadingPane({
   // The rest of the conversation is a nicety: without it, the message still shows.
   const loadThread = useCallback(() => {
     getThread(item.id)
-      .then((result) => setThread(result.messages))
+      .then((result) => {
+        setThread(result.messages);
+        setDrafts(result.drafts ?? []);
+      })
       .catch(() => setThread([]));
   }, [item.id]);
   useEffect(loadThread, [loadThread]);
@@ -331,6 +339,27 @@ export function ReadingPane({
               );
             })}
           </ol>
+        )}
+        {drafts.length > 0 && onDraft && (
+          // Replies being written here, not sent yet: where they will go, under the conversation.
+          <ul className="thread-drafts" aria-label="Replies being written">
+            {drafts.map((draft) => (
+              <li key={draft.id}>
+                <button type="button" className="draft-card" onClick={() => onDraft(draft.id)}>
+                  <span className="draft-head">
+                    <span className="chip draft-chip">
+                      <Icon name="draft" size={12} />
+                      Draft
+                    </span>
+                    <span className="draft-to">{draft.to.length > 0 ? `to ${peopleShort(draft.to)}` : "no recipient yet"}</span>
+                    <time className="when">{fullDate(draft.updated_at)}</time>
+                  </span>
+                  <span className="draft-preview">{draft.preview || "Nothing written yet"}</span>
+                  <span className="draft-open">Continue writing</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </section>

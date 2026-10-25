@@ -850,7 +850,7 @@ impl Session {
                 let params: MessageRef = params(request)?;
                 self.allow_message(Access::Read, params.id).await?;
                 let of = Some(context::Of::Thread(params.id));
-                let result = mail::thread(&self.state, params).await?;
+                let result = mail::thread(&self.state, params, self.is_ui()).await?;
                 Ok(self.with_context(result, of).await)
             }
             methods::MESSAGE_SET_FLAGS => {

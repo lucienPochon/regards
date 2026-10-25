@@ -189,6 +189,30 @@ pub fn list(conn: &Connection, account_id: Option<&str>) -> Result<Vec<Draft>, S
     Ok(drafts)
 }
 
+/// Drafts being written (not those in the outbox) in an account that answer
+/// one of these messages: by its Message-ID, which stays when the message
+/// moves, or by the stored message itself. Oldest first.
+pub fn answering(
+    conn: &Connection,
+    account_id: &str,
+    message_ids: &[String],
+    rows: &[i64],
+) -> Result<Vec<Draft>, StoreError> {
+    let message_ids = serde_json::to_string(message_ids).expect("strings always serialize");
+    let rows = serde_json::to_string(rows).expect("numbers always serialize");
+    let mut statement = conn.prepare_cached(&format!(
+        "SELECT {COLUMNS} FROM drafts d WHERE d.account_id = ?1 \
+         AND NOT EXISTS (SELECT 1 FROM outbox o WHERE o.draft_id = d.id) \
+         AND (d.in_reply_to IN (SELECT value FROM json_each(?2)) OR d.replying_to IN (SELECT value FROM json_each(?3))) \
+         ORDER BY d.updated_at, d.id"
+    ))?;
+    let drafts = statement
+        .query_map(params![account_id, message_ids, rows], from_row)?
+        .map(|row| row?)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(drafts)
+}
+
 /// Discard a draft. Refused while it is being sent.
 pub fn delete(tx: &Transaction<'_>, id: i64) -> Result<bool, StoreError> {
     if get(tx, id)?.is_some_and(|draft| draft.sending) {
@@ -437,5 +461,56 @@ mod tests {
             .unwrap();
         let left = store.read(move |conn| attachments(conn, draft)).await.unwrap();
         assert_eq!(names(left), [("plan.pdf".to_owned(), None)]);
+    }
+
+    #[tokio::test]
+    async fn the_drafts_answering_a_conversation_are_found_by_message_id() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&DataDirs::at(temp.path())).await.unwrap();
+        let (found, expected) = store
+            .write(|tx| {
+                let server = Server {
+                    host: "h".into(),
+                    port: 993,
+                    security: Security::Tls,
+                };
+                for id in ["a1", "a2"] {
+                    accounts::insert(
+                        tx,
+                        NewAccount {
+                            id: id.into(),
+                            display_name: "Ada".into(),
+                            email: format!("{id}@example.test"),
+                            auth_kind: AuthKind::Password,
+                            username: "ada".into(),
+                            secret_key: "k".into(),
+                            imap: server.clone(),
+                            smtp: server.clone(),
+                            imap_capabilities: vec![],
+                        },
+                    )?;
+                }
+                let reply = |to: &str| Content {
+                    in_reply_to: Some(to.into()),
+                    ..Content::default()
+                };
+                let first = create(tx, "a1", &reply("plan@x"), 1_000)?;
+                create(tx, "a1", &reply("other@x"), 2_000)?;
+                create(tx, "a1", &Content::default(), 3_000)?;
+                create(tx, "a2", &reply("plan@x"), 4_000)?;
+                let second = create(tx, "a1", &reply("plan-2@x"), 5_000)?;
+                let found = answering(tx, "a1", &["plan@x".into(), "plan-2@x".into()], &[])?;
+                Ok((
+                    found.into_iter().map(|draft| draft.id).collect::<Vec<_>>(),
+                    vec![first, second],
+                ))
+            })
+            .await
+            .unwrap()
+            .value;
+        assert_eq!(
+            found, expected,
+            "this account's replies to the conversation, oldest first"
+        );
     }
 }
