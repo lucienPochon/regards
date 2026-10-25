@@ -74,6 +74,7 @@ import {
   useSmartOverview,
 } from "./mail";
 import { type OpenLink, onOpenLink, takeLink } from "./links";
+import { recentFolders, rememberFolder } from "./recent-folders";
 import { useRecentSearches } from "./recent-searches";
 import {
   type SavedSearch,
@@ -597,23 +598,44 @@ export function App() {
       null,
     [accounts],
   );
-  /** Move to: a page of the palette listing the account's folders. */
+  /**
+   * Move to (or Copy to): a page of the palette listing the account's folders,
+   * those used last at the top until something is typed.
+   */
   const pickFolder = useCallback(
-    (accountId: string, current: number | null) =>
+    (accountId: string, current: number | null, _anchor?: Anchor | null, purpose: "move" | "copy" = "move") =>
       new Promise<number | null>((resolve) => {
-        const folders = accounts.find((entry) => entry.account.id === accountId)?.mailboxes ?? [];
+        const folders = (accounts.find((entry) => entry.account.id === accountId)?.mailboxes ?? []).filter(
+          (folder) => folder.selectable && folder.id !== current,
+        );
+        const pick = (id: number) => {
+          rememberFolder(accountId, id);
+          resolve(id);
+        };
+        const icon = (folder: MailboxSummary) => (folder.role ? ROLE_ICONS[folder.role] : "folder");
+        const recent = recentFolders(accountId).flatMap((id) => folders.filter((folder) => folder.id === id));
         setMenu({
           anchor: { x: 0, y: 0 },
           variant: "palette",
-          title: "Move to",
-          label: "Move to folder",
+          title: purpose === "copy" ? "Copy to" : "Move to",
+          label: purpose === "copy" ? "Copy to folder" : "Move to folder",
           filter: "Type a folder name",
-          entries: sortFolders(folders.filter((folder) => folder.selectable && folder.id !== current)).map((folder) => ({
-            label: leafName(folder),
-            icon: folder.role ? ROLE_ICONS[folder.role] : "folder",
-            depth: depth(folder),
-            onSelect: () => resolve(folder.id),
-          })),
+          entries: [
+            ...recent.map((folder) => ({
+              label: leafName(folder),
+              detail: "Recent",
+              icon: icon(folder),
+              quick: true,
+              onSelect: () => pick(folder.id),
+            })),
+            ...(recent.length > 0 ? ["separator" as const] : []),
+            ...sortFolders(folders).map((folder) => ({
+              label: leafName(folder),
+              icon: icon(folder),
+              depth: depth(folder),
+              onSelect: () => pick(folder.id),
+            })),
+          ],
           onDismiss: () => resolve(null),
         });
       }),
@@ -863,6 +885,15 @@ export function App() {
     },
     [moved, failed],
   );
+  // Copies go through the server: say where, as they show once that folder syncs.
+  const copied = useCallback(
+    (count: number, mailboxId: number) => {
+      const folder = accounts.flatMap((entry) => entry.mailboxes).find((mailbox) => mailbox.id === mailboxId);
+      const name = folder ? leafName(folder) : "the folder";
+      setNotice(count === 0 ? `Already in ${name}` : count === 1 ? `Copied to ${name}` : `${count} messages copied to ${name}`);
+    },
+    [accounts],
+  );
   const host = useMemo<ActionHost>(
     () => ({
       compose,
@@ -871,6 +902,7 @@ export function App() {
       failed,
       confirm,
       pickFolder,
+      copied,
       pickSnooze,
       pickReminder,
       junkFolder,
@@ -879,7 +911,7 @@ export function App() {
       hasLabels,
       pickLabels,
     }),
-    [compose, moved, marked, failed, confirm, pickFolder, pickSnooze, pickReminder, junkFolder, inboxFolder, leaveList, hasLabels, pickLabels],
+    [compose, moved, marked, failed, confirm, pickFolder, copied, pickSnooze, pickReminder, junkFolder, inboxFolder, leaveList, hasLabels, pickLabels],
   );
   const actionsForItems = useCallback((list: ListItem[]) => messageActions(targetOf(list), host), [host]);
   const actionsFor = useCallback((target: Target) => messageActions(target, host), [host]);

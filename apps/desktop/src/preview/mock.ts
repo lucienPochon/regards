@@ -1553,6 +1553,9 @@ function handle(cmd: string, args: Args): unknown {
     }
     case "message_trash":
       return moveTo(args.ids as number[], (m) => roleBox(m, "trash"), "Deleted");
+    case "message_copy":
+      // The copies would show once the folder syncs, which the preview does not.
+      return { copied: (args.ids as number[]).length };
     case "message_move":
       return moveTo(args.ids as number[], () => args.mailboxId as number, "Moved");
     case "message_delete": {

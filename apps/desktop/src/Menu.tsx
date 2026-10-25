@@ -15,6 +15,8 @@ export interface MenuItem {
   disabled?: boolean;
   /** Indent, for folders in a tree. */
   depth?: number;
+  /** Shown only until something is typed: a quick way to an entry the list has too (a recent folder). */
+  quick?: boolean;
   onSelect: () => void;
 }
 
@@ -80,7 +82,10 @@ export function Menu({ request, onClose }: { request: MenuRequest; onClose: () =
     ...(query.trim() && request.typed ? request.typed(query) : []),
     ...request.entries.filter(
       (entry): entry is MenuItem =>
-        entry !== "separator" && !entry.disabled && entry.label.toLowerCase().includes(query.toLowerCase()),
+        entry !== "separator" &&
+        !entry.disabled &&
+        !(query && entry.quick) &&
+        entry.label.toLowerCase().includes(query.toLowerCase()),
     ),
   ];
   const shown: MenuEntry[] = query ? items : request.entries;

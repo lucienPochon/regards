@@ -678,6 +678,11 @@ export function moveMessages(ids: number[], mailboxId: number): Promise<MoveResu
   return invoke<MoveResult>("message_move", { ids, mailboxId });
 }
 
+/** Copy messages to another folder of their account; the copies show once that folder syncs. */
+export function copyMessages(ids: number[], mailboxId: number): Promise<{ copied: number }> {
+  return invoke<{ copied: number }>("message_copy", { ids, mailboxId });
+}
+
 /** Reverse a recent action. Each undo id works once, for a few minutes. */
 export function applyUndo(id: number): Promise<{ undone: number }> {
   return invoke("undo_apply", { id });

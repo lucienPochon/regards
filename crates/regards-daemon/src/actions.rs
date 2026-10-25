@@ -5,9 +5,9 @@
 use crate::State;
 use regards_core::mailbox::Role;
 use regards_ipc::protocol::{
-    AsideParams, DeleteResult, MarkAllReadParams, MarkResult, MessageIds, MoveParams, MoveResult, PinParams,
-    RemindParams, RpcError, SenderBlockParams, SetFlagsParams, SetFlagsResult, SnoozeParams, UndoInfo, UndoParams,
-    UndoResult, codes,
+    AsideParams, CopyResult, DeleteResult, MarkAllReadParams, MarkResult, MessageIds, MoveParams, MoveResult,
+    PinParams, RemindParams, RpcError, SenderBlockParams, SetFlagsParams, SetFlagsResult, SnoozeParams, UndoInfo,
+    UndoParams, UndoResult, codes,
 };
 use regards_store::marks::{self, Mark};
 use regards_store::operations::{self, FlagName, NewOperation, OperationKind};
@@ -566,6 +566,73 @@ pub(crate) async fn move_to(state: &Arc<State>, params: MoveParams) -> Result<Va
         .name;
     let requests = params.ids.iter().map(|id| (*id, target)).collect();
     run_moves(state, requests, Vec::new(), &format!("Moved to {name}")).await
+}
+
+/// Copy messages to another folder of their account, queued as IMAP COPY:
+/// the copies come in with that folder's next sync. One already there is
+/// left as it is.
+pub(crate) async fn copy_to(state: &Arc<State>, params: MoveParams) -> Result<Value, RpcError> {
+    check_count(&params.ids)?;
+    let now = now_ms();
+    let committed = state
+        .store
+        .write(move |tx| {
+            let target =
+                mailboxes::get(tx, params.mailbox_id)?.ok_or_else(|| StoreError::Conflict("no such folder".into()))?;
+            if !target.selectable {
+                return Err(StoreError::Conflict(format!("{} cannot hold messages", target.name)));
+            }
+            let mut copies: BTreeMap<i64, BTreeSet<u32>> = BTreeMap::new();
+            for id in &params.ids {
+                let message = messages::get(tx, *id)?
+                    .filter(|message| !message.flags.deleted)
+                    .ok_or_else(|| StoreError::Conflict(format!("no message {id}")))?;
+                let source = mailboxes::get(tx, message.mailbox_id)?
+                    .ok_or_else(|| StoreError::Conflict("the folder no longer exists".into()))?;
+                if source.account_id != target.account_id {
+                    return Err(StoreError::Conflict(
+                        "a message can be copied only to a folder of its own account".into(),
+                    ));
+                }
+                if message.moving_to.is_some() {
+                    return Err(StoreError::Conflict(
+                        "a message is still on its way to another folder; copy it once it is there".into(),
+                    ));
+                }
+                if source.id != target.id {
+                    copies.entry(source.id).or_default().insert(message.uid);
+                }
+            }
+            let mut copied = 0;
+            for (source, uids) in copies {
+                let folder = mailboxes::get(tx, source)?
+                    .ok_or_else(|| StoreError::Conflict("the folder no longer exists".into()))?;
+                let uid_validity = folder
+                    .uid_validity
+                    .ok_or_else(|| StoreError::Conflict(format!("{} has not been synced yet", folder.name)))?;
+                copied += uids.len();
+                operations::enqueue(
+                    tx,
+                    &NewOperation {
+                        mailbox_id: source,
+                        uid_validity: uid_validity as u32,
+                        kind: OperationKind::Copy,
+                        uids: uids.into_iter().collect(),
+                        flags: vec![],
+                        target_mailbox_id: Some(target.id),
+                    },
+                    now,
+                )?;
+            }
+            Ok((copied, target.account_id))
+        })
+        .await
+        .map_err(conflict)?;
+    let (copied, account) = committed.value;
+    if copied > 0 {
+        state.queue.wake(state, &account);
+    }
+    Ok(json!(CopyResult { copied }))
 }
 
 pub(crate) async fn archive(state: &Arc<State>, params: MessageIds) -> Result<Value, RpcError> {

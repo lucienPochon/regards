@@ -1348,6 +1348,68 @@ async fn live_a_label_is_a_copy_in_the_labels_folder() {
 
 #[tokio::test]
 #[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_a_copy_lands_in_the_other_folder_and_the_message_stays() {
+    use regards_ipc::protocol::{CopyResult, MailboxCreateParams, MailboxSummary, MoveParams};
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let (_temp, mut desktop, account, inbox, handle) = daemon_with_account(&live).await;
+    let kept: MailboxSummary = desktop
+        .call(
+            methods::MAILBOX_CREATE,
+            MailboxCreateParams {
+                account_id: account.id.clone(),
+                parent_id: None,
+                name: "Kept".into(),
+            },
+        )
+        .await
+        .unwrap();
+    seed.append(b"INBOX", &[], &message(42, "Lease renewal", "agent@example.test"))
+        .await
+        .unwrap();
+    sync(&mut desktop, &account.id).await;
+    let row = messages(&mut desktop, inbox)
+        .await
+        .messages
+        .into_iter()
+        .find(|m| m.subject == "Lease renewal")
+        .unwrap();
+    let copy = |mailbox_id| MoveParams {
+        ids: vec![row.id],
+        mailbox_id,
+    };
+
+    let copied: CopyResult = desktop.call(methods::MESSAGE_COPY, copy(kept.id)).await.unwrap();
+    assert_eq!(copied.copied, 1);
+    server_count_becomes(&mut seed, b"Kept", 1).await;
+    server_count_becomes(&mut seed, b"INBOX", 1).await;
+    sync(&mut desktop, &account.id).await;
+    assert_eq!(
+        messages(&mut desktop, kept.id).await.messages.len(),
+        1,
+        "the copy, once synced"
+    );
+    assert!(
+        messages(&mut desktop, inbox)
+            .await
+            .messages
+            .iter()
+            .any(|m| m.id == row.id),
+        "the message stays where it was"
+    );
+
+    // Already there: nothing to copy.
+    let again: CopyResult = desktop.call(methods::MESSAGE_COPY, copy(inbox)).await.unwrap();
+    assert_eq!(again.copied, 0);
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
 async fn live_folders_are_made_renamed_deleted_and_trash_emptied() {
     use regards_ipc::ClientError;
     use regards_ipc::protocol::{MailboxCreateParams, MailboxRef, MailboxRenameParams, MailboxSummary, codes};
