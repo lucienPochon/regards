@@ -12,6 +12,7 @@ mod assistant;
 mod attachments;
 mod audit;
 mod backfill;
+mod cleanup;
 mod compose;
 mod context;
 mod details;
@@ -341,6 +342,7 @@ impl Daemon {
         let indexing = tokio::spawn(search::run(Arc::clone(&state)));
         let pruning = tokio::spawn(audit::prune(Arc::clone(&state)));
         let prefetching = tokio::spawn(prefetch::run(Arc::clone(&state)));
+        let cleaning = tokio::spawn(cleanup::run(Arc::clone(&state)));
         tokio::task::spawn_blocking({
             let opened = state.dirs.opened();
             move || attachments::sweep(&opened)
@@ -381,6 +383,7 @@ impl Daemon {
         indexing.abort();
         pruning.abort();
         prefetching.abort();
+        cleaning.abort();
         drop(listener);
         // Releasing the lock last lets a replacement daemon start only after we stopped listening.
         drop(lock);
