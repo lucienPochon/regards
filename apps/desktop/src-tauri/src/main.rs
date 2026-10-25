@@ -31,7 +31,7 @@ use regards_ipc::protocol::{
     AccountAddParams, AccountLoginParams, AccountRef, AccountRemoveParams, AccountSummary, AccountUpdateParams,
     AgentAccess, AgentAccessParams, AgentActivityParams, AgentActivityResult, AgentSendParams, AsideParams,
     AttachmentFiles, AttachmentPreview, AttachmentRef, AttachmentSaveAllParams, AttachmentSaveParams, CheckedServer,
-    ClientKind, ConnectionSecurity, ConversationIdsResult, DeleteResult, DiscoverParams, DiscoverResult,
+    ClientKind, ConnectionSecurity, ConversationIdsResult, CopyResult, DeleteResult, DiscoverParams, DiscoverResult,
     DraftAttachFileParams, DraftAttachImageParams, DraftCreateParams, DraftDetachParams, DraftForwardParams,
     DraftImageAttached, DraftImagesResult, DraftListParams, DraftListResult, DraftRef, DraftReplyParams,
     DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView, ExplainResult,
@@ -1239,6 +1239,16 @@ async fn message_move(bridge: State<'_, Bridge>, ids: Vec<i64>, mailbox_id: i64)
         .map_err(describe)
 }
 
+/// Copy messages to another folder of their account.
+#[tauri::command]
+async fn message_copy(bridge: State<'_, Bridge>, ids: Vec<i64>, mailbox_id: i64) -> Result<CopyResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_COPY, MoveParams { ids, mailbox_id })
+        .await
+        .map_err(describe)
+}
+
 #[tauri::command]
 async fn undo_apply(bridge: State<'_, Bridge>, id: i64) -> Result<UndoResult, String> {
     let mut client = bridge.connect().await?.client;
@@ -2158,6 +2168,7 @@ fn main() {
             message_trash,
             message_delete,
             message_move,
+            message_copy,
             undo_apply,
             message_pin,
             message_set_aside,

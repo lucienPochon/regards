@@ -134,6 +134,10 @@ pub mod methods {
     pub const MESSAGE_SET_FLAGS: &str = "message.set_flags";
     /// Move messages to another folder of their account; undoable. `ui` only for now.
     pub const MESSAGE_MOVE: &str = "message.move";
+    /// Copy messages to another folder of their account ([`MoveParams`] →
+    /// [`CopyResult`]), queued as IMAP COPY: the copies show once that folder
+    /// syncs. `ui` only.
+    pub const MESSAGE_COPY: &str = "message.copy";
     /// Move messages to their account's Archive folder; undoable. `ui` only for now.
     pub const MESSAGE_ARCHIVE: &str = "message.archive";
     /// Move messages to their account's Trash folder; undoable. `ui` only for now.
@@ -1367,6 +1371,12 @@ pub struct MoveParams {
     pub ids: Vec<i64>,
     /// The folder to move them to.
     pub mailbox_id: i64,
+}
+
+/// Result of [`methods::MESSAGE_COPY`]: how many copies are on their way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CopyResult {
+    pub copied: usize,
 }
 
 /// How to reverse an action, for a few minutes.

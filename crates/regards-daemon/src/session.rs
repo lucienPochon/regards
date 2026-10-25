@@ -858,6 +858,10 @@ impl Session {
                 self.allow_change(Access::Triage, &params.ids, request).await?;
                 actions::set_flags(&self.state, params).await
             }
+            methods::MESSAGE_COPY => {
+                self.require_ui()?;
+                actions::copy_to(&self.state, params(request)?).await
+            }
             methods::MESSAGE_MOVE => {
                 let params: MoveParams = params(request)?;
                 self.allow_change(Access::Triage, &params.ids, request).await?;

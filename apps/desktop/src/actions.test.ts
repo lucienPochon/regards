@@ -5,6 +5,7 @@ const invoke = vi.fn(async (command: string, args?: { ids?: number[] }) => {
   if (command === "message_conversation_ids") return [...(args?.ids ?? []), 7, 8];
   if (command === "message_archive") return { moved: args?.ids?.length ?? 0, undo: null };
   if (command === "message_set_flags") return { changed: args?.ids?.length ?? 0 };
+  if (command === "message_copy") return { copied: args?.ids?.length ?? 0 };
   return null;
 });
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
@@ -89,5 +90,23 @@ describe("Done on a new sender's mail", () => {
         { accountId: "a", section: "new_senders", from: null },
       ]),
     ).toEqual([{ accountId: "a", address: "lena@example.net" }]);
+  });
+});
+
+describe("Copy to", () => {
+  it("asks for a folder to copy to, and copies the whole conversation there", async () => {
+    const using = { ...host(), pickFolder: vi.fn(async () => 20), copied: vi.fn() };
+    await run(target(true), "copy", using as never);
+    await new Promise((done) => setTimeout(done, 0));
+    expect(using.pickFolder).toHaveBeenCalledWith("a", 10, null, "copy");
+    expect(sent("message_copy")).toEqual({ ids: [1, 7, 8], mailboxId: 20 });
+    expect(using.copied).toHaveBeenCalledWith(3, 20);
+  });
+
+  it("is not offered where labels do it (Gmail), nor without a way to say it was done", () => {
+    const ids = (using: object) => messageActions(target(false), using as never).map((action) => action.id);
+    expect(ids({ ...host(), copied: vi.fn(), hasLabels: () => true })).not.toContain("copy");
+    expect(ids(host())).not.toContain("copy");
+    expect(ids({ ...host(), copied: vi.fn() })).toContain("copy");
   });
 });

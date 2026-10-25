@@ -3,6 +3,7 @@ import {
   type MoveResult,
   archiveMessages,
   conversationIds,
+  copyMessages,
   deleteForever,
   moveMessages,
   pinMessages,
@@ -87,8 +88,10 @@ export interface ActionHost {
   marked: (result: MarkResult) => void;
   failed: (error: unknown) => void;
   confirm: (request: ConfirmRequest) => Promise<boolean>;
-  /** Ask which of the account's folders to move to (other than `current`): its id, or null if cancelled. */
-  pickFolder: (accountId: string, current: number | null, anchor: Anchor | null) => Promise<number | null>;
+  /** Ask which of the account's folders to move (or copy) to, other than `current`: its id, or null if cancelled. */
+  pickFolder: (accountId: string, current: number | null, anchor: Anchor | null, purpose?: "move" | "copy") => Promise<number | null>;
+  /** Copies are on their way to a folder: say so. Without it, there is no Copy to. */
+  copied?: (count: number, mailboxId: number) => void;
   /** Ask until when to snooze: a time (Unix ms), "someday", or null if cancelled. */
   pickSnooze: (anchor: Anchor | null) => Promise<number | "someday" | null>;
   /** Ask when to be reminded if nobody replies: a time (Unix ms), or null if cancelled. */
@@ -121,7 +124,8 @@ export type ActionId =
   | "junk"
   | "delete"
   | "unsubscribe"
-  | "label";
+  | "label"
+  | "copy";
 
 export interface Action {
   id: ActionId;
@@ -154,6 +158,7 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
     delete: ["Delete", "Backspace"],
     unsubscribe: [],
     label: ["l"],
+    copy: [],
   },
   classic: {
     reply: ["r"],
@@ -172,6 +177,7 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
     delete: ["#", "Delete"],
     unsubscribe: [],
     label: ["l"],
+    copy: [],
   },
 };
 
@@ -317,6 +323,26 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
         });
       },
     });
+    // A copy in another folder, the message staying where it is. Gmail has labels for that.
+    if (host.copied && !host.hasLabels?.(account)) {
+      const copied = host.copied;
+      actions.push({
+        id: "copy",
+        label: "Copy to…",
+        icon: "copy",
+        keys: keys.copy,
+        shown: true,
+        run: (anchor) => {
+          void host.pickFolder(account, target.mailboxId, anchor ?? null, "copy").then((folder) => {
+            if (folder === null) return;
+            all()
+              .then((list) => copyMessages(list, folder))
+              .then((result) => copied(result.copied, folder))
+              .catch(host.failed);
+          });
+        },
+      });
+    }
     // Junk is a move to the account's Junk folder, when it has one and they are not there already.
     const junk = host.junkFolder?.(account) ?? null;
     if (junk !== null && junk !== target.mailboxId) {
