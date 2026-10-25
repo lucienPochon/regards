@@ -46,6 +46,8 @@ pub enum SearchTerm {
     From(String),
     /// In To or Cc.
     To(String),
+    /// In Cc only.
+    Cc(String),
     Subject(String),
     Seen,
     Unseen,
@@ -60,7 +62,9 @@ pub enum SearchTerm {
 impl SearchTerm {
     fn is_ascii(&self) -> bool {
         match self {
-            Self::Text(text) | Self::From(text) | Self::To(text) | Self::Subject(text) => text.is_ascii(),
+            Self::Text(text) | Self::From(text) | Self::To(text) | Self::Cc(text) | Self::Subject(text) => {
+                text.is_ascii()
+            }
             Self::Not(term) => term.is_ascii(),
             Self::Seen | Self::Unseen | Self::Flagged | Self::Before(_) | Self::Since(_) => true,
         }
@@ -83,6 +87,7 @@ fn search_key(term: &SearchTerm) -> Result<SearchKey<'static>, ImapError> {
         SearchTerm::Text(words) => SearchKey::Text(text(words)?),
         SearchTerm::From(who) => SearchKey::From(text(who)?),
         SearchTerm::To(who) => SearchKey::Or(Box::new(SearchKey::To(text(who)?)), Box::new(SearchKey::Cc(text(who)?))),
+        SearchTerm::Cc(who) => SearchKey::Cc(text(who)?),
         SearchTerm::Subject(words) => SearchKey::Subject(text(words)?),
         SearchTerm::Seen => SearchKey::Seen,
         SearchTerm::Unseen => SearchKey::Unseen,

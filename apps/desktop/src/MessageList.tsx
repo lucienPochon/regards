@@ -17,6 +17,7 @@ import { Icon, type IconName } from "./icons";
 import type { ListItem, MessageFeed } from "./mail";
 import { type Anchor, anchorOf } from "./Menu";
 import { accountColour, usePrefs } from "./prefs";
+import { SEARCH_CHIPS, hasTerm, toggleTerm } from "./search";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { DRAG_TYPE, type DragPayload } from "./Sidebar";
 
@@ -653,6 +654,28 @@ export function MessageList({
             <Icon name="alert" size={16} /> {feed.error}
           </p>
         )}
+        {searching && query && (
+          <div className="search-chips" role="group" aria-label="Narrow the search">
+            {SEARCH_CHIPS.map((chip) => {
+              const on = hasTerm(query, chip.term);
+              return (
+                <button
+                  key={chip.term}
+                  type="button"
+                  className={on ? "chip chosen" : "chip"}
+                  aria-pressed={on}
+                  title={on ? `Remove ${chip.term} from the search` : `Add ${chip.term} to the search`}
+                  onClick={() => {
+                    search.onQuery(toggleTerm(query, chip.term));
+                    field.current?.focus();
+                  }}
+                >
+                  {chip.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {searching && !query ? (
           <SearchTips
             recents={search.recents}
@@ -1093,7 +1116,7 @@ function ServerRow({ server }: { server: ServerSearch }) {
 /** What search understands, as examples to click into the field. */
 const TIPS: { icon: IconName; term: string; example: string; text: string }[] = [
   { icon: "user", term: "from:", example: "from:lena", text: "From someone, by name or address" },
-  { icon: "send", term: "to:", example: "to:marco", text: "To someone" },
+  { icon: "send", term: "to:", example: "to:marco", text: "To someone; cc:marco for copied only" },
   { icon: "text", term: "subject:", example: "subject:invoice", text: "Words in the subject" },
   { icon: "folder", term: "in:", example: "in:sent", text: "In one folder; in:anywhere adds Trash and Junk" },
   { icon: "paperclip", term: "has:attachment ", example: "has:attachment", text: "With files attached" },
