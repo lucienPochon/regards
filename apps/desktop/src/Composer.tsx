@@ -28,22 +28,21 @@ import {
   textToHtml,
   touchDraft,
 } from "./compose";
-import { type UndoInfo, listAccounts } from "./accounts";
+import { type Person, type UndoInfo, listAccounts } from "./accounts";
 import { type Identity, listIdentities } from "./identities";
 import { type Signature, editorSignature, listSignatures, signatureIn } from "./signatures";
 import {
   IMAGE_TYPES,
   attachImage,
   attachPictures,
-  coloursAsMarks,
-  coloursAsStyles,
+  type DraftImage,
   draftImages,
   fileBase64,
   insertImage,
   toEditorHtml,
   toStoredHtml,
 } from "./images";
-import type { Template } from "./templates";
+import { type Template, type Written, useTemplateOnDraft } from "./templates";
 import { fileKind, fileSize, laterDate } from "./format";
 import { Icon } from "./icons";
 import { type Anchor, anchorOf, Menu, type MenuEntry, type MenuRequest } from "./Menu";
@@ -108,7 +107,7 @@ export function Composer({
    * Ask which template to start from (none: no templates button). What is
    * written so far comes along, so it can be kept as a template.
    */
-  pickTemplate?: (anchor: Anchor, written: { subject: string; html: string }) => Promise<Template | null>;
+  pickTemplate?: (anchor: Anchor, written: Written) => Promise<Template | null>;
   /** From the From menu: go and add another account. */
   onAddAccount?: () => void;
 }) {
@@ -445,20 +444,49 @@ export function Composer({
    * sender (add the recipient first, as in Spark).
    */
   const insertTemplate = async (anchor: Anchor) => {
-    if (!pickTemplate || !fields) return;
-    // Kept as a message is: colours as styles.
-    const template = await pickTemplate(anchor, { subject: fields.subject, html: coloursAsStyles(fields.html) });
+    if (!pickTemplate || !fields || !draft) return;
+    // Kept as a message is (colours as styles, images by Content-ID), with its recipients and files.
+    const template = await pickTemplate(anchor, {
+      subject: fields.subject,
+      html: toStoredHtml(fields.html),
+      to: parseRecipients(fields.to),
+      cc: parseRecipients(fields.cc),
+      bcc: parseRecipients(fields.bcc),
+      draftId: draft.id,
+    });
     if (!template) return;
-    const first = parseRecipients(fields.to)[0];
-    const names = { to: first?.name ?? null, me: draft?.from.name ?? null };
+    touchDraft(draft.id);
+    // Its files (and the images in its text) on the draft first, so the text can show them.
+    let images: DraftImage[] = [];
+    if (template.files.length > 0) {
+      try {
+        setDraft(await useTemplateOnDraft(draft.id, template.id));
+        if (template.files.some((file) => file.inline)) images = await draftImages(draft.id);
+      } catch (failure) {
+        setError(String(failure));
+      }
+    }
+    // Its recipients join the message's, each once.
+    const join = (now: string, more: Person[]) => {
+      const have = parseRecipients(now);
+      const known = new Set(have.map((person) => person.address?.toLowerCase()));
+      return formatRecipients([...have, ...more.filter((person) => !known.has(person.address?.toLowerCase()))]);
+    };
+    const to = join(fields.to, template.to);
+    const first = parseRecipients(to)[0];
+    const names = { to: first?.name ?? null, me: draft.from.name ?? null };
     const filled = {
       body: fillPlaceholders(template.body, names),
-      html: template.html === null ? null : coloursAsMarks(fillPlaceholders(template.html, names, true)),
+      html: template.html === null ? null : toEditorHtml(fillPlaceholders(template.html, names, true), images),
     };
+    if (template.cc.length + template.bcc.length > 0) setCopies(true);
     setFields((current) =>
       current
         ? {
             ...current,
+            to: join(current.to, template.to),
+            cc: join(current.cc, template.cc),
+            bcc: join(current.bcc, template.bcc),
             html: insertTemplateHtml(current.html, filled),
             subject: current.subject.trim() ? current.subject : fillPlaceholders(template.subject, names),
           }

@@ -102,7 +102,7 @@ import { ShortcutHelp } from "./ShortcutHelp";
 import { NameDialog, type NameRequest } from "./NameDialog";
 import { useLabels } from "./labels";
 import { useOnline } from "./online";
-import { type Template, listTemplates, saveTemplate } from "./templates";
+import { type Template, type Written, listTemplates, saveWritten } from "./templates";
 import { type AssistantJob, AssistantDialog, useAssistantKind } from "./AssistantDialog";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
 import { type DragPayload, Sidebar } from "./Sidebar";
@@ -718,7 +718,7 @@ export function App() {
    * what is written as one (named after its subject; renamed in Settings).
    */
   const pickTemplate = useCallback(
-    (_anchor: Anchor, written: { subject: string; html: string }) =>
+    (_anchor: Anchor, written: Written) =>
       listTemplates().then(
         (templates) =>
           new Promise<Template | null>((resolve) => {
@@ -732,7 +732,7 @@ export function App() {
                     detail: name,
                     onSelect: () => {
                       resolve(null);
-                      saveTemplate({ id: null, name, subject: written.subject, body: "", html: written.html }).then(
+                      saveWritten(name, written).then(
                         (saved) => setSaid(`Saved as the template “${saved.name}”`),
                         failed,
                       );
