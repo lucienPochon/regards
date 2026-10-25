@@ -235,3 +235,20 @@ export const listHolds = (pending = true) =>
 export const approveHold = (id: number, text?: string) =>
   invoke<Hold>("hold_approve", text === undefined ? { id } : { id, text });
 export const rejectHold = (id: number) => invoke<Hold>("hold_reject", { id });
+
+/** What an agent's request did, for the activity filter. */
+export type ActivityKind = "reading" | "sorting" | "sending";
+
+/**
+ * Reading (listing, opening, searching mail and drafts), sorting (moving,
+ * marking, snoozing, labelling, choosing where senders go) or sending
+ * (writing and sending). Other requests (asking what it asked for, trying
+ * to change its access) are none of these.
+ */
+export function activityKind(method: string): ActivityKind | null {
+  if (/^(draft\.(create|reply|forward|update|send|attach_file|attach_image|detach)|outbox\.)/.test(method)) return "sending";
+  if (/^message\.(archive|trash|delete|move|copy|set_flags|pin|snooze|set_aside|remind|set_labels)$|^sender\./.test(method)) return "sorting";
+  if (/^(account|mailbox|message|draft|search|smart|thread|attachment|people)\.(list|get|html|view|explain|overview|query|server|preview|source|suggest)$/.test(method))
+    return "reading";
+  return null;
+}

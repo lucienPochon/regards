@@ -5363,6 +5363,24 @@ button.sender-row:hover:not(:disabled) {
   width: min(540px, 100%);
 }
 
+/* What agents wait for, decided over the mail. */
+.holds-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(620px, 100%);
+  overflow: hidden;
+}
+
+/* The requests scroll; the buttons stay at the foot. */
+.holds-dialog > .agent-holds {
+  min-height: 0;
+  overflow: auto;
+}
+
+.holds-dialog .dialog-actions .spacer {
+  flex: 1;
+}
+
 .help h3 {
   margin-bottom: 12px;
   font-size: 17px;

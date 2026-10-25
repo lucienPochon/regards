@@ -5,7 +5,9 @@ import { useChanges } from "./changes";
 import { type Draft, getDraft, undoSend } from "./compose";
 import { fileSize, fullDate, peopleFull } from "./format";
 import { Icon } from "./icons";
+import { useDialogFocus } from "./dialogFocus";
 import { VOICE_MAX } from "./identities";
+import { useShortcuts } from "./shortcuts";
 
 /** The draft's text shown in full up to this, then cut. */
 const TEXT_SHOWN = 1500;
@@ -348,5 +350,50 @@ function Outcome({ hold, focused = false, onDismiss }: { hold: Hold; focused?: b
         </button>
       </div>
     </li>
+  );
+}
+
+/**
+ * What agents wait for, over the mail (from "Agents are waiting for you"):
+ * each request decided here as in Settings › Agents, which the foot opens.
+ */
+export function HoldsDialog({
+  accounts,
+  onSettings,
+  onClose,
+}: {
+  accounts: { id: string; email: string }[];
+  /** Settings › Agents: what each agent may do, and their activity. */
+  onSettings: () => void;
+  onClose: () => void;
+}) {
+  const box = useRef<HTMLElement>(null);
+  useDialogFocus(box);
+  useShortcuts({ Escape: onClose }, { modal: true });
+  const waiting = usePendingHolds();
+  return (
+    <div className="backdrop" onMouseDown={onClose}>
+      <section
+        ref={box}
+        tabIndex={-1}
+        className="dialog holds-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="What agents are waiting for"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <AgentHolds accounts={accounts} />
+        {waiting.length === 0 && <p className="muted">Nothing more is waiting for you.</p>}
+        <div className="dialog-actions">
+          <button type="button" className="btn small" onClick={onSettings}>
+            Agent settings…
+          </button>
+          <span className="spacer" />
+          <button type="button" className="btn small primary" onClick={onClose}>
+            Done
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
