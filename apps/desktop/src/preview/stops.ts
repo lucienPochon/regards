@@ -132,6 +132,7 @@ export const TOUR: Group[] = [
     title: "Writing",
     stops: [
       { id: "compose", label: "New message", note: "The c key.", steps: ["wait:700", "key:c"] },
+      { id: "compose-colour", label: "Text colour", note: "In the formatting bar, with highlight, headings and Clear.", steps: ["wait:700", "key:c", "wait:600", "click:[aria-label='Text colour']"] },
       { id: "reply", label: "Reply", note: "The r key, in a conversation.", steps: [...openRow("Garden plot"), "wait:600", "key:r"] },
       { id: "suggest", label: "People suggested as you type", note: "Those you write to first; arrows and Enter put one in.", steps: ["wait:700", "key:c", "wait:600", "type:ma", "wait:500"] },
       { id: "template", label: "Insert a template", note: "Ctrl+Shift+T in the composer.", steps: ["wait:700", "key:c", "wait:500", "click:[aria-label='Insert a template']"] },
