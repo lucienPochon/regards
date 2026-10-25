@@ -1,4 +1,5 @@
 import type { MenuItem } from "./Menu";
+import { appLocale, t } from "./i18n";
 
 /**
  * A time typed into a time picker, in local time: "in 3 days", "2h",
@@ -225,7 +226,7 @@ function when(said: Said, now: Date): number | null {
 /** "Friday 30 October, 20:00", with the year when it is not this one. */
 export function typedTimeLabel(time: number, now: Date = new Date()): string {
   const date = new Date(time);
-  return date.toLocaleString([], {
+  return date.toLocaleString(appLocale(), {
     weekday: "long",
     day: "numeric",
     month: "long",
@@ -236,7 +237,7 @@ export function typedTimeLabel(time: number, now: Date = new Date()): string {
 }
 
 /** Placeholder of a time picker's field. */
-export const TYPED_TIME_HINT = "Or type a time, like “in 3 days” or “fri 8pm”";
+export const TYPED_TIME_HINT = t("Or type a time, like “in 3 days” or “fri 8pm”");
 
 /** A time picker's entry for what is typed, when it names a time. */
 export function typedTimeEntries(query: string, pick: (time: number) => void): MenuItem[] {

@@ -9,6 +9,7 @@ import type { Anchor } from "./Menu";
 import { useShortcuts } from "./shortcuts";
 import { type Explanation, type Policy, SECTION_LABELS, blockSender, blockableDomain, explain, reasonText, setSender, setSenderQuiet } from "./smart";
 import { useDialogFocus } from "./dialogFocus";
+import { t, tn } from "./i18n";
 
 export interface SenderRequest {
   anchor: Anchor;
@@ -111,13 +112,13 @@ export function SenderCard({
             <strong>{person.name || address}</strong>
             <span className="sender-address">
               {address}
-              <button type="button" className="icon-btn small" title={copied ? "Copied" : "Copy the address"} aria-label="Copy the address" onClick={copy}>
+              <button type="button" className="icon-btn small" title={copied ? t("Copied") : t("Copy the address")} aria-label={t("Copy the address")} onClick={copy}>
                 <Icon name={copied ? "check" : "copy"} size={13} />
               </button>
             </span>
             <select
               className="sender-section"
-              aria-label="Where their mail goes"
+              aria-label={t("Where their mail goes")}
               value={sender?.policy ?? "auto"}
               disabled={!sender}
               onChange={(event) => {
@@ -125,10 +126,10 @@ export function SenderCard({
                 choose(value === "auto" ? null : (value as Policy), sender?.priority ?? false);
               }}
             >
-              <option value="auto">Sorted automatically</option>
-              <option value="people">Always People</option>
-              <option value="notifications">Always Notifications</option>
-              <option value="newsletters">Always Newsletters</option>
+              <option value="auto">{t("Sorted automatically")}</option>
+              <option value="people">{t("Always People")}</option>
+              <option value="notifications">{t("Always Notifications")}</option>
+              <option value="newsletters">{t("Always Newsletters")}</option>
             </select>
           </div>
         </div>
@@ -144,13 +145,13 @@ export function SenderCard({
         <div className="sender-rows">
           <button type="button" className="sender-row" onClick={() => onWrite(person)}>
             <Icon name="compose" size={16} />
-            <span>Write to them</span>
+            <span>{t("Write to them")}</span>
           </button>
           {onSearch && (
             <button type="button" className="sender-row" onClick={() => onSearch(address)} disabled={!address}>
               <Icon name="search" size={16} />
               <span>
-                Search mail from them
+                {t("Search mail from them")}
                 <span className="muted sender-row-detail">{address}</span>
               </span>
             </button>
@@ -164,7 +165,7 @@ export function SenderCard({
             onClick={() => choose(sender?.policy ?? null, !(sender?.priority ?? false))}
           >
             <Icon name="bolt" size={16} />
-            <span>Priority sender</span>
+            <span>{t("Priority sender")}</span>
             <span className={sender?.priority ? "toggle on" : "toggle"} aria-hidden="true" />
           </button>
           <button
@@ -179,30 +180,30 @@ export function SenderCard({
           >
             <Icon name="bellOff" size={16} />
             <span>
-              No notifications
-              <span className="muted sender-row-detail">Their mail comes in quietly</span>
+              {t("No notifications")}
+              <span className="muted sender-row-detail">{t("Their mail comes in quietly")}</span>
             </span>
             <span className={sender?.quiet ? "toggle on" : "toggle"} aria-hidden="true" />
           </button>
           <div className="sender-row why">
             <Icon name="info" size={16} />
             <span>
-              <strong>Why is this here?</strong>
+              <strong>{t("Why is this here?")}</strong>
               <span className="muted">
-                {explanation ? `In ${SECTION_LABELS[explanation.section]}. ${reasonText(explanation)}` : "…"}
+                {explanation ? t("In {section}. {reason}", { section: SECTION_LABELS[explanation.section], reason: reasonText(explanation) }) : "…"}
               </span>
             </span>
           </div>
           <button type="button" className="sender-row danger" onClick={block} disabled={!address}>
             <Icon name="thumbDown" size={16} />
-            <span>{sender?.blocked ? "Unblock sender" : "Block sender"}</span>
+            <span>{sender?.blocked ? t("Unblock sender") : t("Block sender")}</span>
           </button>
           {domain && (
             <button type="button" className="sender-row danger" onClick={blockDomain}>
               <Icon name="thumbDown" size={16} />
               <span>
-                Block everyone at {domain.slice(1)}
-                <span className="muted sender-row-detail">Their mail goes to Junk, and so does what anyone there sends later</span>
+                {t("Block everyone at {domain}", { domain: domain.slice(1) })}
+                <span className="muted sender-row-detail">{t("Their mail goes to Junk, and so does what anyone there sends later")}</span>
               </span>
             </button>
           )}
@@ -278,24 +279,24 @@ function SenderNotes({
   };
   const about = (note: Note) =>
     [
-      note.by === "person" ? "You" : null,
+      note.by === "person" ? t("You") : null,
       listDate(note.updated_at),
-      note.from_subject ? `from “${note.from_subject}”` : null,
-      note.from_address && note.from_address !== note.address ? `sent by ${note.from_address}` : null,
+      note.from_subject ? t("from “{subject}”", { subject: note.from_subject }) : null,
+      note.from_address && note.from_address !== note.address ? t("sent by {address}", { address: note.from_address }) : null,
     ]
       .filter(Boolean)
       .join(" · ");
 
   return (
-    <section className="sender-notes" aria-label={`Notes about ${who}`}>
+    <section className="sender-notes" aria-label={t("Notes about {who}", { who })}>
       <div className="notes-head">
         <Icon name="text" size={16} />
-        <strong>Notes</strong>
+        <strong>{t("Notes")}</strong>
         {notes.length > 0 && <span className="muted">{notes.length}</span>}
-        <span className="notes-where muted">On this computer only</span>
+        <span className="notes-where muted">{t("On this computer only")}</span>
       </div>
       {notes.length === 0 && (
-        <p className="notes-empty muted">Nothing yet. Add what&apos;s worth remembering: who decides, what they prefer.</p>
+        <p className="notes-empty muted">{t("Nothing yet. Add what's worth remembering: who decides, what they prefer.")}</p>
       )}
       {notes.length > 0 && (
         <ul className="notes-list">
@@ -304,7 +305,7 @@ function SenderNotes({
               {editing?.id === note.id ? (
                 <div className="note-edit">
                   <input
-                    aria-label="Note"
+                    aria-label={t("Note")}
                     maxLength={NOTE_MAX}
                     value={editing.text}
                     onChange={(event) => setEditing({ id: note.id, text: event.target.value })}
@@ -319,10 +320,10 @@ function SenderNotes({
                   />
                   <div className="note-edit-buttons">
                     <button type="button" className="btn small" onClick={() => setEditing(null)}>
-                      Cancel
+                      {t("Cancel")}
                     </button>
                     <button type="button" className="btn small primary" onClick={save} disabled={!editing.text.trim()}>
-                      Save
+                      {t("Save")}
                     </button>
                   </div>
                 </div>
@@ -333,7 +334,7 @@ function SenderNotes({
                     {note.by === "agent" && (
                       <span className="note-agent">
                         <Icon name="agent" size={11} />
-                        Agent
+                        {t("Agent")}
                       </span>
                     )}
                     <span>{about(note)}</span>
@@ -342,8 +343,8 @@ function SenderNotes({
                     <button
                       type="button"
                       className="icon-btn small"
-                      title="Edit the note"
-                      aria-label="Edit the note"
+                      title={t("Edit the note")}
+                      aria-label={t("Edit the note")}
                       onClick={() => setEditing({ id: note.id, text: note.text })}
                     >
                       <Icon name="compose" size={13} />
@@ -351,8 +352,8 @@ function SenderNotes({
                     <button
                       type="button"
                       className="icon-btn small"
-                      title="Remove the note"
-                      aria-label="Remove the note"
+                      title={t("Remove the note")}
+                      aria-label={t("Remove the note")}
                       onClick={() => remove(note.id)}
                     >
                       <Icon name="trash" size={13} />
@@ -366,20 +367,20 @@ function SenderNotes({
       )}
       {notes.length > NOTES_SHOWN && (
         <button type="button" className="notes-more" onClick={() => setAll(!all)}>
-          {all ? "Show fewer" : `Show all ${notes.length}`}
+          {all ? t("Show fewer") : t("Show all {count}", { count: notes.length })}
         </button>
       )}
       {waiting > 0 && onHolds && (
         <button type="button" className="notes-waiting" onClick={onHolds}>
           <Icon name="agent" size={13} />
-          <span>{waiting === 1 ? "1 note from an agent waits for you" : `${waiting} notes from agents wait for you`}</span>
+          <span>{tn(waiting, "1 note from an agent waits for you", "{count} notes from agents wait for you")}</span>
           <Icon name="chevronRight" size={13} />
         </button>
       )}
       <div className="notes-add">
         <input
-          aria-label={`Add a note about ${who}`}
-          placeholder={`Add a note about ${first}…`}
+          aria-label={t("Add a note about {who}", { who })}
+          placeholder={t("Add a note about {who}…", { who: first })}
           maxLength={NOTE_MAX}
           value={adding}
           onChange={(event) => setAdding(event.target.value)}
@@ -388,7 +389,7 @@ function SenderNotes({
           }}
         />
         <button type="button" className="btn small primary" onClick={add} disabled={!adding.trim()}>
-          Add
+          {t("Add")}
         </button>
       </div>
     </section>

@@ -30,6 +30,7 @@ import { openUrl } from "./background";
 import { useDark } from "./theme";
 import { SourceDialog } from "./SourceDialog";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
+import { appLocale, t, tn } from "./i18n";
 
 type Load = { state: "loading" } | { state: "ready"; detail: MessageDetail } | { state: "failed"; message: string };
 
@@ -259,13 +260,13 @@ export function ReadingPane({
   );
 
   return (
-    <section className={`reader ${mode}`} aria-label="Message">
-      <header className="reader-bar" role="toolbar" aria-label="Message actions" data-tauri-drag-region>
+    <section className={`reader ${mode}`} aria-label={t("Message")}>
+      <header className="reader-bar" role="toolbar" aria-label={t("Message actions")} data-tauri-drag-region>
         <div className="segmented">
           <button
             type="button"
-            title={mode === "single" ? "Back to the list (Esc)" : "Close (Esc)"}
-            aria-label={mode === "single" ? "Back to the list" : "Close"}
+            title={mode === "single" ? t("Back to the list (Esc)") : t("Close (Esc)")}
+            aria-label={mode === "single" ? t("Back to the list") : t("Close")}
             onClick={onClose}
           >
             <Icon name={mode === "single" ? "back" : "close"} size={14} />
@@ -287,8 +288,8 @@ export function ReadingPane({
           <button
             type="button"
             className="icon-btn"
-            title={`More (${MOD_KEY}+K)`}
-            aria-label="More"
+            title={t("More ({key})", { key: `${MOD_KEY}+K` })}
+            aria-label={t("More")}
             disabled={load.state !== "ready"}
             onClick={() => onPalette(actions, subject)}
           >
@@ -299,8 +300,8 @@ export function ReadingPane({
           <button
             type="button"
             className="reader-ask"
-            title={`Ask ${assistant.name} about this conversation`}
-            aria-label={`Ask ${assistant.name}`}
+            title={t("Ask {assistant} about this conversation", { assistant: assistant.name })}
+            aria-label={t("Ask {assistant}", { assistant: assistant.name })}
             aria-haspopup="true"
             disabled={load.state !== "ready"}
             onClick={(event) => assistant.onMenu(anchorOf(event.currentTarget, "end"))}
@@ -314,7 +315,7 @@ export function ReadingPane({
       <div className="reader-scroll">
         <h1 className="reader-subject">{subject}</h1>
         {labels.length > 0 && (
-          <div className="reader-labels" aria-label="Labels">
+          <div className="reader-labels" aria-label={t("Labels")}>
             {labels.map((label) => (
               <button
                 key={label.id}
@@ -356,20 +357,20 @@ export function ReadingPane({
         )}
         {drafts.length > 0 && onDraft && (
           // Replies being written here, not sent yet: where they will go, under the conversation.
-          <ul className="thread-drafts" aria-label="Replies being written">
+          <ul className="thread-drafts" aria-label={t("Replies being written")}>
             {drafts.map((draft) => (
               <li key={draft.id}>
                 <button type="button" className="draft-card" onClick={() => onDraft(draft.id)}>
                   <span className="draft-head">
                     <span className="chip draft-chip">
                       <Icon name="draft" size={12} />
-                      Draft
+                      {t("Draft")}
                     </span>
-                    <span className="draft-to">{draft.to.length > 0 ? `to ${peopleShort(draft.to)}` : "no recipient yet"}</span>
+                    <span className="draft-to">{draft.to.length > 0 ? t("to {people}", { people: peopleShort(draft.to) }) : t("no recipient yet")}</span>
                     <time className="when">{fullDate(draft.updated_at)}</time>
                   </span>
-                  <span className="draft-preview">{draft.preview || "Nothing written yet"}</span>
-                  <span className="draft-open">Continue writing</span>
+                  <span className="draft-preview">{draft.preview || t("Nothing written yet")}</span>
+                  <span className="draft-open">{t("Continue writing")}</span>
                 </button>
               </li>
             ))}
@@ -532,53 +533,53 @@ function ThreadMessage({
   const more = () => {
     const extra: MenuEntry[] = [];
     if (ready?.has_html) {
-      extra.push({ label: showText ? "Show formatted" : "Show plain text", icon: "text", onSelect: () => setShowText(!showText) });
+      extra.push({ label: showText ? t("Show formatted") : t("Show plain text"), icon: "text", onSelect: () => setShowText(!showText) });
     }
     if (ready?.has_html && ready.remote_images > 0 && !allowRemote && !trusted) {
-      extra.push({ label: "Load remote images", icon: "image", onSelect: () => setAllowRemote(true) });
+      extra.push({ label: t("Load remote images"), icon: "image", onSelect: () => setAllowRemote(true) });
     }
     if (ready?.has_html && ready.remote_images > 0 && address && !trusted) {
-      extra.push({ label: `Always load images from ${address}`, icon: "image", onSelect: () => alwaysFrom(address) });
-      if (domain) extra.push({ label: `Always load images from anyone at ${domain.slice(1)}`, icon: "image", onSelect: () => alwaysFrom(domain) });
+      extra.push({ label: t("Always load images from {address}", { address }), icon: "image", onSelect: () => alwaysFrom(address) });
+      if (domain) extra.push({ label: t("Always load images from anyone at {domain}", { domain: domain.slice(1) }), icon: "image", onSelect: () => alwaysFrom(domain) });
     }
     if (ready?.has_html && trusted) {
-      extra.push({ label: "Stop loading images from this sender", icon: "shield", onSelect: stopFrom });
+      extra.push({ label: t("Stop loading images from this sender"), icon: "shield", onSelect: stopFrom });
     }
     if (conversation) {
       extra.push(
-        { label: "Open every message", icon: "expand", keys: "Shift+O", onSelect: conversation.openAll },
-        { label: "Fold the older messages", icon: "shrink", keys: "o", onSelect: conversation.foldOlder },
+        { label: t("Open every message"), icon: "expand", keys: "Shift+O", onSelect: conversation.openAll },
+        { label: t("Fold the older messages"), icon: "shrink", keys: "o", onSelect: conversation.foldOlder },
       );
     }
     if (ready) {
       extra.push(
-        { label: "Find in this message…", icon: "search", keys: "Mod+Shift+F", onSelect: () => setFinding(true) },
+        { label: t("Find in this message…"), icon: "search", keys: "Mod+Shift+F", onSelect: () => setFinding(true) },
         {
-          label: "Copy link",
+          label: t("Copy link"),
           icon: "link",
           onSelect: () => void navigator.clipboard?.writeText(ready.link ?? `regards://message/${message.id}`).catch(() => {}),
         },
         {
-          label: "Copy as Markdown",
+          label: t("Copy as Markdown"),
           icon: "copy",
           onSelect: () => void navigator.clipboard?.writeText(asMarkdown(ready)).catch(() => {}),
         },
-        { label: "Print…", icon: "text", onSelect: () => printMessage(ready) },
-        ...(conversation ? [{ label: "Print the whole conversation…", icon: "text" as const, onSelect: conversation.print }] : []),
-        { label: "See the original message", icon: "quote", onSelect: () => setSource(true) },
+        { label: t("Print…"), icon: "text", onSelect: () => printMessage(ready) },
+        ...(conversation ? [{ label: t("Print the whole conversation…"), icon: "text" as const, onSelect: conversation.print }] : []),
+        { label: t("See the original message"), icon: "quote", onSelect: () => setSource(true) },
       );
     }
     if (onAssistant) {
       extra.push(
-        { label: "Summarise with the assistant…", icon: "bolt", onSelect: () => onAssistant(message.id, "summary") },
-        { label: "Draft a reply with the assistant…", icon: "bolt", onSelect: () => onAssistant(message.id, "reply") },
+        { label: t("Summarise with the assistant…"), icon: "bolt", onSelect: () => onAssistant(message.id, "summary") },
+        { label: t("Draft a reply with the assistant…"), icon: "bolt", onSelect: () => onAssistant(message.id, "reply") },
       );
     }
-    extra.push({ label: details ? "Hide details" : "Show details", icon: "info", onSelect: () => setDetails(!details) });
+    extra.push({ label: details ? t("Hide details") : t("Show details"), icon: "info", onSelect: () => setDetails(!details) });
     const from = message.from;
     if (onSender && from) {
       extra.push({
-        label: "The sender, and why this is here…",
+        label: t("The sender, and why this is here…"),
         icon: "people",
         onSelect: () => onSender({ x: window.innerWidth / 2 - 160, y: window.innerHeight / 4 }, message.id, from),
       });
@@ -595,7 +596,7 @@ function ThreadMessage({
           <button
             type="button"
             className="mail-avatar"
-            title="About the sender"
+            title={t("About the sender")}
             aria-label={`About ${personName(message.from)}`}
             onClick={(event) => message.from && onSender(anchorOf(event.currentTarget), message.id, message.from)}
           >
@@ -614,12 +615,12 @@ function ThreadMessage({
           <strong>{personName(message.from)}</strong>
           {ready && (to.length > 0 || cc.length > 0) && (
             <span className="mail-to">
-              to <span className="people">{recipients([...to, ...cc])}</span>
+              {t("to")} <span className="people">{recipients([...to, ...cc])}</span>
             </span>
           )}
         </button>
         <time className="when">{when}</time>
-        <button type="button" className="icon-btn small" title={`More (${MOD_KEY}+K)`} aria-label="More" aria-haspopup="dialog" onClick={more}>
+        <button type="button" className="icon-btn small" title={t("More ({key})", { key: `${MOD_KEY}+K` })} aria-label={t("More")} aria-haspopup="dialog" onClick={more}>
           <Icon name="more" size={15} />
         </button>
       </div>
@@ -628,7 +629,7 @@ function ThreadMessage({
         <SourceDialog messageId={message.id} subject={message.subject || "(no subject)"} onClose={() => setSource(false)} />
       )}
       <div className="mail-body">
-        {load.state === "loading" && <p className="muted">Opening…</p>}
+        {load.state === "loading" && <p className="muted">{t("Opening…")}</p>}
         {load.state === "failed" && <p className="error" role="alert">{load.message}</p>}
         {ready && (
           <>
@@ -638,15 +639,18 @@ function ThreadMessage({
               <div className="notice images-notice">
                 <Icon name="shield" size={16} />
                 <span>
-                  {ready.remote_images} remote {ready.remote_images === 1 ? "image is" : "images are"} blocked. They
-                  can tell the sender you opened this message.
+                  {tn(
+                    ready.remote_images,
+                    "1 remote image is blocked. It can tell the sender you opened this message.",
+                    "{count} remote images are blocked. They can tell the sender you opened this message.",
+                  )}
                 </span>
                 <button type="button" className="btn small" onClick={() => setAllowRemote(true)}>
-                  Load once
+                  {t("Load once")}
                 </button>
                 {address && (
-                  <button type="button" className="btn small" title={`Images from ${address} load from now on`} onClick={() => alwaysFrom(address)}>
-                    Always from this sender
+                  <button type="button" className="btn small" title={t("Images from {address} load from now on", { address })} onClick={() => alwaysFrom(address)}>
+                    {t("Always from this sender")}
                   </button>
                 )}
               </div>
@@ -664,7 +668,7 @@ function ThreadMessage({
                 style={frameHeight === null ? undefined : { height: frameHeight }}
                 sandbox="allow-scripts"
                 referrerPolicy="no-referrer"
-                title="Message content"
+                title={t("Message content")}
                 src={messageHtmlUrl(message.id, allowRemote || fromSender === true, dark)}
                 onMouseLeave={() => setLinkGoes(null)}
               />
@@ -715,7 +719,7 @@ function TextBody({
   if (!text)
     return (
       <pre ref={ref} className="text-body">
-        (no text)
+        {t("(no text)")}
       </pre>
     );
   return (
@@ -755,11 +759,11 @@ function Details({ detail }: { detail: MessageDetail }) {
   const { message } = detail;
   return (
     <dl className="mail-details">
-      {row("From", message.from ? [message.from] : [])}
-      {row("To", detail.to)}
-      {row("Cc", detail.cc)}
-      <dt>Date</dt>
-      <dd>{new Date(message.sent_at ?? message.received_at).toLocaleString()}</dd>
+      {row(t("From"), message.from ? [message.from] : [])}
+      {row(t("To"), detail.to)}
+      {row(t("Cc"), detail.cc)}
+      <dt>{t("Date")}</dt>
+      <dd>{new Date(message.sent_at ?? message.received_at).toLocaleString(appLocale())}</dd>
     </dl>
   );
 }

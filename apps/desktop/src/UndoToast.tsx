@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { type UndoInfo, applyUndo } from "./accounts";
 import { Icon } from "./icons";
 import { useShortcuts } from "./shortcuts";
+import { t } from "./i18n";
 
 /** How long the toast offers undo (ADR-0007: at least 10 seconds). */
 const SHOW_FOR_MS = 10_000;
@@ -43,7 +44,7 @@ export function UndoToast({ undo, onDone }: { undo: UndoBar; onDone: () => void 
       <span>{error ?? undo.description}</span>
       {!error && (
         <button type="button" onClick={revert}>
-          Undo
+          {t("Undo")}
         </button>
       )}
     </div>

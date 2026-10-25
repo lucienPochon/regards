@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { MoveResult } from "./accounts";
+import { t } from "./i18n";
 
 /**
  * The Smart Inbox (plan §5.4): the inbox by section, why a message is where
@@ -14,11 +15,11 @@ import type { MoveResult } from "./accounts";
 export type Section = "priority" | "people" | "new_senders" | "notifications" | "newsletters";
 export const SECTIONS: Section[] = ["priority", "people", "new_senders", "notifications", "newsletters"];
 export const SECTION_LABELS: Record<Section, string> = {
-  priority: "Priority",
-  people: "People",
-  new_senders: "New senders",
-  notifications: "Notifications",
-  newsletters: "Newsletters",
+  priority: t("Priority"),
+  people: t("People"),
+  new_senders: t("New senders"),
+  notifications: t("Notifications"),
+  newsletters: t("Newsletters"),
 };
 
 /** Where the person said a sender's mail goes. */
@@ -122,30 +123,30 @@ export const setScreening = (mode: Screening) => invoke<{ mode: Screening }>("sm
 
 /** The answer to "why is this here?", in a sentence. */
 export function reasonText(explanation: Explanation): string {
-  const who = explanation.sender?.address ?? "the sender";
+  const who = explanation.sender?.address ?? t("the sender");
   switch (explanation.reason) {
     case "your_choice":
-      return `You chose ${SECTION_LABELS[explanation.section]} for ${who}.`;
+      return t("You chose {section} for {who}.", { section: SECTION_LABELS[explanation.section], who });
     case "priority_sender":
-      return `${who} is one of your priority senders.`;
+      return t("{who} is one of your priority senders.", { who });
     case "from_you":
-      return "You sent it.";
+      return t("You sent it.");
     case "delivery_report":
-      return "It's a delivery report from a mail server.";
+      return t("It's a delivery report from a mail server.");
     case "sent_automatically":
-      return "A program sent it, not a person.";
+      return t("A program sent it, not a person.");
     case "no_reply_address":
-      return `It comes from ${who}, an address that takes no replies.`;
+      return t("It comes from {who}, an address that takes no replies.", { who });
     case "mailing_list":
-      return "It came through a mailing list, or has an unsubscribe link.";
+      return t("It came through a mailing list, or has an unsubscribe link.");
     case "bulk_mail":
-      return "It's marked as bulk mail.";
+      return t("It's marked as bulk mail.");
     case "bulk_sender":
-      return "It was sent through a bulk-mail service.";
+      return t("It was sent through a bulk-mail service.");
     case "you_wrote_to_them":
-      return `You have written to ${who}.`;
+      return t("You have written to {who}.", { who });
     case "new_sender":
-      return `You haven't written to ${who} yet.`;
+      return t("You haven't written to {who} yet.", { who });
   }
 }
 

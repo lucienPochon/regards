@@ -3,6 +3,7 @@ import { Avatar } from "./Avatar";
 import { type OutboxEntry, dismissOutbox, reschedule, sendAgain, undoSend } from "./compose";
 import { fullDate, peopleShort } from "./format";
 import { Icon } from "./icons";
+import { appLocale, t } from "./i18n";
 
 /**
  * What has not gone out yet: waiting, scheduled, held, failed, or perhaps
@@ -39,8 +40,8 @@ export function OutboxList({
           <span className="zero-mark" aria-hidden="true">
             <Icon name="send" size={30} />
           </span>
-          <h2>Everything has gone out</h2>
-          <p>Messages waiting to be sent, or that could not be, show here.</p>
+          <h2>{t("Everything has gone out")}</h2>
+          <p>{t("Messages waiting to be sent, or that could not be, show here.")}</p>
         </div>
       </div>
     );
@@ -57,7 +58,7 @@ export function OutboxList({
   return (
     <div className="list-scroll">
       <div className="rows tall">
-        <ul aria-label="Outbox">
+        <ul aria-label={t("Outbox")}>
           {entries.map((entry) => {
             const trouble = entry.state === "failed" || entry.state === "uncertain" || entry.state === "held";
             const waiting = entry.state === "held" || scheduled(entry);
@@ -71,19 +72,19 @@ export function OutboxList({
                     <Avatar person={entry.recipients[0] ?? null} size="sm" />
                   </span>
                   <span className="from">to {peopleShort(entry.recipients)}</span>
-                  <span className="subject">{entry.subject || "(no subject)"}</span>
+                  <span className="subject">{entry.subject || t("(no subject)")}</span>
                   <span className="row-extra">
                     {entry.by_agent && (
                       <span className="chip agent-chip">
                         <Icon name="agent" size={11} />
-                        An agent asked to send this
+                        {t("An agent asked to send this")}
                       </span>
                     )}
                     <span className={trouble ? "outbox-state bad" : "outbox-state"}>{describe(entry, now)}</span>
                     <span className="outbox-actions">
                       {waiting && (
                         <button type="button" className="btn small" onClick={() => act(() => reschedule(entry.id, null))}>
-                          Send now
+                          {t("Send now")}
                         </button>
                       )}
                       {waiting && onPickTime && (
@@ -97,36 +98,36 @@ export function OutboxList({
                             })
                           }
                         >
-                          Change time…
+                          {t("Change time…")}
                         </button>
                       )}
                       {(waiting || entry.state === "failed" || (entry.state === "queued" && entry.attempts > 0)) && (
                         <button type="button" className="btn small" onClick={() => edit(entry)}>
-                          Edit
+                          {t("Edit")}
                         </button>
                       )}
                       {callable && (
                         <button type="button" className="btn small primary" onClick={() => act(() => undoSend(entry.id))}>
-                          Call it back
+                          {t("Call it back")}
                         </button>
                       )}
                       {signedOut(entry) && onSignIn && (
                         <button type="button" className="btn small primary" onClick={onSignIn}>
-                          Sign in again
+                          {t("Sign in again")}
                         </button>
                       )}
                       {entry.state === "failed" && (
                         <button type="button" className="btn small" onClick={() => act(() => dismissOutbox(entry.id))}>
-                          Discard
+                          {t("Discard")}
                         </button>
                       )}
                       {entry.state === "uncertain" && (
                         <>
                           <button type="button" className="btn small" onClick={() => act(() => sendAgain(entry.id))}>
-                            Send again
+                            {t("Send again")}
                           </button>
                           <button type="button" className="btn small" onClick={() => act(() => dismissOutbox(entry.id))}>
-                            It was sent
+                            {t("It was sent")}
                           </button>
                         </>
                       )}
@@ -155,30 +156,35 @@ function signedOut(entry: OutboxEntry): boolean {
 function describe(entry: OutboxEntry, now: number): string {
   switch (entry.state) {
     case "sending":
-      return "Sending…";
+      return t("Sending…");
     case "failed":
-      return `Not sent: ${entry.last_error ?? "the server refused it"}`;
+      return entry.last_error ? t("Not sent: {problem}", { problem: entry.last_error }) : t("Not sent: the server refused it");
     case "uncertain":
-      return `It may or may not have been sent: ${entry.last_error ?? ""} Check the recipient or your Sent folder before sending it again.`;
+      return t("It may or may not have been sent: {problem} Check the recipient or your Sent folder before sending it again.", {
+        problem: entry.last_error ?? "",
+      });
     case "held":
-      return `Not sent: it was due ${fullDate(entry.send_at ?? entry.next_attempt_at)}, while this computer was off or asleep. Send it now, or edit it.`;
+      return t("Not sent: it was due {when}, while this computer was off or asleep. Send it now, or edit it.", {
+        when: fullDate(entry.send_at ?? entry.next_attempt_at),
+      });
     case "handed_off":
       // From 1.1: a remote executor holds it.
-      return `Sends ${fullDate(entry.send_at ?? entry.next_attempt_at)}, even with this computer off.`;
+      return t("Sends {when}, even with this computer off.", { when: fullDate(entry.send_at ?? entry.next_attempt_at) });
     case "queued":
-      if (signedOut(entry)) return "Waits for you to sign in again to its account, then goes at once.";
+      if (signedOut(entry)) return t("Waits for you to sign in again to its account, then goes at once.");
       if (scheduled(entry)) {
         // Sent from this computer (every send in 1.0), it must be on then (ADR-0019).
         return entry.needs_this_computer === false
-          ? `Sends ${fullDate(entry.send_at!)}.`
-          : `Sends ${fullDate(entry.send_at!)}. This computer must be on then.`;
+          ? t("Sends {when}.", { when: fullDate(entry.send_at!) })
+          : t("Sends {when}. This computer must be on then.", { when: fullDate(entry.send_at!) });
       }
       if (entry.attempts === 0) {
         const left = Math.ceil((entry.undo_until - now) / 1000);
-        return left > 0 ? `Goes in ${left} s unless you call it back.` : "Sending soon…";
+        return left > 0 ? t("Goes in {seconds} s unless you call it back.", { seconds: left }) : t("Sending soon…");
       }
-      return `Not sent yet, trying again at ${new Date(entry.next_attempt_at).toLocaleTimeString()}${
-        entry.last_error ? `: ${entry.last_error}` : ""
-      }`;
+      const at = new Date(entry.next_attempt_at).toLocaleTimeString(appLocale());
+      return entry.last_error
+        ? t("Not sent yet, trying again at {time}: {problem}", { time: at, problem: entry.last_error })
+        : t("Not sent yet, trying again at {time}", { time: at });
   }
 }

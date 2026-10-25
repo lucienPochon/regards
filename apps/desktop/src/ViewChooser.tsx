@@ -4,6 +4,7 @@ import type { Anchor } from "./Menu";
 import { useShortcuts } from "./shortcuts";
 import { useDialogFocus } from "./dialogFocus";
 import { radioKeys, radioTab } from "./radios";
+import { t } from "./i18n";
 
 export type InboxView = "smart" | "date" | "cards";
 
@@ -13,19 +14,19 @@ const MARGIN = 8;
 const VIEWS: { id: InboxView; label: string; kind: string; about: string; badge: IconName }[] = [
   {
     id: "smart",
-    label: "By priority",
-    kind: "Smart Inbox",
-    about: "Priority first, then people by date; notifications and newsletters in one row each.",
+    label: t("By priority"),
+    kind: t("Smart Inbox"),
+    about: t("Priority first, then people by date; notifications and newsletters in one row each."),
     badge: "boltFilled",
   },
   {
     id: "cards",
-    label: "By category",
-    kind: "Smart Inbox",
-    about: "Unread mail under a heading per category; what you have seen goes below.",
+    label: t("By category"),
+    kind: t("Smart Inbox"),
+    about: t("Unread mail under a heading per category; what you have seen goes below."),
     badge: "sections",
   },
-  { id: "date", label: "By date", kind: "Classic inbox", about: "Everything together, newest first.", badge: "calendar" },
+  { id: "date", label: t("By date"), kind: t("Classic inbox"), about: t("Everything together, newest first."), badge: "calendar" },
 ];
 
 type Hue = "accent" | "warm" | "blue" | "violet";
@@ -160,18 +161,18 @@ export function ViewChooser({
         ref={card}
         className={position ? "view-chooser" : "view-chooser measuring"}
         role="dialog"
-        aria-label="Inbox view"
+        aria-label={t("Inbox view")}
         tabIndex={-1}
         style={position ?? undefined}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="chooser-head">
-          <strong>Choose how the inbox looks</strong>
+          <strong>{t("Choose how the inbox looks")}</strong>
           <button
             type="button"
             className="icon-btn small"
-            title="Inbox settings"
-            aria-label="Inbox settings"
+            title={t("Inbox settings")}
+            aria-label={t("Inbox settings")}
             onClick={() => {
               onClose();
               onSettings();
@@ -180,7 +181,7 @@ export function ViewChooser({
             <Icon name="settings" size={15} />
           </button>
         </div>
-        <div className="chooser-tiles" role="radiogroup" aria-label="Inbox view" onKeyDown={(event) => radioKeys(event, false)}>
+        <div className="chooser-tiles" role="radiogroup" aria-label={t("Inbox view")} onKeyDown={(event) => radioKeys(event, false)}>
           {VIEWS.map((view, index) => (
             <button
               key={view.id}
@@ -208,7 +209,7 @@ export function ViewChooser({
         </div>
         {forAccount && (
           <p className="chooser-note muted">
-            For {forAccount.label} only.
+            {t("For {account} only.", { account: forAccount.label })}
             {forAccount.own && (
               <>
                 {" "}
@@ -220,7 +221,7 @@ export function ViewChooser({
                     onClose();
                   }}
                 >
-                  Look like the other inboxes
+                  {t("Look like the other inboxes")}
                 </button>
               </>
             )}

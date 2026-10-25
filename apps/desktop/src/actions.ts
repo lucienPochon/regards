@@ -13,6 +13,7 @@ import {
   setFlags,
   trashMessages,
 } from "./accounts";
+import { t, tn } from "./i18n";
 import { type KeySet, getPrefs } from "./prefs";
 import type { Person } from "./accounts";
 import { type Draft, againDraft, forwardDraft, replyDraft } from "./compose";
@@ -224,19 +225,19 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
   if (target.single !== null) {
     const id = target.single;
     actions.push(
-      { id: "reply", label: "Reply", icon: "reply", keys: keys.reply, shown: true, run: () => host.compose(replyDraft(id, false)) },
-      { id: "replyAll", label: "Reply all", icon: "replyAll", keys: keys.replyAll, shown: true, run: () => host.compose(replyDraft(id, true)) },
-      { id: "forward", label: "Forward", icon: "forward", keys: keys.forward, shown: true, run: () => host.compose(forwardDraft(id)) },
-      { id: "again", label: "Send again", icon: "send", keys: keys.again, shown: target.sent === true, run: () => host.compose(againDraft(id)) },
+      { id: "reply", label: t("Reply"), icon: "reply", keys: keys.reply, shown: true, run: () => host.compose(replyDraft(id, false)) },
+      { id: "replyAll", label: t("Reply all"), icon: "replyAll", keys: keys.replyAll, shown: true, run: () => host.compose(replyDraft(id, true)) },
+      { id: "forward", label: t("Forward"), icon: "forward", keys: keys.forward, shown: true, run: () => host.compose(forwardDraft(id)) },
+      { id: "again", label: t("Send again"), icon: "send", keys: keys.again, shown: target.sent === true, run: () => host.compose(againDraft(id)) },
     );
   }
   actions.push(
     // Drawn as the row's dot: a ring on read mail, filled on unread mail.
-    { id: "unread", label: "Mark unread", icon: "circle", keys: half("unread", target.seen), shown: target.seen, run: () => flags({ seen: false }) },
-    { id: "read", label: "Mark read", icon: "circleFilled", keys: half("read", !target.seen), shown: !target.seen, run: () => flags({ seen: true }) },
+    { id: "unread", label: t("Mark unread"), icon: "circle", keys: half("unread", target.seen), shown: target.seen, run: () => flags({ seen: false }) },
+    { id: "read", label: t("Mark read"), icon: "circleFilled", keys: half("read", !target.seen), shown: !target.seen, run: () => flags({ seen: true }) },
     {
       id: "flag",
-      label: target.flagged ? "Unflag" : "Flag",
+      label: target.flagged ? t("Unflag") : t("Flag"),
       icon: target.flagged ? "flagFilled" : "flag",
       keys: keys.flag,
       shown: true,
@@ -244,7 +245,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
     },
     {
       id: "pin",
-      label: target.pinned ? "Unpin" : "Pin",
+      label: target.pinned ? t("Unpin") : t("Pin"),
       icon: target.pinned ? "pinFilled" : "pin",
       keys: keys.pin,
       shown: true,
@@ -254,7 +255,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
     },
     {
       id: "mute",
-      label: target.muted ? "Unmute conversation" : "Mute conversation",
+      label: target.muted ? t("Unmute conversation") : t("Mute conversation"),
       icon: target.muted ? "bell" : "bellOff",
       keys: keys.mute,
       shown: true,
@@ -268,7 +269,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
     },
     {
       id: "snooze",
-      label: target.snoozed ? "Unsnooze" : "Snooze…",
+      label: target.snoozed ? t("Unsnooze") : t("Snooze…"),
       icon: "clock",
       keys: keys.snooze,
       shown: true,
@@ -286,7 +287,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
     },
     {
       id: "remind",
-      label: target.reminding ? "No reminder" : "Remind me…",
+      label: target.reminding ? t("No reminder") : t("Remind me…"),
       icon: "bell",
       keys: keys.remind,
       shown: true,
@@ -305,7 +306,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
     },
     {
       id: "aside",
-      label: target.aside ? "Back to inbox" : "Set aside",
+      label: target.aside ? t("Back to inbox") : t("Set aside"),
       icon: "aside",
       keys: keys.aside,
       shown: true,
@@ -319,7 +320,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
     },
     {
       id: "archive",
-      label: "Archive",
+      label: t("Archive"),
       icon: "archive",
       keys: keys.archive,
       shown: true,
@@ -339,7 +340,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
     const account = target.accountId;
     actions.push({
       id: "move",
-      label: "Move to…",
+      label: t("Move to…"),
       icon: "move",
       keys: keys.move,
       shown: true,
@@ -354,7 +355,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       const copied = host.copied;
       actions.push({
         id: "copy",
-        label: "Copy to…",
+        label: t("Copy to…"),
         icon: "copy",
         keys: keys.copy,
         shown: true,
@@ -374,7 +375,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
     if (junk !== null && junk !== target.mailboxId) {
       actions.push({
         id: "junk",
-        label: "Mark as junk",
+        label: t("Mark as junk"),
         icon: "junk",
         keys: keys.junk,
         shown: true,
@@ -385,15 +386,15 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
   // Gmail: labels, each a copy in the label's folder (ADR-0009 §6).
   if (target.accountId !== null && host.hasLabels?.(target.accountId) && host.pickLabels) {
     const [account, pick] = [target.accountId, host.pickLabels];
-    actions.push({ id: "label", label: "Label…", icon: "tag", keys: keys.label, shown: true, run: (anchor) => pick(ids, account, anchor ?? null) });
+    actions.push({ id: "label", label: t("Label…"), icon: "tag", keys: keys.label, shown: true, run: (anchor) => pick(ids, account, anchor ?? null) });
   }
   if (target.single !== null && target.unsubscribe && host.unsubscribe) {
     const [id, from, leave] = [target.single, target.unsubscribe.from, host.unsubscribe];
-    actions.push({ id: "unsubscribe", label: "Unsubscribe…", icon: "unsubscribe", keys: keys.unsubscribe, shown: true, run: () => leave(id, from) });
+    actions.push({ id: "unsubscribe", label: t("Unsubscribe…"), icon: "unsubscribe", keys: keys.unsubscribe, shown: true, run: () => leave(id, from) });
   }
   actions.push({
     id: "delete",
-    label: target.disposable ? "Delete forever" : "Delete",
+    label: target.disposable ? t("Delete forever") : t("Delete"),
     icon: "trash",
     keys: keys.delete,
     shown: true,
@@ -407,9 +408,9 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       void all()
         .then(async (list) => {
           const ok = await host.confirm({
-            title: list.length === 1 ? "Delete this message for good?" : `Delete ${list.length} messages for good?`,
-            body: `${list.length === 1 ? "It is" : "They are"} removed from the server. This cannot be undone.`,
-            confirm: "Delete forever",
+            title: tn(list.length, "Delete this message for good?", "Delete {count} messages for good?"),
+            body: tn(list.length, "It is removed from the server. This cannot be undone.", "They are removed from the server. This cannot be undone."),
+            confirm: t("Delete forever"),
             danger: true,
           });
           if (!ok) return;
@@ -423,7 +424,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
   const inbox = target.done && target.accountId !== null ? (host.inboxFolder?.(target.accountId) ?? null) : null;
   const archive = actions.findIndex((action) => action.id === "archive");
   if (inbox !== null && archive !== -1) {
-    actions[archive] = { ...actions[archive], label: "Back to inbox", icon: "inbox", run: () => move(() => moveMessages(ids, inbox)) };
+    actions[archive] = { ...actions[archive], label: t("Back to inbox"), icon: "inbox", run: () => move(() => moveMessages(ids, inbox)) };
   }
   return actions;
 }

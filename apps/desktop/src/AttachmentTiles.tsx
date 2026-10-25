@@ -5,6 +5,7 @@ import { AttachmentViewer, type Placed, loadPreview } from "./AttachmentPreview"
 import { fileKind, fileSize } from "./format";
 import { Icon } from "./icons";
 import { useShortcuts } from "./shortcuts";
+import { t, tn } from "./i18n";
 
 /** Images up to this size get a thumbnail. */
 const THUMBNAIL_MAX = 3 * 1024 * 1024;
@@ -38,13 +39,13 @@ export function AttachmentTiles({
   const saveAll = () => {
     setError(null);
     saveAllAttachments(messageId).then((saved) => {
-      if (saved) setStatus(saved.length === 1 ? `Saved as “${saved[0]}”` : `Saved ${saved.length} files`);
+      if (saved) setStatus(saved.length === 1 ? t("Saved as “{name}”", { name: saved[0] }) : tn(saved.length, "Saved 1 file", "Saved {count} files"));
     }, failed);
   };
   const saveOne = (file: Placed) => {
     setError(null);
     saveAttachment(messageId, file.index, file.attachment.name ?? "attachment").then(
-      (saved) => saved && setStatus(`Saved as “${saved}”`),
+      (saved) => saved && setStatus(t("Saved as “{name}”", { name: saved })),
       failed,
     );
   };
@@ -58,7 +59,7 @@ export function AttachmentTiles({
         </strong>
         <span className="muted">{fileSize(total)}</span>
         <button type="button" className="link" onClick={saveAll}>
-          {files.length === 1 ? "Save" : "Save all"}
+          {files.length === 1 ? t("Save") : t("Save all")}
         </button>
         <span className="muted small" role="status">
           {status}
@@ -133,7 +134,7 @@ function Tile({
           {kind} · {fileSize(attachment.size)}
         </span>
       </button>
-      <button type="button" className="tile-save" aria-label={`Save ${name}`} title="Save as…" onClick={onSave}>
+      <button type="button" className="tile-save" aria-label={`Save ${name}`} title={t("Save as…")} onClick={onSave}>
         <Icon name="download" size={13} />
       </button>
     </li>

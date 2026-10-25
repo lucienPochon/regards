@@ -1,6 +1,7 @@
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { clearFound, findRanges, markFound, reveal } from "./find";
 import { Icon } from "./icons";
+import { t } from "./i18n";
 
 /**
  * Find in the open message (its ⋯ menu, or Ctrl+Shift+F): how many matches
@@ -87,8 +88,8 @@ export function FindBar({
       <input
         autoFocus
         value={query}
-        placeholder="Find in this message"
-        aria-label="Find in this message"
+        placeholder={t("Find in this message")}
+        aria-label={t("Find in this message")}
         onChange={(event) => search(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
@@ -102,15 +103,15 @@ export function FindBar({
         }}
       />
       <span className="find-count muted small" role="status">
-        {query && found ? (found.count === 0 ? "Not found" : `${found.at + 1} of ${found.count}${found.count >= 1000 ? "+" : ""}`) : ""}
+        {query && found ? (found.count === 0 ? t("Not found") : t("{at} of {count}", { at: found.at + 1, count: `${found.count}${found.count >= 1000 ? "+" : ""}` })) : ""}
       </span>
-      <button type="button" className="icon-btn small find-previous" aria-label="Previous match" title="Previous (Shift+Enter)" onClick={() => step(-1)}>
+      <button type="button" className="icon-btn small find-previous" aria-label={t("Previous match")} title={t("Previous (Shift+Enter)")} onClick={() => step(-1)}>
         <Icon name="back" size={14} />
       </button>
-      <button type="button" className="icon-btn small find-next" aria-label="Next match" title="Next (Enter)" onClick={() => step(1)}>
+      <button type="button" className="icon-btn small find-next" aria-label={t("Next match")} title={t("Next (Enter)")} onClick={() => step(1)}>
         <Icon name="back" size={14} />
       </button>
-      <button type="button" className="icon-btn small" aria-label="Close find" title="Close (Esc)" onClick={onClose}>
+      <button type="button" className="icon-btn small" aria-label={t("Close find")} title={t("Close (Esc)")} onClick={onClose}>
         <Icon name="close" size={14} />
       </button>
     </div>
