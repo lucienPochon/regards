@@ -1086,6 +1086,9 @@ function handle(cmd: string, args: Args): unknown {
       return null;
     case "composer_window_open":
       return false;
+    case "thread_window":
+      window.open(`preview.html?thread=${Number(args.messageId)}`, "_blank");
+      return null;
     case "people_forget": {
       const address = String(args.address ?? "").trim().toLowerCase();
       const known = !forgottenPeople.has(address);
