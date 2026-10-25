@@ -1,5 +1,6 @@
 import { type Editor, Extension } from "@tiptap/core";
 import Image from "@tiptap/extension-image";
+import { TextStyle } from "@tiptap/extension-text-style";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useRef, useState } from "react";
@@ -20,11 +21,58 @@ const InlineImage = Image.extend({
       },
     };
   },
-}).configure({ inline: true, allowBase64: true });
+}).configure({
+  inline: true,
+  allowBase64: true,
+  // Made smaller or larger from a corner, keeping its proportions.
+  resize: {
+    enabled: true,
+    directions: ["top-left", "top-right", "bottom-left", "bottom-right"],
+    minWidth: 32,
+    minHeight: 32,
+    alwaysPreserveAspectRatio: true,
+  },
+});
 
 /**
- * The message text, with formatting: bold, italic, underline, strikethrough,
- * links, lists, quotes and images (Tiptap, on ProseMirror). The daemon
+ * Colour and highlight on a span of text. The app's CSP allows no inline
+ * styles, so the editor marks them with `data-colour` and `data-highlight`
+ * (shown by styles.css, for the colours offered below); the HTML kept and
+ * sent has them as styles (`toStoredHtml`).
+ */
+const Colours = TextStyle.extend({
+  addAttributes() {
+    const kept = (name: string) => ({
+      default: null,
+      parseHTML: (element: HTMLElement) => element.getAttribute(`data-${name}`),
+      renderHTML: (attributes: Record<string, unknown>) =>
+        attributes[name] ? { [`data-${name}`]: attributes[name] as string } : {},
+    });
+    return { ...this.parent?.(), colour: kept("colour"), highlight: kept("highlight") };
+  },
+});
+
+/** Text colours and highlights offered, as the daemon lets them through (`sanitize_outgoing`). */
+const TEXT_COLOURS = [
+  { name: "Red", value: "#c62828" },
+  { name: "Orange", value: "#e65100" },
+  { name: "Green", value: "#2e7d32" },
+  { name: "Blue", value: "#1565c0" },
+  { name: "Purple", value: "#6a1b9a" },
+  { name: "Grey", value: "#616161" },
+];
+const HIGHLIGHTS = [
+  { name: "Yellow", value: "#fff59d" },
+  { name: "Green", value: "#c8e6c9" },
+  { name: "Blue", value: "#bbdefb" },
+  { name: "Pink", value: "#f8bbd0" },
+  { name: "Orange", value: "#ffe0b2" },
+];
+
+/**
+ * The message text, with formatting: text styles and headings, bold,
+ * italic, underline, strikethrough, colour and highlight, links, lists,
+ * quotes and images that can be resized (Tiptap, on ProseMirror). The daemon
  * sanitises what it receives, so this is about writing comfortably, not
  * about safety.
  */
@@ -67,6 +115,7 @@ export function RichEditor({
         },
       }),
       InlineImage,
+      Colours,
       // Cmd/Ctrl+Enter sends (with Shift, and Done), before the line break that would otherwise take it.
       Extension.create({
         name: "sendKey",
@@ -112,9 +161,14 @@ export function RichEditor({
       bullets: editor?.isActive("bulletList") ?? false,
       numbers: editor?.isActive("orderedList") ?? false,
       quote: editor?.isActive("blockquote") ?? false,
+      heading: ([1, 2, 3] as const).find((level) => editor?.isActive("heading", { level })) ?? 0,
+      colour: (editor?.getAttributes("textStyle").colour as string | undefined) ?? null,
+      highlight: (editor?.getAttributes("textStyle").highlight as string | undefined) ?? null,
     }),
   });
   const [linking, setLinking] = useState<string | null>(null);
+  // Which row of swatches is open, if one is.
+  const [swatches, setSwatches] = useState<"colour" | "highlight" | null>(null);
   useEffect(() => {
     if (editor) onEditor?.(editor);
   }, [editor, onEditor]);
@@ -139,10 +193,91 @@ export function RichEditor({
   return (
     <div className="rich-editor">
       <div className="format-bar small" role="toolbar" aria-label="Formatting">
+        <select
+          className="text-style"
+          aria-label="Text style"
+          title="Text style"
+          disabled={disabled}
+          value={active?.heading ?? 0}
+          onChange={(event) => {
+            const level = Number(event.target.value);
+            if (level === 1 || level === 2 || level === 3) chain().setHeading({ level }).run();
+            else chain().setParagraph().run();
+          }}
+        >
+          <option value={0}>Text</option>
+          <option value={1}>Large heading</option>
+          <option value={2}>Heading</option>
+          <option value={3}>Small heading</option>
+        </select>
         {button("B", active?.bold ?? false, () => chain().toggleBold().run(), "Bold")}
         {button("I", active?.italic ?? false, () => chain().toggleItalic().run(), "Italic")}
         {button("U", active?.underline ?? false, () => chain().toggleUnderline().run(), "Underline")}
         {button("S", active?.strike ?? false, () => chain().toggleStrike().run(), "Strikethrough")}
+        <button
+          type="button"
+          className="colour-button"
+          aria-pressed={swatches === "colour"}
+          aria-label="Text colour"
+          title="Text colour"
+          disabled={disabled}
+          onClick={() => setSwatches(swatches === "colour" ? null : "colour")}
+        >
+          A<span className="colour-bar" style={{ background: active?.colour ?? "currentColor" }} />
+        </button>
+        <button
+          type="button"
+          className="colour-button"
+          aria-pressed={swatches === "highlight"}
+          aria-label="Highlight"
+          title="Highlight"
+          disabled={disabled}
+          onClick={() => setSwatches(swatches === "highlight" ? null : "highlight")}
+        >
+          <span className="highlight-mark" style={active?.highlight ? { background: active.highlight } : undefined}>
+            ab
+          </span>
+        </button>
+        {swatches !== null && (
+          // One row of colours; picking one (or none) closes it.
+          <span
+            className="swatches"
+            role="group"
+            aria-label={swatches === "colour" ? "Text colours" : "Highlights"}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                setSwatches(null);
+              }
+            }}
+          >
+            {(swatches === "colour" ? TEXT_COLOURS : HIGHLIGHTS).map((swatch) => (
+              <button
+                key={swatch.value}
+                type="button"
+                className="swatch"
+                aria-label={swatch.name}
+                title={swatch.name}
+                aria-pressed={(swatches === "colour" ? active?.colour : active?.highlight) === swatch.value}
+                style={{ background: swatch.value }}
+                onClick={() => {
+                  chain().setMark("textStyle", { [swatches]: swatch.value }).run();
+                  setSwatches(null);
+                }}
+              />
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                chain().setMark("textStyle", { [swatches]: null }).removeEmptyTextStyle().run();
+                setSwatches(null);
+              }}
+            >
+              {swatches === "colour" ? "Default" : "None"}
+            </button>
+          </span>
+        )}
         {button(
           "Link",
           active?.link ?? false,
@@ -152,6 +287,7 @@ export function RichEditor({
         {button("• List", active?.bullets ?? false, () => chain().toggleBulletList().run(), "Bulleted list")}
         {button("1. List", active?.numbers ?? false, () => chain().toggleOrderedList().run(), "Numbered list")}
         {button("Quote", active?.quote ?? false, () => chain().toggleBlockquote().run(), "Quote")}
+        {button("Clear", false, () => chain().unsetAllMarks().clearNodes().run(), "Clear formatting")}
         {linking !== null && (
           <span className="link-input">
             <input
