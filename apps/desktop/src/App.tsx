@@ -53,7 +53,7 @@ import {
 import { Confirm, type ConfirmRequest } from "./Confirm";
 import { DraftsList } from "./DraftsList";
 import { Icon, type IconName } from "./icons";
-import { type Layout, LIST_MAX, LIST_MIN, clampList, useLayout } from "./layout";
+import { type Layout, LIST_MAX, LIST_MIN, SIDE_MAX, SIDE_MIN, clampList, clampSide, inboxViewOf, useLayout } from "./layout";
 import {
   type ListItem,
   type MessageFeed,
@@ -75,7 +75,9 @@ import {
 } from "./mail";
 import { type OpenLink, onOpenLink, takeLink } from "./links";
 import { recentFolders, rememberFolder } from "./recent-folders";
+import { type Opened, forgetOpened, linkOf, useOpened } from "./recent-opened";
 import { useRecentSearches } from "./recent-searches";
+import { UNDO_ELSEWHERE, openThreadWindow } from "./thread-window";
 import {
   type SavedSearch,
   listSavedSearches,
@@ -89,6 +91,7 @@ import {
 import { openUrl } from "./background";
 import { type Anchor, Menu, type MenuEntry, type MenuRequest } from "./Menu";
 import { type Bundle, type InboxCard, ListHeader, MessageList, type Screener } from "./MessageList";
+import { useSearchGroups } from "./search-groups";
 import { SenderCard, type SenderRequest } from "./SenderCard";
 import { SECTION_LABELS, type Screening, type Section, blockSender, screening, setSender } from "./smart";
 import { ViewChooser } from "./ViewChooser";
@@ -173,6 +176,7 @@ function targetOf(items: ListItem[]): Target {
     disposable: items.length > 0 && items.every(trashLike),
     pinned: items.length > 0 && items.every((item) => item.pinned),
     muted: items.length > 0 && items.every((item) => item.muted === true),
+    sent: items.length === 1 && items[0].role === "sent",
     aside: items.length > 0 && items.every((item) => item.aside),
     snoozed: items.length > 0 && items.every((item) => item.snoozed_until !== null),
     reminding: items.length > 0 && items.every((item) => item.remind_at !== null),
@@ -204,6 +208,7 @@ const PALETTE_ACTIONS = [
   "reply",
   "replyAll",
   "forward",
+  "again",
   "remind",
   "unsubscribe",
   "label",
@@ -279,6 +284,7 @@ export function App() {
   const [search, setSearch] = useState<{ query: string; accountId: string | null } | null>(null);
   const [searchRound, setSearchRound] = useState(0);
   const [recentSearches, rememberSearch, forgetSearch] = useRecentSearches();
+  const opened = useOpened();
   const typed = search?.query.trim() ?? "";
   const [searchFor, setSearchFor] = useState("");
   useEffect(() => {
@@ -389,19 +395,22 @@ export function App() {
             entry.account.id === view.accountId && entry.mailboxes.some((m) => m.id === view.mailboxId && m.role === "inbox"),
         )
       : undefined;
+  // With several accounts, one account's inbox can look its own way.
+  const ownViewOf = accounts.length > 1 && accountInbox ? accountInbox.account.id : null;
+  const inboxView = inboxViewOf(layout, ownViewOf);
   const smartScope = useMemo(
-    () => (layout.inboxView !== "smart" ? null : inInbox ? unified : accountInbox ? [accountInbox] : null),
-    [layout.inboxView, inInbox, unified, accountInbox],
+    () => (inboxView !== "smart" ? null : inInbox ? unified : accountInbox ? [accountInbox] : null),
+    [inboxView, inInbox, unified, accountInbox],
   );
   const smartOn = smartScope !== null && search === null;
   // Show Done (Ctrl+E): the inbox by date with its Done mail mixed in, greyed.
   const [showDone, setShowDone] = useState(false);
-  const inboxByDate = (inInbox || accountInbox !== null) && layout.inboxView === "date" && search === null;
+  const inboxByDate = (inInbox || accountInbox !== null) && inboxView === "date" && search === null;
   const doneShown = showDone && inboxByDate;
   // The inbox as cards: unread mail by kind, then what has been read.
   const cardScope = useMemo(
-    () => (layout.inboxView !== "cards" ? null : inInbox ? unified : accountInbox ? [accountInbox] : null),
-    [layout.inboxView, inInbox, unified, accountInbox],
+    () => (inboxView !== "cards" ? null : inInbox ? unified : accountInbox ? [accountInbox] : null),
+    [inboxView, inInbox, unified, accountInbox],
   );
   const cardsOn = cardScope !== null && search === null;
   const found = useSearch(accounts, search ? searchFor : "", search?.accountId ?? null, searchRound);
@@ -980,6 +989,20 @@ export function App() {
   };
   const linkTo = useRef(openLink);
   linkTo.current = openLink;
+  // Recently opened, from the search page: the message wherever it is now.
+  const openRecent = (entry: Opened) => {
+    setSearch(null);
+    setPicked(new Set());
+    const gone = () => {
+      forgetOpened(entry.link);
+      setNotice("That message is no longer on this computer.");
+    };
+    const link = linkOf(entry.link);
+    if (!link) gone();
+    else if (link.kind === "message_id") {
+      locateMessage(link.message_id).then((id) => (id === null ? gone() : openLink({ kind: "message", id })), gone);
+    } else openLink(link);
+  };
   useEffect(() => {
     const stop = onOpenLink((link) => linkTo.current(link));
     return () => void stop.then((unlisten) => unlisten()).catch(() => {});
@@ -1026,6 +1049,11 @@ export function App() {
   };
   useEffect(() => {
     const stop = listen<SentElsewhere>("composer_queued", (event) => sentElsewhere.current(event.payload));
+    return () => void stop.then((unlisten) => unlisten()).catch(() => {});
+  }, []);
+  // What was done in a conversation's own window: its undo shows here.
+  useEffect(() => {
+    const stop = listen<UndoInfo>(UNDO_ELSEWHERE, (event) => setUndo(event.payload));
     return () => void stop.then((unlisten) => unlisten()).catch(() => {});
   }, []);
 
@@ -1255,6 +1283,13 @@ export function App() {
   }, []);
   useEffect(loadSaved, [loadSaved]);
   useChanges(loadSaved);
+  // Those shown as groups of the Smart Inbox: of the one account whose inbox is open, or all.
+  const searchGroups = useSearchGroups(
+    savedSearches,
+    appPrefs.searchGroups,
+    !inInbox && accountInbox ? accountInbox.account.id : null,
+    smartOn,
+  );
   const openSaved = (saved: SavedSearch) => {
     if (layout.mode === "single") setOpen(null);
     setSearch({ query: saved.query, accountId: saved.account_id });
@@ -1277,7 +1312,18 @@ export function App() {
   const savedMenu = (saved: SavedSearch): MenuEntry[] => {
     const change = (fields: Partial<{ name: string; query: string; color: string | null }>) =>
       saveSearch({ id: saved.id, name: saved.name, query: saved.query, accountId: saved.account_id, color: saved.color, ...fields });
+    const grouped = appPrefs.searchGroups.includes(saved.id);
     return [
+      {
+        label: grouped ? "Stop showing as a group in the inbox" : "Show as a group in the inbox",
+        icon: "sections",
+        onSelect: () =>
+          setPrefs({
+            searchGroups: grouped
+              ? appPrefs.searchGroups.filter((id) => id !== saved.id)
+              : [...appPrefs.searchGroups, saved.id],
+          }),
+      },
       {
         label: "Rename…",
         icon: "compose",
@@ -1542,6 +1588,45 @@ export function App() {
     },
   };
 
+  // The open sidebar's edge, the same way.
+  const appRoot = useRef<HTMLDivElement>(null);
+  const sideDrag = useRef<{ x: number; width: number } | null>(null);
+  const sideResizer = (
+    <div
+      className="side-resizer"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize the sidebar"
+      aria-valuenow={layout.sidebarWidth}
+      aria-valuemin={SIDE_MIN}
+      aria-valuemax={SIDE_MAX}
+      tabIndex={0}
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        sideDrag.current = { x: event.clientX, width: layout.sidebarWidth };
+        event.currentTarget.classList.add("dragging");
+      }}
+      onPointerMove={(event) => {
+        if (!sideDrag.current) return;
+        const width = clampSide(sideDrag.current.width + event.clientX - sideDrag.current.x);
+        appRoot.current?.style.setProperty("--side-w", `${width}px`);
+      }}
+      onPointerUp={(event) => {
+        if (!sideDrag.current) return;
+        event.currentTarget.classList.remove("dragging");
+        setLayout({ sidebarWidth: clampSide(sideDrag.current.width + event.clientX - sideDrag.current.x) });
+        sideDrag.current = null;
+      }}
+      onDoubleClick={() => setLayout({ sidebarWidth: 238 })}
+      onKeyDown={(event) => {
+        const by = event.key === "ArrowLeft" ? -16 : event.key === "ArrowRight" ? 16 : 0;
+        if (!by) return;
+        event.preventDefault();
+        setLayout({ sidebarWidth: clampSide(layout.sidebarWidth + by) });
+      }}
+    />
+  );
+
   const service =
     check.state === "failed"
       ? `Could not reach the background service: ${check.message}`
@@ -1762,6 +1847,20 @@ export function App() {
             newest: invitationItems[0]?.listed_at,
             onOpen: () => changeView({ kind: "marked", mark: "invitations" }),
           },
+          // Saved searches the person shows as groups: what each finds in the inbox.
+          ...searchGroups.map(
+            (group): Bundle => ({
+              key: `search-${group.saved.id}`,
+              label: group.saved.name,
+              icon: "search",
+              colour: group.saved.color,
+              count: group.messages.length,
+              unread: group.messages.some((message) => !message.seen),
+              messages: group.messages,
+              newest: group.messages[0]?.listed_at,
+              onOpen: () => openSaved(group.saved),
+            }),
+          ),
           {
             key: "pinned",
             label: "Pinned",
@@ -1773,7 +1872,7 @@ export function App() {
             onOpen: () => changeView({ kind: "marked", mark: "pinned" }),
           },
           ] satisfies Bundle[]
-        ).filter((bundle) => appPrefs.grouped[bundle.key as keyof typeof appPrefs.grouped]),
+        ).filter((bundle) => bundle.key.startsWith("search-") || appPrefs.grouped[bundle.key as keyof typeof appPrefs.grouped]),
       }
     : null;
   const cardOf = (section: Section, label: string, items: ListItem[]): InboxCard => ({
@@ -1945,6 +2044,8 @@ export function App() {
           recents: recentSearches,
           onRemember: rememberSearch,
           onForget: forgetSearch,
+          opened,
+          onOpened: openRecent,
           top: found.top,
           indexing: found.indexing,
           onRetry: () => setSearchRound((round) => round + 1),
@@ -1974,6 +2075,7 @@ export function App() {
       labels={labelsOf(openItem)}
       onLabel={(mailboxId) => changeView({ kind: "mailbox", mailboxId, accountId: openItem.accountId })}
       onDraft={editDraft}
+      onOwnWindow={() => void openThreadWindow(openItem.id, openItem.subject).catch(failed)}
       stepped={openedByStep}
       folders={folders}
       mode={layout.mode}
@@ -2095,6 +2197,8 @@ export function App() {
 
   return (
     <div
+      ref={appRoot}
+      style={{ "--side-w": `${layout.sidebarWidth}px` } as CSSProperties}
       className={[
         "app",
         layout.locked ? "locked" : "",
@@ -2112,6 +2216,7 @@ export function App() {
         {...sidebarProps}
         expanded={layout.locked}
         locked={layout.locked}
+        resizer={layout.locked ? sideResizer : undefined}
         onToggleLock={() => setLayout({ locked: !layout.locked })}
         onExpand={() => setOverlay(true)}
       />
@@ -2358,8 +2463,22 @@ export function App() {
       {chooser && (
         <ViewChooser
           anchor={chooser}
-          current={layout.inboxView}
-          onChoose={(inboxView) => setLayout({ inboxView })}
+          current={inboxView}
+          onChoose={(choice) =>
+            ownViewOf ? setLayout({ accountViews: { ...layout.accountViews, [ownViewOf]: choice } }) : setLayout({ inboxView: choice })
+          }
+          forAccount={
+            ownViewOf && accountInbox
+              ? {
+                  label: accountLabel(appPrefs, accountInbox.account),
+                  own: layout.accountViews[ownViewOf] !== undefined,
+                  onShared: () => {
+                    const { [ownViewOf]: _left, ...rest } = layout.accountViews;
+                    setLayout({ accountViews: rest });
+                  },
+                }
+              : undefined
+          }
           accounts={
             accounts.length > 1
               ? [

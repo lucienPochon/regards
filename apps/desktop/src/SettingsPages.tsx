@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { type SavedSearch, listSavedSearches } from "./search";
 import {
   type AccountSummary,
   type AutoCopy,
@@ -843,6 +844,10 @@ export function EmailGroupsPage({ accounts, onBack }: { accounts: AccountSummary
   const prefs = usePrefs();
   const grouped = (key: keyof Prefs["grouped"], value: boolean) => setPrefs({ grouped: { ...prefs.grouped, [key]: value } });
   const hidden = new Set(prefs.hiddenAccounts);
+  const [searches, setSearches] = useState<SavedSearch[]>([]);
+  useEffect(() => {
+    listSavedSearches().then(setSearches, () => setSearches([]));
+  }, []);
   return (
     <>
       <SubPageHead title="Email groups" onBack={onBack} />
@@ -885,6 +890,33 @@ export function EmailGroupsPage({ accounts, onBack }: { accounts: AccountSummary
           />
         </Option>
       ))}
+      <h4 className="settings-subhead">Your groups</h4>
+      {searches.length === 0 ? (
+        <p className="muted settings-note">
+          Save a search ("Save this search", under its results) to make a group of your own: everything it finds in the inbox, as one row.
+        </p>
+      ) : (
+        searches.map((saved) => (
+          <Option key={saved.id} icon="search" label={saved.name} description={saved.query}>
+            <Select
+              label={saved.name}
+              value={prefs.searchGroups.includes(saved.id) ? "group" : "sidebar"}
+              options={[
+                { id: "group", label: "As one row" },
+                { id: "sidebar", label: "Only in the sidebar" },
+              ]}
+              onChange={(value) =>
+                setPrefs({
+                  searchGroups:
+                    value === "group"
+                      ? [...prefs.searchGroups.filter((id) => id !== saved.id), saved.id]
+                      : prefs.searchGroups.filter((id) => id !== saved.id),
+                })
+              }
+            />
+          </Option>
+        ))
+      )}
       {accounts.length > 1 && (
         <>
           <h4 className="settings-subhead">Accounts in the unified inbox</h4>

@@ -25,6 +25,7 @@ import { type Anchor, type MenuEntry, anchorOf } from "./Menu";
 import { MARK_READ_AFTER, STEP_DWELL, getPrefs, usePrefs } from "./prefs";
 import { senderImages, setSenderImages } from "./smart";
 import { asMarkdown, printMessage, printMessages, textParts } from "./messageText";
+import { rememberOpened } from "./recent-opened";
 import { openUrl } from "./background";
 import { useDark } from "./theme";
 import { SourceDialog } from "./SourceDialog";
@@ -92,6 +93,7 @@ export function ReadingPane({
   labels = [],
   onLabel,
   onDraft,
+  onOwnWindow,
   stepped = false,
 }: {
   item: ListItem;
@@ -114,6 +116,8 @@ export function ReadingPane({
   onLabel?: (id: number) => void;
   /** Go on writing a reply being written in the conversation (its draft). */
   onDraft?: (id: number) => void;
+  /** Open the conversation in a window of its own; absent in that window. */
+  onOwnWindow?: () => void;
   /** Opened by stepping through the list with the keyboard: read only if one stays. */
   stepped?: boolean;
 }) {
@@ -161,6 +165,16 @@ export function ReadingPane({
   }, [thread.length]);
 
   const detail = load.state === "ready" ? load.detail : null;
+  // Remembered for the search page's "Recently opened".
+  useEffect(() => {
+    if (!detail) return;
+    rememberOpened({
+      link: detail.link ?? `regards://message/${detail.message.id}`,
+      subject: detail.message.subject,
+      from: detail.message.from,
+      at: Date.now(),
+    });
+  }, [detail]);
   const message = detail?.message ?? item;
   const mailboxId = detail?.mailbox_id ?? item.mailboxId;
   const folder = folders.find((f) => f.id === mailboxId);
@@ -176,6 +190,7 @@ export function ReadingPane({
     disposable: disposable(folder?.role ?? item.role),
     pinned: message.pinned,
     muted: message.muted === true,
+    sent: (folder?.role ?? item.role) === "sent",
     aside: message.aside,
     snoozed: message.snoozed_until !== null,
     reminding: message.remind_at !== null,
@@ -337,6 +352,7 @@ export function ReadingPane({
                   onSender={onSender}
                   conversation={conversation}
                   onAssistant={onAssistant}
+                  onOwnWindow={onOwnWindow}
                 />
               );
             })}
@@ -381,6 +397,7 @@ function ThreadMessage({
   onSender,
   conversation,
   onAssistant,
+  onOwnWindow,
 }: {
   ref?: Ref<HTMLLIElement>;
   entry: ThreadEntry;
@@ -398,6 +415,7 @@ function ThreadMessage({
   /** A conversation of several messages: open them all, or fold the older ones. */
   conversation?: { openAll: () => void; foldOlder: () => void; print: () => void };
   onAssistant?: (messageId: number, kind: "summary" | "reply") => void;
+  onOwnWindow?: () => void;
 }) {
   const own = useDetail(entry.message.id, given === null && expanded);
   const load = given ?? own;
@@ -514,6 +532,7 @@ function ThreadMessage({
     snoozed: (ready?.message.snoozed_until ?? message.snoozed_until) !== null,
     reminding: (ready?.message.remind_at ?? message.remind_at) !== null,
     reminded: ready?.message.reminded ?? message.reminded,
+    sent: entry.mailbox_role === "sent",
   });
   // The message's own view options join its actions in the palette.
   const more = () => {
@@ -540,6 +559,7 @@ function ThreadMessage({
     if (ready) {
       extra.push(
         { label: "Find in this message…", icon: "search", keys: "Mod+Shift+F", onSelect: () => setFinding(true) },
+        ...(onOwnWindow ? [{ label: "Open in its own window", icon: "popOut" as const, onSelect: onOwnWindow }] : []),
         {
           label: "Copy link",
           icon: "link",
@@ -670,7 +690,7 @@ function ThreadMessage({
       </div>
       {ready && (
         <div className="mail-foot">
-          {choose(actions, "reply", "forward").map((action) => (
+          {choose(actions, "reply", "forward", "again").map((action) => (
             <button
               key={action.id}
               type="button"

@@ -106,6 +106,20 @@ pub(crate) async fn explain(state: &State, params: MessageRef) -> Result<Value, 
             let from = message.from.and_then(|person| person.address);
             let own = smart::own_addresses(conn, &account)?;
             let (section, reason) = smart::classify(conn, &account, &own, traits, from.as_deref())?;
+            let domain = match from.as_deref().and_then(regards_core::smart::domain_key) {
+                Some(key) => {
+                    let known = smart::entry(conn, &account, &key)?;
+                    Some(SenderView {
+                        address: key,
+                        policy: known.policy,
+                        priority: known.priority,
+                        written_to: false,
+                        blocked: known.blocked,
+                        quiet: known.quiet,
+                    })
+                }
+                None => None,
+            };
             let sender = match from {
                 Some(address) => {
                     let known = smart::sender(conn, &account, &address)?;
@@ -124,6 +138,7 @@ pub(crate) async fn explain(state: &State, params: MessageRef) -> Result<Value, 
                 section,
                 reason,
                 sender,
+                domain,
             }))
         })
         .await
@@ -135,10 +150,14 @@ pub(crate) async fn explain(state: &State, params: MessageRef) -> Result<Value, 
 /// The person's choice for a sender; their mail follows. Corrections persist:
 /// mail from them that arrives later is sorted the same way.
 pub(crate) async fn set_sender(state: &State, params: SenderSetParams) -> Result<Value, RpcError> {
-    let address = params.address.trim().to_owned();
-    if !address.contains('@') || address.len() > 320 {
-        return Err(RpcError::new(codes::INVALID_PARAMS, "that is not an address"));
+    let raw = params.address.trim();
+    // An address, or everyone at a domain as `@example.org`.
+    let address = if raw.starts_with('@') {
+        regards_core::smart::domain_key(raw)
+    } else {
+        (raw.contains('@') && raw.len() <= 320).then(|| raw.to_owned())
     }
+    .ok_or_else(|| RpcError::new(codes::INVALID_PARAMS, "give an address, or a domain as @example.org"))?;
     let account_id = params.account_id;
     let changed = state
         .store

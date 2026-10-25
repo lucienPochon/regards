@@ -11,7 +11,6 @@ export type OpenLink =
   | { kind: "message" | "draft" | "hold"; id: number }
   /** A link copied in Regards (`regards://message-id/…`): whichever copy of the message is stored. */
   | { kind: "message_id"; message_id: string }
-| { kind: "message" | "draft" | "hold"; id: number }
   | {
       kind: "compose";
       to: string[];

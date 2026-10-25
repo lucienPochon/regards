@@ -468,6 +468,13 @@ impl Session {
                 let of = context::Of::draft_in(&result);
                 Ok(self.with_context(result, of).await)
             }
+            methods::DRAFT_AGAIN => {
+                let params: MessageRef = params(request)?;
+                self.allow_message(Access::Triage, params.id).await?;
+                let result = compose::again(&self.state, params).await?;
+                let of = context::Of::draft_in(&result);
+                Ok(self.with_context(result, of).await)
+            }
             methods::DRAFT_GET => {
                 let params: DraftRef = params(request)?;
                 self.allow_draft(Access::Triage, params.id).await?;

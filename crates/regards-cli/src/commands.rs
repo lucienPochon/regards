@@ -251,7 +251,7 @@ fn human(tool: &Tool, result: &Value) -> String {
                 people(&draft["to"])
             )
         }),
-        "draft" | "write" | "reply" | "forward" | "edit" => format!(
+        "draft" | "write" | "reply" | "forward" | "send_again" | "edit" => format!(
             "Draft {}: “{}” to {}\n\n{}",
             result["id"],
             text(&result["subject"]),

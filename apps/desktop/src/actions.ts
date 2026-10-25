@@ -15,7 +15,7 @@ import {
 } from "./accounts";
 import { type KeySet, getPrefs } from "./prefs";
 import type { Person } from "./accounts";
-import { type Draft, forwardDraft, replyDraft } from "./compose";
+import { type Draft, againDraft, forwardDraft, replyDraft } from "./compose";
 import type { ConfirmRequest } from "./Confirm";
 import type { IconName } from "./icons";
 import type { Anchor } from "./Menu";
@@ -42,6 +42,8 @@ export interface Target {
   pinned: boolean;
   /** Its conversation is muted. */
   muted?: boolean;
+  /** The one message is mail the person sent (in a Sent folder): Send again is offered. */
+  sent?: boolean;
   /** All set aside. */
   aside: boolean;
   /** All snoozed. */
@@ -115,6 +117,7 @@ export type ActionId =
   | "reply"
   | "replyAll"
   | "forward"
+  | "again"
   | "unread"
   | "read"
   | "flag"
@@ -149,6 +152,7 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
     reply: ["Shift+R"],
     replyAll: ["r"],
     forward: ["f"],
+    again: [],
     unread: ["u"],
     read: ["u"],
     flag: ["i"],
@@ -169,6 +173,7 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
     reply: ["r"],
     replyAll: ["a"],
     forward: ["f"],
+    again: [],
     unread: ["Shift+U"],
     read: ["Shift+I"],
     flag: ["s"],
@@ -186,6 +191,39 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
     mute: ["m"],
   },
 };
+
+/** Each action's keys: the key set's, or the ones the person chose instead. */
+export function keysFor(set: KeySet, mine: Record<string, string[]>): Record<ActionId, string[]> {
+  const keys = { ...ACTION_KEYS[set] };
+  for (const id of Object.keys(keys) as ActionId[]) {
+    const chosen = mine[id];
+    if (Array.isArray(chosen)) keys[id] = chosen;
+  }
+  return keys;
+}
+
+/** The message actions whose keys can be changed, as Settings › Shortcuts names them. */
+export const KEYED_ACTIONS: { id: ActionId; label: string }[] = [
+  { id: "archive", label: "Done (archive)" },
+  { id: "delete", label: "Delete" },
+  { id: "reply", label: "Reply" },
+  { id: "replyAll", label: "Reply all" },
+  { id: "forward", label: "Forward" },
+  { id: "again", label: "Send again" },
+  { id: "read", label: "Mark read" },
+  { id: "unread", label: "Mark unread" },
+  { id: "flag", label: "Flag or unflag" },
+  { id: "pin", label: "Pin or unpin" },
+  { id: "snooze", label: "Snooze" },
+  { id: "remind", label: "Remind me if nobody replies" },
+  { id: "aside", label: "Set aside" },
+  { id: "move", label: "Move to a folder" },
+  { id: "copy", label: "Copy to a folder" },
+  { id: "label", label: "Labels (Gmail)" },
+  { id: "junk", label: "Mark as junk" },
+  { id: "mute", label: "Mute the conversation" },
+  { id: "unsubscribe", label: "Unsubscribe" },
+];
 
 /** An action's name with its first key, for a tooltip. */
 export const actionTitle = (action: Action) =>
@@ -210,7 +248,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       .catch(host.failed);
   };
 
-  const keys = ACTION_KEYS[getPrefs().keySet];
+  const keys = keysFor(getPrefs().keySet, getPrefs().myKeys);
   // A key that both marks read and unread belongs to the half that shows.
   const half = (id: "unread" | "read", shown: boolean) =>
     shown ? keys[id] : keys[id].filter((key) => !keys[id === "read" ? "unread" : "read"].includes(key));
@@ -222,6 +260,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       { id: "reply", label: "Reply", icon: "reply", keys: keys.reply, shown: true, run: () => host.compose(replyDraft(id, false)) },
       { id: "replyAll", label: "Reply all", icon: "replyAll", keys: keys.replyAll, shown: true, run: () => host.compose(replyDraft(id, true)) },
       { id: "forward", label: "Forward", icon: "forward", keys: keys.forward, shown: true, run: () => host.compose(forwardDraft(id)) },
+      { id: "again", label: "Send again", icon: "send", keys: keys.again, shown: target.sent === true, run: () => host.compose(againDraft(id)) },
     );
   }
   actions.push(
