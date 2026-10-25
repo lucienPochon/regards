@@ -1924,6 +1924,7 @@ export function App() {
       item={openItem}
       labels={labelsOf(openItem)}
       onLabel={(mailboxId) => changeView({ kind: "mailbox", mailboxId, accountId: openItem.accountId })}
+      onDraft={editDraft}
       stepped={openedByStep}
       folders={folders}
       mode={layout.mode}

@@ -88,6 +88,7 @@ export const TOUR: Group[] = [
       { id: "reader-single", label: "A message in place of the list", note: "Settings › Appearance › Layout: in place of the list.", params: { link: NEWSLETTER, layout: "single" } },
       { id: "thread", label: "A conversation", note: "Older messages fold to one line each.", steps: openRow("Garden plot") },
       { id: "thread-open", label: "A conversation, unfolded", note: "Settings › General › Fold older messages, off.", prefs: { collapseOlder: false }, steps: openRow("Garden plot") },
+      { id: "thread-draft", label: "A reply being written", note: "An unsent reply shows under its conversation; it opens to go on writing.", steps: openRow("Book club") },
       { id: "sender-card", label: "About the sender", note: "Why it is here, and what to do with this sender's mail.", params: { link: NEWSLETTER }, steps: ["wait:900", "click:.mail-avatar"] },
       { id: "images-always", label: "Images always from this sender", note: "After choosing it once, this sender's images load without asking.", params: { link: NEWSLETTER }, steps: ["wait:900", "text:.images-notice button=Always"] },
       { id: "snooze", label: "Snooze", note: "The b key. Its times come from Settings › Scheduling.", params: { link: NEWSLETTER }, steps: ["wait:900", "key:b"] },

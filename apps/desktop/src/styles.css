@@ -2901,6 +2901,62 @@ button.list-title:hover {
   padding: 0;
 }
 
+/* A reply being written, under its conversation: dashed, as it is not sent. */
+.thread-drafts {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.draft-card {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+}
+
+.draft-card:hover {
+  border-color: var(--accent);
+  background: var(--hover);
+}
+
+.draft-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.draft-chip {
+  color: var(--accent);
+}
+
+.draft-to {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-preview {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-open {
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
 .mail-card.collapsed:hover {
   background: var(--hover);
 }
