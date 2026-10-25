@@ -15,6 +15,7 @@ import {
 import { type Action, type Target, actionKeys, actionTitle, choose, newSendersOf } from "./actions";
 import { AttachmentTiles } from "./AttachmentTiles";
 import { FindBar } from "./FindBar";
+import { InvitationCard } from "./InvitationCard";
 import { Avatar } from "./Avatar";
 import { useChanges } from "./changes";
 import { fullDate, peopleFull, peopleShort, personName } from "./format";
@@ -619,6 +620,7 @@ function ThreadMessage({
         {ready && (
           <>
             {finding && <FindBar frame={frame} text={textBody} onClose={() => setFinding(false)} />}
+            {given !== null && <InvitationCard messageId={message.id} onFailed={setImagesError} />}
             {ready.has_html && !showText && ready.remote_images > 0 && !allowRemote && !trusted && (
               <div className="notice images-notice">
                 <Icon name="shield" size={16} />

@@ -36,7 +36,7 @@ export const TOUR: Group[] = [
       {
         id: "smart-inbox",
         label: "Inbox by priority",
-        note: "New senders to accept or block, Priority, then today's mail. Notifications and Newsletters each sit in one row.",
+        note: "New senders to accept or block, Priority, then today's mail. Notifications, Newsletters, Invitations and Pinned each sit in one row.",
         params: { view: "smart" },
       },
       {
@@ -49,8 +49,9 @@ export const TOUR: Group[] = [
       { id: "unified", label: "Two accounts, one inbox", note: "Both accounts' mail together; the sidebar lists each account.", params: { accounts: "2" } },
       { id: "folded-sidebar", label: "Sidebar folded to icons", note: "The / key does the same.", params: { sidebar: "icons" } },
       { id: "folders-more", label: "More folders", note: "Folders beyond the usual ones.", steps: ["wait:700", "text:button=More"] },
-      { id: "group-open", label: "Notifications, opened", note: "A group row opens its own list.", steps: openRow("Notifications") },
+      { id: "group-open", label: "Notifications, opened", note: "A group row opens its own list.", params: { view: "smart" }, steps: openRow("Notifications") },
       { id: "pinned", label: "Pinned", note: "Pinned mail, from the sidebar.", steps: ["wait:700", "text:button=Pinned"] },
+      { id: "invitations-open", label: "Invitations, opened", note: "Invitations not answered yet, as one row of the Smart Inbox; answering one takes it off.", params: { view: "smart" }, steps: openRow("Invitations") },
       { id: "screen-hold", label: "New senders held aside", note: "Settings › Inbox › new senders: held until accepted.", params: { screen: "hold" } },
       { id: "screen-off", label: "New senders not screened", note: "New senders' mail goes straight into the inbox.", params: { screen: "off" } },
       { id: "reminder-due", label: "A reminder came due", note: "Nobody replied in time: the message you sent comes back to the inbox, with a bell.", params: { reminder: "1" }, steps: ["wait:900", "see:.reminder.due="] },
@@ -89,6 +90,7 @@ export const TOUR: Group[] = [
       { id: "reader-single", label: "A message in place of the list", note: "Settings › Appearance › Layout: in place of the list.", params: { link: NEWSLETTER, layout: "single" } },
       { id: "thread", label: "A conversation", note: "Older messages fold to one line each.", steps: openRow("Garden plot") },
       { id: "thread-open", label: "A conversation, unfolded", note: "Settings › General › Fold older messages, off.", prefs: { collapseOlder: false }, steps: openRow("Garden plot") },
+      { id: "invitation", label: "An invitation", note: "When, where and from whom, in your time; Accept, Maybe or Decline answers the organizer by email.", steps: openRow("Plot planning") },
       { id: "thread-draft", label: "A reply being written", note: "An unsent reply shows under its conversation; it opens to go on writing.", steps: openRow("Book club") },
       { id: "find", label: "Find in this message", note: "Ctrl+Shift+F, or the message's ⋯ menu. Enter and Shift+Enter step through the matches.", steps: [...openRow("Garden plot"), "wait:700", "key:Mod+Shift+F", "wait:300", "type:the"] },
       { id: "sender-card", label: "About the sender", note: "Why it is here, and what to do with this sender's mail.", params: { link: NEWSLETTER }, steps: ["wait:900", "click:.mail-avatar"] },

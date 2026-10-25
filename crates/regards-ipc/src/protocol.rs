@@ -93,6 +93,12 @@ pub mod methods {
     /// The stored message a `regards://message-id/…` link names, by its
     /// Message-ID ([`MessageLocateParams`] → [`MessageLocateResult`]). `ui` only.
     pub const MESSAGE_LOCATE: &str = "message.locate";
+    /// The invitation a message carries (iMIP), if it carries one
+    /// ([`MessageRef`] → [`InvitationView`] or null). `ui` only.
+    pub const INVITATION_GET: &str = "invitation.get";
+    /// Answer an invitation: a reply to its organizer, through the outbox
+    /// ([`InvitationRespondParams`] → [`InvitationView`]). `ui` only.
+    pub const INVITATION_RESPOND: &str = "invitation.respond";
     /// The sanitised HTML version of a message (ADR-0006 §4). `ui` only for now.
     pub const MESSAGE_HTML: &str = "message.html";
     /// A message as it came, headers and all ("See the original message"):
@@ -1277,6 +1283,54 @@ pub struct MessageDetail {
     /// moved; by its number without one.
     #[serde(default)]
     pub link: String,
+}
+
+/// What an invitation in a message asks ([`methods::INVITATION_GET`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InvitationView {
+    /// "request" (to answer), "cancel" (it is off), or another iMIP method, lower case.
+    pub method: String,
+    pub summary: String,
+    pub location: Option<String>,
+    pub start: Option<CalendarTime>,
+    pub end: Option<CalendarTime>,
+    pub organizer: Option<Person>,
+    /// How many are invited.
+    pub attendees: usize,
+    /// It repeats: an answer is for every occurrence.
+    pub repeats: bool,
+    /// The person's address it was sent to, which answers it.
+    pub me: Option<String>,
+    /// How the invitation says the person stands ("needs-action", "accepted"…), lower case.
+    pub status: Option<String>,
+    /// What the person answered in Regards to this version of it.
+    pub answered: Option<InvitationAnswer>,
+}
+
+/// A time as an invitation writes it: the app shows it in local time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CalendarTime {
+    /// `20261030T100000`, or `20261030` for a whole day.
+    pub value: String,
+    /// Its time zone (an IANA name, or a Windows one), when not UTC.
+    pub zone: Option<String>,
+    pub utc: bool,
+    pub all_day: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InvitationAnswer {
+    Accepted,
+    Tentative,
+    Declined,
+}
+
+/// Parameters of [`methods::INVITATION_RESPOND`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InvitationRespondParams {
+    pub message_id: i64,
+    pub answer: InvitationAnswer,
 }
 
 /// Parameters of [`methods::MESSAGE_LOCATE`].

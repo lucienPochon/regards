@@ -10,6 +10,7 @@ import type { Identity } from "../identities";
 import type { Note } from "../notes";
 import type { Signature } from "../signatures";
 import type { Template } from "../templates";
+import type { Invitation, InvitationAnswer } from "../invitations";
 import type { AgentAccess, AgentActivity, Hold } from "../agents";
 import { type Explanation, type Policy, type Screening, SECTIONS, type Section } from "../smart";
 import { type FixtureAccount, type FixtureMessage, ME, PERSONAL, WORK, addedAccount, fixtureMessages } from "./fixtures";
@@ -139,6 +140,25 @@ if (params.get("signin") === "1" && accounts[0]) {
     });
   });
 }
+// The sample invitation (Lena's), as the daemon reads it, and the answer given here.
+const invitationDay = new Date(started + 5 * 24 * 3600_000);
+const stamp = (hour: number) =>
+  `${invitationDay.getFullYear()}${String(invitationDay.getMonth() + 1).padStart(2, "0")}${String(invitationDay.getDate()).padStart(2, "0")}T${String(hour).padStart(2, "0")}0000`;
+const invitation: Invitation = {
+  method: "request",
+  summary: "Plot planning",
+  location: "The shed, by the gate",
+  start: { value: stamp(10), zone: null, utc: false, all_day: false },
+  end: { value: stamp(11), zone: null, utc: false, all_day: false },
+  organizer: { name: "Lena Okafor", address: "lena.okafor@example.net" },
+  attendees: 4,
+  repeats: false,
+  me: "sam@example.org",
+  status: "needs-action",
+  answered: null,
+};
+let invitationAnswer: InvitationAnswer | null = null;
+
 // Two sample templates; the daemon keeps them by name.
 const templates: Template[] = [
   {
@@ -1471,6 +1491,15 @@ function handle(cmd: string, args: Args): unknown {
         link: `regards://message/${message.id}`,
       };
     }
+    case "invitation_get": {
+      // The sample invitation: as the daemon reads one from its calendar part.
+      const message = byId(args.id as number);
+      if (!message.subject.startsWith("Invitation:")) return null;
+      return { ...invitation, answered: invitationAnswer };
+    }
+    case "invitation_respond":
+      invitationAnswer = args.answer as InvitationAnswer;
+      return { ...invitation, answered: invitationAnswer };
     case "message_locate":
       // The preview's messages have no Message-ID: their links are by number.
       return { id: null };

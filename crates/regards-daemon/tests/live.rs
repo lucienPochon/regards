@@ -1754,6 +1754,83 @@ fn person(address: &str) -> Person {
 
 #[tokio::test]
 #[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_an_invitation_is_read_and_answered_to_its_organizer() {
+    use regards_ipc::protocol::{InvitationAnswer, InvitationRespondParams, InvitationView, MessageRef};
+    let live = live();
+    let me = format!("{}@example.test", live.user);
+    let invitation = format!(
+        "From: Lena Okafor <lena@example.net>\r\nTo: {me}\r\nSubject: Invitation: Garden plot\r\n\
+         Message-ID: <invite-1@example.net>\r\nDate: Mon, 19 Oct 2026 10:00:00 +0000\r\nMIME-Version: 1.0\r\n\
+         Content-Type: multipart/alternative; boundary=a\r\n\r\n\
+         --a\r\nContent-Type: text/plain\r\n\r\nYou are invited.\r\n\
+         --a\r\nContent-Type: text/calendar; method=REQUEST; charset=utf-8\r\n\r\n\
+         BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:plot-7@example.net\r\nSEQUENCE:1\r\n\
+         DTSTART;TZID=Europe/Zurich:20261030T100000\r\nDTEND;TZID=Europe/Zurich:20261030T110000\r\n\
+         SUMMARY:Garden plot\r\nLOCATION:The shed\r\nORGANIZER;CN=Lena Okafor:mailto:lena@example.net\r\n\
+         ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:{me}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n--a--\r\n"
+    );
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let _ = seed.create_mailbox(b"Sent").await;
+    seed.append(b"INBOX", &[], invitation.as_bytes()).await.unwrap();
+    let script = fake_smtp::Script::new(fake_smtp::Mode::StartTls {
+        offer: true,
+        inject: false,
+    });
+    let ((_temp, mut desktop, _account, inbox, handle), mut sent) = daemon_sending_through(&live, script).await;
+    let id = messages(&mut desktop, inbox).await.messages[0].id;
+
+    // Read: what, when, where, who; not answered yet.
+    let seen: InvitationView = desktop.call(methods::INVITATION_GET, MessageRef { id }).await.unwrap();
+    assert_eq!(
+        (seen.method.as_str(), seen.summary.as_str()),
+        ("request", "Garden plot")
+    );
+    assert_eq!(seen.location.as_deref(), Some("The shed"));
+    assert_eq!(
+        seen.start.as_ref().map(|start| start.value.as_str()),
+        Some("20261030T100000")
+    );
+    assert_eq!(seen.me.as_deref(), Some(me.as_str()));
+    assert_eq!((seen.status.as_deref(), seen.answered), (Some("needs-action"), None));
+
+    // Accepted: a reply to the organizer, the invitation marked answered here.
+    let answered: InvitationView = desktop
+        .call(
+            methods::INVITATION_RESPOND,
+            InvitationRespondParams {
+                message_id: id,
+                answer: InvitationAnswer::Accepted,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(answered.answered, Some(InvitationAnswer::Accepted));
+    let delivered = tokio::time::timeout(Duration::from_secs(20), sent.next())
+        .await
+        .expect("the answer reached the SMTP server");
+    assert_eq!(delivered.to, ["lena@example.net"]);
+    let data = String::from_utf8(delivered.data.unwrap()).unwrap();
+    assert!(data.contains("Subject: Accepted: Garden plot"), "{data}");
+    assert!(data.contains("In-Reply-To: <invite-1@example.net>"), "{data}");
+    let reply = regards_core::calendar::in_message(data.as_bytes()).expect("a calendar part");
+    // Lines are folded at 75 octets: a long address goes over two.
+    let reply = reply.replace("\r\n ", "").replace("\n ", "");
+    assert!(
+        reply.contains("METHOD:REPLY") && reply.contains("UID:plot-7@example.net"),
+        "{reply}"
+    );
+    assert!(reply.contains("PARTSTAT=ACCEPTED") && reply.contains(&me), "{reply}");
+    let again: InvitationView = desktop.call(methods::INVITATION_GET, MessageRef { id }).await.unwrap();
+    assert_eq!(again.answered, Some(InvitationAnswer::Accepted), "kept");
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
 async fn live_a_reply_can_be_undone_then_goes_out_once_and_lands_in_sent() {
     let live = live();
     let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
