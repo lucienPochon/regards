@@ -39,17 +39,17 @@ use regards_ipc::protocol::{
     IdentitySaveParams, IdentitySetSignatureParams, IdentitySetVoiceParams, IdentityView, LabelsResult,
     MailboxCreateParams, MailboxListResult, MailboxRef, MailboxRenameParams, MailboxSummary, MarkResult, MessageCursor,
     MessageDetail, MessageIds, MessageListParams, MessageListResult, MessageLocateParams, MessageLocateResult,
-    MessageRef, MoveParams, MoveResult, NoteAddParams, NoteAddResult, NoteListParams, NoteListResult, NoteRef,
-    NoteRemoved, NoteSetEnabledParams, NoteSettings, NoteUpdateParams, NoteView, NotesForgotten, OauthFlowRef,
+    MessageRef, MoveParams, MoveResult, MuteParams, NoteAddParams, NoteAddResult, NoteListParams, NoteListResult,
+    NoteRef, NoteRemoved, NoteSetEnabledParams, NoteSettings, NoteUpdateParams, NoteView, NotesForgotten, OauthFlowRef,
     OauthProvidersResult, OauthStartParams, OauthStartResult, OutboxListResult, OutboxRef, OutboxRescheduleParams,
     OutboxUndoResult, PinParams, Principal, RemindParams, SavedSearchListResult, SavedSearchOrderParams,
     SavedSearchRef, SavedSearchSaveParams, SavedSearchView, Screening, ScreeningParams, SearchParams, SearchResult,
-    Section, SenderBlockParams, SenderBlockedResult, SenderImagesParams, SenderImagesResult, SenderSetParams,
-    SenderSetResult, ServerCheckParams, ServerCheckResult, ServerSearchResult, ServerSettings, SetFlagsParams,
-    SetFlagsResult, SetLabelsParams, SetLabelsResult, SignatureListResult, SignatureRef, SignatureSaveParams,
-    SignatureView, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef, TemplateSaveParams,
-    TemplateView, ThreadView, UndoParams, UndoResult, UnsubscribeParams, UnsubscribeResult, View, ViewParams, codes,
-    methods,
+    Section, SenderBlockParams, SenderBlockedResult, SenderImagesParams, SenderImagesResult, SenderQuietParams,
+    SenderSetParams, SenderSetResult, ServerCheckParams, ServerCheckResult, ServerSearchResult, ServerSettings,
+    SetFlagsParams, SetFlagsResult, SetLabelsParams, SetLabelsResult, SignatureListResult, SignatureRef,
+    SignatureSaveParams, SignatureView, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef,
+    TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, UnsubscribeParams, UnsubscribeResult, View,
+    ViewParams, codes, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -915,6 +915,13 @@ async fn sender_block(bridge: State<'_, Bridge>, sender: SenderBlockParams) -> R
     client.call(methods::SENDER_BLOCK, sender).await.map_err(describe)
 }
 
+/// Make a sender or `@domain` quiet (their new mail tells of nothing), or not.
+#[tauri::command]
+async fn sender_quiet(bridge: State<'_, Bridge>, sender: SenderQuietParams) -> Result<Value, String> {
+    let mut client = bridge.connect().await?.client;
+    client.call(methods::SENDER_QUIET, sender).await.map_err(describe)
+}
+
 /// Let a sender's or `@domain`'s remote images load from then on, or block them again.
 #[tauri::command]
 async fn sender_set_images(bridge: State<'_, Bridge>, sender: SenderImagesParams) -> Result<Value, String> {
@@ -1259,6 +1266,15 @@ async fn undo_apply(bridge: State<'_, Bridge>, id: i64) -> Result<UndoResult, St
 }
 
 /// Pin or unpin messages (kept on this device); undoable.
+#[tauri::command]
+async fn message_mute(bridge: State<'_, Bridge>, ids: Vec<i64>, muted: bool) -> Result<MarkResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_MUTE, MuteParams { ids, muted })
+        .await
+        .map_err(describe)
+}
+
 #[tauri::command]
 async fn message_pin(bridge: State<'_, Bridge>, ids: Vec<i64>, pinned: bool) -> Result<MarkResult, String> {
     let mut client = bridge.connect().await?.client;
@@ -2150,6 +2166,7 @@ fn main() {
             message_explain,
             sender_set,
             sender_block,
+            sender_quiet,
             sender_set_images,
             sender_images,
             sender_blocked,
@@ -2171,6 +2188,7 @@ fn main() {
             message_copy,
             undo_apply,
             message_pin,
+            message_mute,
             message_set_aside,
             message_snooze,
             message_remind,

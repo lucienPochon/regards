@@ -7,7 +7,7 @@ import { Icon } from "./icons";
 import { type Note, NOTE_MAX, addNote, listNotes, noteSettings, removeNote, updateNote } from "./notes";
 import type { Anchor } from "./Menu";
 import { useShortcuts } from "./shortcuts";
-import { type Explanation, type Policy, SECTION_LABELS, blockSender, blockableDomain, explain, reasonText, setSender } from "./smart";
+import { type Explanation, type Policy, SECTION_LABELS, blockSender, blockableDomain, explain, reasonText, setSender, setSenderQuiet } from "./smart";
 import { useDialogFocus } from "./dialogFocus";
 
 export interface SenderRequest {
@@ -166,6 +166,23 @@ export function SenderCard({
             <Icon name="bolt" size={16} />
             <span>Priority sender</span>
             <span className={sender?.priority ? "toggle on" : "toggle"} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="sender-row"
+            role="switch"
+            aria-checked={sender?.quiet ?? false}
+            disabled={!sender}
+            onClick={() => {
+              if (address) setSenderQuiet(accountId, address, !(sender?.quiet ?? false)).then(load, onFailed);
+            }}
+          >
+            <Icon name="bellOff" size={16} />
+            <span>
+              No notifications
+              <span className="muted sender-row-detail">Their mail comes in quietly</span>
+            </span>
+            <span className={sender?.quiet ? "toggle on" : "toggle"} aria-hidden="true" />
           </button>
           <div className="sender-row why">
             <Icon name="info" size={16} />

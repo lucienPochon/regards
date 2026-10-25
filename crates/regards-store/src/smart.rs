@@ -28,6 +28,7 @@ pub fn sender(conn: &Connection, account_id: &str, address: &str) -> Result<Send
         priority: own.priority || domain.priority,
         written_to: own.written_to,
         blocked: own.blocked || domain.blocked,
+        quiet: own.quiet || domain.quiet,
     })
 }
 
@@ -35,7 +36,7 @@ pub fn sender(conn: &Connection, account_id: &str, address: &str) -> Result<Send
 fn entry(conn: &Connection, account_id: &str, key: &str) -> Result<Sender, StoreError> {
     let found = conn
         .prepare_cached(
-            "SELECT policy, priority, written_to_at, blocked FROM senders WHERE account_id = ?1 AND address = lower(?2)",
+            "SELECT policy, priority, written_to_at, blocked, quiet FROM senders WHERE account_id = ?1 AND address = lower(?2)",
         )?
         .query_row(params![account_id, key], |row| {
             let policy: Option<String> = row.get(0)?;
@@ -45,6 +46,7 @@ fn entry(conn: &Connection, account_id: &str, key: &str) -> Result<Sender, Store
                 priority: row.get(1)?,
                 written_to: written_to.is_some(),
                 blocked: row.get(3)?,
+                quiet: row.get(4)?,
             })
         })
         .optional()?;
@@ -85,6 +87,16 @@ pub fn set_blocked(tx: &Transaction<'_>, account_id: &str, key: &str, blocked: b
         "INSERT INTO senders (account_id, address, blocked) VALUES (?1, lower(?2), ?3) \
          ON CONFLICT (account_id, address) DO UPDATE SET blocked = ?3",
         params![account_id, key, blocked],
+    )?;
+    Ok(())
+}
+
+/// Make a sender (or `@domain`) quiet, or not: their new mail tells of nothing.
+pub fn set_quiet(tx: &Transaction<'_>, account_id: &str, key: &str, quiet: bool) -> Result<(), StoreError> {
+    tx.execute(
+        "INSERT INTO senders (account_id, address, quiet) VALUES (?1, lower(?2), ?3) \
+         ON CONFLICT (account_id, address) DO UPDATE SET quiet = ?3",
+        params![account_id, key, quiet],
     )?;
     Ok(())
 }

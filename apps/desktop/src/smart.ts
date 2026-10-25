@@ -57,6 +57,8 @@ export interface Sender {
   written_to: boolean;
   /** Blocked, by address or domain: their mail goes to Junk. */
   blocked: boolean;
+  /** Quiet, by address or domain: their new mail tells of nothing. */
+  quiet?: boolean;
 }
 
 export interface Explanation {
@@ -94,6 +96,10 @@ export const setSender = (accountId: string, address: string, choice: { policy: 
  */
 export const blockSender = (accountId: string, address: string, blocked = true) =>
   invoke<MoveResult>("sender_block", { sender: { account_id: accountId, address, blocked } });
+
+/** Make a sender (or a whole `@domain`) quiet, their new mail telling of nothing, or not. */
+export const setSenderQuiet = (accountId: string, address: string, quiet: boolean) =>
+  invoke("sender_quiet", { sender: { account_id: accountId, address, quiet } });
 
 /**
  * Load a sender's remote images from then on (an address, or a whole domain
