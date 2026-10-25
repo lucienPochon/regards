@@ -1858,6 +1858,33 @@ button.list-title:hover {
   padding: 0 16px 32px 0;
 }
 
+/* Filters to narrow a search by, under its field. */
+.search-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 16px 4px 20px;
+}
+
+.search-chips .chip {
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.search-chips .chip:hover {
+  background: var(--hover);
+}
+
+.search-chips .chip.chosen:hover {
+  background: var(--pill-strong);
+}
+
 .search-start .day-head {
   padding-top: 14px;
 }
