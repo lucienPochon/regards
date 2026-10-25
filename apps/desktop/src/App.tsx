@@ -1828,7 +1828,13 @@ export function App() {
     ) : view.kind === "outbox" ? (
       <section className="list-pane" aria-label="Outbox">
         <ListHeader title={title} subtitle={subtitle} />
-        <OutboxList entries={outbox} onEdit={editDraft} onFailed={failed} onSignIn={() => setSettings("accounts")} />
+        <OutboxList
+          entries={outbox}
+          onEdit={editDraft}
+          onFailed={failed}
+          onSignIn={() => setSettings("accounts")}
+          onPickTime={pickSendTime}
+        />
       </section>
     ) : (
       <MessageList

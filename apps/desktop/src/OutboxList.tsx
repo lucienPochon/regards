@@ -13,12 +13,15 @@ export function OutboxList({
   onEdit,
   onFailed,
   onSignIn,
+  onPickTime,
 }: {
   entries: OutboxEntry[];
   onEdit: (draftId: number) => void;
   onFailed: (error: unknown) => void;
   /** Where to sign an account in again (Settings › Accounts). */
   onSignIn?: () => void;
+  /** Choose another time to send, as Send later does; `null` if none was chosen. */
+  onPickTime?: () => Promise<number | null>;
 }) {
   // While a message can still be called back, count down to when it goes.
   const [now, setNow] = useState(() => Date.now());
@@ -81,6 +84,20 @@ export function OutboxList({
                       {waiting && (
                         <button type="button" className="btn small" onClick={() => act(() => reschedule(entry.id, null))}>
                           Send now
+                        </button>
+                      )}
+                      {waiting && onPickTime && (
+                        <button
+                          type="button"
+                          className="btn small"
+                          onClick={() =>
+                            act(async () => {
+                              const time = await onPickTime();
+                              if (time !== null) await reschedule(entry.id, time);
+                            })
+                          }
+                        >
+                          Change time…
                         </button>
                       )}
                       {(waiting || entry.state === "failed" || (entry.state === "queued" && entry.attempts > 0)) && (
