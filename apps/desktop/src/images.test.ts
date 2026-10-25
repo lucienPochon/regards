@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
-const { attachImage, toEditorHtml, toStoredHtml } = await import("./images");
+const { attachImage, coloursAsMarks, coloursAsStyles, toEditorHtml, toStoredHtml } = await import("./images");
 
 describe("images in the text", () => {
   it("are kept by Content-ID, without their bytes, and shown from them again", () => {
@@ -31,5 +31,27 @@ describe("images in the text", () => {
       mime: "image/png",
       data: "AAAA",
     });
+  });
+});
+
+describe("colours and picture sizes in the text", () => {
+  it("are kept as styles and sizes, and marked again for the editor", () => {
+    const edited =
+      `<p><span data-colour="#c62828" data-highlight="#fff59d">urgent</span> ` +
+      `<img src="data:image/png;base64,AAAA" alt="" data-cid="lake@regards" width="320.4" height="180"></p>`;
+    const stored = toStoredHtml(edited);
+    expect(stored).toBe(
+      `<p><span style="color: #c62828; background-color: #fff59d">urgent</span> ` +
+        `<img src="cid:lake@regards" alt="" width="320" height="180"></p>`,
+    );
+    expect(toEditorHtml(stored, [{ content_id: "lake@regards", mime: "image/png", data: "AAAA" }])).toBe(
+      `<p><span data-colour="#c62828" data-highlight="#fff59d">urgent</span> ` +
+        `<img src="data:image/png;base64,AAAA" alt="" data-cid="lake@regards" width="320" height="180"></p>`,
+    );
+  });
+
+  it("leave other spans and styles alone, for the daemon to judge", () => {
+    expect(coloursAsStyles(`<span data-colour="red">x</span><span>y</span>`)).toBe(`<span data-colour="red">x</span><span>y</span>`);
+    expect(coloursAsMarks(`<span style="font-size: 40px">x</span>`)).toBe(`<span style="font-size: 40px">x</span>`);
   });
 });

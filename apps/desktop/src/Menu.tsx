@@ -31,6 +31,8 @@ export interface MenuRequest {
   entries: MenuEntry[];
   /** Show a filter field with this placeholder (for long lists such as folders, or the palette). */
   filter?: string;
+  /** Entries made from what is typed in the filter field (a time, say), shown first. */
+  typed?: (query: string) => MenuItem[];
   label: string;
   /**
    * "palette": a wide panel in the upper middle of the window with a title,
@@ -76,13 +78,16 @@ export function Menu({ request, onClose }: { request: MenuRequest; onClose: () =
   };
   useShortcuts({ Escape: dismiss }, { modal: true });
 
-  const items = request.entries.filter(
-    (entry): entry is MenuItem =>
-      entry !== "separator" &&
-          !entry.disabled &&
-          !(query && entry.quick) &&
-          entry.label.toLowerCase().includes(query.toLowerCase()),
-  );
+  const items = [
+    ...(query.trim() && request.typed ? request.typed(query) : []),
+    ...request.entries.filter(
+      (entry): entry is MenuItem =>
+        entry !== "separator" &&
+        !entry.disabled &&
+        !(query && entry.quick) &&
+        entry.label.toLowerCase().includes(query.toLowerCase()),
+    ),
+  ];
   const shown: MenuEntry[] = query ? items : request.entries;
   const highlighted = request.filter ? items[Math.min(active, items.length - 1)] : undefined;
 

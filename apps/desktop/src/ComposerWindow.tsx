@@ -6,6 +6,7 @@ import { type SentElsewhere, getDraft } from "./compose";
 import { type Anchor, Menu, type MenuEntry, type MenuRequest } from "./Menu";
 import { getPrefs } from "./prefs";
 import { reminderPresets, sendPresets, timeHint } from "./snooze";
+import { TYPED_TIME_HINT, typedTimeEntries } from "./typedTime";
 import { type Template, listTemplates, saveTemplate } from "./templates";
 import { TimePicker } from "./TimePicker";
 import { PLATFORM, TitleBar } from "./TitleBar";
@@ -56,6 +57,8 @@ export function ComposerWindow({ draftId }: { draftId: number }) {
           variant: "palette",
           title,
           label: title,
+          filter: TYPED_TIME_HINT,
+          typed: (query) => typedTimeEntries(query, resolve),
           entries: [
             ...choices.map((choice) => ({
               label: choice.label,

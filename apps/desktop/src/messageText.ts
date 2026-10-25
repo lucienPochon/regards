@@ -30,6 +30,14 @@ const escape = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;
  * everywhere and loads nothing from the web.
  */
 export function printMessage(detail: MessageDetail): void {
+  printMessages([detail], detail.message.subject || "Message");
+}
+
+/**
+ * Print messages one after another (a conversation, oldest first), each
+ * with its head and its text, as [`printMessage`] does one.
+ */
+export function printMessages(details: MessageDetail[], title: string): void {
   const frame = document.createElement("iframe");
   // No scripts in it; the same origin, so this page can ask it to print.
   frame.setAttribute("sandbox", "allow-modals allow-same-origin");
@@ -38,10 +46,13 @@ export function printMessage(detail: MessageDetail): void {
   frame.style.width = "0";
   frame.style.height = "0";
   frame.style.border = "0";
-  const rows = head(detail)
-    .map(([label, value]) => `<tr><th>${escape(label)}</th><td>${escape(value)}</td></tr>`)
-    .join("");
-  frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><title>${escape(detail.message.subject || "Message")}</title></head><body><table>${rows}</table><hr><pre>${escape(detail.text.trim())}</pre></body></html>`;
+  const one = (detail: MessageDetail) => {
+    const rows = head(detail)
+      .map(([label, value]) => `<tr><th>${escape(label)}</th><td>${escape(value)}</td></tr>`)
+      .join("");
+    return `<section><table>${rows}</table><hr><pre>${escape(detail.text.trim())}</pre></section>`;
+  };
+  frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><title>${escape(title)}</title></head><body>${details.map(one).join("")}</body></html>`;
   frame.addEventListener("load", () => {
     const page = frame.contentDocument;
     const window = frame.contentWindow;
@@ -53,10 +64,19 @@ export function printMessage(detail: MessageDetail): void {
       cell.style.paddingRight = "12px";
       cell.style.fontWeight = "600";
     }
-    const text = page.querySelector<HTMLElement>("pre");
-    if (text) {
+    for (const text of page.querySelectorAll<HTMLElement>("pre")) {
       text.style.whiteSpace = "pre-wrap";
       text.style.font = "inherit";
+    }
+    // Between messages, a heavier line and room; a head never alone at a page's foot.
+    for (const [index, section] of page.querySelectorAll<HTMLElement>("section").entries()) {
+      if (index > 0) {
+        section.style.borderTop = "2px solid #000";
+        section.style.marginTop = "28px";
+        section.style.paddingTop = "12px";
+      }
+      const table = section.querySelector<HTMLElement>("table");
+      if (table) table.style.breakAfter = "avoid";
     }
     window.addEventListener("afterprint", () => frame.remove());
     window.focus();
