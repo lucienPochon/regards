@@ -20,6 +20,7 @@ import {
   unsubscribe,
   getMessage,
   getThread,
+  locateMessage,
   markAllRead,
   moveMessages,
   pinMessages,
@@ -915,6 +916,13 @@ export function App() {
       getDraft(link.id).then(
         (draft) => setComposer({ id: draft.id, mode: "full" }),
         () => setNotice("That draft is no longer here."),
+      );
+      return;
+    }
+    if (link.kind === "message_id") {
+      locateMessage(link.message_id).then(
+        (id) => (id === null ? setNotice("That message is no longer on this computer.") : openLink({ kind: "message", id })),
+        () => setNotice("That message is no longer on this computer."),
       );
       return;
     }

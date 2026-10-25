@@ -381,6 +381,10 @@ impl Session {
                 let scope = self.search_scope(params.account_id.as_deref()).await?;
                 mail::search_server(&self.state, params, scope).await
             }
+            methods::MESSAGE_LOCATE => {
+                self.require_ui()?;
+                mail::locate(&self.state, params(request)?).await
+            }
             methods::MESSAGE_GET => {
                 let params: MessageRef = params(request)?;
                 self.allow_message(Access::Read, params.id).await?;

@@ -1458,8 +1458,12 @@ function handle(cmd: string, args: Args): unknown {
         remote_images: message.remote_images,
         images_from_sender: imagesFrom(accountOfMailbox(message.mailboxId)?.account.id ?? "", message.from?.address),
         attachments: message.attachments,
+        link: `regards://message/${message.id}`,
       };
     }
+    case "message_locate":
+      // The preview's messages have no Message-ID: their links are by number.
+      return { id: null };
     case "message_labels":
       return { messages: (args.ids as number[]).map((id) => ({ id, labels: [...(labels.get(id) ?? [])].sort((a, b) => a - b) })) };
     case "message_set_labels": {

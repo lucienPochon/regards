@@ -474,6 +474,11 @@ function ThreadMessage({
     if (ready) {
       extra.push(
         {
+          label: "Copy link",
+          icon: "link",
+          onSelect: () => void navigator.clipboard?.writeText(ready.link ?? `regards://message/${message.id}`).catch(() => {}),
+        },
+        {
           label: "Copy as Markdown",
           icon: "copy",
           onSelect: () => void navigator.clipboard?.writeText(asMarkdown(ready)).catch(() => {}),
