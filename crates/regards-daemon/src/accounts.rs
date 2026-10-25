@@ -625,6 +625,9 @@ pub(crate) async fn mailboxes(state: &State, params: AccountRef) -> Result<Value
 
 pub(crate) async fn sync_now(state: &Arc<State>, params: AccountRef) -> Result<Value, RpcError> {
     ensure_exists(state, &params.account_id).await?;
+    // Asked for mail, perhaps because the network is back: push connections
+    // waiting to try again try now too.
+    state.watchers.reconnect_now();
     let outcome = sync::sync_account(state, &params.account_id).await;
     if let Some(Ok(_)) = &outcome {
         // After a folder was rebuilt, only its newest messages are back.

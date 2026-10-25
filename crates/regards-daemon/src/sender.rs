@@ -50,6 +50,30 @@ impl Outbox {
     pub(crate) fn wake(&self) {
         self.notify.notify_one();
     }
+
+    /// The account's server answers again, perhaps after an outage: what
+    /// waits out a retry delay (up to [`MAX_RETRY`]) goes now.
+    pub(crate) async fn retry_now(state: &State, account_id: &str) {
+        let (id, now) = (account_id.to_owned(), now_ms());
+        // Read first: most connections find nothing waiting, and a write would notify every client.
+        match state
+            .store
+            .read(move |conn| outbox::waiting_retry(conn, &id, now))
+            .await
+        {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(error) => return tracing::warn!(%error, "cannot read the outbox"),
+        }
+        let id = account_id.to_owned();
+        match state.store.write(move |tx| outbox::retry_now(tx, &id, now)).await {
+            Ok(moved) => {
+                tracing::info!(account = %account_id, sends = moved.value, "connected again: waiting sends go now");
+                state.outbox.wake();
+            }
+            Err(error) => tracing::warn!(%error, "cannot retry waiting sends"),
+        }
+    }
 }
 
 pub(crate) async fn run(state: Arc<State>) {

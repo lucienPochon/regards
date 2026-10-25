@@ -192,8 +192,20 @@ pub fn retry_later(tx: &Transaction<'_>, id: i64, error: &str, next: i64) -> Res
     Ok(())
 }
 
+/// Whether an account has entries waiting out a retry delay (what
+/// [`retry_now`] would move), read before writing: most reconnects find none.
+pub fn waiting_retry(conn: &Connection, account_id: &str, now: i64) -> Result<bool, StoreError> {
+    Ok(conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM outbox \
+         WHERE account_id = ?1 AND state = 'queued' AND executor = 'device' AND attempts > 0 AND next_attempt_at > ?2)",
+        params![account_id, now],
+        |row| row.get(0),
+    )?)
+}
+
 /// An account's entries waiting to try again go at once, not before their
-/// undo window or time (its sign-in was renewed). Returns how many.
+/// undo window or time (its sign-in was renewed, or its server answers
+/// again). Returns how many.
 pub fn retry_now(tx: &Transaction<'_>, account_id: &str, now: i64) -> Result<usize, StoreError> {
     Ok(tx.execute(
         "UPDATE outbox SET next_attempt_at = MAX(undo_until, COALESCE(send_at, 0), ?2) \
@@ -675,5 +687,38 @@ mod tests {
                 .unwrap()
                 .sending
         );
+    }
+
+    #[tokio::test]
+    async fn a_send_waiting_out_a_retry_goes_once_the_server_answers_again() {
+        let (_temp, store, account, draft) = store_with_draft().await;
+        let a = account.clone();
+        let id = store
+            .write(move |tx| queue(tx, &entry(&a, draft, 0), 0))
+            .await
+            .unwrap()
+            .value;
+        let a = account.clone();
+        assert!(
+            !store.read(move |c| waiting_retry(c, &a, 1_000)).await.unwrap(),
+            "never tried yet"
+        );
+        assert!(store.write(move |tx| claim(tx, id, 0)).await.unwrap().value);
+        store
+            .write(move |tx| retry_later(tx, id, "offline", 600_000))
+            .await
+            .unwrap();
+        let a = account.clone();
+        assert!(store.read(move |c| waiting_retry(c, &a, 1_000)).await.unwrap());
+        assert!(store.read(move |c| due(c, 1_000)).await.unwrap().is_empty());
+        let a = account.clone();
+        assert_eq!(store.write(move |tx| retry_now(tx, &a, 1_000)).await.unwrap().value, 1);
+        assert_eq!(
+            store.read(move |c| due(c, 1_000)).await.unwrap().len(),
+            1,
+            "due at once"
+        );
+        let a = account.clone();
+        assert!(!store.read(move |c| waiting_retry(c, &a, 1_000)).await.unwrap());
     }
 }
