@@ -7,7 +7,8 @@ import type { Section } from "./smart";
  * account at once (all inboxes, all sent mail …); a `mailbox` view is one
  * folder of one account. Drafts and the Outbox are kept by the daemon, not on
  * the server. A `marked` view is what is pinned, snoozed or set aside, kept on
- * this device, across accounts. A `section` view is one Smart Inbox section
+ * this device, across accounts (or the invitations to answer, from the
+ * inbox). A `section` view is one Smart Inbox section
  * (Priority, Newsletters …) of every inbox, or of the one it was opened from.
  */
 export type View =
@@ -23,6 +24,7 @@ export const MARKED_LABELS: Record<MessageView, string> = {
   snoozed: "Snoozed",
   reminders: "Reminders",
   aside: "Set aside",
+  invitations: "Invitations",
 };
 
 export const MARKED_ICONS: Record<MessageView, IconName> = {
@@ -30,6 +32,7 @@ export const MARKED_ICONS: Record<MessageView, IconName> = {
   snoozed: "clock",
   reminders: "bell",
   aside: "aside",
+  invitations: "calendar",
 };
 
 /** The sidebar order, under the inbox. */

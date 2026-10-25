@@ -835,7 +835,7 @@ export function EmailGroupsPage({ accounts, onBack }: { accounts: AccountSummary
       <Option
         icon="clock"
         label="Where groups sit"
-        description="Notifications, Newsletters and Pinned, each as one row of the Smart Inbox."
+        description="Notifications, Newsletters, Invitations and Pinned, each as one row of the Smart Inbox."
       >
         <Select
           label="Where groups sit"
@@ -852,6 +852,7 @@ export function EmailGroupsPage({ accounts, onBack }: { accounts: AccountSummary
         [
           { key: "notifications", label: "Notifications", icon: "bell" },
           { key: "newsletters", label: "Newsletters", icon: "newspaper" },
+          { key: "invitations", label: "Invitations", icon: "calendar" },
           { key: "pinned", label: "Pinned", icon: "pin" },
         ] as const
       ).map((category) => (
