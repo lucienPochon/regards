@@ -121,6 +121,7 @@ export function ViewChooser({
   current,
   onChoose,
   accounts,
+  forAccount,
   onSettings,
   onClose,
 }: {
@@ -129,6 +130,11 @@ export function ViewChooser({
   onChoose: (view: InboxView) => void;
   /** With several accounts: all of them, or one. */
   accounts: { label: string; active: boolean; onSelect: () => void }[];
+  /**
+   * One account's inbox is open: the view chosen is that inbox's own.
+   * `own` when it has one; `onShared` goes back to the one of all inboxes.
+   */
+  forAccount?: { label: string; own: boolean; onShared: () => void };
   onSettings: () => void;
   onClose: () => void;
 }) {
@@ -200,6 +206,26 @@ export function ViewChooser({
             </button>
           ))}
         </div>
+        {forAccount && (
+          <p className="chooser-note muted">
+            For {forAccount.label} only.
+            {forAccount.own && (
+              <>
+                {" "}
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() => {
+                    forAccount.onShared();
+                    onClose();
+                  }}
+                >
+                  Look like the other inboxes
+                </button>
+              </>
+            )}
+          </p>
+        )}
         {accounts.length > 0 && (
           <div className="chooser-accounts">
             {accounts.map((account) => (

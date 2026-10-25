@@ -189,6 +189,7 @@ export const TOUR: Group[] = [
       { id: "signup-oauth-only", label: "Sign-up › Outlook.com", note: "Microsoft's own sign-in only.", params: { accounts: "0" }, steps: [...signUp("ada@outlook.com"), "text:button=Continue"] },
       { id: "signup-no-imap", label: "Sign-up › No mail apps", note: "Proton Mail, Tuta, HEY: said under the address, before any password.", params: { accounts: "0" }, steps: signUp("ada@proton.me") },
       { id: "accounts", label: "Accounts", note: "Sync, addresses and signatures, details, remove.", params: { accounts: "2" }, steps: settings("Accounts") },
+      { id: "inbox-views", label: "An inbox view per account", note: "Settings › Inbox: each account's own inbox can look its own way; the inbox's view chooser sets it too.", params: { accounts: "2" }, steps: settings("Inbox") },
       { id: "account-details", label: "An account's details", note: "Your name, its label in Regards, colour, and the unified inbox.", params: { accounts: "2" }, steps: settings("Accounts", "text:button=Details") },
       { id: "identities", label: "Addresses", note: "Send as an alias.", steps: settings("Accounts", "text:button=Addresses") },
       { id: "add-from-menu", label: "Add an account › From the ⌄ menu", note: "Under Accounts…: the same steps, in a window over the mail.", steps: ["wait:600", "click:.caption-btn[aria-label=Menu]"] },

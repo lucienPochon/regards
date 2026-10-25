@@ -21,7 +21,7 @@ import { type Screening, setScreening } from "./smart";
 import { TemplatesEditor } from "./TemplatesEditor";
 import type { AccountMail, MailState, ServiceCheck } from "./mail";
 import { MOD_KEY, shortcutList, useShortcuts } from "./shortcuts";
-import { ACCOUNT_COLOURS, COLOUR_NAMES, accountColour, setPrefs, usePrefs } from "./prefs";
+import { ACCOUNT_COLOURS, COLOUR_NAMES, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
 import { Choice, LinkRow, Option, Select, Toggle } from "./SettingsControls";
 import {
   AccessibilityPage,
@@ -645,6 +645,7 @@ function InboxTab({
   const [problem, setProblem] = useState<string | null>(null);
   const [groups, setGroups] = useState(false);
   const [blocked, setBlocked] = useState(false);
+  const prefs = usePrefs();
   if (groups) return <EmailGroupsPage accounts={accounts} onBack={() => setGroups(false)} />;
   if (blocked) return <BlockedSendersPage accounts={accounts} onBack={() => setBlocked(false)} />;
   const screen = (mode: Screening) => {
@@ -677,6 +678,25 @@ function InboxTab({
           onChange={(inboxView) => onLayout({ inboxView })}
         />
       </Option>
+      {accounts.length > 1 &&
+        accounts.map((account) => (
+          <Option key={account.id} icon="inbox" label={accountLabel(prefs, account)} description="Its own inbox, opened from the sidebar.">
+            <Select
+              label={`Inbox view of ${account.email}`}
+              value={layout.accountViews[account.id] ?? "shared"}
+              options={[
+                { id: "shared", label: "As above" },
+                { id: "smart", label: "By priority" },
+                { id: "cards", label: "By category" },
+                { id: "date", label: "By date" },
+              ]}
+              onChange={(choice) => {
+                const { [account.id]: _left, ...rest } = layout.accountViews;
+                onLayout({ accountViews: choice === "shared" ? rest : { ...rest, [account.id]: choice } });
+              }}
+            />
+          </Option>
+        ))}
       <Option
         icon="people"
         label="New senders"
@@ -698,7 +718,7 @@ function InboxTab({
       <LinkRow
         icon="newspaper"
         label="Email groups"
-        detail="Where Notifications, Newsletters and Pinned sit, and which accounts are in the unified inbox"
+        detail="Where Notifications, Newsletters, Invitations and Pinned sit, and which accounts are in the unified inbox"
         onOpen={() => setGroups(true)}
       />
       <LinkRow
