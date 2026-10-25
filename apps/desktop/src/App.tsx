@@ -53,7 +53,7 @@ import {
 import { Confirm, type ConfirmRequest } from "./Confirm";
 import { DraftsList } from "./DraftsList";
 import { Icon, type IconName } from "./icons";
-import { type Layout, LIST_MAX, LIST_MIN, clampList, useLayout } from "./layout";
+import { type Layout, LIST_MAX, LIST_MIN, SIDE_MAX, SIDE_MIN, clampList, clampSide, useLayout } from "./layout";
 import {
   type ListItem,
   type MessageFeed,
@@ -1542,6 +1542,45 @@ export function App() {
     },
   };
 
+  // The open sidebar's edge, the same way.
+  const appRoot = useRef<HTMLDivElement>(null);
+  const sideDrag = useRef<{ x: number; width: number } | null>(null);
+  const sideResizer = (
+    <div
+      className="side-resizer"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize the sidebar"
+      aria-valuenow={layout.sidebarWidth}
+      aria-valuemin={SIDE_MIN}
+      aria-valuemax={SIDE_MAX}
+      tabIndex={0}
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        sideDrag.current = { x: event.clientX, width: layout.sidebarWidth };
+        event.currentTarget.classList.add("dragging");
+      }}
+      onPointerMove={(event) => {
+        if (!sideDrag.current) return;
+        const width = clampSide(sideDrag.current.width + event.clientX - sideDrag.current.x);
+        appRoot.current?.style.setProperty("--side-w", `${width}px`);
+      }}
+      onPointerUp={(event) => {
+        if (!sideDrag.current) return;
+        event.currentTarget.classList.remove("dragging");
+        setLayout({ sidebarWidth: clampSide(sideDrag.current.width + event.clientX - sideDrag.current.x) });
+        sideDrag.current = null;
+      }}
+      onDoubleClick={() => setLayout({ sidebarWidth: 238 })}
+      onKeyDown={(event) => {
+        const by = event.key === "ArrowLeft" ? -16 : event.key === "ArrowRight" ? 16 : 0;
+        if (!by) return;
+        event.preventDefault();
+        setLayout({ sidebarWidth: clampSide(layout.sidebarWidth + by) });
+      }}
+    />
+  );
+
   const service =
     check.state === "failed"
       ? `Could not reach the background service: ${check.message}`
@@ -2095,6 +2134,8 @@ export function App() {
 
   return (
     <div
+      ref={appRoot}
+      style={{ "--side-w": `${layout.sidebarWidth}px` } as CSSProperties}
       className={[
         "app",
         layout.locked ? "locked" : "",
@@ -2112,6 +2153,7 @@ export function App() {
         {...sidebarProps}
         expanded={layout.locked}
         locked={layout.locked}
+        resizer={layout.locked ? sideResizer : undefined}
         onToggleLock={() => setLayout({ locked: !layout.locked })}
         onExpand={() => setOverlay(true)}
       />

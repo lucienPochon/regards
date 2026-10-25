@@ -9,11 +9,13 @@ export interface SidebarPrefs {
   recents: View[];
   /** Standard rows taken out of the sidebar (by view key); they stay in the panel. */
   hidden: string[];
+  /** Rows the person put in another order (by view key), each section's together. */
+  order: string[];
 }
 
 const KEY = "regards.sidebar";
 const RECENTS = 5;
-const EMPTY: SidebarPrefs = { starred: [], recents: [], hidden: [] };
+const EMPTY: SidebarPrefs = { starred: [], recents: [], hidden: [], order: [] };
 
 function load(): SidebarPrefs {
   try {
@@ -22,6 +24,7 @@ function load(): SidebarPrefs {
       starred: Array.isArray(saved?.starred) ? saved.starred : [],
       recents: Array.isArray(saved?.recents) ? saved.recents : [],
       hidden: Array.isArray(saved?.hidden) ? saved.hidden.filter((key) => typeof key === "string") : [],
+      order: Array.isArray(saved?.order) ? saved.order.filter((key) => typeof key === "string") : [],
     };
   } catch {
     return EMPTY;
@@ -37,6 +40,20 @@ export interface SidebarChanges {
   clearRecents: () => void;
   hide: (view: View) => void;
   show: (view: View) => void;
+  /** A section's rows (by view key), in their new order. */
+  arrange: (keys: string[]) => void;
+}
+
+/** Rows in the order the person put them; any never moved keep their place after those. */
+export function arranged<T>(rows: T[], keyOf: (row: T) => string, order: string[]): T[] {
+  const place = (row: T, index: number) => {
+    const at = order.indexOf(keyOf(row));
+    return at === -1 ? order.length + index : at;
+  };
+  return rows
+    .map((row, index) => ({ row, place: place(row, index) }))
+    .sort((one, other) => one.place - other.place)
+    .map((entry) => entry.row);
 }
 
 export function useSidebarPrefs(): [SidebarPrefs, SidebarChanges] {
@@ -53,6 +70,7 @@ export function useSidebarPrefs(): [SidebarPrefs, SidebarChanges] {
   const changes: SidebarChanges = {
     star: (view) =>
       setPrefs((now) => ({
+        ...now,
         starred: [...without(now.starred, view), view],
         recents: without(now.recents, view),
         hidden: now.hidden.filter((key) => key !== viewKey(view)),
@@ -73,6 +91,7 @@ export function useSidebarPrefs(): [SidebarPrefs, SidebarChanges] {
         hidden: [...now.hidden.filter((key) => key !== viewKey(view)), viewKey(view)],
       })),
     show: (view) => setPrefs((now) => ({ ...now, hidden: now.hidden.filter((key) => key !== viewKey(view)) })),
+    arrange: (keys) => setPrefs((now) => ({ ...now, order: [...keys, ...now.order.filter((key) => !keys.includes(key))] })),
   };
   return [prefs, changes];
 }

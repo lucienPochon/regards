@@ -8,6 +8,8 @@ export interface Layout {
   locked: boolean;
   /** The message list's width in split view, in pixels. */
   listWidth: number;
+  /** The open sidebar's width, in pixels. */
+  sidebarWidth: number;
   /** The inbox by Smart Inbox section ("smart"), or simply newest first ("date"). */
   inboxView: "smart" | "date" | "cards";
   /** In place ("single"): a handle on the list's edge opens the reader beside it. */
@@ -22,9 +24,12 @@ export const LAYOUT_KEY = "regards.layout";
 export const LAYOUT_VERSION = 2;
 export const LIST_MIN = 320;
 export const LIST_MAX = 640;
-const DEFAULT: Layout = { mode: "split", locked: true, listWidth: 460, inboxView: "date", handle: true };
+const DEFAULT: Layout = { mode: "split", locked: true, listWidth: 460, sidebarWidth: 238, inboxView: "date", handle: true };
 
 export const clampList = (width: number) => Math.round(Math.min(LIST_MAX, Math.max(LIST_MIN, width)));
+export const SIDE_MIN = 200;
+export const SIDE_MAX = 360;
+export const clampSide = (width: number) => Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, width)));
 
 function load(): Layout {
   try {
@@ -33,6 +38,7 @@ function load(): Layout {
       mode: saved?.version === LAYOUT_VERSION && saved.mode === "single" ? "single" : "split",
       locked: saved?.locked !== false,
       listWidth: typeof saved?.listWidth === "number" ? clampList(saved.listWidth) : DEFAULT.listWidth,
+      sidebarWidth: typeof saved?.sidebarWidth === "number" ? clampSide(saved.sidebarWidth) : DEFAULT.sidebarWidth,
       inboxView:
         saved?.inboxView === "smart" || saved?.inboxView === "cards" || saved?.inboxView === "date"
           ? saved.inboxView
