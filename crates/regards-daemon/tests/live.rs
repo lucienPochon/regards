@@ -2788,6 +2788,41 @@ async fn live_the_smart_inbox_sorts_by_section_and_follows_corrections() {
     assert_eq!(section_of(&page, "Sale again"), Some(Section::People));
     assert_eq!(section_of(&page, "Garden"), Some(Section::People));
 
+    // Everyone at Lena's domain made a priority: her mail goes to Priority.
+    let _: SenderSetResult = desktop
+        .call(
+            methods::SENDER_SET,
+            SenderSetParams {
+                account_id: account.id.clone(),
+                address: "@Example.net".into(),
+                policy: None,
+                priority: true,
+            },
+        )
+        .await
+        .unwrap();
+    let page = messages(&mut desktop, inbox).await;
+    assert_eq!(section_of(&page, "Garden"), Some(Section::Priority));
+    let garden = page.messages.iter().find(|m| m.subject == "Garden").unwrap().id;
+    let why: ExplainResult = desktop
+        .call(methods::MESSAGE_EXPLAIN, MessageRef { id: garden })
+        .await
+        .unwrap();
+    let domain = why.domain.expect("her domain's choices");
+    assert_eq!((domain.address.as_str(), domain.priority), ("@example.net", true));
+    let refused: Result<SenderSetResult, _> = desktop
+        .call(
+            methods::SENDER_SET,
+            SenderSetParams {
+                account_id: account.id.clone(),
+                address: "@".into(),
+                policy: None,
+                priority: true,
+            },
+        )
+        .await;
+    assert!(refused.is_err(), "not a domain");
+
     seed.logout().await;
     handle.abort();
 }

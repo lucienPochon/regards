@@ -4899,6 +4899,15 @@ button.list-title:hover {
   text-align: left;
 }
 
+/* Everyone at their domain: what is chosen for all of them. */
+.sender-domain > span {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
 .sender-row > .icon {
   flex: none;
   color: var(--muted);

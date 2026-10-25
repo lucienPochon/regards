@@ -1614,6 +1614,10 @@ pub struct ExplainResult {
     pub reason: Reason,
     /// None for a message without a sender's address.
     pub sender: Option<SenderView>,
+    /// The choices for everyone at the sender's domain (`@example.org`),
+    /// which `sender` includes; none without a domain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain: Option<SenderView>,
 }
 
 /// Parameters of [`methods::SENDER_SET`].
