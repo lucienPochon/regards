@@ -22,14 +22,14 @@ export function AttachmentTiles({
 }: {
   messageId: number;
   attachments: Attachment[];
-  /** Space opens the viewer on the first file (the open message's), as it closes it. */
+  /** The preview key (Space) opens the viewer on the first file (the open message's), as it closes it. */
   spaceOpens?: boolean;
 }) {
   const files: Placed[] = attachments
     .map((attachment, index) => ({ index, attachment }))
     .filter((file) => !file.attachment.inline);
   const [viewing, setViewing] = useState<number | null>(null);
-  useShortcuts(spaceOpens && files.length > 0 && viewing === null ? { " ": () => setViewing(0) } : {});
+  useShortcuts(spaceOpens && files.length > 0 && viewing === null ? { preview: () => setViewing(0) } : {});
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   if (files.length === 0) return null;

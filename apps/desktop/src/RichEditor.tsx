@@ -1,10 +1,11 @@
-import { type Editor, Extension } from "@tiptap/core";
+import type { Editor } from "@tiptap/core";
 import Image from "@tiptap/extension-image";
 import { TextStyle } from "@tiptap/extension-text-style";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useRef, useState } from "react";
 import { IMAGE_TYPES } from "./images";
+import { commandOf } from "./shortcuts";
 // ProseMirror's base styles as files: the app's CSP allows no injected <style>.
 import "prosemirror-view/style/prosemirror.css";
 import "prosemirror-gapcursor/style/gapcursor.css";
@@ -117,29 +118,20 @@ export function RichEditor({
       }),
       InlineImage,
       Colours,
-      // Cmd/Ctrl+Enter sends (with Shift, and Done), before the line break that would otherwise take it.
-      Extension.create({
-        name: "sendKey",
-        priority: 1000,
-        addKeyboardShortcuts() {
-          return {
-            "Mod-Enter": () => {
-              send.current(false);
-              return true;
-            },
-            "Mod-Shift-Enter": () => {
-              send.current(true);
-              return true;
-            },
-          };
-        },
-      }),
     ],
     content: initial,
     injectCSS: false,
     editable: !disabled,
     autofocus: autofocus ? "start" : false,
     editorProps: {
+      // Send's keys (Cmd/Ctrl+Enter, with Shift and Done, unless changed) before the
+      // editor's own: a line break would otherwise take Cmd/Ctrl+Enter.
+      handleKeyDown: (_view, event) => {
+        const command = commandOf(event, ["send", "sendDone"]);
+        if (command === null) return false;
+        send.current(command === "sendDone");
+        return true;
+      },
       attributes: { class: "compose-body", "aria-label": "Message", role: "textbox", "aria-multiline": "true" },
       // Pasted images are stored first: the editor shows them once they are.
       handlePaste: (_view, event) => {

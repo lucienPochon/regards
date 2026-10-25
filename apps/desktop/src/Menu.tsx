@@ -1,6 +1,6 @@
 import { type KeyboardEvent, useLayoutEffect, useRef, useState, useId } from "react";
 import { Icon, type IconName } from "./icons";
-import { MOD_KEY, useShortcuts } from "./shortcuts";
+import { MOD_KEY, keyText, useShortcuts } from "./shortcuts";
 import { t } from "./i18n";
 
 export interface MenuItem {
@@ -46,10 +46,10 @@ export interface MenuRequest {
   onDismiss?: () => void;
 }
 
-/** "Shift+U" → ["Shift", "U"]; "Mod+k" → [Ctrl or ⌘, "K"]; a lone "+" stays a key. */
+/** "Shift+U" → ["Shift", "U"]; "Mod+k" → [Ctrl or ⌘, "K"]; a "+" key stays a key ("Mod++"); named keys as the language names them. */
 export function keyCaps(keys: string): string[] {
-  if (keys === "+") return ["+"];
-  return keys.split("+").map((part) => (part === "Mod" ? MOD_KEY : part.length === 1 ? part.toUpperCase() : part));
+  const parts = keys === "+" ? ["+"] : keys.endsWith("++") ? [...keys.slice(0, -2).split("+"), "+"] : keys.split("+");
+  return parts.map((part) => (part === "Mod" ? MOD_KEY : part !== " " && part.length === 1 ? part.toUpperCase() : keyText(part)));
 }
 
 export function anchorOf(element: Element, align: "start" | "end" = "start"): Anchor {

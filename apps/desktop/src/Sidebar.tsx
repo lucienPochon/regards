@@ -7,7 +7,7 @@ import type { AccountMail, MailState } from "./mail";
 import { type Anchor, type MenuEntry, type MenuRequest, anchorOf } from "./Menu";
 import { type SidebarChanges, type SidebarPrefs, arranged } from "./sidebar-prefs";
 import { accountColour, accountLabel, usePrefs } from "./prefs";
-import { MOD_KEY, useShortcuts } from "./shortcuts";
+import { useShortcuts, withKey } from "./shortcuts";
 import { t } from "./i18n";
 import { useOnline } from "./online";
 import { MARKED_ICONS, MARKED_LABELS, ROLE_ICONS, ROLE_LABELS, type View, depth, leafName, sameView, viewKey } from "./views";
@@ -700,7 +700,7 @@ function FolderPanel({
                   <button
                     type="button"
                     className="panel-new"
-                    title={t("New folder in {account} ({key})", { account: account.account.email, key: `${MOD_KEY}+Shift+U` })}
+                    title={withKey(t("New folder in {account}", { account: account.account.email }), "newFolder")}
                     aria-label={t("New folder in {account}", { account: account.account.email })}
                     onClick={() => onNewFolder(account.account.id)}
                   >

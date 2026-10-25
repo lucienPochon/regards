@@ -27,10 +27,16 @@ describe("digit keys by their place", () => {
     expect(placeName(press("Digit3", { ctrlKey: true, altKey: true }))).toBe("Mod+Alt+3");
   });
 
+  it("name Ctrl and a digit, with Shift or not, and the backslash key", () => {
+    expect(placeName(press("Digit1", { ctrlKey: true }))).toBe("Mod+1");
+    expect(placeName(press("Digit1", { shiftKey: true, ctrlKey: true }))).toBe("Mod+Shift+1");
+    expect(placeName(press("Backslash", { shiftKey: true, ctrlKey: true }))).toBe("Mod+Shift+\\");
+  });
+
   it("leave other keys to their typed name", () => {
     expect(placeName(press("Digit1"))).toBe(null);
     expect(placeName(press("KeyA", { shiftKey: true }))).toBe(null);
-    expect(placeName(press("Digit1", { shiftKey: true, ctrlKey: true }))).toBe(null);
+    expect(placeName(press("Digit1", { altKey: true }))).toBe(null);
   });
 });
 

@@ -29,7 +29,7 @@ import { rememberOpened } from "./recent-opened";
 import { openUrl } from "./background";
 import { useDark } from "./theme";
 import { SourceDialog } from "./SourceDialog";
-import { MOD_KEY, useShortcuts } from "./shortcuts";
+import { useShortcuts, withKey } from "./shortcuts";
 import { appLocale, t, tn } from "./i18n";
 
 type Load = { state: "loading" } | { state: "ready"; detail: MessageDetail } | { state: "failed"; message: string };
@@ -206,10 +206,10 @@ export function ReadingPane({
   const standard = prefs.keySet === "standard";
   useShortcuts({
     Escape: onClose,
-    ...(onStep ? { j: () => onStep(1), k: () => onStep(-1) } : {}),
+    ...(onStep ? { next: () => onStep(1), previous: () => onStep(-1) } : {}),
     ...(onStep && standard ? { ArrowRight: () => onStep(1), ArrowLeft: () => onStep(-1) } : {}),
     ...(load.state === "ready" ? actionKeys(actions) : {}),
-    ...(load.state === "ready" && standard ? { p: () => printMessage(load.detail) } : {}),
+    ...(load.state === "ready" ? { print: () => printMessage(load.detail) } : {}),
   });
 
   const entries: ThreadEntry[] =
@@ -223,7 +223,7 @@ export function ReadingPane({
     if (!prefs.collapseOlder && allIds) setExpanded(new Set(allIds.split(",").map(Number)));
   }, [prefs.collapseOlder, allIds]);
 
-  // Every message of the conversation open, or the older ones folded again (Shift+O, O).
+  // Every message of the conversation open, or the older ones folded again (Shift+O, o unless changed).
   const conversation =
     entries.length > 1
       ? {
@@ -237,7 +237,7 @@ export function ReadingPane({
             }),
         }
       : undefined;
-  useShortcuts(conversation ? { "Shift+O": conversation.openAll, o: conversation.foldOlder } : {});
+  useShortcuts(conversation ? { openAll: conversation.openAll, foldOlder: conversation.foldOlder } : {});
 
   const toggle = (id: number) =>
     setExpanded((now) => {
@@ -291,7 +291,7 @@ export function ReadingPane({
           <button
             type="button"
             className="icon-btn"
-            title={t("More ({key})", { key: `${MOD_KEY}+K` })}
+            title={withKey(t("More"), "commands")}
             aria-label={t("More")}
             disabled={load.state !== "ready"}
             onClick={() => onPalette(actions, subject)}
@@ -429,7 +429,7 @@ function ThreadMessage({
   // Find in this message (Ctrl+Shift+F), the open one's only: in its frame, or its text here.
   const [finding, setFinding] = useState(false);
   const textBody = useRef<HTMLPreElement>(null);
-  useShortcuts(given !== null && given.state === "ready" ? { "Mod+Shift+F": () => setFinding(true) } : {});
+  useShortcuts(given !== null && given.state === "ready" ? { find: () => setFinding(true) } : {});
   // The HTML frame is as tall as the message: its own script says how tall (mail_frame.rs).
   // It also passes on keys pressed in the message, and where the link under the pointer goes.
   const frame = useRef<HTMLIFrameElement>(null);
@@ -627,7 +627,7 @@ function ThreadMessage({
           )}
         </button>
         <time className="when">{when}</time>
-        <button type="button" className="icon-btn small" title={t("More ({key})", { key: `${MOD_KEY}+K` })} aria-label={t("More")} aria-haspopup="dialog" onClick={more}>
+        <button type="button" className="icon-btn small" title={withKey(t("More"), "commands")} aria-label={t("More")} aria-haspopup="dialog" onClick={more}>
           <Icon name="more" size={15} />
         </button>
       </div>

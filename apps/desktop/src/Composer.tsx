@@ -47,7 +47,7 @@ import { fileKind, fileSize, laterDate } from "./format";
 import { Icon } from "./icons";
 import { type Anchor, anchorOf, Menu, type MenuEntry, type MenuRequest } from "./Menu";
 import { getPrefs } from "./prefs";
-import { MOD_KEY, useShortcuts } from "./shortcuts";
+import { type CommandId, commandOf, useShortcuts, withKey } from "./shortcuts";
 import { t } from "./i18n";
 
 // The editor (Tiptap and ProseMirror) loads when a message is first written.
@@ -360,15 +360,7 @@ export function Composer({
     if (saveRef) saveRef.current = flush;
   }, [flush, saveRef]);
 
-  useShortcuts(
-    {
-      Escape: () => void close(),
-      "Mod+Shift+T": () => {
-        if (!locked) void insertTemplate({ x: 0, y: 0 });
-      },
-    },
-    { modal: true },
-  );
+  useShortcuts({ Escape: () => void close() }, { modal: true });
 
   const change = (name: keyof Fields) => (event: { target: { value: string } }) => {
     setError(null);
@@ -611,28 +603,32 @@ export function Composer({
     window.requestAnimationFrame(() => field.current?.focus());
   };
 
-  // Spark's composer keys, with Ctrl on Windows and Linux: 1–6 go to From,
-  // Subject, To, Cc, Bcc and the text; Shift+A attaches; Shift+\ deletes the
-  // draft; Enter sends, Shift+Enter sends and files the conversation as Done.
+  // The composer's keys, from any field (Settings › Shortcuts › Writing): with Ctrl
+  // (Cmd on a Mac), unless changed, Enter sends, Shift+Enter sends and files the
+  // conversation as Done, Shift+A attaches, Shift+T inserts a template, Shift+\
+  // deletes the draft, and 1–6 go to From, Subject, To, Cc, Bcc and the text.
   const keys = (event: KeyboardEvent) => {
-    // The editor handles its own keys (Cmd/Ctrl+Enter sends from there too).
-    if (event.defaultPrevented || !(event.metaKey || event.ctrlKey) || event.altKey) return;
-    const field: Record<string, () => void> = {
-      Digit1: () => fromButton.current?.focus(),
-      Digit2: () => subjectField.current?.focus(),
-      Digit3: () => toField.current?.focus(),
-      Digit4: () => copyField(ccField),
-      Digit5: () => copyField(bccField),
-      Digit6: () => editor.current?.commands.focus(),
+    // The editor sends from its text itself (RichEditor), before its own keys.
+    if (event.defaultPrevented) return;
+    const run: Partial<Record<CommandId, () => void>> = {
+      send: () => void send(null, false),
+      sendDone: () => void send(null, true),
+      attach: () => void attach(),
+      template: () => {
+        if (!locked) void insertTemplate({ x: 0, y: 0 });
+      },
+      discard: () => void discard(),
+      toFrom: () => fromButton.current?.focus(),
+      toSubject: () => subjectField.current?.focus(),
+      toTo: () => toField.current?.focus(),
+      toCc: () => copyField(ccField),
+      toBcc: () => copyField(bccField),
+      toText: () => editor.current?.commands.focus(),
     };
-    let run: (() => void) | undefined;
-    if (event.key === "Enter") run = () => void send(null, event.shiftKey);
-    else if (event.shiftKey && event.key.toLowerCase() === "a") run = () => void attach();
-    else if (event.shiftKey && event.code === "Backslash") run = () => void discard();
-    else if (!event.shiftKey) run = field[event.code];
-    if (!run) return;
+    const command = commandOf(event.nativeEvent, Object.keys(run) as CommandId[]);
+    if (command === null) return;
     event.preventDefault();
-    run();
+    run[command]?.();
   };
 
   // Escape closes, even from the text: the editor would otherwise take it (to select the
@@ -655,13 +651,13 @@ export function Composer({
   const tools = (
     <div className="composer-tools">
       <span className="composer-status">{status}</span>
-      <button type="button" className="icon-btn" title={t("Attach files")} aria-label={t("Attach files")} onClick={() => void attach()} disabled={locked}>
+      <button type="button" className="icon-btn" title={withKey(t("Attach files"), "attach")} aria-label={t("Attach files")} onClick={() => void attach()} disabled={locked}>
         <Icon name="paperclip" />
       </button>
       <button
         type="button"
         className="icon-btn danger"
-        title={t("Discard the draft")}
+        title={withKey(t("Discard the draft"), "discard")}
         aria-label={t("Discard the draft")}
         onClick={() => void discard()}
         disabled={Boolean(draft?.sending)}
@@ -672,7 +668,7 @@ export function Composer({
         <button
           type="button"
           className="icon-btn"
-          title={`Insert a template (${MOD_KEY}+Shift+T)`}
+          title={withKey(t("Insert a template"), "template")}
           aria-label={t("Insert a template")}
           onClick={(event) => void insertTemplate(anchorOf(event.currentTarget, "end"))}
           disabled={locked}
@@ -744,7 +740,7 @@ export function Composer({
       <button
         type="button"
         className="send-button"
-        title={`Send (${MOD_KEY}+Enter)`}
+        title={withKey(t("Send"), "send")}
         aria-label={t("Send")}
         onClick={() => void send()}
         disabled={locked || !hasRecipients}
