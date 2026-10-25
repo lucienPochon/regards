@@ -3,6 +3,7 @@ import { type AccountSummary, resyncAccount } from "./accounts";
 import type { ConfirmRequest } from "./Confirm";
 import { Icon } from "./icons";
 import { Select } from "./SettingsControls";
+import { t, tn } from "./i18n";
 
 /**
  * Support › Troubleshooting › Download an account again: for when an
@@ -25,12 +26,11 @@ export function DownloadAgain({
 
   const start = async () => {
     const ok = await confirm({
-      title: `Download ${account.email} again?`,
-      body:
-        "Its mail on this computer is dropped and downloaded again from the server, newest first. Nothing changes on the server. " +
-        "The account and its settings, drafts, the Outbox, pins, snoozes and reminders are kept. " +
-        "A reply still waiting in the Outbox goes out, but the message it answers won't show as answered.",
-      confirm: "Download again",
+      title: t("Download {account} again?", { account: account.email }),
+      body: t(
+        "Its mail on this computer is dropped and downloaded again from the server, newest first. Nothing changes on the server. The account and its settings, drafts, the Outbox, pins, snoozes and reminders are kept. A reply still waiting in the Outbox goes out, but the message it answers won't show as answered.",
+      ),
+      confirm: t("Download again"),
     });
     if (!ok) return;
     setState("working");
@@ -40,7 +40,11 @@ export function DownloadAgain({
       .then(
         (dropped) =>
           setSaid(
-            `${dropped === 1 ? "1 message" : `${dropped.toLocaleString()} messages`} dropped from this computer; the newest are coming back first.`,
+            tn(
+              dropped,
+              "1 message dropped from this computer; the newest are coming back first.",
+              "{count} messages dropped from this computer; the newest are coming back first.",
+            ),
           ),
         (failure: unknown) => setError(String(failure)),
       )
@@ -54,23 +58,23 @@ export function DownloadAgain({
           <Icon name="refresh" size={18} />
         </span>
         <span className="option-text">
-          <strong>Download an account again</strong>
+          <strong>{t("Download an account again")}</strong>
           <span aria-live="polite">
             {state === "working"
-              ? "Dropping its mail here… This can take up to half a minute."
-              : (said ?? "When an account's mail looks wrong here. The server is not touched.")}
+              ? t("Dropping its mail here… This can take up to half a minute.")
+              : (said ?? t("When an account's mail looks wrong here. The server is not touched."))}
           </span>
           <span className="download-again">
             {accounts.length > 1 && (
               <Select
-                label="Account to download again"
+                label={t("Account to download again")}
                 value={account.id}
                 options={accounts.map((one) => ({ id: one.id, label: one.email }))}
                 onChange={setAccountId}
               />
             )}
             <button type="button" className="btn small" onClick={() => void start()} disabled={state === "working"}>
-              Download again…
+              {t("Download again…")}
             </button>
           </span>
         </span>

@@ -8,6 +8,7 @@ import { Icon } from "./icons";
 import { coloursAsMarks, coloursAsStyles, fileBase64 } from "./images";
 import { LinkRow, Option, Select, SubPageHead } from "./SettingsControls";
 import { type Signature, SIGNATURE_MAX, listSignatures, removeSignature, saveSignature, setDefaultSignature } from "./signatures";
+import { t, tn } from "./i18n";
 
 const RichEditor = lazy(() => import("./RichEditor").then((module) => ({ default: module.RichEditor })));
 
@@ -63,40 +64,39 @@ export function SignaturesPage({
     setError(null);
     setDefaultSignature(identity.id, id === NONE ? null : id).then(reload, (failure: unknown) => setError(String(failure)));
   };
-  const options = [{ id: NONE, label: "No signature" }, ...(signatures ?? []).map((signature) => ({ id: signature.id, label: signature.name }))];
+  const options = [{ id: NONE, label: t("No signature") }, ...(signatures ?? []).map((signature) => ({ id: signature.id, label: signature.name }))];
 
   return (
     <>
       <div className="signatures-head">
-        <SubPageHead title="Signatures" onBack={onBack} />
+        <SubPageHead title={t("Signatures")} onBack={onBack} />
         <button type="button" className="btn small" onClick={() => setEditing("new")}>
           <Icon name="plus" size={15} />
-          New signature
+          {t("New signature")}
         </button>
       </div>
       <p className="muted settings-lead">
-        Added below what you write and above a quote, with its formatting and pictures. In a message, the signature menu next to the sender
-        switches it.
+        {t("Added below what you write and above a quote, with its formatting and pictures. In a message, the signature menu next to the sender switches it.")}
       </p>
       {error && (
         <p className="error small" role="alert">
           {error}
         </p>
       )}
-      <h4 className="settings-subhead">Default signatures</h4>
+      <h4 className="settings-subhead">{t("Default signatures")}</h4>
       {identities.map((identity) => (
         <Option key={identity.id} icon="user" label={identity.email} description={identity.name || undefined}>
           <Select
-            label={`Default signature for ${identity.email}`}
+            label={t("Default signature for {address}", { address: identity.email })}
             value={identity.signature_id ?? NONE}
             options={options}
             onChange={(id) => choose(identity, id)}
           />
         </Option>
       ))}
-      <h4 className="settings-subhead">All signatures</h4>
+      <h4 className="settings-subhead">{t("All signatures")}</h4>
       {signatures?.length === 0 && (
-        <p className="muted settings-note">None yet. A formal one and a short one for replies are a good start.</p>
+        <p className="muted settings-note">{t("None yet. A formal one and a short one for replies are a good start.")}</p>
       )}
       {signatures?.map((signature) => (
         <LinkRow
@@ -144,7 +144,7 @@ function SignatureEditor({
   const pictures = (files: File[]) => {
     for (const file of files) {
       if (file.size > PICTURE_MAX) {
-        setError(`“${file.name}” is too large for a signature: pictures there can be ${Math.round(PICTURE_MAX / 1024)} KB at most.`);
+        setError(t("“{name}” is too large for a signature: pictures there can be {size} KB at most.", { name: file.name, size: Math.round(PICTURE_MAX / 1024) }));
         continue;
       }
       void fileBase64(file).then((data) =>
@@ -166,12 +166,17 @@ function SignatureEditor({
   const remove = () => {
     if (!signature) return;
     void confirm({
-      title: `Delete “${signature.name}”?`,
+      title: t("Delete “{name}”?", { name: signature.name }),
       body:
         usedBy.length > 0
-          ? `${usedBy.join(", ")} ${usedBy.length === 1 ? "adds" : "add"} it by default, and will add no signature. Messages already written keep theirs.`
-          : "No address adds it by default. Messages already written keep theirs.",
-      confirm: "Delete",
+          ? tn(
+              usedBy.length,
+              "{addresses} adds it by default, and will add no signature. Messages already written keep theirs.",
+              "{addresses} add it by default, and will add no signature. Messages already written keep theirs.",
+              { addresses: usedBy.join(", ") },
+            )
+          : t("No address adds it by default. Messages already written keep theirs."),
+      confirm: t("Delete"),
       danger: true,
     }).then((ok) => {
       if (ok) run(() => removeSignature(signature.id));
@@ -180,23 +185,23 @@ function SignatureEditor({
 
   return (
     <div className="signature-editor">
-      <SubPageHead title={signature ? signature.name : "New signature"} onBack={onBack} />
+      <SubPageHead title={signature ? signature.name : t("New signature")} onBack={onBack} />
       <label className="signature-field">
-        <span>Name</span>
+        <span>{t("Name")}</span>
         <input
           className="input"
           value={name}
           maxLength={80}
-          placeholder="Formal, Short, In English…"
+          placeholder={t("Formal, Short, In English…")}
           onChange={(event) => setName(event.target.value)}
           autoFocus={signature === null}
         />
-        <span className="muted small">For you only: it names the signature in lists.</span>
+        <span className="muted small">{t("For you only: it names the signature in lists.")}</span>
       </label>
       <div className="signature-field">
-        <span>Text</span>
+        <span>{t("Text")}</span>
         <div className="signature-text">
-          <Suspense fallback={<p className="muted small">Opening the editor…</p>}>
+          <Suspense fallback={<p className="muted small">{t("Opening the editor…")}</p>}>
             <RichEditor
               initial={initial}
               onChange={written}
@@ -213,7 +218,7 @@ function SignatureEditor({
           </Suspense>
         </div>
         <span className="signature-count muted small">
-          Bold, colours, links and pictures (pasted) go with it. {body.length} / {SIGNATURE_MAX}
+          {t("Bold, colours, links and pictures (pasted) go with it.")} {body.length} / {SIGNATURE_MAX}
         </span>
       </div>
       {error && (
@@ -224,15 +229,15 @@ function SignatureEditor({
       <div className="signature-buttons">
         {signature && (
           <button type="button" className="btn small danger" onClick={remove} disabled={busy}>
-            Delete
+            {t("Delete")}
           </button>
         )}
         <span className="spacer" />
         <button type="button" className="btn small" onClick={onBack} disabled={busy}>
-          Cancel
+          {t("Cancel")}
         </button>
         <button type="button" className="btn small primary" onClick={save} disabled={busy || !ready}>
-          Save
+          {t("Save")}
         </button>
       </div>
     </div>

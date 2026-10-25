@@ -37,6 +37,7 @@ import {
   SupportPage,
 } from "./SettingsPages";
 import { useDialogFocus } from "./dialogFocus";
+import { appLocale, t } from "./i18n";
 
 export type SettingsTab =
   | "accounts"
@@ -56,25 +57,25 @@ export type SettingsTab =
 /** Grouped as in the nav; each item has its own colour. Accounts is the person's card above them. */
 const GROUPS: { id: SettingsTab; label: string; icon: IconName; tone: string }[][] = [
   [
-    { id: "agents", label: "Agents", icon: "agent", tone: "tone-indigo" },
-    { id: "assistant", label: "Assistant", icon: "bolt", tone: "tone-violet" },
+    { id: "agents", label: t("Agents"), icon: "agent", tone: "tone-indigo" },
+    { id: "assistant", label: t("Assistant"), icon: "bolt", tone: "tone-violet" },
   ],
   [
-    { id: "general", label: "General", icon: "settings", tone: "tone-slate" },
-    { id: "appearance", label: "Appearance", icon: "sun", tone: "tone-violet" },
-    { id: "notifications", label: "Notifications", icon: "bell", tone: "tone-blue" },
-    { id: "scheduling", label: "Scheduling", icon: "clock", tone: "tone-blue" },
+    { id: "general", label: t("General"), icon: "settings", tone: "tone-slate" },
+    { id: "appearance", label: t("Appearance"), icon: "sun", tone: "tone-violet" },
+    { id: "notifications", label: t("Notifications"), icon: "bell", tone: "tone-blue" },
+    { id: "scheduling", label: t("Scheduling"), icon: "clock", tone: "tone-blue" },
   ],
   [
-    { id: "inbox", label: "Inbox", icon: "inbox", tone: "tone-blue" },
-    { id: "composer", label: "Composer", icon: "compose", tone: "tone-blue" },
-    { id: "templates", label: "Templates", icon: "text", tone: "tone-rose" },
+    { id: "inbox", label: t("Inbox"), icon: "inbox", tone: "tone-blue" },
+    { id: "composer", label: t("Composer"), icon: "compose", tone: "tone-blue" },
+    { id: "templates", label: t("Templates"), icon: "text", tone: "tone-rose" },
   ],
   [
-    { id: "accessibility", label: "Accessibility", icon: "user", tone: "tone-green" },
-    { id: "shortcuts", label: "Shortcuts", icon: "keyboard", tone: "tone-amber" },
+    { id: "accessibility", label: t("Accessibility"), icon: "user", tone: "tone-green" },
+    { id: "shortcuts", label: t("Shortcuts"), icon: "keyboard", tone: "tone-amber" },
   ],
-  [{ id: "support", label: "Support", icon: "help", tone: "tone-green" }],
+  [{ id: "support", label: t("Support"), icon: "help", tone: "tone-green" }],
 ];
 
 export function Settings({
@@ -117,11 +118,11 @@ export function Settings({
         className="dialog settings"
         role="dialog"
         aria-modal="true"
-        aria-label="Settings"
+        aria-label={t("Settings")}
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <nav className="settings-nav" aria-label="Settings">
+        <nav className="settings-nav" aria-label={t("Settings")}>
           {/* The person, on a card at the top: their accounts page. */}
           <button
             type="button"
@@ -131,7 +132,7 @@ export function Settings({
           >
             {me ? <Avatar person={{ name: me.display_name, address: me.email }} size="md" /> : <Icon name="user" />}
             <span>
-              <strong>{me?.display_name || "Regards"}</strong>
+              <strong>{me?.display_name || t("Regards")}</strong>
               {me && <span className="muted">{me.email}</span>}
             </span>
           </button>
@@ -155,7 +156,7 @@ export function Settings({
           ))}
         </nav>
         <div className="settings-pane">
-          <button type="button" className="icon-btn settings-close" aria-label="Close" title="Close (Esc)" onClick={onClose}>
+          <button type="button" className="icon-btn settings-close" aria-label={t("Close")} title={t("Close (Esc)")} onClick={onClose}>
             <Icon name="close" />
           </button>
           {tab === "assistant" && <AssistantPage />}
@@ -184,7 +185,7 @@ function AccountsTab({ mail, confirm }: { mail: MailState; confirm: (request: Co
   const accounts = mail.state === "ready" ? mail.accounts : [];
   return (
     <>
-      <h3>Accounts</h3>
+      <h3>{t("Accounts")}</h3>
       {mail.state === "failed" && <p className="error" role="alert">{mail.message}</p>}
       {accounts.length > 0 && (
         <ul className="account-list">
@@ -198,7 +199,7 @@ function AccountsTab({ mail, confirm }: { mail: MailState; confirm: (request: Co
       ) : (
         <button type="button" className="btn" onClick={() => setAdding(true)}>
           <Icon name="plus" size={16} />
-          Add account
+          {t("Add account")}
         </button>
       )}
     </>
@@ -244,9 +245,12 @@ function AgentsTab({
     const before = windowOf(account);
     if (seconds !== null && before === null) {
       const ok = await confirm({
-        title: `Let agents' sends from ${account.email} go without asking?`,
-        body: `Each send then waits ${windowLabel(seconds)} in the Outbox, and you are told, so you can call it back. After that it goes. At most 20 an hour go this way; more wait for your approval.`,
-        confirm: `Send after ${windowLabel(seconds)}`,
+        title: t("Let agents' sends from {account} go without asking?", { account: account.email }),
+        body: t(
+          "Each send then waits {time} in the Outbox, and you are told, so you can call it back. After that it goes. At most 20 an hour go this way; more wait for your approval.",
+          { time: windowLabel(seconds) },
+        ),
+        confirm: t("Send after {time}", { time: windowLabel(seconds) }),
       });
       if (!ok) return;
     }
@@ -264,9 +268,9 @@ function AgentsTab({
   const choose = async (account: AccountSummary, access: AgentAccess) => {
     if (access === "send") {
       const ok = await confirm({
-        title: `Let agents send from ${account.email}?`,
-        body: "They could then send mail as you from this account. Each send waits for you to approve it, here in Settings › Agents, and nothing goes out until you do.",
-        confirm: "Allow sending",
+        title: t("Let agents send from {account}?", { account: account.email }),
+        body: t("They could then send mail as you from this account. Each send waits for you to approve it, here in Settings › Agents, and nothing goes out until you do."),
+        confirm: t("Allow sending"),
       });
       if (!ok) return;
     }
@@ -286,16 +290,15 @@ function AgentsTab({
 
   return (
     <>
-      <h3>Agents</h3>
+      <h3>{t("Agents")}</h3>
       <p className="muted settings-lead">
-        Agents are AI assistants and other programs that work with your mail through Regards&apos; command line. Each
-        account decides what they may do. Only this page can change it: an agent can&apos;t give itself more.
+        {t("Agents are AI assistants and other programs that work with your mail through Regards' command line. Each account decides what they may do. Only this page can change it: an agent can't give itself more.")}
       </p>
       {error && <p className="error" role="alert">{error}</p>}
       <AgentsGate />
       <AgentHolds accounts={accounts.map(({ account }) => ({ id: account.id, email: account.email }))} focus={focusHold} />
       {accounts.length === 0 ? (
-        <p className="muted">Add an account first.</p>
+        <p className="muted">{t("Add an account first.")}</p>
       ) : (
         <ul className="account-list">
           {accounts.map(({ account }) => {
@@ -311,12 +314,12 @@ function AgentsTab({
                     {info?.allows}
                     {level === "send" &&
                       (window === null
-                        ? " Each send waits for you here."
-                        : ` Each send goes after ${windowLabel(window)} unless you call it back from the Outbox.`)}
+                        ? t(" Each send waits for you here.")
+                        : t(" Each send goes after {time} unless you call it back from the Outbox.", { time: windowLabel(window) }))}
                   </span>
                   {level === "send" && (
                     <label className="agent-send">
-                      Sends
+                      {t("Sends")}
                       <select
                         className="agent-level"
                         value={window ?? ""}
@@ -324,10 +327,10 @@ function AgentsTab({
                           void chooseWindow(account, event.target.value === "" ? null : Number(event.target.value))
                         }
                       >
-                        <option value="">Ask me each time</option>
+                        <option value="">{t("Ask me each time")}</option>
                         {SEND_WINDOWS.map((seconds) => (
                           <option key={seconds} value={seconds}>
-                            Send after {windowLabel(seconds)} unless I call it back
+                            {t("Send after {time} unless I call it back", { time: windowLabel(seconds) })}
                           </option>
                         ))}
                       </select>
@@ -336,7 +339,7 @@ function AgentsTab({
                 </span>
                 <select
                   className="agent-level"
-                  aria-label={`What agents may do with ${account.email}`}
+                  aria-label={t("What agents may do with {account}", { account: account.email })}
                   value={level}
                   onChange={(event) => void choose(account, event.target.value as AgentAccess)}
                 >
@@ -351,22 +354,20 @@ function AgentsTab({
           })}
         </ul>
       )}
-      <h4 className="agent-heading">The levels</h4>
+      <h4 className="agent-heading">{t("The levels")}</h4>
       <dl className="agent-levels">
         {AGENT_ACCESS_LEVELS.map((entry) => (
           <div key={entry.value}>
             <dt>
               {entry.label}
-              {COMING.has(entry.value) && <span className="chip coming">Coming</span>}
+              {COMING.has(entry.value) && <span className="chip coming">{t("Coming")}</span>}
             </dt>
             <dd>{entry.allows}</dd>
           </div>
         ))}
       </dl>
       <p className="muted settings-note">
-        Each level allows what the one before it does. What agents change can be undone from the activity below for
-        ten minutes. Whatever level an account has, changes to more than 50 messages at once and deleting for good wait
-        for you at the top of this page, and so does every send, unless an account lets its sends go after a delay.
+        {t("Each level allows what the one before it does. What agents change can be undone from the activity below for ten minutes. Whatever level an account has, changes to more than 50 messages at once and deleting for good wait for you at the top of this page, and so does every send, unless an account lets its sends go after a delay.")}
       </p>
       <VoiceSection accounts={accounts.map(({ account }) => account)} onOpen={setVoiceFor} />
       <NotesSection confirm={confirm} />
@@ -391,10 +392,10 @@ function AgentsButtonOption() {
   return (
     <Option
       icon="agent"
-      label="Show Agents in the sidebar"
-      description="A button at the foot of the sidebar, with ready-made requests to hand an agent, and the agents on this computer."
+      label={t("Show Agents in the sidebar")}
+      description={t("A button at the foot of the sidebar, with ready-made requests to hand an agent, and the agents on this computer.")}
     >
-      <Toggle label="Show Agents in the sidebar" on={prefs.agentsButton} onChange={(on) => setPrefs({ agentsButton: on })} />
+      <Toggle label={t("Show Agents in the sidebar")} on={prefs.agentsButton} onChange={(on) => setPrefs({ agentsButton: on })} />
     </Option>
   );
 }
@@ -423,7 +424,7 @@ function AccountName({ account }: { account: AccountSummary }) {
   };
   return (
     <label className="account-title">
-      Your name
+      {t("Your name")}
       <input
         className="input"
         placeholder={account.email}
@@ -440,10 +441,10 @@ function AccountName({ account }: { account: AccountSummary }) {
       <span className="muted small" aria-live="polite">
         {error ??
           (state === "saving"
-            ? "Saving…"
+            ? t("Saving…")
             : state === "saved"
-              ? "Saved."
-              : "Who your mail is from. An address with a name of its own (Addresses) keeps it. Empty: the address.")}
+              ? t("Saved.")
+              : t("Who your mail is from. An address with a name of its own (Addresses) keeps it. Empty: the address."))}
       </span>
     </label>
   );
@@ -486,8 +487,8 @@ function AccountRow({
   const remove = async () => {
     const ok = await confirm({
       title: `Remove ${account.email}?`,
-      body: "Its mail, drafts and unsent messages are removed from this computer, and its saved password is deleted. Nothing changes on the server.",
-      confirm: "Remove account",
+      body: t("Its mail, drafts and unsent messages are removed from this computer, and its saved password is deleted. Nothing changes on the server."),
+      confirm: t("Remove account"),
       danger: true,
     });
     if (!ok) return;
@@ -502,18 +503,18 @@ function AccountRow({
   // The push connection keeps failing: new mail arrives only when synced, until it works again.
   const pushStopped = !problem && !sync?.push_active && sync?.push_error ? sync.push_error : null;
   const status = account.needs_sign_in
-    ? "Signed out: sign in again to sync and send"
+    ? t("Signed out: sign in again to sync and send")
     : syncing || sync?.running
-      ? "Syncing…"
+      ? t("Syncing…")
       : problem
-        ? `Sync failed: ${problem}`
+        ? t("Sync failed: {problem}", { problem })
         : pushStopped
-          ? `Live updates stopped: ${pushStopped}. Trying again…`
+          ? t("Live updates stopped: {problem}. Trying again…", { problem: pushStopped })
           : sync?.push_active
-            ? "Live: new mail arrives as it comes in"
+            ? t("Live: new mail arrives as it comes in")
             : sync?.last_success_at
-              ? `Synced at ${new Date(sync.last_success_at).toLocaleTimeString()}`
-              : "Not synced yet";
+              ? t("Synced at {time}", { time: new Date(sync.last_success_at).toLocaleTimeString(appLocale()) })
+              : t("Not synced yet");
 
   return (
     <>
@@ -522,13 +523,13 @@ function AccountRow({
       <div className="account-text">
         <strong>{account.display_name || account.email}</strong>
         <span className="muted">{account.email}</span>
-        {provider && <span className="small muted">Signs in with {PROVIDERS[provider].label}</span>}
+        {provider && <span className="small muted">{t("Signs in with")} {PROVIDERS[provider].label}</span>}
         <span className={problem || pushStopped || account.needs_sign_in ? "small error" : "small muted"}>{status}</span>
       </div>
       <div className="account-buttons">
         {account.needs_sign_in && provider && (
           <button type="button" className="btn small primary" onClick={() => void oauth.start(provider, account.email)} disabled={oauth.flow !== null}>
-            Sign in again
+            {t("Sign in again")}
           </button>
         )}
         {!provider && problem && (
@@ -540,21 +541,21 @@ function AccountRow({
               setPassword((now) => now + 1);
             }}
           >
-            Change password…
+            {t("Change password…")}
           </button>
         )}
         <button type="button" className="btn small" onClick={syncNow} disabled={syncing || sync?.running}>
           <Icon name="refresh" size={15} />
-          Sync now
+          {t("Sync now")}
         </button>
         <button type="button" className="btn small" aria-expanded={addresses} onClick={() => setAddresses(!addresses)}>
-          Addresses
+          {t("Addresses")}
         </button>
         <button type="button" className="btn small" aria-expanded={options} onClick={() => setOptions(!options)}>
-          Details
+          {t("Details")}
         </button>
         <button type="button" className="btn small danger" onClick={remove}>
-          Remove
+          {t("Remove")}
         </button>
       </div>
     </li>
@@ -573,19 +574,19 @@ function AccountRow({
         <AccountName account={account} />
         {!provider && <AccountLogin key={password} account={account} open={password > 0 ? "password" : null} />}
         <label className="account-title">
-          Label in Regards
+          {t("Label in Regards")}
           <input
             className="input"
             placeholder={account.email}
             value={prefs.accountTitles[account.id] ?? ""}
             onChange={(event) => setPrefs({ accountTitles: { ...prefs.accountTitles, [account.id]: event.target.value } })}
           />
-          <span className="muted small">Shown in the sidebar and above the list instead of the address. Only on this computer.</span>
+          <span className="muted small">{t("Shown in the sidebar and above the list instead of the address. Only on this computer.")}</span>
         </label>
         {prefs.colourCoding ? (
           <div className="account-colour">
-            <span>Colour</span>
-            <span className="swatches" role="radiogroup" aria-label={`Colour of ${account.email}`}>
+            <span>{t("Colour")}</span>
+            <span className="swatches" role="radiogroup" aria-label={t("Colour of {account}", { account: account.email })}>
               {ACCOUNT_COLOURS.map((swatch) => (
                 <button
                   key={swatch}
@@ -602,16 +603,16 @@ function AccountRow({
             </span>
           </div>
         ) : (
-          <p className="muted small">To give each account a colour, turn on colour coding in Appearance.</p>
+          <p className="muted small">{t("To give each account a colour, turn on colour coding in Appearance.")}</p>
         )}
         {many && (
           <Option
             icon="inbox"
-            label="In the unified inbox"
-            description="Off: this account's mail shows only in its own inbox, under the sidebar's Inbox."
+            label={t("In the unified inbox")}
+            description={t("Off: this account's mail shows only in its own inbox, under the sidebar's Inbox.")}
           >
             <Toggle
-              label="In the unified inbox"
+              label={t("In the unified inbox")}
               on={!prefs.hiddenAccounts.includes(account.id)}
               onChange={(on) =>
                 setPrefs({
@@ -662,34 +663,34 @@ function InboxTab({
   };
   return (
     <>
-      <h3>Inbox</h3>
+      <h3>{t("Inbox")}</h3>
       <Option
         icon="bolt"
-        label="Inbox view"
-        description="By priority puts priority mail first and folds notifications and newsletters into one row each; By category puts unread mail in a card per category, then what you have seen; By date shows everything together, newest first."
+        label={t("Inbox view")}
+        description={t("By priority puts priority mail first and folds notifications and newsletters into one row each; By category puts unread mail in a card per category, then what you have seen; By date shows everything together, newest first.")}
       >
         <Choice
-          label="Inbox view"
+          label={t("Inbox view")}
           value={layout.inboxView}
           options={[
-            { id: "smart", label: "By priority" },
-            { id: "cards", label: "By category" },
-            { id: "date", label: "By date" },
+            { id: "smart", label: t("By priority") },
+            { id: "cards", label: t("By category") },
+            { id: "date", label: t("By date") },
           ]}
           onChange={(inboxView) => onLayout({ inboxView })}
         />
       </Option>
       {accounts.length > 1 &&
         accounts.map((account) => (
-          <Option key={account.id} icon="inbox" label={accountLabel(prefs, account)} description="Its own inbox, opened from the sidebar.">
+          <Option key={account.id} icon="inbox" label={accountLabel(prefs, account)} description={t("Its own inbox, opened from the sidebar.")}>
             <Select
-              label={`Inbox view of ${account.email}`}
+              label={t("Inbox view of {account}", { account: account.email })}
               value={layout.accountViews[account.id] ?? "shared"}
               options={[
-                { id: "shared", label: "As above" },
-                { id: "smart", label: "By priority" },
-                { id: "cards", label: "By category" },
-                { id: "date", label: "By date" },
+                { id: "shared", label: t("As above") },
+                { id: "smart", label: t("By priority") },
+                { id: "cards", label: t("By category") },
+                { id: "date", label: t("By date") },
               ]}
               onChange={(choice) => {
                 const { [account.id]: _left, ...rest } = layout.accountViews;
@@ -700,16 +701,16 @@ function InboxTab({
         ))}
       <Option
         icon="people"
-        label="New senders"
-        description="Mail from someone you haven't written to: with everyone else, in a card at the top to accept or block, or held back until you accept them."
+        label={t("New senders")}
+        description={t("Mail from someone you haven't written to: with everyone else, in a card at the top to accept or block, or held back until you accept them.")}
       >
         <Choice
-          label="New senders"
+          label={t("New senders")}
           value={screening}
           options={[
-            { id: "off", label: "With everyone" },
-            { id: "section", label: "In a card" },
-            { id: "hold", label: "Held back" },
+            { id: "off", label: t("With everyone") },
+            { id: "section", label: t("In a card") },
+            { id: "hold", label: t("Held back") },
           ]}
           onChange={screen}
         />
@@ -718,19 +719,18 @@ function InboxTab({
       <PriorityRows />
       <LinkRow
         icon="newspaper"
-        label="Email groups"
-        detail="Where Notifications, Newsletters, Invitations and Pinned sit, and which accounts are in the unified inbox"
+        label={t("Email groups")}
+        detail={t("Where Notifications, Newsletters, Invitations and Pinned sit, and which accounts are in the unified inbox")}
         onOpen={() => setGroups(true)}
       />
       <LinkRow
         icon="thumbDown"
-        label="Blocked senders"
-        detail="Their mail goes to Junk; unblock them here"
+        label={t("Blocked senders")}
+        detail={t("Their mail goes to Junk; unblock them here")}
         onOpen={() => setBlocked(true)}
       />
       <p className="muted settings-note">
-        Sorting happens on this computer, from the headers and who you have written to. Nothing is sent anywhere. Open a
-        sender from a message to choose where their mail goes, or to see why a message is where it is.
+        {t("Sorting happens on this computer, from the headers and who you have written to. Nothing is sent anywhere. Open a sender from a message to choose where their mail goes, or to see why a message is where it is.")}
       </p>
     </>
   );
@@ -740,22 +740,24 @@ function InboxTab({
 function TemplatesTab() {
   return (
     <>
-      <h3>Templates</h3>
+      <h3>{t("Templates")}</h3>
       <p className="muted settings-lead">
-        Start a message from one with the templates button in the composer, or {MOD_KEY}+Shift+T. The same list also keeps
-        what you have written as a new template.
+        {t(
+          "Start a message from one with the templates button in the composer, or {key}. The same list also keeps what you have written as a new template.",
+          { key: `${MOD_KEY}+Shift+T` },
+        )}
       </p>
       <div className="template-hint">
-        <strong>Filled in when the template is used</strong>
+        <strong>{t("Filled in when the template is used")}</strong>
         <ul>
           <li>
-            <code>{"{{name}}"}</code> <code>{"{{first name}}"}</code> <code>{"{{last name}}"}</code>: the first person it is to
+            <code>{"{{name}}"}</code> <code>{"{{first name}}"}</code> <code>{"{{last name}}"}</code>: {t("the first person it is to")}
           </li>
           <li>
-            <code>{"{{my name}}"}</code> <code>{"{{my first name}}"}</code>: you, as the address it is sent from
+            <code>{"{{my name}}"}</code> <code>{"{{my first name}}"}</code>: {t("you, as the address it is sent from")}
           </li>
           <li>
-            <code>[[a blank]]</code>: left for you to fill in; sending asks first if one is still there
+            <code>[[a blank]]</code>: {t("left for you to fill in; sending asks first if one is still there")}
           </li>
         </ul>
       </div>
@@ -771,26 +773,25 @@ export function ShortcutsTab({ editable = false }: { editable?: boolean }) {
   const labels = Object.fromEntries(KEYED_ACTIONS.map((one) => [one.id, one.label]));
   return (
     <>
-      <h3>Keyboard shortcuts</h3>
+      <h3>{t("Keyboard shortcuts")}</h3>
       <Option
         icon="keyboard"
-        label="Keys"
-        description="Standard: E done, S snooze, R reply all, Shift+R reply, as in most desktop mail apps. Classic: the keys of earlier Regards versions."
+        label={t("Keys")}
+        description={t("Standard: E done, S snooze, R reply all, Shift+R reply, as in most desktop mail apps. Classic: the keys of earlier Regards versions.")}
       >
         <Select
-          label="Keys"
+          label={t("Keys")}
           value={prefs.keySet}
           options={[
-            { id: "standard", label: "Standard" },
-            { id: "classic", label: "Classic" },
+            { id: "standard", label: t("Standard") },
+            { id: "classic", label: t("Classic") },
           ]}
           onChange={(keySet) => setPrefs({ keySet })}
         />
       </Option>
       {!prefs.singleKeys && (
         <p className="muted settings-note">
-          Single-key shortcuts are off (Settings › Accessibility): only those with {MOD_KEY}, and keys such as Escape and
-          the arrows, act.
+          {t("Single-key shortcuts are off (Settings › Accessibility): only those with {key}, and keys such as Escape and the arrows, act.", { key: MOD_KEY })}
         </p>
       )}
       {editable && <MyKeys />}
@@ -804,7 +805,7 @@ export function ShortcutsTab({ editable = false }: { editable?: boolean }) {
           </div>
         ))}
       </dl>
-      <p className="muted small">After clicking inside a message's text, click outside it for the keys to work again.</p>
+      <p className="muted small">{t("After clicking inside a message's text, click outside it for the keys to work again.")}</p>
     </>
   );
 }
@@ -836,12 +837,12 @@ function MyKeys() {
     }
     const name = keyName(event.nativeEvent) ?? placeName(event.nativeEvent);
     if (!name) {
-      setNote("That combination cannot be a shortcut. Try a key alone, with Shift, or with " + MOD_KEY + ".");
+      setNote(t("That combination cannot be a shortcut. Try a key alone, with Shift, or with {key}.", { key: MOD_KEY }));
       return;
     }
     const taken = takenKey(prefs.keySet, name);
     if (taken) {
-      setNote(`${shown(name)} is taken: ${taken}. Try another key.`);
+      setNote(t("{key} is taken: {what}. Try another key.", { key: shown(name), what: taken }));
       return;
     }
     // A key another action had moves here.
@@ -854,17 +855,17 @@ function MyKeys() {
     }
     setPrefs({ myKeys: next });
     setCapturing(null);
-    setNote(from.length > 0 ? `${shown(name)} is now ${label}, no longer ${from.join(", ")}.` : null);
+    setNote(from.length > 0 ? t("{key} is now {action}, no longer {before}.", { key: shown(name), action: label, before: from.join(", ") }) : null);
   };
   return (
     <>
-      <h4 className="settings-subhead">Message actions</h4>
+      <h4 className="settings-subhead">{t("Message actions")}</h4>
       <ul className="my-keys">
         {KEYED_ACTIONS.map(({ id, label }) => (
           <li key={id}>
             <span className="my-keys-what">{label}</span>
             <span className="my-keys-keys">
-              {keys[id].length > 0 ? keys[id].map((name) => <kbd key={name}>{shown(name)}</kbd>) : <span className="muted">No key</span>}
+              {keys[id].length > 0 ? keys[id].map((name) => <kbd key={name}>{shown(name)}</kbd>) : <span className="muted">{t("No key")}</span>}
             </span>
             {capturing === id ? (
               <button
@@ -874,38 +875,38 @@ function MyKeys() {
                 onKeyDown={capture(id, label)}
                 onBlur={() => setCapturing(null)}
               >
-                Press a key…
+                {t("Press a key…")}
               </button>
             ) : (
               <button
                 type="button"
                 className="btn small"
-                aria-label={`Change the key of ${label}`}
+                aria-label={t("Change the key of {action}", { action: label })}
                 onClick={() => {
                   setNote(null);
                   setCapturing(id);
                 }}
               >
-                Change
+                {t("Change")}
               </button>
             )}
             <button
               type="button"
               className="btn small"
-              aria-label={`No key for ${label}`}
+              aria-label={t("No key for {action}", { action: label })}
               disabled={keys[id].length === 0}
               onClick={() => choose(id, [])}
             >
-              Clear
+              {t("Clear")}
             </button>
             <button
               type="button"
               className="link"
-              aria-label={`${label}: back to the key set's key`}
+              aria-label={t("{action}: back to the key set's key", { action: label })}
               hidden={!Array.isArray(prefs.myKeys[id])}
               onClick={() => choose(id, null)}
             >
-              Reset
+              {t("Reset")}
             </button>
           </li>
         ))}
@@ -917,10 +918,10 @@ function MyKeys() {
       )}
       {Object.keys(prefs.myKeys).length > 0 && (
         <button type="button" className="btn small my-keys-reset" onClick={() => setPrefs({ myKeys: {} })}>
-          Back to the key set's keys
+          {t("Back to the key set's keys")}
         </button>
       )}
-      <h4 className="settings-subhead">Every shortcut</h4>
+      <h4 className="settings-subhead">{t("Every shortcut")}</h4>
     </>
   );
 }

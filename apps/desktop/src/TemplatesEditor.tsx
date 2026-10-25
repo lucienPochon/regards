@@ -3,6 +3,7 @@ import { formatRecipients, parseRecipients } from "./compose";
 import { fileSize } from "./format";
 import { Icon } from "./icons";
 import { type Template, listTemplates, removeTemplate, saveTemplate } from "./templates";
+import { t } from "./i18n";
 
 /**
  * Templates (plan §5.9): a message to start from, by name: subject, text and
@@ -23,7 +24,7 @@ export function TemplatesEditor() {
     <div className="account-form">
       {error && <p className="error small" role="alert">{error}</p>}
       {templates.length === 0 && !adding && (
-        <p className="muted small">No templates yet. They start a message with text you write often.</p>
+        <p className="muted small">{t("No templates yet. They start a message with text you write often.")}</p>
       )}
       {templates.map((template) => (
         <TemplateForm key={template.id} template={template} onDone={reload} onError={setError} />
@@ -42,7 +43,7 @@ export function TemplatesEditor() {
         <div>
           <button type="button" className="btn small" onClick={() => setAdding(true)}>
             <Icon name="plus" size={15} />
-            New template
+            {t("New template")}
           </button>
         </div>
       )}
@@ -117,38 +118,38 @@ function TemplateForm({
   return (
     <form className="template-form" onSubmit={save}>
       <fieldset>
-        <legend>{template ? template.name : "A new template"}</legend>
+        <legend>{template ? template.name : t("A new template")}</legend>
         <div className="form-row grow">
           <label>
-            Name
-            <input className="input" required value={name} onChange={(e) => setName(e.target.value)} placeholder="Booking reply" />
+            {t("Name")}
+            <input className="input" required value={name} onChange={(e) => setName(e.target.value)} placeholder={t("Booking reply")} />
           </label>
           <label>
-            Subject (optional)
-            <input className="input" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Used when a message has none" />
+            {t("Subject (optional)")}
+            <input className="input" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={t("Used when a message has none")} />
           </label>
         </div>
         <label className="grow">
-          To (optional, added to a message&apos;s own)
+          {t("To (optional, added to a message's own)")}
           <input className="input" value={to} onChange={(e) => setTo(e.target.value)} placeholder="desk@example.org" />
         </label>
         <div className="form-row grow">
           <label>
-            Cc
+            {t("Cc")}
             <input className="input" value={cc} onChange={(e) => setCc(e.target.value)} />
           </label>
           <label>
-            Bcc
+            {t("Bcc")}
             <input className="input" value={bcc} onChange={(e) => setBcc(e.target.value)} />
           </label>
         </div>
         <label className="grow">
-          Text
+          {t("Text")}
           <textarea className="input" rows={4} value={body} onChange={(e) => setBody(e.target.value)} />
         </label>
         {files.length > 0 && (
           // Kept from the message it was saved from; they go on each message it starts.
-          <ul className="template-files" aria-label="Files it keeps">
+          <ul className="template-files" aria-label={t("Files it keeps")}>
             {files.map((file) => (
               <li key={file.id} className="chip">
                 <Icon name={file.inline ? "image" : "paperclip"} size={12} />
@@ -157,8 +158,8 @@ function TemplateForm({
                 <button
                   type="button"
                   className="address-chip-remove"
-                  aria-label={`Take off ${file.name}`}
-                  title="Take it off the template"
+                  aria-label={t("Take off {name}", { name: file.name })}
+                  title={t("Take it off the template")}
                   onClick={() => setDropped((now) => [...now, file.id])}
                 >
                   <Icon name="close" size={11} />
@@ -170,16 +171,16 @@ function TemplateForm({
         <div className="dialog-actions">
           {onCancel && (
             <button type="button" className="btn small" onClick={onCancel} disabled={busy}>
-              Cancel
+              {t("Cancel")}
             </button>
           )}
           {template && (
             <button type="button" className="btn small danger" onClick={() => void run(() => removeTemplate(template.id))} disabled={busy}>
-              Remove
+              {t("Remove")}
             </button>
           )}
           <button type="submit" className="btn small primary" disabled={busy || !changed}>
-            {template ? "Save" : "Add"}
+            {template ? t("Save") : t("Add")}
           </button>
         </div>
       </fieldset>

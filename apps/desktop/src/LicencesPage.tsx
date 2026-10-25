@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { type LicenceList, rustLicences } from "./licences";
 import { SubPageHead } from "./SettingsControls";
+import { appLocale, t, tn } from "./i18n";
 
 /** The web packages' list, made at release time by scripts/licences-npm.mjs, in the Rust side's shape. */
 async function webLicences(): Promise<LicenceList | null> {
@@ -35,23 +36,31 @@ function LicenceGroups({ title, list, filter }: { title: string; list: LicenceLi
     <section className="licence-list" aria-label={title}>
       <h4 className="settings-subhead">{title}</h4>
       {list === undefined ? (
-        <p className="muted">Reading the list…</p>
+        <p className="muted">{t("Reading the list…")}</p>
       ) : list === null ? (
-        <p className="muted">Not in this build: the list is made when Regards is built for release.</p>
+        <p className="muted">{t("Not in this build: the list is made when Regards is built for release.")}</p>
       ) : (
         <>
           <p className="muted small">
-            {list.crates.length.toLocaleString()} components, {list.texts.length.toLocaleString()} licence texts
-            {list.tool ? ` (from ${list.tool})` : ""}.
+            {list.tool
+              ? t("{components} components, {texts} licence texts (from {tool}).", {
+                  components: list.crates.length.toLocaleString(appLocale()),
+                  texts: list.texts.length.toLocaleString(appLocale()),
+                  tool: list.tool,
+                })
+              : t("{components} components, {texts} licence texts.", {
+                  components: list.crates.length.toLocaleString(appLocale()),
+                  texts: list.texts.length.toLocaleString(appLocale()),
+                })}
           </p>
-          {groups.length === 0 && <p className="muted">Nothing here matches.</p>}
+          {groups.length === 0 && <p className="muted">{t("Nothing here matches.")}</p>}
           {groups.map((group, index) => (
             <details key={index} className="licence-group">
               <summary>
-                <strong>{group.text ? group.text.name : "Licence named, no text shipped"}</strong>
+                <strong>{group.text ? group.text.name : t("Licence named, no text shipped")}</strong>
                 <span className="muted">
                   {" "}
-                  · {group.components.length === 1 ? "1 component" : `${group.components.length} components`}
+                  · {tn(group.components.length, "1 component", "{count} components")}
                 </span>
                 <span className="licence-names">
                   {group.components.map((component) => `${component.name} ${component.version}`).join(", ")}
@@ -87,21 +96,20 @@ export function LicencesPage({ onBack }: { onBack: () => void }) {
   }, []);
   return (
     <>
-      <SubPageHead title="Open-source licences" onBack={onBack} />
+      <SubPageHead title={t("Open-source licences")} onBack={onBack} />
       <p className="muted settings-note">
-        Regards is open source, under the Apache License 2.0 or the MIT License, as you choose. It is built on the work of
-        the projects below; their licences follow.
+        {t("Regards is open source, under the Apache License 2.0 or the MIT License, as you choose. It is built on the work of the projects below; their licences follow.")}
       </p>
       <input
         className="input licence-filter"
         type="search"
-        placeholder="Find a component"
-        aria-label="Find a component"
+        placeholder={t("Find a component")}
+        aria-label={t("Find a component")}
         value={filter}
         onChange={(event) => setFilter(event.target.value)}
       />
-      <LicenceGroups title="The service and the command line (Rust)" list={rust} filter={filter} />
-      <LicenceGroups title="The window (web packages)" list={web} filter={filter} />
+      <LicenceGroups title={t("The service and the command line (Rust)")} list={rust} filter={filter} />
+      <LicenceGroups title={t("The window (web packages)")} list={web} filter={filter} />
     </>
   );
 }

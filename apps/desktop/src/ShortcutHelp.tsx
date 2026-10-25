@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { ShortcutsTab } from "./Settings";
 import { useShortcuts } from "./shortcuts";
 import { useDialogFocus } from "./dialogFocus";
+import { t } from "./i18n";
 
 /** The list of keyboard shortcuts; while it shows, other shortcuts are paused. */
 export function ShortcutHelp({ onClose }: { onClose: () => void }) {
@@ -16,13 +17,13 @@ export function ShortcutHelp({ onClose }: { onClose: () => void }) {
         className="dialog help"
         role="dialog"
         aria-modal="true"
-        aria-label="Keyboard shortcuts"
+        aria-label={t("Keyboard shortcuts")}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <ShortcutsTab />
         <div className="dialog-actions">
           <button type="button" className="btn primary" onClick={onClose} autoFocus>
-            Close
+            {t("Close")}
           </button>
         </div>
       </section>
