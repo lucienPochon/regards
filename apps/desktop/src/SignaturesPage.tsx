@@ -1,10 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
+import type { Editor } from "@tiptap/core";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import type { AccountSummary } from "./accounts";
 import type { ConfirmRequest } from "./Confirm";
+import { textSignature } from "./compose";
 import { type Identity, listIdentities } from "./identities";
 import { Icon } from "./icons";
+import { coloursAsMarks, coloursAsStyles, fileBase64 } from "./images";
 import { LinkRow, Option, Select, SubPageHead } from "./SettingsControls";
 import { type Signature, SIGNATURE_MAX, listSignatures, removeSignature, saveSignature, setDefaultSignature } from "./signatures";
+
+const RichEditor = lazy(() => import("./RichEditor").then((module) => ({ default: module.RichEditor })));
+
+/** A signature's picture, at most: the daemon keeps it inside the signature (base64, 256 KB). */
+const PICTURE_MAX = 190 * 1024;
 
 /** "No signature" in an address's choice: signature ids start at 1. */
 const NONE = 0;
@@ -67,7 +75,7 @@ export function SignaturesPage({
         </button>
       </div>
       <p className="muted settings-lead">
-        Plain text, added below what you write and above a quote. In a message, the signature menu next to the sender
+        Added below what you write and above a quote, with its formatting and pictures. In a message, the signature menu next to the sender
         switches it.
       </p>
       {error && (
@@ -117,11 +125,33 @@ function SignatureEditor({
   onBack: () => void;
 }) {
   const [name, setName] = useState(signature?.name ?? "");
+  // Written with formatting and pictures: its text is the editor's, its HTML kept beside it.
+  const [initial] = useState(() =>
+    signature?.html ? coloursAsMarks(signature.html) : textSignature(signature?.body ?? ""),
+  );
+  const [html, setHtml] = useState(initial);
   const [body, setBody] = useState(signature?.body ?? "");
+  const editor = useRef<Editor | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const changed = signature === null || name !== signature.name || body !== signature.body;
-  const ready = name.trim() !== "" && body.trim() !== "" && changed;
+  const changed = signature === null || name !== signature.name || html !== initial;
+  const ready = name.trim() !== "" && body.trim() !== "" && body.length <= SIGNATURE_MAX && changed;
+  const written = (now: string) => {
+    setHtml(now);
+    setBody(editor.current?.getText({ blockSeparator: "\n" }).trim() ?? "");
+  };
+  // Pictures pasted go in the signature itself, not attached to any message yet.
+  const pictures = (files: File[]) => {
+    for (const file of files) {
+      if (file.size > PICTURE_MAX) {
+        setError(`“${file.name}” is too large for a signature: pictures there can be ${Math.round(PICTURE_MAX / 1024)} KB at most.`);
+        continue;
+      }
+      void fileBase64(file).then((data) =>
+        editor.current?.chain().focus().insertContent({ type: "image", attrs: { src: `data:${file.type};base64,${data}`, alt: "" } }).run(),
+      );
+    }
+  };
 
   const run = (work: () => Promise<unknown>) => {
     setBusy(true);
@@ -131,7 +161,8 @@ function SignatureEditor({
       setBusy(false);
     });
   };
-  const save = () => run(() => saveSignature({ id: signature?.id ?? null, name: name.trim(), body }));
+  const save = () =>
+    run(() => saveSignature({ id: signature?.id ?? null, name: name.trim(), body, html: coloursAsStyles(html) }));
   const remove = () => {
     if (!signature) return;
     void confirm({
@@ -162,20 +193,29 @@ function SignatureEditor({
         />
         <span className="muted small">For you only: it names the signature in lists.</span>
       </label>
-      <label className="signature-field">
+      <div className="signature-field">
         <span>Text</span>
-        <textarea
-          className="input"
-          rows={8}
-          value={body}
-          maxLength={SIGNATURE_MAX}
-          placeholder={"Ada Lovelace\nAnalytical Engines Ltd"}
-          onChange={(event) => setBody(event.target.value)}
-        />
+        <div className="signature-text">
+          <Suspense fallback={<p className="muted small">Opening the editor…</p>}>
+            <RichEditor
+              initial={initial}
+              onChange={written}
+              onSend={() => {
+                if (ready && !busy) save();
+              }}
+              onImages={pictures}
+              onEditor={(ready) => {
+                editor.current = ready;
+              }}
+              disabled={busy}
+              autofocus={false}
+            />
+          </Suspense>
+        </div>
         <span className="signature-count muted small">
-          {body.length} / {SIGNATURE_MAX}
+          Bold, colours, links and pictures (pasted) go with it. {body.length} / {SIGNATURE_MAX}
         </span>
-      </label>
+      </div>
       {error && (
         <p className="error small" role="alert">
           {error}

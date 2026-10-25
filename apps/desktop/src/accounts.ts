@@ -540,8 +540,17 @@ export interface ThreadEntry {
   mailbox_role: Role | null;
 }
 
-/** The conversation a message belongs to, across folders, oldest first. */
-export function getThread(id: number): Promise<{ messages: ThreadEntry[] }> {
+/** A reply being written in a conversation, not sent yet. */
+export interface ThreadDraft {
+  id: number;
+  to: Person[];
+  /** Its first words, without the quoted message under them. */
+  preview: string;
+  updated_at: number;
+}
+
+/** The conversation a message belongs to, across folders, oldest first, and the replies being written in it. */
+export function getThread(id: number): Promise<{ messages: ThreadEntry[]; drafts?: ThreadDraft[] }> {
   return invoke("thread_get", { id });
 }
 

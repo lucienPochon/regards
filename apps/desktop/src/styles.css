@@ -2901,6 +2901,62 @@ button.list-title:hover {
   padding: 0;
 }
 
+/* A reply being written, under its conversation: dashed, as it is not sent. */
+.thread-drafts {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.draft-card {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+}
+
+.draft-card:hover {
+  border-color: var(--accent);
+  background: var(--hover);
+}
+
+.draft-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.draft-chip {
+  color: var(--accent);
+}
+
+.draft-to {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-preview {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-open {
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
 .mail-card.collapsed:hover {
   background: var(--hover);
 }
@@ -7309,13 +7365,20 @@ button.sender-row:hover:not(:disabled) {
   font-weight: 600;
 }
 
-.signature-field textarea {
-  height: auto;
-  min-height: 170px;
-  padding: 10px 12px;
-  font-family: inherit;
-  line-height: 1.55;
-  resize: vertical;
+/* The signature's text, written as a message is: the formatting bar floats at its foot. */
+.signature-text {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 12px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg);
+  font-weight: 400;
+}
+
+.signature-text .compose-body.ProseMirror {
+  min-height: 140px;
+  padding: 8px 0 16px;
 }
 
 .signature-count {

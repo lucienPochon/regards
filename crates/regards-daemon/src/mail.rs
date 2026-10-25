@@ -12,8 +12,8 @@ use regards_ipc::protocol::{
     AccountRef, ConnectionLogSettings, ConversationIdsResult, MessageCursor, MessageDetail, MessageHtml,
     MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageLocateParams, MessageLocateResult,
     MessageRef, MessageSource, MessageSummary, ReadingSettings, RpcError, SearchParams, SearchResult,
-    SenderBlockedResult, SenderImagesParams, SenderImagesResult, ServerSearchResult, ThreadEntry, ThreadView, View,
-    ViewParams, codes,
+    SenderBlockedResult, SenderImagesParams, SenderImagesResult, ServerSearchResult, ThreadDraft, ThreadEntry,
+    ThreadView, View, ViewParams, codes,
 };
 use regards_store::mailboxes::Mailbox;
 use regards_store::marks::{self, Mark, Marks};
@@ -958,9 +958,11 @@ pub(crate) async fn conversation_ids(state: &State, params: MessageIds) -> Resul
     Ok(json!(ConversationIdsResult { ids: all }))
 }
 
-pub(crate) async fn thread(state: &State, params: MessageRef) -> Result<Value, RpcError> {
+/// A conversation, oldest first; `with_drafts`, the replies being written in
+/// it too (for the Regards app, not agents).
+pub(crate) async fn thread(state: &State, params: MessageRef, with_drafts: bool) -> Result<Value, RpcError> {
     let id = params.id;
-    let entries = state
+    let found = state
         .store
         .read(move |conn| {
             let Some(message) = messages::get(conn, id)? else {
@@ -972,6 +974,7 @@ pub(crate) async fn thread(state: &State, params: MessageRef) -> Result<Value, R
             };
             let mut folders: HashMap<i64, Option<Mailbox>> = HashMap::new();
             let mut entries = Vec::new();
+            let (mut account, mut message_ids, mut ids) = (None, Vec::new(), Vec::new());
             for row in rows {
                 // A message on its way to another folder is shown there.
                 let shown_in = row.moving_to.unwrap_or(row.mailbox_id);
@@ -982,6 +985,9 @@ pub(crate) async fn thread(state: &State, params: MessageRef) -> Result<Value, R
                 let Some(folder) = folder else {
                     continue;
                 };
+                account.get_or_insert_with(|| folder.account_id.clone());
+                ids.push(row.id);
+                message_ids.extend(row.message_id.clone());
                 let info = page_info(conn, &folder.account_id, std::slice::from_ref(&row))?;
                 entries.push(ThreadEntry {
                     mailbox_id: folder.id,
@@ -990,12 +996,47 @@ pub(crate) async fn thread(state: &State, params: MessageRef) -> Result<Value, R
                     message: summary(row, &info),
                 });
             }
-            Ok(Some(entries))
+            let drafts = match account {
+                Some(account) if with_drafts => regards_store::drafts::answering(conn, &account, &message_ids, &ids)?
+                    .into_iter()
+                    .map(|draft| ThreadDraft {
+                        preview: draft_preview(&draft.body, draft.html.as_deref()),
+                        id: draft.id,
+                        to: draft.to,
+                        updated_at: draft.updated_at,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            Ok(Some((entries, drafts)))
         })
         .await
         .map_err(store_error)?;
-    let messages = entries.ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such message"))?;
-    Ok(json!(ThreadView { messages }))
+    let (messages, drafts) = found.ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such message"))?;
+    Ok(json!(ThreadView { messages, drafts }))
+}
+
+/// A draft's first words: its text (from its HTML when it has no text yet)
+/// down to the quoted message, if it answers one; one line, 160 characters.
+fn draft_preview(body: &str, html: Option<&str>) -> String {
+    let text = match html {
+        Some(html) if body.trim().is_empty() => html::to_text(html),
+        _ => body.to_owned(),
+    };
+    let lines: Vec<&str> = text
+        .lines()
+        .take_while(|line| !line.trim_start().starts_with('>'))
+        .collect();
+    // The "On …, … wrote:" line over the quote is not theirs either.
+    let own = match lines.iter().rposition(|line| !line.trim().is_empty()) {
+        Some(last) if lines[last].trim_end().ends_with("wrote:") => &lines[..last],
+        _ => &lines[..],
+    };
+    let words = own.join(" ").split_whitespace().collect::<Vec<_>>().join(" ");
+    match words.char_indices().nth(160) {
+        Some((cut, _)) => format!("{}…", words[..cut].trim_end()),
+        None => words,
+    }
 }
 
 /// Thread the messages stored before threading existed, a batch at a time so
@@ -1049,6 +1090,21 @@ pub(crate) fn plain_summary(m: Message) -> MessageSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_draft_preview_is_its_own_words_not_the_quote_under_them() {
+        let reply = "Saturday works.\nSee you then!\n\nOn Mon 19 Oct 2026, Lena wrote:\n> Lunch?\n> Or dinner?";
+        assert_eq!(draft_preview(reply, None), "Saturday works. See you then!");
+        assert_eq!(
+            draft_preview("", Some("<p>Yes, <strong>please</strong>.</p>")),
+            "Yes, please.",
+            "from its HTML when it has no text yet"
+        );
+        let long = "word ".repeat(100);
+        let cut = draft_preview(&long, None);
+        assert!(cut.ends_with('…') && cut.chars().count() <= 161, "{cut}");
+        assert_eq!(draft_preview("> only a quote", None), "");
+    }
 
     #[test]
     fn a_link_names_the_message_by_its_message_id_when_it_has_one() {

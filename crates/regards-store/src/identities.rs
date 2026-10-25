@@ -259,6 +259,7 @@ mod tests {
                     &crate::signatures::Fields {
                         name: "Formal".into(),
                         body: "Ada\nAnalytical Engines Ltd".into(),
+                        html: None,
                     },
                     1,
                 )?;

@@ -107,3 +107,21 @@ export function coloursAsMarks(html: string): string {
     return `<span${colour ? ` data-colour="${colour}"` : ""}${highlight ? ` data-highlight="${highlight}"` : ""}>`;
   });
 }
+
+/**
+ * A signature's pictures (embedded as `data:`) made the draft's own images,
+ * as pasted ones are: each attached with a Content-ID and marked with it.
+ */
+export async function attachPictures(draftId: number, html: string): Promise<string> {
+  let out = html;
+  for (const [at, tag] of (html.match(IMG) ?? []).entries()) {
+    if (attribute(tag, "data-cid")) continue;
+    const found = /^data:(image\/(png|jpeg|gif|webp));base64,([A-Za-z0-9+/=]+)$/.exec(attribute(tag, "src") ?? "");
+    if (!found) continue;
+    const [, mime, kind, data] = found;
+    const { content_id } = await attachImage(draftId, { name: `signature-${at + 1}.${kind}`, mime, data });
+    const marked = `<img src="data:${mime};base64,${data}" alt="${attribute(tag, "alt") ?? ""}" data-cid="${content_id}"${size(tag)}>`;
+    out = out.replace(tag, () => marked);
+  }
+  return out;
+}

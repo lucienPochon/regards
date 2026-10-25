@@ -47,6 +47,7 @@ const MIGRATIONS: &[M<'static>] = &[
     M::up(include_str!("../migrations/0036_saved_searches.sql")),
     M::up(include_str!("../migrations/0037_labels.sql")),
     M::up(include_str!("../migrations/0038_message_files.sql")),
+    M::up(include_str!("../migrations/0039_signature_html.sql")),
     M::up(include_str!("../migrations/0040_template_recipients_files.sql")),
 ];
 

@@ -254,19 +254,76 @@ export function invalidAddresses(people: Person[]): string[] {
 }
 
 /** A plain-text draft (a new reply's quote, say) as editor HTML: paragraphs, and "> " lines as quotes. */
+/** A plain-text signature as the editor has it: its lines, as `textToHtml` puts them; nothing for none. */
+export const textSignature = (signature: string) => (signature.trim() ? textToHtml(signature.trimEnd()) : "");
+
 /**
- * The draft's HTML sent from another identity: the old signature becomes the
- * new one. Where the old one is not found (none, or edited), the new one goes
- * above the quoted ("On …, Bob wrote:") or forwarded message, or at the end.
- * Signatures are plain text, put in as `textToHtml` does.
+ * The draft's HTML with plain-text signature `old` swapped for `next` (sent
+ * from another identity, say): as [`swapSignatureBlocks`].
  */
 export function swapSignatureHtml(html: string, old: string, next: string): string {
-  const block = (signature: string) => (signature.trim() ? textToHtml(signature.trimEnd()) : "");
-  const [from, to] = [block(old), block(next)];
-  if (from && html.includes(from)) return html.replace(from, () => to);
-  if (!to) return html;
-  const quote = html.search(/<p>[^<]*wrote:<\/p><blockquote>|<p>---------- Forwarded message ----------/);
-  return quote === -1 ? html + to : html.slice(0, quote) + to + html.slice(quote);
+  return swapSignatureBlocks(html, textSignature(old), textSignature(next));
+}
+
+/** A picture, among a signature's words. */
+const PICTURE = "￼";
+const BLOCK = /^(P|DIV|LI|UL|OL|H[1-6]|BLOCKQUOTE|PRE|HR|TABLE|TR|TD)$/;
+
+/** What nodes say, whatever their formatting: words and pictures, spaces as one. */
+function words(nodes: Node[]): string {
+  const said = (node: Node): string => {
+    if (node.nodeType === Node.TEXT_NODE) return (node as Text).data;
+    const name = node.nodeName;
+    if (name === "BR") return "\n";
+    if (name === "IMG") return ` ${PICTURE} `;
+    const inside = [...node.childNodes].map(said).join("");
+    return BLOCK.test(name) ? `\n${inside}\n` : inside;
+  };
+  return nodes.map(said).join("\n").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The draft's HTML with its signature swapped: the blocks holding `old` (the
+ * signature it has, as the editor has it) become `next`. They are found by
+ * their words and pictures, whatever their formatting, so a formatted
+ * signature is found as well as a plain one. Where `old` is not found (none,
+ * or edited), `next` goes above the quoted ("On …, Bob wrote:") or forwarded
+ * message, or at the end.
+ */
+export function swapSignatureBlocks(html: string, old: string, next: string): string {
+  const parse = (fragment: string) => new DOMParser().parseFromString(`<body>${fragment}</body>`, "text/html").body;
+  const body = parse(html);
+  const blocks = [...body.childNodes];
+  const wanted = words([...parse(old).childNodes]);
+  let found: [number, number] | null = null;
+  for (let first = 0; wanted && !found && first < blocks.length; first++) {
+    if (!words([blocks[first]])) continue;
+    for (let last = first; last < blocks.length; last++) {
+      const have = words(blocks.slice(first, last + 1));
+      if (have === wanted) {
+        found = [first, last];
+        break;
+      }
+      if (have.length > wanted.length) break;
+    }
+  }
+  const incoming = [...parse(next).childNodes].map((node) => body.ownerDocument.importNode(node, true));
+  if (found) {
+    blocks[found[0]].before(...incoming);
+    for (const node of blocks.slice(found[0], found[1] + 1)) node.remove();
+  } else if (incoming.length === 0) {
+    return html;
+  } else {
+    const quote = blocks.find(
+      (node, at) =>
+        node.nodeName === "P" &&
+        ((node.textContent?.trimEnd().endsWith("wrote:") && blocks[at + 1]?.nodeName === "BLOCKQUOTE") ||
+          node.textContent?.startsWith("---------- Forwarded message ----------")),
+    );
+    if (quote) quote.before(...incoming);
+    else body.append(...incoming);
+  }
+  return body.innerHTML;
 }
 
 /**

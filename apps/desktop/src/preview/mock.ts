@@ -643,7 +643,7 @@ if (accounts.length > 0) {
     subject: "Re: Book club: next pick",
     body: "I'd vote for the lighthouse keeper.",
     html: "<p>I'd vote for the lighthouse keeper.</p>",
-    replying_to: null,
+    replying_to: messages.find((m) => m.subject === "Book club: next pick")?.id ?? null,
     updated_at: started - 70 * 60_000,
     sending: false,
     attachments: [],
@@ -1509,6 +1509,11 @@ function handle(cmd: string, args: Args): unknown {
             mailbox_name: mailboxOf(m.mailboxId)?.name ?? "",
             mailbox_role: mailboxOf(m.mailboxId)?.role ?? null,
           })),
+        // Replies being written in it, as the daemon gives them to the app.
+        drafts: drafts
+          .filter((d) => !d.sending && messages.some((m) => m.id === d.replying_to && m.thread === message.thread))
+          .sort((a, b) => a.updated_at - b.updated_at)
+          .map((d) => ({ id: d.id, to: d.to, preview: d.body.split("\n")[0] ?? "", updated_at: d.updated_at })),
       };
     }
     case "message_mark_all_read": {
@@ -1738,8 +1743,9 @@ function handle(cmd: string, args: Args): unknown {
     case "signature_list":
       return { signatures: [...signatures].sort((a, b) => a.name.localeCompare(b.name)) };
     case "signature_save": {
-      const asked = args.signature as { id?: number; name: string; body: string };
-      const fields = { name: asked.name.trim(), body: asked.body.trimEnd(), updated_at: Date.now() };
+      const asked = args.signature as { id?: number; name: string; body: string; html?: string | null };
+      // The daemon sanitises the HTML; the preview keeps it as the editor gave it.
+      const fields = { name: asked.name.trim(), body: asked.body.trimEnd(), html: asked.html ?? null, updated_at: Date.now() };
       if (!fields.name || !fields.body.trim()) throw new Error("a signature needs a name and some text");
       const existing = signatures.find((s) => s.id === asked.id);
       if (existing) {
