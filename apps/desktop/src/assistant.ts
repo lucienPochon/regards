@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Draft } from "./compose";
+import { tn } from "./i18n";
 
 /**
  * The assistant (ADR-0015 §5): with the person's own key, a conversation
@@ -79,10 +80,16 @@ export const runAssistant = (messageId: number, task: AssistantTask, all = false
 
 /** "2 messages (1,234 characters) go to api.anthropic.com, for claude-opus-5-5. 1 with a code is left out." */
 export function describePreview(preview: AssistantPreview): string {
-  const count = (n: number, one: string, many: string) => `${n.toLocaleString("en")} ${n === 1 ? one : many}`;
-  const sent =
-    `${count(preview.messages, "message", "messages")} (${count(preview.characters, "character", "characters")}) ` +
-    `${preview.messages === 1 ? "goes" : "go"} to ${preview.destination}, for ${preview.model}.`;
+  const sent = tn(
+    preview.messages,
+    "1 message ({characters}) goes to {destination}, for {model}.",
+    "{count} messages ({characters}) go to {destination}, for {model}.",
+    {
+      characters: tn(preview.characters, "1 character", "{count} characters"),
+      destination: preview.destination,
+      model: preview.model,
+    },
+  );
   if (preview.left_out === 0) return sent;
-  return `${sent} ${count(preview.left_out, "message", "messages")} with a code ${preview.left_out === 1 ? "is" : "are"} left out.`;
+  return `${sent} ${tn(preview.left_out, "1 message with a code is left out.", "{count} messages with a code are left out.")}`;
 }

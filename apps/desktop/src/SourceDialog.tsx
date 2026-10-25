@@ -4,6 +4,7 @@ import { useDialogFocus } from "./dialogFocus";
 import { fileSize } from "./format";
 import { Icon } from "./icons";
 import { useShortcuts } from "./shortcuts";
+import { t } from "./i18n";
 
 /**
  * "See the original message": the message as it came, headers and all, as
@@ -25,7 +26,7 @@ export function SourceDialog({ messageId, subject, onClose }: { messageId: numbe
     if (!source) return;
     navigator.clipboard?.writeText(source.text).then(
       () => setCopied(true),
-      () => setError("Copying didn't work here: select the text and copy it."),
+      () => setError(t("Copying didn't work here: select the text and copy it.")),
     );
   };
 
@@ -41,11 +42,11 @@ export function SourceDialog({ messageId, subject, onClose }: { messageId: numbe
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="source-head">
-          <h2 id="source-title">Original message</h2>
+          <h2 id="source-title">{t("Original message")}</h2>
           <span className="muted small">
             {source
               ? source.truncated
-                ? `The first 1 MB of ${fileSize(source.size)}`
+                ? t("The first 1 MB of {size}", { size: fileSize(source.size) })
                 : fileSize(source.size)
               : null}
           </span>
@@ -56,19 +57,19 @@ export function SourceDialog({ messageId, subject, onClose }: { messageId: numbe
             {error}
           </p>
         )}
-        {!source && !error && <p className="muted">Fetching the original…</p>}
+        {!source && !error && <p className="muted">{t("Fetching the original…")}</p>}
         {source && (
-          <pre className="source-text" tabIndex={0} aria-label="The message as it came">
+          <pre className="source-text" tabIndex={0} aria-label={t("The message as it came")}>
             {source.text}
           </pre>
         )}
         <div className="dialog-actions">
           <button type="button" className="btn" onClick={copy} disabled={!source}>
             <Icon name={copied ? "check" : "copy"} size={14} />
-            {copied ? "Copied" : "Copy"}
+            {copied ? t("Copied") : t("Copy")}
           </button>
           <button type="button" className="btn primary" onClick={onClose}>
-            Close
+            {t("Close")}
           </button>
         </div>
       </section>

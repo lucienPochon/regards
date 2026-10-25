@@ -13,6 +13,7 @@ import type { Draft } from "./compose";
 import { useDialogFocus } from "./dialogFocus";
 import { Icon } from "./icons";
 import { useShortcuts } from "./shortcuts";
+import { t } from "./i18n";
 
 /** What the person asked the assistant for, about which message. */
 export interface AssistantJob {
@@ -125,27 +126,27 @@ export function AssistantDialog({
       >
         <h2 id="assistant-title">
           <Icon name="bolt" size={18} />
-          {reply ? "Draft a reply" : "Summarise the conversation"}
+          {reply ? t("Draft a reply") : t("Summarise the conversation")}
         </h2>
 
         {step === "ask" && (
           <>
             {reply && (
               <label className="assistant-instructions">
-                What should it say?
+                {t("What should it say?")}
                 <textarea
                   className="input"
                   rows={3}
                   value={instructions}
-                  placeholder="Say yes, but Friday suits me better."
+                  placeholder={t("Say yes, but Friday suits me better.")}
                   onChange={(event) => setInstructions(event.target.value)}
                   autoFocus
                 />
-                <span className="muted small">Optional. The draft opens for you to check; nothing is sent.</span>
+                <span className="muted small">{t("Optional. The draft opens for you to check; nothing is sent.")}</span>
               </label>
             )}
             <p className="assistant-preview" aria-live="polite">
-              {preview ? describePreview(preview) : error ? null : "Looking at what would be sent…"}
+              {preview ? describePreview(preview) : error ? null : t("Looking at what would be sent…")}
             </p>
             {error && (
               <p className="error" role="alert">
@@ -154,10 +155,10 @@ export function AssistantDialog({
             )}
             <div className="dialog-actions">
               <button type="button" className="btn" onClick={onClose}>
-                Cancel
+                {t("Cancel")}
               </button>
               <button type="button" className="btn primary" onClick={run} disabled={!preview}>
-                {preview ? `Send to ${preview.destination}` : reply ? "Write the draft" : "Summarise"}
+                {preview ? t("Send to {destination}", { destination: preview.destination }) : reply ? t("Write the draft") : t("Summarise")}
               </button>
             </div>
           </>
@@ -167,11 +168,11 @@ export function AssistantDialog({
           <>
             <p className="assistant-working" role="status">
               <span className="assistant-spinner" aria-hidden="true" />
-              Asking {preview?.model ?? "the model"}… This can take up to two minutes.
+              {t("Asking")} {preview?.model ?? t("the model")}{t("… This can take up to two minutes.")}
             </p>
             <div className="dialog-actions">
               <button type="button" className="btn" onClick={onClose}>
-                Close
+                {t("Close")}
               </button>
             </div>
           </>
@@ -179,17 +180,17 @@ export function AssistantDialog({
 
         {step === "done" && result && (
           <>
-            <div className="assistant-result" tabIndex={0} aria-label="Summary">
+            <div className="assistant-result" tabIndex={0} aria-label={t("Summary")}>
               {result.text}
             </div>
-            <p className="muted small">Written by {preview?.model ?? "a model"}: check it against the messages.</p>
+            <p className="muted small">{t("Written by")} {preview?.model ?? t("a model")}{t(": check it against the messages.")}</p>
             <div className="dialog-actions">
               <button type="button" className="btn" onClick={copy}>
                 <Icon name={copied ? "check" : "copy"} size={14} />
-                {copied ? "Copied" : "Copy"}
+                {copied ? t("Copied") : t("Copy")}
               </button>
               <button type="button" className="btn primary" onClick={onClose}>
-                Close
+                {t("Close")}
               </button>
             </div>
           </>

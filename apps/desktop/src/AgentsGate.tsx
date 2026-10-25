@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { type AgentsSettings, agentsSettings, disconnectAgents, setAgentsEnabled } from "./agents";
 import { Option, Toggle } from "./SettingsControls";
+import { t, tn } from "./i18n";
 
 /**
  * Settings › Agents, at the top: one switch for every agent at once, and the
@@ -22,7 +23,9 @@ export function AgentsGate() {
     setAgentsEnabled(on).then(
       (now) => {
         setGate(now);
-        if (!on && before > 0) setSaid(`${before === 1 ? "The agent" : `The ${before} agents`} connected now ${before === 1 ? "was" : "were"} disconnected.`);
+        if (!on && before > 0) {
+          setSaid(tn(before, "The agent connected now was disconnected.", "The {count} agents connected now were disconnected."));
+        }
       },
       (failure: unknown) => setError(String(failure)),
     );
@@ -34,8 +37,8 @@ export function AgentsGate() {
         setGate((now) => (now ? { ...now, connected: 0 } : now));
         setSaid(
           count === 0
-            ? "No agent was connected."
-            : `${count === 1 ? "1 agent" : `${count} agents`} disconnected. They can connect again.`,
+            ? t("No agent was connected.")
+            : tn(count, "1 agent disconnected. It can connect again.", "{count} agents disconnected. They can connect again."),
         );
       },
       (failure: unknown) => setError(String(failure)),
@@ -47,14 +50,14 @@ export function AgentsGate() {
     <div className="agents-gate">
       <Option
         icon="agent"
-        label="Agents can use Regards"
+        label={t("Agents can use Regards")}
         description={
           gate.enabled
-            ? "Each account below decides what they may do."
-            : "Off: every agent request is refused. Each account keeps its level for when you turn this on again."
+            ? t("Each account below decides what they may do.")
+            : t("Off: every agent request is refused. Each account keeps its level for when you turn this on again.")
         }
       >
-        <Toggle label="Agents can use Regards" on={gate.enabled} onChange={turn} />
+        <Toggle label={t("Agents can use Regards")} on={gate.enabled} onChange={turn} />
       </Option>
       {gate.enabled && (
         <div className="option">
@@ -62,14 +65,14 @@ export function AgentsGate() {
           <span className="option-text">
             <strong>
               {gate.connected === 0
-                ? "No agent connected now"
-                : `${gate.connected === 1 ? "1 agent" : `${gate.connected} agents`} connected now`}
+                ? t("No agent connected now")
+                : tn(gate.connected, "1 agent connected now", "{count} agents connected now")}
             </strong>
-            <span>Disconnecting ends their connection; they can connect again.</span>
+            <span>{t("Disconnecting ends their connection; they can connect again.")}</span>
           </span>
           <span className="option-control">
             <button type="button" className="btn small" onClick={disconnect} disabled={gate.connected === 0}>
-              Disconnect now
+              {t("Disconnect now")}
             </button>
           </span>
         </div>

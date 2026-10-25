@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { MessageSummary, Person, UndoInfo } from "./accounts";
+import { t } from "./i18n";
 
 /** Mirrors `DraftView` in `regards-ipc`. */
 export interface Draft {
@@ -106,13 +107,13 @@ export const checkDraft = (id: number) =>
 export function describeCheck(check: SendCheck): string {
   switch (check.kind) {
     case "no_recipients":
-      return "Add at least one recipient.";
+      return t("Add at least one recipient.");
     case "no_subject":
-      return "There is no subject.";
+      return t("There is no subject.");
     case "missing_attachment":
-      return `It mentions “${check.word}”, but nothing is attached.`;
+      return t("It mentions “{word}”, but nothing is attached.", { word: check.word });
     case "placeholder":
-      return `“${check.text}” is still to be filled in.`;
+      return t("“{text}” is still to be filled in.", { text: check.text });
   }
 }
 

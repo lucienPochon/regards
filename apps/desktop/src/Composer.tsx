@@ -48,6 +48,7 @@ import { Icon } from "./icons";
 import { type Anchor, anchorOf, Menu, type MenuEntry, type MenuRequest } from "./Menu";
 import { getPrefs } from "./prefs";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
+import { t } from "./i18n";
 
 // The editor (Tiptap and ProseMirror) loads when a message is first written.
 const RichEditor = lazy(() => import("./RichEditor").then((module) => ({ default: module.RichEditor })));
@@ -279,9 +280,9 @@ export function Composer({
       : [{ label: draft.from.address ?? "", detail: draft.from.name ?? undefined, icon: "check", disabled: true, onSelect: () => undefined }];
     setFromMenu({
       anchor: anchorOf(button, "end"),
-      label: "Send from",
+      label: t("Send from"),
       entries: onAddAccount
-        ? [...addresses, "separator", { label: "Add an account…", icon: "plus", onSelect: onAddAccount }]
+        ? [...addresses, "separator", { label: t("Add an account…"), icon: "plus", onSelect: onAddAccount }]
         : addresses,
     });
   };
@@ -380,7 +381,7 @@ export function Composer({
     if (!fields || !draft || busy) return false;
     const everyone = [...parseRecipients(fields.to), ...parseRecipients(fields.cc), ...parseRecipients(fields.bcc)];
     if (everyone.length === 0) {
-      setError("Add at least one recipient.");
+      setError(t("Add at least one recipient."));
       return false;
     }
     const invalid = invalidAddresses(everyone);
@@ -527,7 +528,7 @@ export function Composer({
         if (gone) return;
         setDragging(false);
         if (frozen) {
-          setError("This message is being sent. Undo it first to attach files.");
+          setError(t("This message is being sent. Undo it first to attach files."));
           return;
         }
         setError(null);
@@ -654,14 +655,14 @@ export function Composer({
   const tools = (
     <div className="composer-tools">
       <span className="composer-status">{status}</span>
-      <button type="button" className="icon-btn" title="Attach files" aria-label="Attach files" onClick={() => void attach()} disabled={locked}>
+      <button type="button" className="icon-btn" title={t("Attach files")} aria-label={t("Attach files")} onClick={() => void attach()} disabled={locked}>
         <Icon name="paperclip" />
       </button>
       <button
         type="button"
         className="icon-btn danger"
-        title="Discard the draft"
-        aria-label="Discard the draft"
+        title={t("Discard the draft")}
+        aria-label={t("Discard the draft")}
         onClick={() => void discard()}
         disabled={Boolean(draft?.sending)}
       >
@@ -672,7 +673,7 @@ export function Composer({
           type="button"
           className="icon-btn"
           title={`Insert a template (${MOD_KEY}+Shift+T)`}
-          aria-label="Insert a template"
+          aria-label={t("Insert a template")}
           onClick={(event) => void insertTemplate(anchorOf(event.currentTarget, "end"))}
           disabled={locked}
         >
@@ -684,10 +685,10 @@ export function Composer({
         className="icon-btn"
         title={
           remindAt === null
-            ? "Remind me if nobody replies"
-            : `Reminds you ${laterDate(remindAt)} if nobody replies (click to remove)`
+            ? t("Remind me if nobody replies")
+            : t("Reminds you {when} if nobody replies (click to remove)", { when: laterDate(remindAt) })
         }
-        aria-label="Remind me if nobody replies"
+        aria-label={t("Remind me if nobody replies")}
         aria-pressed={remindAt !== null}
         onClick={(event) => void remind(event.currentTarget)}
         disabled={locked}
@@ -697,8 +698,8 @@ export function Composer({
       <button
         type="button"
         className="icon-btn"
-        title="Send later"
-        aria-label="Send later"
+        title={t("Send later")}
+        aria-label={t("Send later")}
         onClick={(event) => void later(event.currentTarget)}
         disabled={locked || !hasRecipients}
       >
@@ -708,13 +709,13 @@ export function Composer({
       {signatures.length > 0 && (
         <select
           className="composer-from"
-          aria-label="Signature"
-          title="Signature"
+          aria-label={t("Signature")}
+          title={t("Signature")}
           value={signatureId ?? ""}
           onChange={(event) => void changeSignature(event.target.value)}
           disabled={locked}
         >
-          <option value="">No signature</option>
+          <option value="">{t("No signature")}</option>
           {signatures.map((signature) => (
             <option key={signature.id} value={signature.id}>
               {signature.name}
@@ -729,7 +730,7 @@ export function Composer({
           className="composer-from-button"
           aria-haspopup="menu"
           aria-label={`From ${formatRecipients([draft.from])}`}
-          title="Send from"
+          title={t("Send from")}
           onClick={(event) => openFrom(event.currentTarget)}
           disabled={locked}
         >
@@ -744,7 +745,7 @@ export function Composer({
         type="button"
         className="send-button"
         title={`Send (${MOD_KEY}+Enter)`}
-        aria-label="Send"
+        aria-label={t("Send")}
         onClick={() => void send()}
         disabled={locked || !hasRecipients}
       >
@@ -757,25 +758,25 @@ export function Composer({
     <section
       className={`composer ${mode}${dragging ? " dropping" : ""}`}
       role="dialog"
-      aria-label={mode === "panel" ? "Reply" : "New message"}
+      aria-label={mode === "panel" ? t("Reply") : t("New message")}
       onKeyDown={keys}
       onKeyDownCapture={escape}
     >
       {dragging && (
         <div className="composer-drop" aria-hidden>
-          Drop to attach
+          {t("Drop to attach")}
         </div>
       )}
       {/* The title, then the window's buttons in the top right corner, Close last. */}
       <div className="composer-top">
-        <span className="composer-title">{mode === "panel" ? fields?.subject || "New message" : ""}</span>
+        <span className="composer-title">{mode === "panel" ? fields?.subject || t("New message") : ""}</span>
         <div className="composer-window">
           {onMode && (
             <button
               type="button"
               className="icon-btn"
-              title={mode === "panel" ? "Full size" : "Smaller"}
-              aria-label={mode === "panel" ? "Full size" : "Smaller"}
+              title={mode === "panel" ? t("Full size") : t("Smaller")}
+              aria-label={mode === "panel" ? t("Full size") : t("Smaller")}
               onClick={() => onMode(mode === "panel" ? "full" : "panel")}
             >
               <Icon name={mode === "panel" ? "expand" : "shrink"} size={15} />
@@ -785,8 +786,8 @@ export function Composer({
             <button
               type="button"
               className="icon-btn"
-              title="Open in a new window"
-              aria-label="Open in a new window"
+              title={t("Open in a new window")}
+              aria-label={t("Open in a new window")}
               onClick={() => void flush().then(() => onPopOut(fields?.subject ?? ""))}
             >
               <Icon name="popOut" size={15} />
@@ -795,8 +796,8 @@ export function Composer({
           <button
             type="button"
             className="icon-btn"
-            title="Close (Esc). The draft is kept, once something is written in it."
-            aria-label="Close"
+            title={t("Close (Esc). The draft is kept, once something is written in it.")}
+            aria-label={t("Close")}
             onClick={() => void close()}
           >
             <Icon name="close" size={16} />
@@ -805,13 +806,13 @@ export function Composer({
       </div>
       {!fields ? (
         <p className={error ? "composer-note error" : "composer-note muted"} role={error ? "alert" : "status"}>
-          {error ?? "Opening…"}
+          {error ?? t("Opening…")}
         </p>
       ) : (
         <>
           {draft?.sending && (
             <p className="composer-note error" role="status">
-              This message is being sent. Undo it first to change it.
+              {t("This message is being sent. Undo it first to change it.")}
             </p>
           )}
           <fieldset className="composer-fields" disabled={locked}>
@@ -820,24 +821,24 @@ export function Composer({
               className="subject-field"
               value={fields.subject}
               onChange={change("subject")}
-              placeholder="Subject"
-              aria-label="Subject"
+              placeholder={t("Subject")}
+              aria-label={t("Subject")}
             />
             {/* Not a label: a label may hold one control, and this line also has the Cc Bcc button. */}
             <div className="address-line">
-              <span onClick={() => toField.current?.focus()}>To</span>
+              <span onClick={() => toField.current?.focus()}>{t("To")}</span>
               <AddressInput
                 inputRef={toField}
-                label="To"
+                label={t("To")}
                 value={fields.to}
                 onChange={(to) => change("to")({ target: { value: to } })}
                 accountId={accountId ?? null}
                 besides={`${fields.cc}, ${fields.bcc}`}
-                placeholder="name@example.org, …"
+                placeholder={t("name@example.org, …")}
               />
               {!copies && (
                 <button type="button" className="link" onClick={() => setCopies(true)}>
-                  Cc Bcc
+                  {t("Cc Bcc")}
                 </button>
               )}
             </div>
@@ -845,10 +846,10 @@ export function Composer({
               <>
                 {/* Not labels either: the chips are controls too. */}
                 <div className="address-line">
-                  <span onClick={() => ccField.current?.focus()}>Cc</span>
+                  <span onClick={() => ccField.current?.focus()}>{t("Cc")}</span>
                   <AddressInput
                     inputRef={ccField}
-                    label="Cc"
+                    label={t("Cc")}
                     value={fields.cc}
                     onChange={(cc) => change("cc")({ target: { value: cc } })}
                     accountId={accountId ?? null}
@@ -856,10 +857,10 @@ export function Composer({
                   />
                 </div>
                 <div className="address-line">
-                  <span onClick={() => bccField.current?.focus()}>Bcc</span>
+                  <span onClick={() => bccField.current?.focus()}>{t("Bcc")}</span>
                   <AddressInput
                     inputRef={bccField}
-                    label="Bcc"
+                    label={t("Bcc")}
                     value={fields.bcc}
                     onChange={(bcc) => change("bcc")({ target: { value: bcc } })}
                     accountId={accountId ?? null}
@@ -868,7 +869,7 @@ export function Composer({
                 </div>
               </>
             )}
-            <Suspense fallback={<p className="muted small">Opening the editor…</p>}>
+            <Suspense fallback={<p className="muted small">{t("Opening the editor…")}</p>}>
               <RichEditor
                 key={editorKey}
                 initial={fields.html}
@@ -892,7 +893,7 @@ export function Composer({
                   </strong>
                   <span className="muted">{fileSize(total)}</span>
                 </p>
-                <ul className="tiles" aria-label="Attachments">
+                <ul className="tiles" aria-label={t("Attachments")}>
                   {files.map((file) => (
                     <li key={file.id} className="tile">
                       <span className="tile-face">{fileKind(file.name, file.mime)}</span>
@@ -904,7 +905,7 @@ export function Composer({
                         type="button"
                         className="tile-remove"
                         aria-label={`Remove ${file.name}`}
-                        title="Remove"
+                        title={t("Remove")}
                         onClick={() => void detach(file.id)}
                       >
                         <Icon name="close" size={12} />
@@ -912,7 +913,7 @@ export function Composer({
                     </li>
                   ))}
                   <li className="tile add">
-                    <button type="button" className="tile-face" aria-label="Attach more files" onClick={() => void attach()}>
+                    <button type="button" className="tile-face" aria-label={t("Attach more files")} onClick={() => void attach()}>
                       <Icon name="plus" size={22} />
                     </button>
                   </li>
@@ -922,7 +923,7 @@ export function Composer({
           </fieldset>
           {warnings.length > 0 && (
             <p className="composer-note" role="status">
-              {warnings.map(describeCheck).join(" ")} Press Send again to send it anyway.
+              {warnings.map(describeCheck).join(" ")} {t("Press Send again to send it anyway.")}
             </p>
           )}
           {error && (

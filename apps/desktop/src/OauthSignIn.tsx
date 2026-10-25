@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type AccountSummary, type Provider, cancelOauth, finishOauth, startOauth } from "./accounts";
 import { Icon } from "./icons";
+import { t } from "./i18n";
 
 /** What each provider covers, for its button. */
 export const PROVIDERS: Record<Provider, { label: string; covers: string }> = {
-  microsoft: { label: "Microsoft", covers: "Outlook.com, Hotmail and Microsoft 365" },
-  google: { label: "Google", covers: "Gmail and Google Workspace" },
+  microsoft: { label: t("Microsoft"), covers: "Outlook.com, Hotmail and Microsoft 365" },
+  google: { label: t("Google"), covers: "Gmail and Google Workspace" },
 };
 
 export interface OauthFlow {
@@ -85,22 +86,22 @@ export function OauthWaiting({ flow, onCancel }: { flow: OauthFlow; onCancel: ()
   return (
     <div className="oauth-waiting" role="status">
       <span className="spinner" aria-hidden="true" />
-      <strong>Waiting for your browser…</strong>
+      <strong>{t("Waiting for your browser…")}</strong>
       <p className="muted">
-        Sign in to {PROVIDERS[flow.provider].label} in the browser window that opened, then come back here.
+        {t("Sign in to")} {PROVIDERS[flow.provider].label} {t("in the browser window that opened, then come back here.")}
       </p>
       <div className="oauth-url">
-        <label htmlFor="oauth-url">If no window opened, open this address in your browser:</label>
+        <label htmlFor="oauth-url">{t("If no window opened, open this address in your browser:")}</label>
         <span>
           <input id="oauth-url" ref={field} className="input" readOnly value={flow.url} onFocus={(event) => event.target.select()} />
           <button type="button" className="btn small" onClick={copy}>
             <Icon name={copied ? "check" : "copy"} size={14} />
-            {copied ? "Copied" : "Copy"}
+            {copied ? t("Copied") : t("Copy")}
           </button>
         </span>
       </div>
       <button type="button" className="btn" onClick={onCancel}>
-        Cancel
+        {t("Cancel")}
       </button>
     </div>
   );

@@ -3,6 +3,7 @@ import { type Queued, undoSend } from "./compose";
 import { laterDate } from "./format";
 import { Icon } from "./icons";
 import { useShortcuts } from "./shortcuts";
+import { t } from "./i18n";
 
 /** How long a scheduled message's toast stays; it can be taken back from the Outbox after that. */
 const SCHEDULED_SHOW_MS = 10_000;
@@ -56,17 +57,17 @@ export function SendToast({
         <>
           {/* Said once; the ticking seconds would be read out every second. */}
           <span className="sr-only">
-            {scheduled ? `Scheduled for ${laterDate(queued.send_at as number)}.` : "Sending. Undo is still possible."}
+            {scheduled ? t("Scheduled for {when}.", { when: laterDate(queued.send_at as number) }) : t("Sending. Undo is still possible.")}
           </span>
           <span aria-hidden="true">
-            {scheduled ? `Scheduled for ${laterDate(queued.send_at as number)}` : `Sending in ${left} s`}
+            {scheduled ? t("Scheduled for {when}", { when: laterDate(queued.send_at as number) }) : t("Sending in {seconds} s", { seconds: left })}
           </span>
           <button type="button" onClick={undo}>
-            Undo
+            {t("Undo")}
           </button>
         </>
       ) : (
-        <span>Sending…</span>
+        <span>{t("Sending…")}</span>
       )}
     </div>
   );

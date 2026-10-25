@@ -38,20 +38,20 @@ export interface AgentApp {
 export const AGENT_APPS: AgentApp[] = [
   {
     id: "claude-code",
-    label: "Claude Code",
+    label: t("Claude Code"),
     opens: true,
-    hint: "Opens in a new terminal with the request ready: press Enter there.",
+    hint: t("Opens in a new terminal with the request ready: press Enter there."),
     is: (name) => /claude/i.test(name) && /code/i.test(name),
   },
   {
     id: "claude-app",
-    label: "Claude",
+    label: t("Claude"),
     opens: true,
-    hint: "Opens a new chat in the Claude app with the request ready: send it there.",
+    hint: t("Opens a new chat in the Claude app with the request ready: send it there."),
     is: (name) => /claude/i.test(name) && !/code/i.test(name),
   },
-  { id: "codex", label: "Codex", opens: false, hint: "", is: (name) => /codex/i.test(name) },
-  { id: "cursor", label: "Cursor", opens: false, hint: "", is: (name) => /cursor/i.test(name) },
+  { id: "codex", label: t("Codex"), opens: false, hint: "", is: (name) => /codex/i.test(name) },
+  { id: "cursor", label: t("Cursor"), opens: false, hint: "", is: (name) => /cursor/i.test(name) },
 ];
 
 /** An agent app found on this computer. */

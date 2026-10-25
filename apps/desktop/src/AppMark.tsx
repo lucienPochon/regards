@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { t } from "./i18n";
 
 /**
  * The Regards mark, "Traced": an envelope drawn by one point, the agent,
@@ -119,10 +120,10 @@ export function Launch() {
     <div className="launch">
       <AppMark size={96} draw pulse />
       <span className="launch-name" aria-hidden="true">
-        Regards
+        {t("Regards")}
       </span>
       <span className="launch-status" role="status">
-        Starting Regards…
+        {t("Starting Regards…")}
       </span>
     </div>
   );
