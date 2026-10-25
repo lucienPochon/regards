@@ -775,6 +775,10 @@ impl Session {
                 self.require_ui()?;
                 mail::set_sender_images(&self.state, params(request)?).await
             }
+            methods::SENDER_BLOCKED => {
+                self.require_ui()?;
+                mail::blocked_senders(&self.state, params(request)?).await
+            }
             methods::SENDER_IMAGES => {
                 self.require_ui()?;
                 mail::sender_images_list(&self.state, params(request)?).await

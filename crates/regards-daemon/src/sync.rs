@@ -163,6 +163,10 @@ pub(crate) async fn sync_account(state: &State, account_id: &str) -> Option<Resu
         Err(error) => tracing::warn!(account = %account_id, %error, "account sync failed"),
     }
     state.sync.finish(account_id, &outcome);
+    if outcome.is_ok() {
+        // The server answered: messages waiting out a retry go now.
+        crate::sender::Outbox::retry_now(state, account_id).await;
+    }
     Some(outcome)
 }
 

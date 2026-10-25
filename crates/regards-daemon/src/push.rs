@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tokio::sync::watch;
+use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 
 /// Re-issue IDLE this often; servers may drop idle sessions after 30 minutes (RFC 2177).
@@ -30,6 +30,8 @@ pub(crate) struct Watchers {
     running: Mutex<HashMap<String, Watcher>>,
     /// Tells a watcher from one started after it for the same account.
     next: AtomicU64,
+    /// Ends the wait of watchers between two failed connections.
+    reconnect: Notify,
 }
 
 struct Watcher {
@@ -84,6 +86,12 @@ impl Watchers {
         }
     }
 
+    /// Watchers waiting to connect again (up to [`MAX_BACKOFF`]) try now:
+    /// the person asked for mail, perhaps because the network is back.
+    pub(crate) fn reconnect_now(&self) {
+        self.reconnect.notify_waiters();
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Watcher>> {
         self.running.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
@@ -111,6 +119,7 @@ async fn run(state: &Arc<State>, account_id: &str, mut stopped: watch::Receiver<
                 tracing::warn!(account = %account_id, %error, retry_in = ?backoff, "push connection failed");
                 tokio::select! {
                     () = tokio::time::sleep(backoff) => {}
+                    () = state.watchers.reconnect.notified() => {}
                     () = until_stopped(&mut stopped) => return,
                 }
                 backoff = (backoff * 2).min(MAX_BACKOFF);
@@ -129,8 +138,10 @@ async fn watch_once(
 ) -> Result<(), SyncError> {
     let mut session = sync::login(state, account_id).await?;
     *connected = true;
-    // The server answers again, perhaps after an outage: send actions that wait for a retry.
+    // The server answers again, perhaps after an outage: send actions and
+    // messages that wait for a retry.
     crate::queue::Queue::retry_now(state, account_id).await;
+    crate::sender::Outbox::retry_now(state, account_id).await;
     let id = account_id.to_owned();
     let inbox = state
         .store

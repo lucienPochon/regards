@@ -103,6 +103,10 @@ export const blockSender = (accountId: string, address: string, blocked = true) 
 export const setSenderImages = (accountId: string, address: string, allow: boolean) =>
   invoke<{ allow: boolean }>("sender_set_images", { sender: { account_id: accountId, address, allow } });
 
+/** The senders (addresses and `@domain`s) an account blocked, sorted. `blockSender(…, false)` unblocks one. */
+export const blockedSenders = (accountId: string) =>
+  invoke<{ senders: string[] }>("sender_blocked", { accountId }).then((result) => result.senders);
+
 /** The senders (addresses and `@domain`s) an account loads remote images from, sorted. */
 export const senderImages = (accountId: string) =>
   invoke<{ senders: string[] }>("sender_images", { accountId }).then((result) => result.senders);

@@ -11,7 +11,7 @@ import {
   messageHtmlUrl,
   setFlags,
 } from "./accounts";
-import { type Action, type Target, actionKeys, actionTitle, choose } from "./actions";
+import { type Action, type Target, actionKeys, actionTitle, choose, newSendersOf } from "./actions";
 import { AttachmentTiles } from "./AttachmentTiles";
 import { Avatar } from "./Avatar";
 import { useChanges } from "./changes";
@@ -171,6 +171,7 @@ export function ReadingPane({
     reminded: message.reminded,
     unsubscribe: message.section === "newsletters" || message.section === "notifications" ? { from: message.from } : null,
     done: item.done === true,
+    accept: newSendersOf([{ accountId: item.accountId, section: message.section, from: message.from }]),
   };
   const actions = actionsFor(target);
   const done = choose(actions, "archive")[0];

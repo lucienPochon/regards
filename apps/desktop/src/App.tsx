@@ -28,7 +28,7 @@ import {
   syncAccount,
   trashMessages,
 } from "./accounts";
-import { type Action, type ActionHost, type Target, choose, messageActions } from "./actions";
+import { type Action, type ActionHost, type Target, choose, messageActions, newSendersOf } from "./actions";
 import { AddAccountDialog } from "./AddAccount";
 import { usePendingHolds } from "./AgentHolds";
 import { AskUpdates, useUpdateStatus } from "./UpdateCheck";
@@ -99,6 +99,7 @@ import { ConnectDialog, type ConnectId } from "./ConnectDialog";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { NameDialog, type NameRequest } from "./NameDialog";
 import { useLabels } from "./labels";
+import { useOnline } from "./online";
 import { type Template, listTemplates, saveTemplate } from "./templates";
 import { type AssistantJob, AssistantDialog, useAssistantKind } from "./AssistantDialog";
 import { MOD_KEY, useShortcuts } from "./shortcuts";
@@ -179,6 +180,7 @@ function targetOf(items: ListItem[]): Target {
     done: items.length > 0 && items.every((item) => item.done === true),
     // Rows stand for their conversations.
     conversation: true,
+    accept: newSendersOf(items),
   };
 }
 
@@ -1055,6 +1057,17 @@ export function App() {
       .catch(failed)
       .finally(() => setSyncing(false));
   };
+
+  // Back online: check for mail at once, so connections and sends waiting to
+  // try again don't sit out their delay. Quietly: the network may still flap.
+  const online = useOnline();
+  const wasOnline = useRef(online);
+  useEffect(() => {
+    if (online && !wasOnline.current) {
+      void Promise.allSettled(accounts.map((entry) => syncAccount(entry.account.id)));
+    }
+    wasOnline.current = online;
+  }, [online]);
 
   const toggleSidebar = () => {
     if (layout.locked) setLayout({ locked: false });

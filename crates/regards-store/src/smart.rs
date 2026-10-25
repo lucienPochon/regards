@@ -89,6 +89,14 @@ pub fn set_blocked(tx: &Transaction<'_>, account_id: &str, key: &str, blocked: b
     Ok(())
 }
 
+/// The senders and `@domain`s an account blocked, sorted (to unblock from a list).
+pub fn blocked(conn: &Connection, account_id: &str) -> Result<Vec<String>, StoreError> {
+    let mut statement =
+        conn.prepare_cached("SELECT address FROM senders WHERE account_id = ?1 AND blocked = 1 ORDER BY address")?;
+    let rows = statement.query_map([account_id], |row| row.get(0))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 /// How new senders' mail is shown.
 pub fn screening(conn: &Connection) -> Result<smart::Screening, StoreError> {
     let value: Option<String> = conn
@@ -544,6 +552,28 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(exact.len(), 1);
+
+        // The list to unblock from: only what is blocked now, sorted.
+        let a = f.account.clone();
+        f.store
+            .write(move |tx| set_blocked(tx, &a, "Spam@Example.net", true))
+            .await
+            .unwrap();
+        let a = f.account.clone();
+        assert_eq!(
+            f.store.read(move |c| blocked(c, &a)).await.unwrap(),
+            ["@shop.example", "spam@example.net"]
+        );
+        let a = f.account.clone();
+        f.store
+            .write(move |tx| set_blocked(tx, &a, "@shop.example", false))
+            .await
+            .unwrap();
+        let a = f.account.clone();
+        assert_eq!(
+            f.store.read(move |c| blocked(c, &a)).await.unwrap(),
+            ["spam@example.net"]
+        );
 
         // The screening setting: section unless chosen otherwise.
         assert_eq!(f.store.read(screening).await.unwrap(), smart::Screening::Section);
