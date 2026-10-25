@@ -29,6 +29,7 @@ import { useDialogFocus } from "./dialogFocus";
 import { Icon } from "./icons";
 import { OauthWaiting, PROVIDERS, useOauth } from "./OauthSignIn";
 import { useShortcuts } from "./shortcuts";
+import { t } from "./i18n";
 
 /** An address worth looking up: something@domain.tld. */
 const COMPLETE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -245,15 +246,15 @@ export function AddAccount({
           }}
         >
           <div className="signup-titles">
-            <h1>{first ? "Add your email" : onClose ? "Add another account" : "Add an account"}</h1>
+            <h1>{first ? t("Add your email") : onClose ? t("Add another account") : t("Add an account")}</h1>
             <p className="muted">
               {onClose
-                ? "The same steps as the first time. Your other accounts keep working meanwhile."
-                : "Just the address for now. Regards works out your provider and its servers."}
+                ? t("The same steps as the first time. Your other accounts keep working meanwhile.")
+                : t("Just the address for now. Regards works out your provider and its servers.")}
             </p>
           </div>
           <label className="signup-field">
-            Email address
+            {t("Email address")}
             <input
               className="input big"
               type="email"
@@ -270,22 +271,22 @@ export function AddAccount({
             <>
               <div className="signup-buttons">
                 <button type="button" className="btn big" onClick={onClose}>
-                  Cancel
+                  {t("Cancel")}
                 </button>
                 <button type="submit" className="btn primary big" disabled={!COMPLETE.test(email.trim()) || blocked}>
-                  Continue
+                  {t("Continue")}
                 </button>
               </div>
-              <p className="signup-foot center muted">Esc or ✕ closes it; nothing is saved until the last step.</p>
+              <p className="signup-foot center muted">{t("Esc or ✕ closes it; nothing is saved until the last step.")}</p>
             </>
           ) : (
             <>
               <button type="submit" className="btn primary big" disabled={!COMPLETE.test(email.trim()) || blocked}>
-                Continue
+                {t("Continue")}
               </button>
               <p className="signup-foot muted">
                 <Icon name="lock" size={14} />
-                Your password and your mail stay on this computer.
+                {t("Your password and your mail stay on this computer.")}
               </p>
             </>
           )}
@@ -302,10 +303,10 @@ export function AddAccount({
           }}
         >
           {chip}
-          <h1>{named ? `Your ${named} password` : "Your password"}</h1>
+          <h1>{named ? t("Your {provider} password", { provider: named }) : t("Your password")}</h1>
           {step.askUsername && (
             <label className="signup-field">
-              User name
+              {t("User name")}
               <input
                 className="input big"
                 value={input.username ?? ""}
@@ -314,7 +315,7 @@ export function AddAccount({
                 placeholder={email.trim()}
                 onChange={(event) => setInput({ ...input, username: event.target.value || null })}
               />
-              <span className="muted small">A login or customer number from your host's welcome email, for example.</span>
+              <span className="muted small">{t("A login or customer number from your host's welcome email, for example.")}</span>
             </label>
           )}
           <PasswordField
@@ -331,14 +332,14 @@ export function AddAccount({
           <p className="signup-foot muted">
             <Icon name="lock" size={14} />
             <span>
-              {host ? `Connects securely to ${host}` : "Connects securely"} ·{" "}
+              {host ? t("Connects securely to {host}", { host }) : t("Connects securely")} ·{" "}
               <button type="button" className="link" onClick={() => go({ kind: "servers", then: "password" })}>
-                Change servers
+                {t("Change servers")}
               </button>
             </span>
           </p>
           <button type="submit" className="btn primary big" disabled={!input.password}>
-            Sign in
+            {t("Sign in")}
           </button>
         </form>
       );
@@ -349,9 +350,9 @@ export function AddAccount({
         <div className="signup-body">
           {chip}
           <div className="signup-titles">
-            <h1>Sign in with {label}</h1>
+            <h1>{t("Sign in with")} {label}</h1>
             <p className="muted">
-              Your browser opens {label}&apos;s own page. You sign in there, and Regards never sees your password.
+              {t("Your browser opens")} {label}{t("'s own page. You sign in there, and Regards never sees your password.")}
             </p>
           </div>
           {oauth.flow ? (
@@ -362,16 +363,16 @@ export function AddAccount({
                 <li>
                   <span>1</span>
                   <span>
-                    Pick <strong>{email.trim()}</strong> in the browser
+                    {t("Pick")} <strong>{email.trim()}</strong> {t("in the browser")}
                   </span>
                 </li>
                 <li>
                   <span>2</span>
-                  <span>Allow Regards to read and send your mail</span>
+                  <span>{t("Allow Regards to read and send your mail")}</span>
                 </li>
                 <li>
                   <span>3</span>
-                  <span>Come back here: the rest is automatic</span>
+                  <span>{t("Come back here: the rest is automatic")}</span>
                 </li>
               </ol>
               {oauth.error && (
@@ -380,16 +381,16 @@ export function AddAccount({
                 </p>
               )}
               <button type="button" className="btn primary big" onClick={() => void oauth.start(step.provider, email.trim())}>
-                Open {label} sign-in
+                {t("Open {provider} sign-in", { provider: label })}
                 <Icon name="external" size={16} />
               </button>
             </>
           )}
           {!known?.oauth_only && !oauth.flow && (
             <p className="signup-alt muted">
-              Your workplace blocks this?{" "}
+              {t("Your workplace blocks this?")}{" "}
               <button type="button" className="link" onClick={() => go({ kind: "password" })}>
-                Use an app password instead
+                {t("Use an app password instead")}
               </button>
             </p>
           )}
@@ -430,18 +431,18 @@ export function AddAccount({
       body = (
         <div className="signup-body">
           <div className="signup-titles">
-            <h1>Connecting {email.trim()}</h1>
-            <p className="muted">A few seconds. Regards signs in to check everything before it saves anything.</p>
+            <h1>{t("Connecting {address}", { address: email.trim() })}</h1>
+            <p className="muted">{t("A few seconds. Regards signs in to check everything before it saves anything.")}</p>
           </div>
           <ul className="signup-checks" aria-live="polite">
             <li className="done">
               <Icon name="check" size={13} />
-              <span>Found the servers</span>
+              <span>{t("Found the servers")}</span>
               <span className="muted">{host}</span>
             </li>
             <li className="now">
               <span className="spinner small" aria-hidden="true" />
-              <span>Signing in to receive and send</span>
+              <span>{t("Signing in to receive and send")}</span>
               <span className="muted">as {input.username || email.trim()}</span>
             </li>
           </ul>
@@ -485,13 +486,13 @@ export function AddAccount({
     close?.();
   };
   return (
-    <section className="signup-card" aria-label="Add an email account" onKeyDown={escape}>
+    <section className="signup-card" aria-label={t("Add an email account")} onKeyDown={escape}>
       {step.kind !== "ready" && (
         <div className="signup-top">
           {backable || (step.kind === "address" && onCancel) ? (
             <button type="button" className="signup-back" onClick={step.kind === "recover" ? () => setStep({ kind: "password" }) : back}>
               <Icon name="back" size={16} />
-              {step.kind === "address" ? "Cancel" : "Back"}
+              {step.kind === "address" ? t("Cancel") : t("Back")}
             </button>
           ) : onClose ? (
             <Dots at={DOT[step.kind]} />
@@ -505,8 +506,8 @@ export function AddAccount({
         <button
           type="button"
           className="icon-btn signup-close"
-          aria-label="Close"
-          title={close ? "Close (Esc)" : "Signing in…"}
+          aria-label={t("Close")}
+          title={close ? t("Close (Esc)") : t("Signing in…")}
           disabled={!close}
           onClick={close}
         >
@@ -530,7 +531,7 @@ export function AddAccountDialog({ onClose, onAdded }: { onClose: () => void; on
   useShortcuts({}, { modal: true });
   return (
     <div className="backdrop">
-      <div ref={box} tabIndex={-1} className="signup-dialog" role="dialog" aria-modal="true" aria-label="Add another account">
+      <div ref={box} tabIndex={-1} className="signup-dialog" role="dialog" aria-modal="true" aria-label={t("Add another account")}>
         <AddAccount onClose={onClose} onDone={(account) => (account ? onAdded(account) : onClose())} />
       </div>
     </div>
@@ -593,7 +594,7 @@ function AddressChip({ email, detail, onChange }: { email: string; detail: strin
         {detail && <span className="muted">{detail}</span>}
       </span>
       <button type="button" className="link" onClick={onChange}>
-        Change
+        {t("Change")}
       </button>
     </div>
   );
@@ -618,7 +619,7 @@ function Found({
     return (
       <p className="signup-found" role="status">
         <span className="spinner small" aria-hidden="true" />
-        Looking up {domain}…
+        {t("Looking up {domain}…", { domain })}
       </p>
     );
   }
@@ -635,26 +636,26 @@ function Found({
     return (
       <p className="signup-found bad" role="alert">
         <Icon name="alert" size={15} />
-        This address signs in with {PROVIDERS[found.oauth ?? "microsoft"].label} only, which this version of Regards can&apos;t do yet.
+        {t("This address signs in with")} {PROVIDERS[found.oauth ?? "microsoft"].label} {t("only, which this version of Regards can't do yet.")}
       </p>
     );
   }
   const [tone, text]: readonly ["good" | "warn", ReactNode] =
     provider !== null
-      ? ["good", `${PROVIDERS[provider].label} · you sign in in your browser`]
+      ? ["good", t("{provider} · you sign in in your browser", { provider: PROVIDERS[provider].label })]
       : found.source !== null && found.provider_name
         ? [
             "good",
             <>
-              <strong>{found.provider_name}</strong> · settings found
+              <strong>{found.provider_name}</strong> {t("· settings found")}
             </>,
           ]
         : found.source === null
-          ? ["warn", `We couldn't find ${domain}'s servers: you'll type them next`]
+          ? ["warn", t("We couldn't find {domain}'s servers: you'll type them next", { domain })]
           : found.source === "guess"
-            ? ["good", `Likely settings for ${domain}: signing in checks them`]
+            ? ["good", t("Likely settings for {domain}: signing in checks them", { domain })]
             : // Listed, from the domain's own settings file, its MX or DNS records.
-              ["good", `Settings found for ${domain}`];
+              ["good", t("Settings found for {domain}", { domain })];
   return (
     <p className={`signup-found ${tone}`} role="status">
       <Icon name={tone === "good" ? "check" : "info"} size={15} />
@@ -667,7 +668,7 @@ function PasswordField({ value, autoFocus, onChange }: { value: string; autoFocu
   const [shown, setShown] = useState(false);
   return (
     <label className="signup-field">
-      Password
+      {t("Password")}
       <span className="signup-secret">
         <input
           className="input big"
@@ -680,7 +681,7 @@ function PasswordField({ value, autoFocus, onChange }: { value: string; autoFocu
         <button
           type="button"
           className="icon-btn"
-          aria-label={shown ? "Hide the password" : "Show the password"}
+          aria-label={shown ? t("Hide the password") : t("Show the password")}
           aria-pressed={shown}
           onClick={() => setShown(!shown)}
         >
@@ -796,28 +797,27 @@ function ServersForm({
           </span>
           <span className="signup-chip-text">
             <strong>{email}</strong>
-            <span>We couldn&apos;t find this host&apos;s servers on our own</span>
+            <span>{t("We couldn't find this host's servers on our own")}</span>
           </span>
         </div>
       )}
       <div className="signup-titles">
-        <h1>Your mail servers</h1>
+        <h1>{t("Your mail servers")}</h1>
         <p className="muted">
-          Your host&apos;s help pages or welcome email list them. Type the names; Regards fills in the usual ports and checks
-          each server as you go.
+          {t("Your host's help pages or welcome email list them. Type the names; Regards fills in the usual ports and checks each server as you go.")}
         </p>
       </div>
       <fieldset className={imap.className} onBlur={leaving("imap")}>
         <legend>
-          Receiving <span className="muted">· IMAP</span>
+          {t("Receiving")} <span className="muted">{t("· IMAP")}</span>
           <span className="signup-always muted">
             <Icon name="lock" size={12} />
-            Always encrypted (TLS)
+            {t("Always encrypted (TLS)")}
           </span>
         </legend>
         <div className="signup-row">
           <label className="signup-field grow">
-            Server
+            {t("Server")}
             <input
               className="input"
               value={input.imapHost}
@@ -829,7 +829,7 @@ function ServersForm({
             />
           </label>
           <label className="signup-field port">
-            Port
+            {t("Port")}
             <input
               className="input"
               inputMode="numeric"
@@ -842,22 +842,22 @@ function ServersForm({
       </fieldset>
       <fieldset className={smtp.className} onBlur={leaving("smtp")}>
         <legend>
-          Sending <span className="muted">· SMTP</span>
+          {t("Sending")} <span className="muted">{t("· SMTP")}</span>
         </legend>
         <div className="signup-row">
           <label className="signup-field grow">
-            Server
+            {t("Server")}
             <input
               className="input"
               value={input.smtpHost}
               autoFocus={mark === "smtp"}
               spellCheck={false}
-              placeholder="same as receiving"
+              placeholder={t("same as receiving")}
               onChange={(event) => field("smtpHost", event.target.value)}
             />
           </label>
           <label className="signup-field port">
-            Port
+            {t("Port")}
             <input
               className="input"
               inputMode="numeric"
@@ -866,7 +866,7 @@ function ServersForm({
             />
           </label>
         </div>
-        <div className="signup-segmented" role="radiogroup" aria-label="Encryption for sending">
+        <div className="signup-segmented" role="radiogroup" aria-label={t("Encryption for sending")}>
           {(["starttls", "tls"] as const).map((security) => (
             <button
               key={security}
@@ -875,8 +875,8 @@ function ServersForm({
               aria-checked={input.smtpSecurity === security}
               onClick={() => onSecurity(security)}
             >
-              <strong>{security === "tls" ? "TLS" : "STARTTLS"}</strong>
-              <span className="muted">· port {security === "tls" ? 465 : 587}</span>
+              <strong>{security === "tls" ? t("TLS") : t("STARTTLS")}</strong>
+              <span className="muted">{t("· port")} {security === "tls" ? 465 : 587}</span>
             </button>
           ))}
         </div>
@@ -891,7 +891,7 @@ function ServersForm({
         />
       </fieldset>
       <label className="signup-field">
-        User name
+        {t("User name")}
         <input
           className="input"
           value={input.username ?? ""}
@@ -899,10 +899,10 @@ function ServersForm({
           placeholder={email}
           onChange={(event) => field("username", event.target.value || null)}
         />
-        <span className="muted small">Usually your full address. Change it only if your host gave you another one.</span>
+        <span className="muted small">{t("Usually your full address. Change it only if your host gave you another one.")}</span>
       </label>
       <button type="submit" className="btn primary big" disabled={!input.imapHost.trim()}>
-        Continue
+        {t("Continue")}
       </button>
     </form>
   );
@@ -927,7 +927,7 @@ function CheckLine({
     return (
       <p className="signup-check" role="status">
         <span className="spinner small" aria-hidden="true" />
-        Checking {settings.host}…
+        {t("Checking {host}…", { host: settings.host })}
       </p>
     );
   }
@@ -935,38 +935,40 @@ function CheckLine({
     return (
       <p className="signup-check good" role="status">
         <Icon name="check" size={14} />
-        It answers, securely
+        {t("It answers, securely")}
       </p>
     );
   }
   const port = settings.port;
   const what =
     found.reason === "tls"
-      ? `No secure connection on port ${port}`
+      ? t("No secure connection on port {port}", { port })
       : found.reason === "not_imap"
-        ? `What answers on port ${port} isn't a server for ${server === "imap" ? "receiving" : "sending"} mail`
+        ? server === "imap"
+          ? t("What answers on port {port} isn't a server for receiving mail", { port })
+          : t("What answers on port {port} isn't a server for sending mail", { port })
         : found.reason === "protocol"
-          ? `The server on port ${port} answered in a way Regards didn't expect`
-          : `Nothing answered on port ${port}`;
+          ? t("The server on port {port} answered in a way Regards didn't expect", { port })
+          : t("Nothing answered on port {port}", { port });
   const suggestion = found.suggestion;
   return (
     <div className="signup-check bad" role="alert">
       {suggestion ? (
         <span>
-          {what}, but this server answers on{" "}
+          {what}{t(", but this server answers on")}{" "}
           <strong>
-            {suggestion.port} with {securityName(suggestion.security)}
+            {t("{port} with {security}", { port: suggestion.port, security: securityName(suggestion.security) })}
           </strong>
           .
         </span>
       ) : (
         <span>
-          {what}. {found.reason === "tls" ? "Check the port." : "Check the server name and port."}
+          {what}. {found.reason === "tls" ? t("Check the port.") : t("Check the server name and port.")}
         </span>
       )}
       {suggestion && onUse && (
         <button type="button" className="btn small" onClick={() => onUse(suggestion)}>
-          Use {suggestion.port}
+          {t("Use {port}", { port: suggestion.port })}
         </button>
       )}
     </div>
@@ -1017,7 +1019,7 @@ function Recover({
 }) {
   const check = failure.check;
   const sending = check?.server === "smtp";
-  const where = host || email.split("@")[1] || "the server";
+  const where = host || email.split("@")[1] || t("the server");
   // Who turned the password down: the provider, by name, where known.
   const who = named || where;
   const tried = check?.tried?.length ? check.tried : [email];
@@ -1026,89 +1028,94 @@ function Recover({
   let choices: ReactNode;
   switch (check?.reason) {
     case "auth_failed":
-      title = sending ? "The sending server didn't accept the password" : `${who} didn't accept the password`;
+      title = sending ? t("The sending server didn't accept the password") : t("{who} didn't accept the password", { who });
       lead = (
         <>
           {sending
-            ? "Receiving works; signing in to send failed. "
-            : "The server was found and the connection is secure; only the sign-in failed. "}
-          We tried{" "}
+            ? t("Receiving works; signing in to send failed. ")
+            : t("The server was found and the connection is secure; only the sign-in failed. ")}
+          {t("We tried")}{" "}
           {tried.map((name, at) => (
             <span key={name}>
-              {at > 0 && (at === tried.length - 1 ? " and " : ", ")}
+              {at > 0 && (at === tried.length - 1 ? ` ${t("and")} ` : ", ")}
               <strong>{name}</strong>
             </span>
           ))}{" "}
-          as the user name.
+          {t("as the user name.")}
         </>
       );
       choices = (
         <>
-          <Choice main icon="refresh" title="Type the password again" detail="Show the password to check it." onClick={onPassword} />
+          <Choice main icon="refresh" title={t("Type the password again")} detail={t("Show the password to check it.")} onClick={onPassword} />
           <Choice
             icon="lock"
-            title="Use a password made for Regards"
-            detail={found?.password_help ?? `If two-step sign-in is on, ${named || "your provider"} needs an app password.`}
+            title={t("Use a password made for Regards")}
+            detail={
+              found?.password_help ??
+              (named
+                ? t("If two-step sign-in is on, {provider} needs an app password.", { provider: named })
+                : t("If two-step sign-in is on, your provider needs an app password."))
+            }
             onClick={onPassword}
           />
           {provider && (
-            <Choice icon="user" title={`Sign in with ${PROVIDERS[provider].label} instead`} detail="In your browser; no password here." onClick={onProvider} />
+            <Choice icon="user" title={t("Sign in with {provider} instead", { provider: PROVIDERS[provider].label })} detail={t("In your browser; no password here.")} onClick={onProvider} />
           )}
-          <Choice icon="user" title="Sign in with another user name" detail="Some hosts use a login or customer number from your welcome email." onClick={onUsername} />
+          <Choice icon="user" title={t("Sign in with another user name")} detail={t("Some hosts use a login or customer number from your welcome email.")} onClick={onUsername} />
         </>
       );
       break;
     case "login_disabled":
-      title = `${who} doesn't take a password here`;
-      lead = "The server turned password sign-in off for mail apps.";
+      title = t("{who} doesn't take a password here", { who });
+      lead = t("The server turned password sign-in off for mail apps.");
       choices = (
         <>
           {provider && (
-            <Choice main icon="user" title={`Sign in with ${PROVIDERS[provider].label}`} detail="In your browser; no password here." onClick={onProvider} />
+            <Choice main icon="user" title={t("Sign in with {provider}", { provider: PROVIDERS[provider].label })} detail={t("In your browser; no password here.")} onClick={onProvider} />
           )}
           <Choice
             main={!provider}
             icon="lock"
-            title="Use a password made for Regards"
-            detail={found?.password_help ?? "Your provider's settings can make one, or turn mail-app sign-in on."}
+            title={t("Use a password made for Regards")}
+            detail={found?.password_help ?? t("Your provider's settings can make one, or turn mail-app sign-in on.")}
             onClick={onPassword}
           />
         </>
       );
       break;
     case "tls":
-      title = sending ? "Sending isn't encrypted the way Regards needs" : `The connection to ${where} isn't secure`;
+      title = sending ? t("Sending isn't encrypted the way Regards needs") : t("The connection to {where} isn't secure", { where });
       lead = sending
-        ? "The sending server's encryption setting may be the other one: STARTTLS on 587, or TLS on 465."
-        : "Regards only signs in over an encrypted connection, and this server didn't offer one that checks out.";
+        ? t("The sending server's encryption setting may be the other one: STARTTLS on 587, or TLS on 465.")
+        : t("Regards only signs in over an encrypted connection, and this server didn't offer one that checks out.");
       choices = (
         <>
-          <Choice main icon="settings" title="Check the servers" detail={sending ? "Try the other encryption setting." : "A name or port may be off."} onClick={() => onServers(check.server)} />
-          <Choice icon="refresh" title="Try again" detail="On a public network, a second try may work." onClick={onRetry} />
+          <Choice main icon="settings" title={t("Check the servers")} detail={sending ? t("Try the other encryption setting.") : t("A name or port may be off.")} onClick={() => onServers(check.server)} />
+          <Choice icon="refresh" title={t("Try again")} detail={t("On a public network, a second try may work.")} onClick={onRetry} />
         </>
       );
       break;
     case "connect":
     case "timeout":
     case "not_imap":
-      title = sending ? "The sending server didn't answer" : `${where} didn't answer`;
+      title = sending ? t("The sending server didn't answer") : t("{where} didn't answer", { where });
       lead = sending
-        ? "Receiving works. Some networks block the ports for sending mail; the server name or port may also be off."
-        : "The server name or port may be off, or the network may be down.";
+        ? t("Receiving works. Some networks block the ports for sending mail; the server name or port may also be off.")
+        : t("The server name or port may be off, or the network may be down.");
       choices = (
         <>
-          <Choice main icon="settings" title="Check the servers" detail="See what Regards tried, and change it." onClick={() => onServers(check.server)} />
-          <Choice icon="refresh" title="Try again" detail="If the network was down for a moment." onClick={onRetry} />
+          <Choice main icon="settings" title={t("Check the servers")} detail={t("See what Regards tried, and change it.")} onClick={() => onServers(check.server)} />
+          <Choice icon="refresh" title={t("Try again")} detail={t("If the network was down for a moment.")} onClick={onRetry} />
         </>
       );
       break;
     default:
-      title = "The account couldn't be added";
-      lead = check ? "Something went wrong while signing in." : failure.message;
+      title = t("The account couldn't be added");
+      lead = check ? t("Something went wrong while signing in.") : failure.message;
       choices = (
         <>
-          <Choice main icon="refresh" title="Try again" detail="It may work on a second try." onClick={onRetry} />
-          <Choice icon="settings" title="Check the servers" detail="See what Regards tried, and change it." onClick={() => onServers(check?.server)} />
+          <Choice main icon="refresh" title={t("Try again")} detail={t("It may work on a second try.")} onClick={onRetry} />
+          <Choice icon="settings" title={t("Check the servers")} detail={t("See what Regards tried, and change it.")} onClick={() => onServers(check?.server)} />
         </>
       );
   }
@@ -1128,15 +1135,15 @@ function Recover({
         {sending && (
           <Choice
             icon="check"
-            title="Add it anyway"
-            detail="Receiving works. The first message you send then says what is wrong."
+            title={t("Add it anyway")}
+            detail={t("Receiving works. The first message you send then says what is wrong.")}
             onClick={onAddAnyway}
           />
         )}
       </div>
       {check && failure.message && (
         <details className="signup-said">
-          <summary>What the server said</summary>
+          <summary>{t("What the server said")}</summary>
           <code>{failure.message}</code>
         </details>
       )}
@@ -1179,21 +1186,22 @@ function Ready({
         <span aria-hidden="true">
           <Icon name="check" size={28} />
         </span>
-        <h1>{account.email} is ready</h1>
-        <p className="muted">{sendChecked ? "Receiving and sending both work." : "Receiving works. Sending wasn't checked."}</p>
+        <h1>{account.email} {t("is ready")}</h1>
+        <p className="muted">{sendChecked ? t("Receiving and sending both work.") : t("Receiving works. Sending wasn't checked.")}</p>
       </div>
       <label className="signup-field">
-        Name people see on your mail
+        {t("Name people see on your mail")}
         <input className="input big" value={name} autoFocus onChange={(event) => setName(event.target.value)} autoComplete="name" />
         <span className="muted small">
-          {given ? `From your ${account.sign_in === "google" ? "Google" : "Microsoft"} account. ` : ""}You can change it any time in Settings.
+          {given ? `${t("From your {provider} account.", { provider: account.sign_in === "google" ? "Google" : "Microsoft" })} ` : ""}
+          {t("You can change it any time in Settings.")}
         </span>
       </label>
       <button type="submit" className="btn primary big" disabled={saving}>
-        {first ? "Open Inbox" : "Done"}
+        {first ? t("Open Inbox") : t("Done")}
       </button>
       <button type="button" className="link signup-another" onClick={() => finish(onAnother)}>
-        Add another account
+        {t("Add another account")}
       </button>
     </form>
   );

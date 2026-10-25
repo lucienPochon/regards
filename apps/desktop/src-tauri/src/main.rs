@@ -17,6 +17,7 @@ mod badge;
 mod command_line;
 mod compose_window;
 mod drops;
+mod lang;
 mod links;
 mod mail_frame;
 mod notify;
@@ -1075,7 +1076,7 @@ async fn attachment_save(
     let mut dialog = app
         .dialog()
         .file()
-        .set_title("Save attachment")
+        .set_title(lang::tr("Save attachment"))
         .set_file_name(regards_core::attachment::file_name(Some(&name), ""));
     if let Ok(downloads) = app.path().download_dir() {
         dialog = dialog.set_directory(downloads);
@@ -1110,7 +1111,7 @@ async fn attachment_save_all(
     message_id: i64,
 ) -> Result<Option<Vec<String>>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let mut dialog = app.dialog().file().set_title("Save all attachments in");
+    let mut dialog = app.dialog().file().set_title(lang::tr("Save all attachments in"));
     if let Ok(downloads) = app.path().download_dir() {
         dialog = dialog.set_directory(downloads);
     }
@@ -1456,7 +1457,7 @@ async fn draft_attach_files(
     draft_id: i64,
 ) -> Result<Option<DraftView>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let picker = app.dialog().file().set_title("Attach files");
+    let picker = app.dialog().file().set_title(lang::tr("Attach files"));
     let picked = tauri::async_runtime::spawn_blocking(move || picker.blocking_pick_files())
         .await
         .map_err(|error| error.to_string())?;
@@ -2166,6 +2167,7 @@ fn main() {
             people_forget,
             compose_window::composer_window,
             compose_window::composer_window_open,
+            background::set_language,
             snap::snap_layouts,
             thread_window::thread_window,
             draft_check,

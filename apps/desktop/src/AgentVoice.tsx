@@ -6,6 +6,7 @@ import { Icon } from "./icons";
 import { type Identity, VOICE_MAX, learnVoicePrompt, listIdentities, setVoice } from "./identities";
 import { type NoteSettings, forgetAllNotes, noteSettings, setNotesEnabled } from "./notes";
 import { SubPageHead, Toggle } from "./SettingsControls";
+import { t, tn } from "./i18n";
 
 /** Every account's addresses, kept current. */
 function useIdentities(accounts: AccountSummary[]): [Identity[], () => void] {
@@ -40,9 +41,9 @@ function LearnIt({ email, onClose }: { email: string; onClose?: () => void }) {
   return (
     <div className="voice-ask">
       <div className="voice-ask-head">
-        <strong>Ask Claude Code</strong>
+        <strong>{t("Ask Claude Code")}</strong>
         {onClose && (
-          <button type="button" className="icon-btn small" aria-label="Close" title="Close" onClick={onClose}>
+          <button type="button" className="icon-btn small" aria-label={t("Close")} title={t("Close")} onClick={onClose}>
             <Icon name="close" size={13} />
           </button>
         )}
@@ -51,11 +52,11 @@ function LearnIt({ email, onClose }: { email: string; onClose?: () => void }) {
       <div className="voice-ask-foot">
         <span className="muted" role="status">
           {copied
-            ? "Paste it in Claude Code. Its suggestion shows at the top of this page for you to approve."
-            : "Claude Code reads your sent mail through Regards and suggests a voice. Nothing changes until you approve it."}
+            ? t("Paste it in Claude Code. Its suggestion shows at the top of this page for you to approve.")
+            : t("Claude Code reads your sent mail through Regards and suggests a voice. Nothing changes until you approve it.")}
         </span>
         <button type="button" className="btn small primary" onClick={copy}>
-          {copied ? "Copied" : "Copy"}
+          {copied ? t("Copied") : t("Copy")}
         </button>
       </div>
     </div>
@@ -80,16 +81,16 @@ export function VoiceSection({ accounts, onOpen }: { accounts: AccountSummary[];
     <section className="agent-section" aria-labelledby="voice-title">
       <div className="agent-section-head">
         <Icon name="quote" size={18} />
-        <h4 id="voice-title">Your voice</h4>
+        <h4 id="voice-title">{t("Your voice")}</h4>
         <span
           className="info-tip"
-          title="How agents should write when they draft for you from an address: language, tone, how formal, how you open and close, what never to promise. Only you can change it."
+          title={t("How agents should write when they draft for you from an address: language, tone, how formal, how you open and close, what never to promise. Only you can change it.")}
         >
           <Icon name="info" size={15} />
         </span>
       </div>
       <p className="muted agent-section-desc">
-        Agents read it before they draft for you from an address. Off: they write in a plain, neutral style.
+        {t("Agents read it before they draft for you from an address. Off: they write in a plain, neutral style.")}
       </p>
       {error && (
         <p className="error agent-section-desc" role="alert">
@@ -107,7 +108,7 @@ export function VoiceSection({ accounts, onOpen }: { accounts: AccountSummary[];
                     <span className="voice-text">
                       <strong>{identity.email}</strong>
                       <span className={empty ? "muted" : "voice-preview"}>
-                        {empty ? "Empty. Write it, or ask Claude Code to learn it." : identity.voice.split("\n")[0]}
+                        {empty ? t("Empty. Write it, or ask Claude Code to learn it.") : identity.voice.split("\n")[0]}
                       </span>
                     </span>
                     <Icon name="chevronRight" size={15} />
@@ -115,22 +116,22 @@ export function VoiceSection({ accounts, onOpen }: { accounts: AccountSummary[];
                 ) : (
                   <span className="voice-text">
                     <strong>{identity.email}</strong>
-                    <span className="muted">Off</span>
+                    <span className="muted">{t("Off")}</span>
                   </span>
                 )}
                 {identity.voice_on && empty && (
                   <button
                     type="button"
                     className="icon-btn learn-btn"
-                    title="Ask Claude Code to learn it from your sent mail"
-                    aria-label="Ask Claude Code to learn it"
+                    title={t("Ask Claude Code to learn it from your sent mail")}
+                    aria-label={t("Ask Claude Code to learn it")}
                     aria-expanded={asking === identity.id}
                     onClick={() => setAsking(asking === identity.id ? null : identity.id)}
                   >
                     <Icon name="agent" size={15} />
                   </button>
                 )}
-                <Toggle label={`Use a voice for ${identity.email}`} on={identity.voice_on} onChange={() => toggle(identity)} />
+                <Toggle label={t("Use a voice for {address}", { address: identity.email })} on={identity.voice_on} onChange={() => toggle(identity)} />
               </div>
               {asking === identity.id && <LearnIt email={identity.email} onClose={() => setAsking(null)} />}
             </li>
@@ -158,24 +159,24 @@ export function VoiceEditor({ identity, onBack }: { identity: Identity; onBack: 
   };
   return (
     <>
-      <SubPageHead title="Your voice" onBack={onBack} />
+      <SubPageHead title={t("Your voice")} onBack={onBack} />
       <div className="voice-editor">
         <div className="voice-editor-top">
           <span className="muted">{identity.email}</span>
           <button
             type="button"
             className="btn small"
-            title="Ask Claude Code to learn it from your sent mail"
+            title={t("Ask Claude Code to learn it from your sent mail")}
             aria-expanded={asking}
             onClick={() => setAsking(!asking)}
           >
             <Icon name="agent" size={14} />
-            Learn it
+            {t("Learn it")}
           </button>
         </div>
         {asking && <LearnIt email={identity.email} />}
         <label htmlFor="voice-text" className="voice-label">
-          How you write from this address
+          {t("How you write from this address")}
         </label>
         <textarea
           id="voice-text"
@@ -183,7 +184,7 @@ export function VoiceEditor({ identity, onBack }: { identity: Identity; onBack: 
           maxLength={VOICE_MAX}
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder="For example: French by default, English if they write in English. Vous with clients. Short and warm. Never quote a price or promise a date."
+          placeholder={t("For example: French by default, English if they write in English. Vous with clients. Short and warm. Never quote a price or promise a date.")}
         />
         <span className="muted small voice-count">
           {text.length} / {VOICE_MAX.toLocaleString()}
@@ -195,14 +196,14 @@ export function VoiceEditor({ identity, onBack }: { identity: Identity; onBack: 
         )}
         <div className="voice-buttons">
           <button type="button" className="btn small danger" onClick={() => setText("")} disabled={text === ""}>
-            Clear
+            {t("Clear")}
           </button>
           <span className="spacer" />
           <button type="button" className="btn small" onClick={onBack}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button type="button" className="btn small primary" onClick={save} disabled={busy}>
-            Save
+            {t("Save")}
           </button>
         </div>
       </div>
@@ -230,9 +231,12 @@ export function NotesSection({ confirm }: { confirm: (request: ConfirmRequest) =
   };
   const forget = async () => {
     const ok = await confirm({
-      title: "Forget every note?",
-      body: `The ${settings.notes} ${settings.notes === 1 ? "note" : "notes"} about ${settings.people} ${settings.people === 1 ? "person" : "people"} go, in every account. This can't be undone.`,
-      confirm: "Forget them all",
+      title: t("Forget every note?"),
+      body: t("{notes} about {people} go, in every account. This can't be undone.", {
+        notes: tn(settings.notes, "1 note", "{count} notes"),
+        people: tn(settings.people, "1 person", "{count} people"),
+      }),
+      confirm: t("Forget them all"),
       danger: true,
     });
     if (!ok) return;
@@ -242,30 +246,32 @@ export function NotesSection({ confirm }: { confirm: (request: ConfirmRequest) =
     <section className="agent-section" aria-labelledby="notes-title">
       <div className="agent-section-head">
         <Icon name="people" size={18} />
-        <h4 id="notes-title">Notes about people</h4>
-        <Toggle label="Notes about people" on={settings.on} onChange={switchTo} />
+        <h4 id="notes-title">{t("Notes about people")}</h4>
+        <Toggle label={t("Notes about people")} on={settings.on} onChange={switchTo} />
       </div>
       <p className="muted agent-section-desc">
-        Agents can read and add short notes about the people you write with: who decides, what they prefer. You see
-        them on each person&apos;s card.
+        {t("Agents can read and add short notes about the people you write with: who decides, what they prefer. You see them on each person's card.")}
       </p>
       <p className="muted agent-section-fine">
         {settings.on ? (
           <>
             <span>
               {settings.notes === 0
-                ? "No notes yet"
-                : `${settings.notes} ${settings.notes === 1 ? "note" : "notes"} about ${settings.people} ${settings.people === 1 ? "person" : "people"}`}
-              , kept on this computer.
+                ? t("No notes yet")
+                : t("{notes} about {people}", {
+                    notes: tn(settings.notes, "1 note", "{count} notes"),
+                    people: tn(settings.people, "1 person", "{count} people"),
+                  })}
+              {t(", kept on this computer.")}
             </span>
             {settings.notes > 0 && (
               <button type="button" className="danger-link" onClick={() => void forget()}>
-                Forget them all
+                {t("Forget them all")}
               </button>
             )}
           </>
         ) : (
-          "Off: the notes are kept, but nobody is shown or given them, and agents add none."
+          t("Off: the notes are kept, but nobody is shown or given them, and agents add none.")
         )}
       </p>
       {error && (

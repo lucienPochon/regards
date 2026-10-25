@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ConfirmRequest } from "./Confirm";
 import { Icon } from "./icons";
 import { eraseEverything } from "./support";
+import { t } from "./i18n";
 
 /**
  * Support › This computer › Remove everything: what Regards keeps here,
@@ -14,12 +15,12 @@ export function EraseEverything({ confirm }: { confirm: (request: ConfirmRequest
 
   const remove = async () => {
     const ok = await confirm({
-      title: "Remove everything from this computer?",
+      title: t("Remove everything from this computer?"),
       body:
-        "Your passwords, sign-ins and AI key leave this computer's credential store. Then all mail, drafts and the Outbox go " +
+        t("Your passwords, sign-ins and AI key leave this computer's credential store. Then all mail, drafts and the Outbox go ") +
         "(messages waiting there are not sent), with the settings and the logs, and Regards no longer starts at login. " +
-        "Regards then closes; next time it starts as new. Your mail on the servers stays as it is.",
-      confirm: "Remove everything",
+        t("Regards then closes; next time it starts as new. Your mail on the servers stays as it is."),
+      confirm: t("Remove everything"),
       danger: true,
     });
     if (!ok) return;
@@ -48,18 +49,18 @@ export function EraseEverything({ confirm }: { confirm: (request: ConfirmRequest
           <Icon name="trash" size={18} />
         </span>
         <span className="option-text">
-          <strong>Remove everything from this computer</strong>
+          <strong>{t("Remove everything from this computer")}</strong>
           <span role="status">
             {state === "removing"
-              ? "Removing… Regards closes when it is done."
+              ? t("Removing… Regards closes when it is done.")
               : state === "removed"
-                ? "Removed. Regards closes now."
-                : "Passwords and sign-ins, mail, drafts, the Outbox, settings and logs. Your mail on the servers stays."}
+                ? t("Removed. Regards closes now.")
+                : t("Passwords and sign-ins, mail, drafts, the Outbox, settings and logs. Your mail on the servers stays.")}
           </span>
         </span>
         <span className="option-control">
           <button type="button" className="btn small danger" onClick={() => void remove()} disabled={state !== "idle"}>
-            Remove everything…
+            {t("Remove everything…")}
           </button>
         </span>
       </div>

@@ -8,6 +8,7 @@ import { IMAGE_TYPES } from "./images";
 // ProseMirror's base styles as files: the app's CSP allows no injected <style>.
 import "prosemirror-view/style/prosemirror.css";
 import "prosemirror-gapcursor/style/gapcursor.css";
+import { t } from "./i18n";
 
 /** An image in the text, shown from its bytes, marked with its Content-ID (images.ts). */
 const InlineImage = Image.extend({
@@ -192,11 +193,11 @@ export function RichEditor({
 
   return (
     <div className="rich-editor">
-      <div className="format-bar small" role="toolbar" aria-label="Formatting">
+      <div className="format-bar small" role="toolbar" aria-label={t("Formatting")}>
         <select
           className="text-style"
-          aria-label="Text style"
-          title="Text style"
+          aria-label={t("Text style")}
+          title={t("Text style")}
           disabled={disabled}
           value={active?.heading ?? 0}
           onChange={(event) => {
@@ -205,10 +206,10 @@ export function RichEditor({
             else chain().setParagraph().run();
           }}
         >
-          <option value={0}>Text</option>
-          <option value={1}>Title</option>
-          <option value={2}>Heading</option>
-          <option value={3}>Subheading</option>
+          <option value={0}>{t("Text")}</option>
+          <option value={1}>{t("Title")}</option>
+          <option value={2}>{t("Heading")}</option>
+          <option value={3}>{t("Subheading")}</option>
         </select>
         {button("B", active?.bold ?? false, () => chain().toggleBold().run(), "Bold")}
         {button("I", active?.italic ?? false, () => chain().toggleItalic().run(), "Italic")}
@@ -218,19 +219,19 @@ export function RichEditor({
           type="button"
           className="colour-button"
           aria-pressed={swatches === "colour"}
-          aria-label="Text colour"
-          title="Text colour"
+          aria-label={t("Text colour")}
+          title={t("Text colour")}
           disabled={disabled}
           onClick={() => setSwatches(swatches === "colour" ? null : "colour")}
         >
-          A<span className="colour-bar" style={{ background: active?.colour ?? "currentColor" }} />
+          {t("A")}<span className="colour-bar" style={{ background: active?.colour ?? "currentColor" }} />
         </button>
         <button
           type="button"
           className="colour-button"
           aria-pressed={swatches === "highlight"}
-          aria-label="Highlight"
-          title="Highlight"
+          aria-label={t("Highlight")}
+          title={t("Highlight")}
           disabled={disabled}
           onClick={() => setSwatches(swatches === "highlight" ? null : "highlight")}
         >
@@ -243,7 +244,7 @@ export function RichEditor({
           <span
             className="swatches"
             role="group"
-            aria-label={swatches === "colour" ? "Text colours" : "Highlights"}
+            aria-label={swatches === "colour" ? t("Text colours") : t("Highlights")}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.preventDefault();
@@ -274,27 +275,27 @@ export function RichEditor({
                 setSwatches(null);
               }}
             >
-              {swatches === "colour" ? "Default" : "None"}
+              {swatches === "colour" ? t("Default") : t("None")}
             </button>
           </span>
         )}
         {button(
-          "Link",
+          t("Link"),
           active?.link ?? false,
           () => setLinking(editor.getAttributes("link").href ?? ""),
-          "Add or change a link",
+          t("Add or change a link"),
         )}
-        {button("• List", active?.bullets ?? false, () => chain().toggleBulletList().run(), "Bulleted list")}
-        {button("1. List", active?.numbers ?? false, () => chain().toggleOrderedList().run(), "Numbered list")}
-        {button("Quote", active?.quote ?? false, () => chain().toggleBlockquote().run(), "Quote")}
-        {button("Clear", false, () => chain().unsetAllMarks().clearNodes().run(), "Clear formatting")}
+        {button(t("• List"), active?.bullets ?? false, () => chain().toggleBulletList().run(), t("Bulleted list"))}
+        {button(t("1. List"), active?.numbers ?? false, () => chain().toggleOrderedList().run(), t("Numbered list"))}
+        {button(t("Quote"), active?.quote ?? false, () => chain().toggleBlockquote().run(), t("Quote"))}
+        {button(t("Clear"), false, () => chain().unsetAllMarks().clearNodes().run(), t("Clear formatting"))}
         {linking !== null && (
           <span className="link-input">
             <input
               autoFocus
               value={linking}
               placeholder="https://…"
-              aria-label="Link address"
+              aria-label={t("Link address")}
               onChange={(event) => setLinking(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
@@ -308,7 +309,7 @@ export function RichEditor({
               }}
             />
             <button type="button" onClick={applyLink}>
-              {linking.trim() ? "Apply" : "Remove"}
+              {linking.trim() ? t("Apply") : t("Remove")}
             </button>
           </span>
         )}

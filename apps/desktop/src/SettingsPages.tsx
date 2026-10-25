@@ -76,7 +76,7 @@ export function GeneralPage({ accounts }: { accounts: AccountSummary[] }) {
     <>
       <h3>{t("General")}</h3>
       {error && <p className="error" role="alert">{error}</p>}
-      <Option icon="text" label={t("Language")} description={t("Regards in English or in French. Some screens are still in English.")}>
+      <Option icon="text" label={t("Language")} description={t("Regards in English or in French. Like this computer: French on a computer set to French, English otherwise.")}>
         <Select
           label={t("Language")}
           value={prefs.language}

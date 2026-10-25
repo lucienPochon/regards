@@ -10,6 +10,7 @@ import { TYPED_TIME_HINT, typedTimeEntries } from "./typedTime";
 import { type Template, type Written, listTemplates, saveWritten } from "./templates";
 import { TimePicker } from "./TimePicker";
 import { PLATFORM, TitleBar } from "./TitleBar";
+import { t } from "./i18n";
 
 /**
  * A message written in a window of its own (Spark's "open in a new
@@ -68,7 +69,7 @@ export function ComposerWindow({ draftId }: { draftId: number }) {
             })),
             "separator" as const,
             {
-              label: "Pick a date and time…",
+              label: t("Pick a date and time…"),
               icon: "plus" as const,
               onSelect: () => setPicking({ title, confirm, initial: Date.now() + 24 * 3600_000, resolve }),
             },
@@ -79,11 +80,11 @@ export function ComposerWindow({ draftId }: { draftId: number }) {
     [],
   );
   const pickSendTime = useCallback(
-    () => pickTime("Send at", "Schedule", sendPresets(new Date(), getPrefs().sendPresets)),
+    () => pickTime(t("Send at"), t("Schedule"), sendPresets(new Date(), getPrefs().sendPresets)),
     [pickTime],
   );
   const pickReminder = useCallback(
-    () => pickTime("Remind me if no reply by", "Remind me", reminderPresets(new Date(), getPrefs().reminderPresets)),
+    () => pickTime(t("Remind me if no reply by"), t("Remind me"), reminderPresets(new Date(), getPrefs().reminderPresets)),
     [pickTime],
   );
   /** The templates to start from, and keeping what is written as one; editing them is in the main window's Settings. */
@@ -97,7 +98,7 @@ export function ComposerWindow({ draftId }: { draftId: number }) {
             const keep: MenuEntry[] = hasText
               ? [
                   {
-                    label: "Save this message as a template",
+                    label: t("Save this message as a template"),
                     icon: "plus",
                     detail: name,
                     onSelect: () => {
@@ -110,9 +111,9 @@ export function ComposerWindow({ draftId }: { draftId: number }) {
             setMenu({
               anchor: { x: 0, y: 0 },
               variant: "palette",
-              title: "Templates",
-              label: "Insert a template",
-              filter: "Type a template's name",
+              title: t("Templates"),
+              label: t("Insert a template"),
+              filter: t("Type a template's name"),
               entries: [
                 ...templates.map(
                   (template): MenuEntry => ({

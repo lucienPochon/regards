@@ -4,6 +4,7 @@ import { type ActivityKind, type AgentActivity as Entry, type AgentDecision, act
 import { fullDate } from "./format";
 import { Icon } from "./icons";
 import { radioKeys, radioTab } from "./radios";
+import { t } from "./i18n";
 
 /** How often the list looks for new entries while it is shown (recording wakes no client). */
 const POLL_MS = 5000;
@@ -49,18 +50,18 @@ const ACTIONS: Record<string, string> = {
 /** Which requests the list shows: all, those of one kind, or the refused ones. */
 type Filter = "all" | ActivityKind | "refused";
 const FILTERS: { id: Filter; label: string; none: string }[] = [
-  { id: "all", label: "Everything", none: "No agent has used Regards yet. What they do will be listed here." },
-  { id: "reading", label: "Reading", none: "No agent has read any mail." },
-  { id: "sorting", label: "Sorting", none: "No agent has moved or marked any mail." },
-  { id: "sending", label: "Sending", none: "No agent has written or sent anything." },
-  { id: "refused", label: "Refused", none: "No agent has been refused." },
+  { id: "all", label: t("Everything"), none: t("No agent has used Regards yet. What they do will be listed here.") },
+  { id: "reading", label: t("Reading"), none: t("No agent has read any mail.") },
+  { id: "sorting", label: t("Sorting"), none: t("No agent has moved or marked any mail.") },
+  { id: "sending", label: t("Sending"), none: t("No agent has written or sent anything.") },
+  { id: "refused", label: t("Refused"), none: t("No agent has been refused.") },
 ];
 
 const DECISIONS: Partial<Record<AgentDecision, { label: string; tone: string }>> = {
-  denied: { label: "Refused", tone: "refused" },
-  held: { label: "Waiting for you", tone: "held" },
-  approved: { label: "Approved", tone: "approved" },
-  rejected: { label: "Rejected", tone: "refused" },
+  denied: { label: t("Refused"), tone: "refused" },
+  held: { label: t("Waiting for you"), tone: "held" },
+  approved: { label: t("Approved"), tone: "approved" },
+  rejected: { label: t("Rejected"), tone: "refused" },
 };
 
 /** The daemon's answer to an agent going faster than its pace (RATE_LIMITED). */
@@ -72,8 +73,8 @@ function decisionOf(entry: Entry): { label: string; tone: string } | undefined {
   if (slowed(entry)) {
     // Too many at once, or too many already waiting for the person.
     return /wait/i.test(entry.error ?? "") && !/try again/i.test(entry.error ?? "")
-      ? { label: "Too many waiting", tone: "held" }
-      : { label: "Too fast", tone: "held" };
+      ? { label: t("Too many waiting"), tone: "held" }
+      : { label: t("Too fast"), tone: "held" };
   }
   return DECISIONS[entry.decision];
 }
@@ -84,7 +85,7 @@ function describe(entry: Entry): string {
   let action = ACTIONS[entry.method] ?? entry.method;
   if (entry.method === "message.set_flags") {
     const parts = [
-      args.seen === true ? "Marked read" : args.seen === false ? "Marked unread" : null,
+      args.seen === true ? t("Marked read") : args.seen === false ? t("Marked unread") : null,
       args.flagged === true ? "flagged" : args.flagged === false ? "unflagged" : null,
     ].filter(Boolean) as string[];
     if (parts.length > 0) action = parts.length === 2 ? `${parts[0]} and ${parts[1]}` : parts[0].replace(/^f/, "F").replace(/^u/, "U");
@@ -103,7 +104,7 @@ function wasText(item: Record<string, unknown>, folderName: (id: number) => stri
     return [item.address, policy, item.priority ? "priority" : null, item.blocked ? "blocked" : null].filter(Boolean).join(", ");
   }
   const subject = typeof item.subject === "string" && item.subject ? `“${item.subject}”` : "(no subject)";
-  if ("sending" in item || "bcc" in item) return `The draft ${subject}`;
+  if ("sending" in item || "bcc" in item) return t("The draft {subject}", { subject });
   const folder = typeof item.mailbox_id === "number" ? folderName(item.mailbox_id) : null;
   return [
     subject,
@@ -230,10 +231,10 @@ export function AgentActivity({
   const emailOf = (id: string | null) => accounts.find((account) => account.id === id)?.email ?? null;
 
   return (
-    <section className="agent-activity" aria-label="Agent activity">
+    <section className="agent-activity" aria-label={t("Agent activity")}>
       <div className="activity-head">
-        <h4>Activity</h4>
-        <span className="choice" role="radiogroup" aria-label="Which requests" onKeyDown={(event) => radioKeys(event)}>
+        <h4>{t("Activity")}</h4>
+        <span className="choice" role="radiogroup" aria-label={t("Which requests")} onKeyDown={(event) => radioKeys(event)}>
           {FILTERS.map((option, index) => (
             <button
               key={option.label}
@@ -251,11 +252,11 @@ export function AgentActivity({
         {accounts.length > 1 && (
           <select
             className="agent-level"
-            aria-label="Which account"
+            aria-label={t("Which account")}
             value={accountId ?? ""}
             onChange={(event) => setAccountId(event.target.value || null)}
           >
-            <option value="">All accounts</option>
+            <option value="">{t("All accounts")}</option>
             {accounts.map((account) => (
               <option key={account.id} value={account.id}>
                 {account.email}
@@ -266,7 +267,7 @@ export function AgentActivity({
       </div>
       {error && <p className="error" role="alert">{error}</p>}
       {entries === null ? (
-        !error && <p className="muted activity-empty">Loading…</p>
+        !error && <p className="muted activity-empty">{t("Loading…")}</p>
       ) : shown.length === 0 ? (
         <p className="muted activity-empty">
           {FILTERS.find((option) => option.id === only)?.none}
@@ -287,7 +288,7 @@ export function AgentActivity({
       )}
       {next !== null && entries !== null && (
         <button type="button" className="btn small activity-older" onClick={older} disabled={loadingOlder}>
-          {loadingOlder ? "Loading…" : "Show older"}
+          {loadingOlder ? t("Loading…") : t("Show older")}
         </button>
       )}
     </section>
@@ -317,13 +318,13 @@ function Session({
     <li className="activity-session">
       <div className="activity-session-head">
         <Icon name={client === "mcp" ? "agent" : "keyboard"} size={15} />
-        <strong>{client === "mcp" ? "An assistant (MCP)" : "The command line"}</strong>
+        <strong>{client === "mcp" ? t("An assistant (MCP)") : t("The command line")}</strong>
         <span className="muted">
           {fullDate(oldest.at)}
           {newest.at - oldest.at > 60_000 ? ` – ${time(newest.at)}` : ""} · {entries.length}{" "}
           {entries.length === 1 ? "request" : "requests"}
           {refused > 0 && ` · ${refused} refused`}
-          {tooFast > 0 && ` · ${tooFast} slowed down`}
+          {tooFast > 0 && ` · ${t("{count} slowed down", { count: tooFast })}`}
         </span>
       </div>
       <ul className="activity-entries">
@@ -333,7 +334,7 @@ function Session({
       </ul>
       {entries.length > FOLDED && (
         <button type="button" className="activity-more" onClick={() => setOpen(!open)}>
-          {open ? "Show fewer" : `Show all ${entries.length}`}
+          {open ? t("Show fewer") : t("Show all {count}", { count: entries.length })}
         </button>
       )}
     </li>
@@ -388,12 +389,12 @@ function Row({
           <span className="activity-what">{describe(entry)}</span>
           {email && <span className="activity-account muted">{email}</span>}
           {decision && <span className={`chip activity-decision ${decision.tone}`}>{decision.label}</span>}
-          {!decision && entry.error && <span className="chip activity-decision refused">Failed</span>}
+          {!decision && entry.error && <span className="chip activity-decision refused">{t("Failed")}</span>}
           {done ? (
             <span className="chip activity-decision approved">{done}</span>
           ) : entry.undoable && entry.undo_id !== null ? (
             <button type="button" className="activity-undo" onClick={undo} disabled={busy}>
-              Undo
+              {t("Undo")}
             </button>
           ) : null}
         </summary>
@@ -401,15 +402,15 @@ function Row({
         <div className="activity-details">
           {entry.error && <p className={entry.decision === "denied" ? "activity-error" : "error"}>{entry.error}</p>}
           <dl>
-            <dt>Request</dt>
+            <dt>{t("Request")}</dt>
             <dd>
               <code>{entry.method}</code> · {entry.duration_ms} ms
-              {entry.access && ` · account allowed ${entry.access}`}
+              {entry.access && ` · ${t("account allowed {level}", { level: entry.access })}`}
             </dd>
           </dl>
           {before.length > 0 && (
             <dl className="activity-before">
-              <dt>Was</dt>
+              <dt>{t("Was")}</dt>
               <dd>
                 <ul>
                   {before.slice(0, 10).map((item, index) => (

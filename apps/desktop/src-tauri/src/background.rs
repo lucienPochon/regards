@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{App, AppHandle, Manager, Wry};
+use tauri::{App, AppHandle, Manager, State, Wry};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_window_state::{StateFlags, WindowExt};
@@ -55,6 +55,8 @@ struct Settings {
     detailed_logs: bool,
     /// The unread count on the taskbar or dock.
     badge: BadgeChoices,
+    /// The window's language (`en`, `fr`), for what the shell writes itself.
+    language: Option<String>,
 }
 
 impl Default for Settings {
@@ -69,6 +71,7 @@ impl Default for Settings {
             notify: NotifyChoices::default(),
             detailed_logs: false,
             badge: BadgeChoices::default(),
+            language: None,
         }
     }
 }
@@ -87,6 +90,10 @@ pub(crate) struct Background {
     /// The tray menu's check marks, kept in step with the settings.
     check: Mutex<Option<CheckMenuItem<Wry>>>,
     notify_check: Mutex<Option<CheckMenuItem<Wry>>>,
+    /// Its other items, named again when the language changes.
+    open_item: Mutex<Option<MenuItem<Wry>>>,
+    quit_item: Mutex<Option<MenuItem<Wry>>>,
+    language: Mutex<Option<String>>,
 }
 
 impl Background {
@@ -98,6 +105,7 @@ impl Background {
             .and_then(|path| std::fs::read(path).ok())
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or_default();
+        crate::lang::set(settings.language.as_deref().unwrap_or("en"));
         Self {
             file,
             on: AtomicBool::new(settings.background),
@@ -111,7 +119,38 @@ impl Background {
             badge: Mutex::new(settings.badge),
             check: Mutex::new(None),
             notify_check: Mutex::new(None),
+            open_item: Mutex::new(None),
+            quit_item: Mutex::new(None),
+            language: Mutex::new(settings.language),
         }
+    }
+
+    /// The window's language: what the shell writes itself follows it, the
+    /// tray at once; kept for the next start.
+    pub(crate) fn set_language(&self, language: &str) -> Result<(), String> {
+        let language = if language == "fr" { "fr" } else { "en" };
+        {
+            let mut kept = self.language.lock().expect("never poisoned");
+            if kept.as_deref() == Some(language) {
+                return Ok(());
+            }
+            *kept = Some(language.to_owned());
+        }
+        crate::lang::set(language);
+        let tr = crate::lang::tr;
+        if let Some(item) = self.open_item.lock().expect("never poisoned").as_ref() {
+            let _ = item.set_text(tr("Open Regards"));
+        }
+        if let Some(item) = self.quit_item.lock().expect("never poisoned").as_ref() {
+            let _ = item.set_text(tr("Quit Regards"));
+        }
+        if let Some(item) = self.check.lock().expect("never poisoned").as_ref() {
+            let _ = item.set_text(tr("Run in the background"));
+        }
+        if let Some(item) = self.notify_check.lock().expect("never poisoned").as_ref() {
+            let _ = item.set_text(tr("Show notifications"));
+        }
+        self.save(self.current())
     }
 
     /// Closing the window leaves Regards in the tray.
@@ -248,14 +287,16 @@ impl Background {
         if let Err(error) = self.save(self.current()) {
             eprintln!("background mode: {error}");
         }
-        let place = if cfg!(target_os = "macos") { "menu bar" } else { "tray" };
+        let body = if cfg!(target_os = "macos") {
+            "It stays in the menu bar so snoozed mail comes back and scheduled messages go. Quit it from the menu bar icon."
+        } else {
+            "It stays in the tray so snoozed mail comes back and scheduled messages go. Quit it from the tray icon."
+        };
         let shown = app
             .notification()
             .builder()
-            .title("Regards is still running")
-            .body(format!(
-                "It stays in the {place} so snoozed mail comes back and scheduled messages go. Quit it from the {place} icon."
-            ))
+            .title(crate::lang::tr("Regards is still running"))
+            .body(crate::lang::tr(body))
             .show();
         if let Err(error) = shown {
             eprintln!("notification: {error}");
@@ -273,6 +314,7 @@ impl Background {
             notify: self.notify_choices(),
             detailed_logs: self.detailed_logs(),
             badge: self.badge_choices(),
+            language: self.language.lock().expect("never poisoned").clone(),
         }
     }
 
@@ -286,28 +328,38 @@ impl Background {
     }
 }
 
+/// The window's language, for what the shell writes itself: the tray,
+/// notifications and dialogs.
+#[tauri::command]
+pub(crate) fn set_language(background: State<'_, Background>, language: String) -> Result<(), String> {
+    background.set_language(&language)
+}
+
 /// The tray icon and its menu; start at login in line with the setting; the
 /// window shown unless Regards started at login.
 pub(crate) fn setup(app: &App) -> tauri::Result<()> {
     let background = app.state::<Background>();
     let on = background.on();
-    let open = MenuItem::with_id(app, "open", "Open Regards", true, None::<&str>)?;
-    let check = CheckMenuItem::with_id(app, "background", "Run in the background", true, on, None::<&str>)?;
+    let tr = crate::lang::tr;
+    let open = MenuItem::with_id(app, "open", tr("Open Regards"), true, None::<&str>)?;
+    let check = CheckMenuItem::with_id(app, "background", tr("Run in the background"), true, on, None::<&str>)?;
     let notify = CheckMenuItem::with_id(
         app,
         "notifications",
-        "Show notifications",
+        tr("Show notifications"),
         true,
         background.notifications(),
         None::<&str>,
     )?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Regards", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", tr("Quit Regards"), true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[&open, &check, &notify, &PredefinedMenuItem::separator(app)?, &quit],
     )?;
     *background.check.lock().expect("never poisoned") = Some(check.clone());
     *background.notify_check.lock().expect("never poisoned") = Some(notify.clone());
+    *background.open_item.lock().expect("never poisoned") = Some(open.clone());
+    *background.quit_item.lock().expect("never poisoned") = Some(quit.clone());
 
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip("Regards")
@@ -418,11 +470,11 @@ fn ask_then(app: &AppHandle, then: impl FnOnce(&AppHandle) + Send + 'static) {
         let mut dialog = app
             .dialog()
             .message(text)
-            .title("Quit Regards?")
+            .title(crate::lang::tr("Quit Regards?"))
             .kind(MessageDialogKind::Warning)
             .buttons(MessageDialogButtons::OkCancelCustom(
-                "Quit".into(),
-                "Keep running".into(),
+                crate::lang::tr("Quit").into(),
+                crate::lang::tr("Keep running").into(),
             ));
         if let Some(window) = app
             .get_webview_window("main")
@@ -456,28 +508,29 @@ async fn waiting(app: &AppHandle) -> DaemonWaitingResult {
 
 /// "2 messages to send and 1 reminder are waiting. …", or `None` for nothing.
 fn waiting_text(waiting: DaemonWaitingResult) -> Option<String> {
-    let count = |n: u32, one: &str, many: &str| match n {
-        0 => None,
-        1 => Some(format!("1 {one}")),
-        n => Some(format!("{n} {many}")),
-    };
+    let count =
+        |n: u32, one: &'static str, many: &'static str| (n > 0).then(|| crate::lang::count(n as usize, one, many));
     let parts: Vec<String> = [
-        count(waiting.sends, "message to send", "messages to send"),
-        count(waiting.snoozed, "snoozed message", "snoozed messages"),
-        count(waiting.reminders, "reminder", "reminders"),
+        count(waiting.sends, "1 message to send", "{count} messages to send"),
+        count(waiting.snoozed, "1 snoozed message", "{count} snoozed messages"),
+        count(waiting.reminders, "1 reminder", "{count} reminders"),
     ]
     .into_iter()
     .flatten()
     .collect();
-    let (list, verb) = match parts.as_slice() {
+    // "1 reminder is waiting", "2 messages to send and 1 reminder are waiting".
+    let one_thing = waiting.sends + waiting.snoozed + waiting.reminders == 1;
+    let list = match parts.as_slice() {
         [] => return None,
-        [one] => (one.clone(), if one.starts_with("1 ") { "is" } else { "are" }),
-        [rest @ .., last] => (format!("{} and {last}", rest.join(", ")), "are"),
+        [one] => one.clone(),
+        [rest @ .., last] => crate::lang::tr_with("{first} and {last}", &[("first", &rest.join(", ")), ("last", last)]),
     };
-    Some(format!(
-        "{list} {verb} waiting. Regards sends messages and brings mail back only while it runs: \
-         after you quit, they wait until you open it again."
-    ))
+    let sentence = if one_thing {
+        "{list} is waiting. Regards sends messages and brings mail back only while it runs: after you quit, they wait until you open it again."
+    } else {
+        "{list} are waiting. Regards sends messages and brings mail back only while it runs: after you quit, they wait until you open it again."
+    };
+    Some(crate::lang::tr_with(sentence, &[("list", &list)]))
 }
 
 /// Register or remove the login item to match the setting. It is written

@@ -14,6 +14,7 @@ import { forgetPerson, formatRecipients, invalidAddresses, parseRecipients, sugg
 import { Icon } from "./icons";
 import { usePrefs } from "./prefs";
 import { fieldText, isAddress, marked, pastedList, splitTyped, typingStart, withAdded } from "./recipients";
+import { t } from "./i18n";
 
 /**
  * A To, Cc or Bcc field: its people as chips, then what is being typed, with
@@ -254,8 +255,12 @@ export function AddressInput({
                 chips.current[at] = node;
               }}
               className="address-chip-name"
-              title={wrong ? `Not an address: ${person.address}` : full}
-              aria-label={`${full}${wrong ? ", not an address" : ""}. Backspace removes it, Enter edits it.`}
+              title={wrong ? t("Not an address: {address}", { address: person.address ?? "" }) : full}
+              aria-label={
+                wrong
+                  ? t("{person}, not an address. Backspace removes it, Enter edits it.", { person: full })
+                  : t("{person}. Backspace removes it, Enter edits it.", { person: full })
+              }
               onKeyDown={chipKeys(at)}
               onDoubleClick={() => edit(at)}
             >
@@ -300,7 +305,7 @@ export function AddressInput({
         }}
       />
       {shown && (
-        <ul className="address-suggestions" id={listId} role="listbox" aria-label={`People for ${label}`}>
+        <ul className="address-suggestions" id={listId} role="listbox" aria-label={t("People for {field}", { field: label })}>
           {suggestions.map((person, at) => (
             <li
               key={person.address}
@@ -322,7 +327,7 @@ export function AddressInput({
                 type="button"
                 tabIndex={-1}
                 className="address-suggestion-forget"
-                title="Don't suggest (Shift+Delete)"
+                title={t("Don't suggest (Shift+Delete)")}
                 aria-label={`Don't suggest ${person.name || person.address}`}
                 onClick={(event) => {
                   event.stopPropagation();

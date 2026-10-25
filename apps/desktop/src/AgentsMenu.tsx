@@ -18,6 +18,7 @@ import type { Anchor } from "./Menu";
 import { setPrefs } from "./prefs";
 import { type Recipe, recipeGroups } from "./recipes";
 import { useShortcuts } from "./shortcuts";
+import { t } from "./i18n";
 
 /** The agent guide, on the project's site. */
 const GUIDE = "https://github.com/lucienPochon/regards/blob/main/docs/agents.md";
@@ -86,14 +87,14 @@ export function AgentsMenu({
     if (!recipe || (app.id !== "claude-code" && app.id !== "claude-app")) return;
     openInAgent(app.id, recipe.prompt).then(
       () => setSaid(app.hint),
-      (failure: unknown) => setSaid(`${String(failure)}. Copy the request instead, and paste it in ${app.label}.`),
+      (failure: unknown) => setSaid(t("{problem}. Copy the request instead, and paste it in {app}.", { problem: String(failure), app: app.label })),
     );
   };
   const copy = () => {
     if (!recipe) return;
     navigator.clipboard?.writeText(recipe.prompt).then(
-      () => setSaid("Copied: paste it in your agent."),
-      () => setSaid("Copying didn't work here."),
+      () => setSaid(t("Copied: paste it in your agent.")),
+      () => setSaid(t("Copying didn't work here.")),
     );
   };
 
@@ -103,12 +104,12 @@ export function AgentsMenu({
         ref={card}
         className={position ? "agents-menu" : "agents-menu measuring"}
         role="dialog"
-        aria-label="Agents"
+        aria-label={t("Agents")}
         tabIndex={-1}
         style={position ?? undefined}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="agents-tabs" role="tablist" aria-label="Agents">
+        <div className="agents-tabs" role="tablist" aria-label={t("Agents")}>
           {(["recipes", "agents"] as const).map((id) => (
             <button
               key={id}
@@ -118,7 +119,7 @@ export function AgentsMenu({
               className={tab === id ? "agents-tab chosen" : "agents-tab"}
               onClick={() => setTab(id)}
             >
-              {id === "recipes" ? "Recipes" : "Agents"}
+              {id === "recipes" ? t("Recipes") : t("Agents")}
             </button>
           ))}
         </div>
@@ -126,7 +127,7 @@ export function AgentsMenu({
         <div className="agents-body" role="tabpanel">
           {tab === "recipes" && !recipe && (
             <>
-              <p className="agents-lead">Ready-made requests for an AI agent connected to Regards.</p>
+              <p className="agents-lead">{t("Ready-made requests for an AI agent connected to Regards.")}</p>
               {recipeGroups().map(({ group, recipes }) => (
                 <section key={group} aria-label={group}>
                   <h4 className="agents-group">{group}</h4>
@@ -149,27 +150,27 @@ export function AgentsMenu({
           {tab === "recipes" && recipe && (
             <>
               <div className="agents-back">
-                <button type="button" className="icon-btn small" aria-label="Back to the recipes" onClick={() => choose(null)}>
+                <button type="button" className="icon-btn small" aria-label={t("Back to the recipes")} onClick={() => choose(null)}>
                   <Icon name="back" size={16} />
                 </button>
                 <strong>{recipe.title}</strong>
               </div>
               <p className="agents-lead">{recipe.caption}</p>
-              <h4 className="agents-group">Send to an AI agent</h4>
+              <h4 className="agents-group">{t("Send to an AI agent")}</h4>
               <ul className="agents-list">
                 {AGENT_APPS.filter((app) => app.opens).map((app) => (
                   <li key={app.id}>
                     <button type="button" className="agents-row" onClick={() => send(app)}>
                       <AgentMark id={app.id} />
                       <span className="agents-row-label">{app.label}</span>
-                      {isConnected(app, settings, found ?? null) && <span className="agents-active">Active</span>}
+                      {isConnected(app, settings, found ?? null) && <span className="agents-active">{t("Active")}</span>}
                     </button>
                   </li>
                 ))}
                 <li className="agents-split">
                   <button type="button" className="agents-row" onClick={copy}>
                     <Icon name="copy" size={16} />
-                    <span className="agents-row-label">Copy to the clipboard</span>
+                    <span className="agents-row-label">{t("Copy to the clipboard")}</span>
                   </button>
                 </li>
               </ul>
@@ -183,15 +184,15 @@ export function AgentsMenu({
 
           {tab === "agents" && (
             <>
-              <h4 className="agents-group first">AI agents on this computer</h4>
+              <h4 className="agents-group first">{t("AI agents on this computer")}</h4>
               <p className="agents-lead">
                 {found === undefined
-                  ? "Looking for agents on this computer…"
+                  ? t("Looking for agents on this computer…")
                   : here.length > 0
-                    ? "Regards found these agents on this computer. A connected one reads and acts on your mail through Regards, within what each account allows."
+                    ? t("Regards found these agents on this computer. A connected one reads and acts on your mail through Regards, within what each account allows.")
                     : found
-                      ? "Regards didn't find an AI agent on this computer. Connect one to read and act on your mail through Regards, within what each account allows."
-                      : "A connected agent reads and acts on your mail through Regards, within what each account allows."}
+                      ? t("Regards didn't find an AI agent on this computer. Connect one to read and act on your mail through Regards, within what each account allows.")
+                      : t("A connected agent reads and acts on your mail through Regards, within what each account allows.")}
               </p>
               <ul className="agents-list">
                 {(found === undefined ? [] : shown).map((app) => (
@@ -199,7 +200,7 @@ export function AgentsMenu({
                     <AgentMark id={app.id} />
                     <span className="agents-row-label">{app.label}</span>
                     {isConnected(app, settings, found ?? null) ? (
-                      <span className="agents-active">Active</span>
+                      <span className="agents-active">{t("Active")}</span>
                     ) : (
                       <button
                         type="button"
@@ -209,7 +210,7 @@ export function AgentsMenu({
                           onConnect(app.id);
                         }}
                       >
-                        Connect
+                        {t("Connect")}
                       </button>
                     )}
                   </li>
@@ -221,14 +222,14 @@ export function AgentsMenu({
 
         <div className="agents-foot">
           <button type="button" className="agents-learn" onClick={() => void openUrl(GUIDE)}>
-            Learn more
+            {t("Learn more")}
             <Icon name="external" size={13} />
           </button>
           <button
             type="button"
             className="icon-btn small"
-            title="Hide this button (Settings › Agents shows it again)"
-            aria-label="Hide the Agents button"
+            title={t("Hide this button (Settings › Agents shows it again)")}
+            aria-label={t("Hide the Agents button")}
             onClick={() => {
               setPrefs({ agentsButton: false });
               onClose();
@@ -236,7 +237,7 @@ export function AgentsMenu({
           >
             <Icon name="eyeOff" size={16} />
           </button>
-          <button type="button" className="icon-btn small" title="Agent settings" aria-label="Agent settings" onClick={toSettings}>
+          <button type="button" className="icon-btn small" title={t("Agent settings")} aria-label={t("Agent settings")} onClick={toSettings}>
             <Icon name="settings" size={16} />
           </button>
         </div>

@@ -1,6 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { type Identity, listIdentities, makeDefaultIdentity, removeIdentity, saveIdentity } from "./identities";
 import { Icon } from "./icons";
+import { t } from "./i18n";
 
 /**
  * An account's addresses (plan §5.9): the names and addresses it sends as.
@@ -39,7 +40,7 @@ export function IdentitiesEditor({ accountId }: { accountId: string }) {
         <div>
           <button type="button" className="btn small" onClick={() => setAdding(true)}>
             <Icon name="plus" size={15} />
-            Add an address
+            {t("Add an address")}
           </button>
         </div>
       )}
@@ -90,16 +91,16 @@ function IdentityForm({
     <form onSubmit={save}>
       <fieldset>
         <legend>
-          {identity ? identity.email : "A new address"}
-          {identity?.is_default && " · default"}
+          {identity ? identity.email : t("A new address")}
+          {identity?.is_default && t(" · default")}
         </legend>
         <div className="form-row grow">
           <label>
-            Name
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ada Lovelace" />
+            {t("Name")}
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("Ada Lovelace")} />
           </label>
           <label>
-            Address
+            {t("Address")}
             <input
               className="input"
               type="email"
@@ -113,21 +114,21 @@ function IdentityForm({
         <div className="dialog-actions">
           {onCancel && (
             <button type="button" className="btn small" onClick={onCancel} disabled={busy}>
-              Cancel
+              {t("Cancel")}
             </button>
           )}
           {identity && !identity.is_default && (
             <>
               <button type="button" className="btn small" onClick={() => void run(() => makeDefaultIdentity(identity.id))} disabled={busy}>
-                Make default
+                {t("Make default")}
               </button>
               <button type="button" className="btn small danger" onClick={() => void run(() => removeIdentity(identity.id))} disabled={busy}>
-                Remove
+                {t("Remove")}
               </button>
             </>
           )}
           <button type="submit" className="btn small primary" disabled={busy || !changed}>
-            {identity ? "Save" : "Add"}
+            {identity ? t("Save") : t("Add")}
           </button>
         </div>
       </fieldset>

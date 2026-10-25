@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Person } from "./accounts";
+import { appLocale, t } from "./i18n";
 
 /** A time as an invitation writes it (the daemon passes it as is). */
 export interface CalendarTime {
@@ -115,18 +116,18 @@ export function instantOf(time: CalendarTime): { at: number; sure: boolean } | n
 /** "Friday 30 October, 10:00–11:00", in local time; whole days as "Thursday 24 December, all day". */
 export function whenText(start: CalendarTime | null, end: CalendarTime | null, now = new Date()): string {
   const from = start ? instantOf(start) : null;
-  if (!start || !from) return "Time not given";
+  if (!start || !from) return t("Time not given");
   const day = (at: number) => {
     const date = new Date(at);
-    return date.toLocaleDateString([], {
+    return date.toLocaleDateString(appLocale(), {
       weekday: "long",
       day: "numeric",
       month: "long",
       year: date.getFullYear() === now.getFullYear() ? undefined : "numeric",
     });
   };
-  const time = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  if (start.all_day) return `${day(from.at)}, all day`;
+  const time = (at: number) => new Date(at).toLocaleTimeString(appLocale(), { hour: "2-digit", minute: "2-digit" });
+  if (start.all_day) return t("{day}, all day", { day: day(from.at) });
   const until = end ? instantOf(end) : null;
   const zone = from.sure ? "" : ` (${start.zone})`;
   if (!until) return `${day(from.at)}, ${time(from.at)}${zone}`;

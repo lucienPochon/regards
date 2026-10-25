@@ -1,4 +1,5 @@
 import type { IconName } from "./icons";
+import { t } from "./i18n";
 
 /**
  * Recipes: ready-made requests to hand an AI agent connected to Regards
@@ -26,9 +27,9 @@ export const SAFE_PROMPT = /^[\p{L}\p{N} .,:;?()/@\-\n]+$/u;
 export const RECIPES: Recipe[] = [
   {
     id: "morning",
-    group: "Every day",
-    title: "Morning briefing",
-    caption: "What came in overnight, and what needs a reply before noon.",
+    group: t("Every day"),
+    title: t("Morning briefing"),
+    caption: t("What came in overnight, and what needs a reply before noon."),
     icon: "sun",
     prompt:
       "In Regards, give me my morning briefing. Look at what came into my inboxes since yesterday evening, and group it: " +
@@ -37,9 +38,9 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "evening",
-    group: "Every day",
-    title: "End of day",
-    caption: "What happened today, what is still open, what comes first tomorrow.",
+    group: t("Every day"),
+    title: t("End of day"),
+    caption: t("What happened today, what is still open, what comes first tomorrow."),
     icon: "moon",
     prompt:
       "In Regards, sum up my day: what came in and what I sent today, what is still open, and what I should do first " +
@@ -47,9 +48,9 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "needs-reply",
-    group: "Follow-ups",
-    title: "Needs my reply",
-    caption: "People who asked you something and are still waiting.",
+    group: t("Follow-ups"),
+    title: t("Needs my reply"),
+    caption: t("People who asked you something and are still waiting."),
     icon: "reply",
     prompt:
       "In Regards, find the messages from people in the last 14 days that still wait for my answer: they ask me " +
@@ -57,9 +58,9 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "no-answer",
-    group: "Follow-ups",
-    title: "Still no answer",
-    caption: "What you asked for that nobody has answered yet.",
+    group: t("Follow-ups"),
+    title: t("Still no answer"),
+    caption: t("What you asked for that nobody has answered yet."),
     icon: "sendLater",
     prompt:
       "In Regards, find what I sent in the last 14 days that asks for something and that nobody has answered. Oldest " +
@@ -68,9 +69,9 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "promised",
-    group: "Follow-ups",
-    title: "What I promised",
-    caption: "Your commitments in sent mail, and their dates.",
+    group: t("Follow-ups"),
+    title: t("What I promised"),
+    caption: t("Your commitments in sent mail, and their dates."),
     icon: "check",
     prompt:
       "In Regards, list what I promised in the emails I sent in the last 30 days: what, to whom, and by when. Mark " +
@@ -78,9 +79,9 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "voice",
-    group: "Your voice",
-    title: "Learn how I write",
-    caption: "Reads what you sent and suggests your voice, for your approval.",
+    group: t("Your voice"),
+    title: t("Learn how I write"),
+    caption: t("Reads what you sent and suggests your voice, for your approval."),
     icon: "quote",
     prompt:
       "Learn how I write from my sent mail in Regards and suggest it as my voice, for each of my addresses open to " +
@@ -88,9 +89,9 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "newsletters",
-    group: "Tidying",
-    title: "Quiet the newsletters",
-    caption: "The senders you never read, to archive once you say so.",
+    group: t("Tidying"),
+    title: t("Quiet the newsletters"),
+    caption: t("The senders you never read, to archive once you say so."),
     icon: "newspaper",
     prompt:
       "In Regards, find the newsletters and notifications in my inboxes that I never open. Show me the senders, with " +

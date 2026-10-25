@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
@@ -22,4 +23,6 @@ if (!root) {
 const draftId = composerWindowDraft();
 // A conversation in a window of its own (thread-<message id>): the reader alone.
 const threadId = threadWindowMessage();
+// The shell (tray, notifications, dialogs) speaks the window's language too.
+if (draftId === null && threadId === null) invoke("set_language", { language: spoken() }).catch(() => {});
 createRoot(root).render(<StrictMode>{draftId !== null ? <ComposerWindow draftId={draftId} /> : threadId !== null ? <ThreadWindow messageId={threadId} /> : <App />}</StrictMode>);

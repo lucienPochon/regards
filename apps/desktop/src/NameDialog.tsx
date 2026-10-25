@@ -1,6 +1,7 @@
 import { type FormEvent, useRef, useState } from "react";
 import { useDialogFocus } from "./dialogFocus";
 import { useShortcuts } from "./shortcuts";
+import { t } from "./i18n";
 
 export interface NameRequest {
   title: string;
@@ -65,7 +66,7 @@ export function NameDialog({ request, onClose }: { request: NameRequest; onClose
         )}
         <div className="dialog-actions">
           <button type="button" className="btn" onClick={onClose} disabled={busy}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button type="submit" className="btn primary" disabled={busy || !ready}>
             {request.confirm}

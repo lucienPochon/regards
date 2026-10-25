@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { type AssistantKind, type AssistantSettings, assistantSettings, setAssistantSettings } from "./assistant";
 import { assistantChanged } from "./AssistantDialog";
 import { Option, Select } from "./SettingsControls";
+import { t } from "./i18n";
 
 type Provider = AssistantKind | "off";
 
@@ -66,25 +67,23 @@ export function AssistantPage() {
 
   return (
     <>
-      <h3>Assistant</h3>
+      <h3>{t("Assistant")}</h3>
       <p className="muted settings-note">
-        With your own AI key, or a model on this computer, the assistant summarises a conversation or drafts a reply. Only
-        when you ask, and only after showing what would be sent and where. A reply lands in a draft for you to check;
-        nothing is sent by itself. Mail that looks like it carries a sign-in code is left out.
+        {t("With your own AI key, or a model on this computer, the assistant summarises a conversation or drafts a reply. Only when you ask, and only after showing what would be sent and where. A reply lands in a draft for you to check; nothing is sent by itself. Mail that looks like it carries a sign-in code is left out.")}
       </p>
       {error && (
         <p className="error" role="alert">
           {error}
         </p>
       )}
-      <Option icon="bolt" label="Provider" description="Off until you choose one. Turning it off forgets the key.">
+      <Option icon="bolt" label={t("Provider")} description={t("Off until you choose one. Turning it off forgets the key.")}>
         <Select
-          label="Provider"
+          label={t("Provider")}
           value={provider}
           options={[
-            { id: "off", label: "Off" },
-            { id: "anthropic", label: "Anthropic" },
-            { id: "openai_compatible", label: "OpenAI-compatible server" },
+            { id: "off", label: t("Off") },
+            { id: "anthropic", label: t("Anthropic") },
+            { id: "openai_compatible", label: t("OpenAI-compatible server") },
           ]}
           onChange={(next) => {
             setProvider(next);
@@ -102,48 +101,48 @@ export function AssistantPage() {
         <div className="assistant-fields">
           {local && (
             <label>
-              Server address
+              {t("Server address")}
               <input
                 className="input"
                 value={baseUrl}
                 placeholder="http://localhost:11434/v1"
                 onChange={(event) => setBaseUrl(event.target.value)}
               />
-              <span className="muted small">Up to /v1. http:// only for a server on this computer.</span>
+              <span className="muted small">{t("Up to /v1. http:// only for a server on this computer.")}</span>
             </label>
           )}
           <label>
-            Model
+            {t("Model")}
             <input
               className="input"
               value={model}
               placeholder={anthropic ? "claude-opus-5-5" : "llama3.1"}
               onChange={(event) => setModel(event.target.value)}
             />
-            {anthropic && <span className="muted small">Empty: claude-opus-5-5.</span>}
+            {anthropic && <span className="muted small">{t("Empty: claude-opus-5-5.")}</span>}
           </label>
           <label>
-            {anthropic ? "API key" : "API key (if the server needs one)"}
+            {anthropic ? t("API key") : t("API key (if the server needs one)")}
             <input
               className="input"
               type="password"
               autoComplete="off"
               value={key}
-              placeholder={keptKey ? "Kept in this computer's credential store; type to replace it" : anthropic ? "sk-ant-…" : ""}
+              placeholder={keptKey ? t("Kept in this computer's credential store; type to replace it") : anthropic ? "sk-ant-…" : ""}
               onChange={(event) => setKey(event.target.value)}
             />
             <span className="muted small">
               {anthropic
-                ? "From the Anthropic Console. Kept in this computer's credential store, and sent only to that server."
-                : "Kept in this computer's credential store, and sent only to that server."}
+                ? t("From the Anthropic Console. Kept in this computer's credential store, and sent only to that server.")
+                : t("Kept in this computer's credential store, and sent only to that server.")}
             </span>
           </label>
           <div className="assistant-save">
             <button type="button" className="btn primary" onClick={() => save(provider)} disabled={!changed || state === "saving"}>
-              {state === "saving" ? "Saving…" : "Save"}
+              {state === "saving" ? t("Saving…") : t("Save")}
             </button>
             <span className="muted small" aria-live="polite">
-              {state === "saved" && !changed ? "Saved. Summarise and Draft reply are in each message's More menu." : null}
+              {state === "saved" && !changed ? t("Saved. Summarise and Draft reply are in each message's More menu.") : null}
             </span>
           </div>
         </div>
