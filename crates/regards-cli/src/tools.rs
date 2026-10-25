@@ -236,14 +236,14 @@ pub(crate) const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "view",
-        description: "An account's pinned, set aside, snoozed or reminder messages.",
+        description: "An account's pinned, set aside, snoozed or reminder messages, or its invitations to answer.",
         access: Access::Read,
         method: "message.view",
         params: &[
             ACCOUNT,
             needed(
                 "view",
-                Kind::OneOf(&["pinned", "aside", "snoozed", "reminders"]),
+                Kind::OneOf(&["pinned", "aside", "snoozed", "reminders", "invitations"]),
                 "Which.",
             ),
             LIMIT,

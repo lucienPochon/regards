@@ -494,6 +494,7 @@ export function App() {
   const notificationItems = useFirstPage(useMemo(() => sectionSources(scope, "notifications"), [scope]), 30, smartOn);
   const newsletterItems = useFirstPage(useMemo(() => sectionSources(scope, "newsletters"), [scope]), 30, smartOn);
   const pinnedItems = useMarked(scope, "pinned", smartOn);
+  const invitationItems = useMarked(scope, "invitations", smartOn && appPrefs.grouped.invitations);
   // The card view's cards: the newest unread of each kind, and the pinned.
   const cardList = useMemo(() => cardScope ?? [], [cardScope]);
   const cardCounts = useSmartOverview(cardList, cardsOn);
@@ -1659,6 +1660,7 @@ export function App() {
               body: "Remind yourself (Shift+R) about a message you sent: if nobody replies by then, it comes back to the inbox.",
             },
             aside: { title: "Nothing set aside", body: "Set a message aside (Shift+A) to take it out of the inbox until you need it." },
+            invitations: { title: "No invitations to answer", body: "Invitations by email wait here until you accept or decline them." },
           }[view.mark]
         : { title: "Nothing here", body: "This folder has no messages." };
   const folders = openItem
@@ -1746,6 +1748,16 @@ export function App() {
             newest: newsletterItems[0]?.listed_at,
             onOpen: openSection("newsletters"),
             onDone: doneSection("newsletters"),
+          },
+          {
+            key: "invitations",
+            label: "Invitations",
+            icon: "calendar",
+            count: invitationItems.length,
+            unread: invitationItems.some((message) => !message.seen),
+            messages: invitationItems,
+            newest: invitationItems[0]?.listed_at,
+            onOpen: () => changeView({ kind: "marked", mark: "invitations" }),
           },
           {
             key: "pinned",

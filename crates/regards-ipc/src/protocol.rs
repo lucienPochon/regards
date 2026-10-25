@@ -1579,6 +1579,8 @@ pub enum View {
     Snoozed,
     /// Waiting for a reply, with a reminder set.
     Reminders,
+    /// Invitations in the inbox not answered yet.
+    Invitations,
 }
 
 /// Parameters of [`methods::MESSAGE_VIEW`].

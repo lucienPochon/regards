@@ -1600,11 +1600,13 @@ function handle(cmd: string, args: Args): unknown {
         .filter((m) =>
           args.view === "pinned"
             ? m.pinned
-            : args.view === "aside"
-              ? m.aside
-              : args.view === "reminders"
-                ? m.remind_at != null
-                : (m.snoozed_until ?? 0) > Date.now(),
+            : args.view === "invitations"
+              ? m.subject.startsWith("Invitation:") && !m.answered && owner?.mailboxes.find((b) => b.id === m.mailboxId)?.role === "inbox"
+              : args.view === "aside"
+                ? m.aside
+                : args.view === "reminders"
+                  ? m.remind_at != null
+                  : (m.snoozed_until ?? 0) > Date.now(),
         )
         .sort((a, b) => b.received_at - a.received_at || b.id - a.id);
       return { messages: shown.map((m) => summary(m)), next: null };
