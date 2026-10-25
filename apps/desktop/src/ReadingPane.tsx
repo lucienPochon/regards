@@ -370,14 +370,38 @@ function ThreadMessage({
   const [details, setDetails] = useState(false);
   const [source, setSource] = useState(false);
   // The HTML frame is as tall as the message: its own script says how tall (mail_frame.rs).
+  // It also passes on keys pressed in the message, and where the link under the pointer goes.
   const frame = useRef<HTMLIFrameElement>(null);
   const [frameHeight, setFrameHeight] = useState<number | null>(null);
+  const [linkGoes, setLinkGoes] = useState<string | null>(null);
+  useEffect(() => setLinkGoes(null), [entry.message.id]);
   useEffect(() => {
     const heard = (event: MessageEvent) => {
       if (!frame.current || event.source !== frame.current.contentWindow) return;
-      const height = (event.data as { regardsMailHeight?: unknown } | null)?.regardsMailHeight;
+      const data = event.data as { regardsMailHeight?: unknown; regardsMailKey?: unknown; regardsMailLink?: unknown } | null;
+      const height = data?.regardsMailHeight;
       if (typeof height === "number" && Number.isFinite(height)) {
         setFrameHeight(Math.min(Math.max(Math.ceil(height), 40), MAX_FRAME_HEIGHT));
+      }
+      const key = data?.regardsMailKey as Record<string, unknown> | undefined;
+      if (key && typeof key.key === "string") {
+        // As if pressed here: the shortcuts decide, as for any key.
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: key.key,
+            code: typeof key.code === "string" ? key.code : "",
+            ctrlKey: key.ctrlKey === true,
+            metaKey: key.metaKey === true,
+            shiftKey: key.shiftKey === true,
+            altKey: key.altKey === true,
+            modifierAltGraph: key.altGraph === true,
+            cancelable: true,
+          }),
+        );
+      }
+      if (data && "regardsMailLink" in data) {
+        const goes = data.regardsMailLink;
+        setLinkGoes(typeof goes === "string" ? goes.slice(0, 2048) : null);
       }
     };
     window.addEventListener("message", heard);
@@ -565,8 +589,9 @@ function ThreadMessage({
             )}
             {imagesError && <p className="error" role="alert">{imagesError}</p>}
             {ready.has_html && !showText ? (
-              // Only our script, which says how tall the message is (its page's CSP allows no
-              // other); no same-origin access, no forms, popups or navigation.
+              // Only our script, which says how tall the message is and passes on keys and
+              // where links go (its page's CSP allows no other); no same-origin access, no
+              // forms, popups or navigation.
               <iframe
                 // Loaded again when the sender's images are allowed or blocked, or the theme changes.
                 key={`${fromSender}:${dark}`}
@@ -577,9 +602,16 @@ function ThreadMessage({
                 referrerPolicy="no-referrer"
                 title="Message content"
                 src={messageHtmlUrl(message.id, allowRemote || fromSender === true, dark)}
+                onMouseLeave={() => setLinkGoes(null)}
               />
             ) : (
               <TextBody text={ready.text.trim()} onFailed={setImagesError} />
+            )}
+            {linkGoes && ready.has_html && !showText && (
+              // Where the link under the pointer goes, as a browser shows it.
+              <div className="link-goes" role="status">
+                <span>{linkGoes}</span>
+              </div>
             )}
             <AttachmentTiles messageId={message.id} attachments={ready.attachments} />
           </>

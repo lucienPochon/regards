@@ -159,11 +159,12 @@ fn percent_decode(text: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// The one script a message's page runs, ours: it tells the reading pane how
-/// tall the message is, as it loads and whenever that changes, so the frame
-/// is as tall as the message (a horizontal scroll bar included). It can do
-/// nothing else: the frame's origin is its own, not the app's, and it may
-/// fetch nothing (`default-src 'none'`).
+/// The one script a message's page runs, ours, in two parts. This one tells
+/// the reading pane how tall the message is, as it loads and whenever that
+/// changes, so the frame is as tall as the message (a horizontal scroll bar
+/// included). Neither can do more than tell the reading pane: the frame's
+/// origin is its own, not the app's, and it may fetch nothing
+/// (`default-src 'none'`).
 const MEASURE: &str = "(()=>{let last=0;const tell=()=>{const root=document.documentElement;\
 const body=document.body;const bar=innerHeight-root.clientHeight;\
 const height=Math.ceil(Math.max(root.getBoundingClientRect().height,body?body.scrollHeight:0)+bar);\
@@ -171,6 +172,26 @@ if(height!==last){last=height;parent.postMessage({regardsMailHeight:height},'*')
 new ResizeObserver(tell).observe(document.documentElement);\
 if(document.body){new ResizeObserver(tell).observe(document.body);}\
 addEventListener('load',tell);tell();})();";
+
+/// The second part: what happens in the message that the app should know.
+/// - **Keys**, once the person has clicked in the message, so shortcuts
+///   still work there. Not those that stay with the message: copy, select
+///   all, and the keys that scroll it or move between its links.
+/// - **The link under the pointer**: where it really goes (the URL our
+///   `/open` link wraps, never its token), or `null` off a link.
+const RELAY: &str = "(()=>{const send=m=>parent.postMessage(m,'*');\
+addEventListener('keydown',e=>{\
+if(e.isComposing||/^(Arrow|Page)/.test(e.key)||/^(Home|End|Tab|Enter| )$/.test(e.key))return;\
+if((e.ctrlKey||e.metaKey)&&!e.altKey&&/^[ac]$/i.test(e.key))return;\
+send({regardsMailKey:{key:e.key,code:e.code,ctrlKey:e.ctrlKey,metaKey:e.metaKey,shiftKey:e.shiftKey,\
+altKey:e.altKey,altGraph:e.getModifierState('AltGraph')}});});\
+const goes=a=>{try{const u=new URL(a.href);\
+if(u.pathname==='/open'&&u.searchParams.has('url'))return u.searchParams.get('url');\
+return u.protocol==='mailto:'?a.href:null;}catch(_){return null;}};\
+let shown=null;const show=u=>{if(u!==shown){shown=u;send({regardsMailLink:u});}};\
+addEventListener('mouseover',e=>{const a=e.target instanceof Element?e.target.closest('a[href]'):null;\
+show(a?goes(a):null);});\
+document.documentElement.addEventListener('mouseleave',()=>show(null));})();";
 
 /// A value used once, for this page's script alone; `None` without
 /// randomness, and then no script runs (the frame keeps a fixed height).
@@ -180,12 +201,12 @@ fn nonce() -> Option<String> {
     Some(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// The message's HTML with [`MEASURE`] at the end of its body.
+/// The message's HTML with [`MEASURE`] and [`RELAY`] at the end of its body.
 fn measured(html: String, nonce: Option<&str>) -> String {
     let Some(nonce) = nonce else {
         return html;
     };
-    let script = format!("<script nonce=\"{nonce}\">{MEASURE}</script>");
+    let script = format!("<script nonce=\"{nonce}\">{MEASURE}{RELAY}</script>");
     match html.to_ascii_lowercase().rfind("</body>") {
         Some(at) => format!("{}{script}{}", &html[..at], &html[at..]),
         None => html + &script,
@@ -391,6 +412,11 @@ mod tests {
         let page = measured("<html><body><p>Hi</p></BODY></html>".into(), Some("n1"));
         assert!(page.starts_with("<html><body><p>Hi</p><script nonce=\"n1\">"), "{page}");
         assert!(page.ends_with("</script></BODY></html>"), "{page}");
+        assert!(
+            page.contains("regardsMailHeight") && page.contains("regardsMailKey") && page.contains("regardsMailLink"),
+            "one script: the height, keys, and where links go"
+        );
+        assert!(!RELAY.contains("searchParams.get('t')"), "never the link token");
         assert!(measured("<p>Hi</p>".into(), Some("n1")).ends_with("</script>"));
         assert_eq!(measured("<p>Hi</p>".into(), None), "<p>Hi</p>", "no nonce, no script");
     }
