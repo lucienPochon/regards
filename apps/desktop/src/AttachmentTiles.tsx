@@ -4,6 +4,7 @@ import { imageSource, saveAllAttachments, saveAttachment } from "./attachments";
 import { AttachmentViewer, type Placed, loadPreview } from "./AttachmentPreview";
 import { fileKind, fileSize } from "./format";
 import { Icon } from "./icons";
+import { useShortcuts } from "./shortcuts";
 
 /** Images up to this size get a thumbnail. */
 const THUMBNAIL_MAX = 3 * 1024 * 1024;
@@ -13,11 +14,21 @@ const THUMBNAIL_MAX = 3 * 1024 * 1024;
  * viewer, with Save as… on hover; "Save all" in the header. Images shown
  * inside the message are left out.
  */
-export function AttachmentTiles({ messageId, attachments }: { messageId: number; attachments: Attachment[] }) {
+export function AttachmentTiles({
+  messageId,
+  attachments,
+  spaceOpens = false,
+}: {
+  messageId: number;
+  attachments: Attachment[];
+  /** Space opens the viewer on the first file (the open message's), as it closes it. */
+  spaceOpens?: boolean;
+}) {
   const files: Placed[] = attachments
     .map((attachment, index) => ({ index, attachment }))
     .filter((file) => !file.attachment.inline);
   const [viewing, setViewing] = useState<number | null>(null);
+  useShortcuts(spaceOpens && files.length > 0 && viewing === null ? { " ": () => setViewing(0) } : {});
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   if (files.length === 0) return null;
