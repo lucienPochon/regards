@@ -5,6 +5,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 const {
   AGENT_ACCESS_LEVELS,
   AGENT_APPS,
+  activityKind,
   agentAppsFound,
   approveHold,
   isConnected,
@@ -73,5 +74,26 @@ describe("agent access", () => {
 
   it("lists the levels from none to the most", () => {
     expect(AGENT_ACCESS_LEVELS.map((level) => level.value)).toEqual(["off", "read", "triage", "send"]);
+  });
+});
+
+describe("agent activity", () => {
+  it("is reading, sorting or sending, by what was asked", () => {
+    const kinds = Object.fromEntries(
+      ["message.get", "search.query", "draft.get", "message.archive", "sender.block", "draft.reply", "draft.send", "hold.get", "account.set_agent_access"].map(
+        (method) => [method, activityKind(method)],
+      ),
+    );
+    expect(kinds).toEqual({
+      "message.get": "reading",
+      "search.query": "reading",
+      "draft.get": "reading",
+      "message.archive": "sorting",
+      "sender.block": "sorting",
+      "draft.reply": "sending",
+      "draft.send": "sending",
+      "hold.get": null,
+      "account.set_agent_access": null,
+    });
   });
 });

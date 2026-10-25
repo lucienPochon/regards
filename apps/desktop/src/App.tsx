@@ -31,7 +31,7 @@ import {
 } from "./accounts";
 import { type Action, type ActionHost, type Target, choose, messageActions, newSendersOf } from "./actions";
 import { AddAccountDialog } from "./AddAccount";
-import { usePendingHolds } from "./AgentHolds";
+import { HoldsDialog, usePendingHolds } from "./AgentHolds";
 import { AskUpdates, useUpdateStatus } from "./UpdateCheck";
 import { Avatar } from "./Avatar";
 import { Composer } from "./Composer";
@@ -285,6 +285,8 @@ export function App() {
   const [chooser, setChooser] = useState<Anchor | null>(null);
   // What agents asked for and is waiting for the person (Settings › Agents).
   const holds = usePendingHolds();
+  // What agents wait for, decided over the mail (the "Agents are waiting" bubble).
+  const [holdsOpen, setHoldsOpen] = useState(false);
   // Checking for updates: asked once, and a newer version shown when one is found.
   const updates = useUpdateStatus();
   const refreshUpdates = updates.refresh;
@@ -2256,7 +2258,7 @@ export function App() {
               type="button"
               className="aside-bubble agent-waiting"
               title={holds.map((hold) => hold.description).join("\n")}
-              onClick={() => setSettings("agents")}
+              onClick={() => setHoldsOpen(true)}
             >
               <Icon name="agent" size={15} />
               {holds.length === 1 ? "An agent is waiting for you" : `Agents are waiting for you: ${holds.length}`}
@@ -2385,6 +2387,16 @@ export function App() {
             setSenderCard(null);
             setSettings("agents");
           }}
+        />
+      )}
+      {holdsOpen && (
+        <HoldsDialog
+          accounts={accounts.map(({ account }) => ({ id: account.id, email: account.email }))}
+          onSettings={() => {
+            setHoldsOpen(false);
+            setSettings("agents");
+          }}
+          onClose={() => setHoldsOpen(false)}
         />
       )}
       {picking && (

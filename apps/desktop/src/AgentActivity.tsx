@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applyUndo } from "./accounts";
-import { type AgentActivity as Entry, type AgentDecision, listAgentActivity } from "./agents";
+import { type ActivityKind, type AgentActivity as Entry, type AgentDecision, activityKind, listAgentActivity } from "./agents";
 import { fullDate } from "./format";
 import { Icon } from "./icons";
 import { radioKeys, radioTab } from "./radios";
@@ -45,6 +45,16 @@ const ACTIONS: Record<string, string> = {
   "agent.activity": "Tried to read this list",
   "hold.get": "Checked on what it asked for",
 };
+
+/** Which requests the list shows: all, those of one kind, or the refused ones. */
+type Filter = "all" | ActivityKind | "refused";
+const FILTERS: { id: Filter; label: string; none: string }[] = [
+  { id: "all", label: "Everything", none: "No agent has used Regards yet. What they do will be listed here." },
+  { id: "reading", label: "Reading", none: "No agent has read any mail." },
+  { id: "sorting", label: "Sorting", none: "No agent has moved or marked any mail." },
+  { id: "sending", label: "Sending", none: "No agent has written or sent anything." },
+  { id: "refused", label: "Refused", none: "No agent has been refused." },
+];
 
 const DECISIONS: Partial<Record<AgentDecision, { label: string; tone: string }>> = {
   denied: { label: "Refused", tone: "refused" },
@@ -140,7 +150,7 @@ export function AgentActivity({
   folderName: (mailboxId: number) => string | null;
 }) {
   const [accountId, setAccountId] = useState<string | null>(null);
-  const [refusedOnly, setRefusedOnly] = useState(false);
+  const [only, setOnly] = useState<Filter>("all");
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [next, setNext] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -207,8 +217,15 @@ export function AgentActivity({
   };
 
   const shown = useMemo(
-    () => (entries ?? []).filter((entry) => !refusedOnly || entry.decision === "denied" || entry.decision === "rejected"),
-    [entries, refusedOnly],
+    () =>
+      (entries ?? []).filter((entry) =>
+        only === "all"
+          ? true
+          : only === "refused"
+            ? entry.decision === "denied" || entry.decision === "rejected"
+            : activityKind(entry.method) === only,
+      ),
+    [entries, only],
   );
   const emailOf = (id: string | null) => accounts.find((account) => account.id === id)?.email ?? null;
 
@@ -217,18 +234,15 @@ export function AgentActivity({
       <div className="activity-head">
         <h4>Activity</h4>
         <span className="choice" role="radiogroup" aria-label="Which requests" onKeyDown={(event) => radioKeys(event)}>
-          {[
-            { id: false, label: "Everything" },
-            { id: true, label: "Refused" },
-          ].map((option, index) => (
+          {FILTERS.map((option, index) => (
             <button
               key={option.label}
               type="button"
               role="radio"
-              aria-checked={refusedOnly === option.id}
-              tabIndex={radioTab(refusedOnly === option.id, index, true)}
-              className={refusedOnly === option.id ? "chosen" : undefined}
-              onClick={() => setRefusedOnly(option.id)}
+              aria-checked={only === option.id}
+              tabIndex={radioTab(only === option.id, index, true)}
+              className={only === option.id ? "chosen" : undefined}
+              onClick={() => setOnly(option.id)}
             >
               {option.label}
             </button>
@@ -255,7 +269,7 @@ export function AgentActivity({
         !error && <p className="muted activity-empty">Loading…</p>
       ) : shown.length === 0 ? (
         <p className="muted activity-empty">
-          {refusedOnly ? "No agent has been refused." : "No agent has used Regards yet. What they do will be listed here."}
+          {FILTERS.find((option) => option.id === only)?.none}
         </p>
       ) : (
         <ol className="activity-sessions">
