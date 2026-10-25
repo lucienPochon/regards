@@ -30,6 +30,11 @@ pub(crate) enum Open {
     Hold {
         id: i64,
     },
+    /// A message by its Message-ID (`regards://message-id/…`): links copied
+    /// in Regards, which still work once the message has moved.
+    MessageId {
+        message_id: String,
+    },
     /// A `mailto:` link: a draft to start, never sent unasked.
     Compose(Compose),
 }
@@ -59,6 +64,9 @@ pub(crate) fn parse(url: &str) -> Option<Open> {
         return mailto(&url[7..]).map(Open::Compose);
     }
     let rest = url.strip_prefix("regards://")?.trim_end_matches('/');
+    if let Some(encoded) = rest.strip_prefix("message-id/") {
+        return message_id(encoded).map(|message_id| Open::MessageId { message_id });
+    }
     let (kind, id) = rest.split_once('/')?;
     if id.is_empty() || id.len() > 15 || !id.bytes().all(|b| b.is_ascii_digit()) {
         return None;
@@ -70,6 +78,20 @@ pub(crate) fn parse(url: &str) -> Option<Open> {
         "hold" => Open::Hold { id },
         _ => return None,
     })
+}
+
+/// The Message-ID in a `regards://message-id/…` link, decoded: one part, no
+/// query, and nothing a Message-ID cannot hold.
+fn message_id(encoded: &str) -> Option<String> {
+    if encoded.is_empty() || encoded.contains(['/', '?', '#']) {
+        return None;
+    }
+    let message_id = decode(encoded);
+    let valid = message_id.len() <= MAX_SUBJECT
+        && !message_id
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '<' | '>' | char::REPLACEMENT_CHARACTER));
+    valid.then_some(message_id)
 }
 
 /// What follows `mailto:`: addresses, then `?to=…&cc=…&bcc=…&subject=…&body=…`.
@@ -242,6 +264,31 @@ mod tests {
             "regards://message/99999999999999999999",
             "https://message/4",
             "regards:message/4",
+        ] {
+            assert_eq!(parse(other), None, "{other}");
+        }
+    }
+
+    #[test]
+    fn a_link_by_message_id_opens_whichever_copy_is_stored() {
+        assert_eq!(
+            parse("regards://message-id/plan.2026%2B1%40x@example.test"),
+            Some(Open::MessageId {
+                message_id: "plan.2026+1@x@example.test".into()
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(parse("regards://message-id/a@b").unwrap()).unwrap(),
+            serde_json::json!({ "kind": "message_id", "message_id": "a@b" }),
+            "as the UI has them"
+        );
+        for other in [
+            "regards://message-id/",
+            "regards://message-id/a@b/delete",
+            "regards://message-id/a@b?then=send",
+            "regards://message-id/a%20b@x",
+            "regards://message-id/%3Ca@b%3E",
+            "regards://message-id/%FF@x",
         ] {
             assert_eq!(parse(other), None, "{other}");
         }

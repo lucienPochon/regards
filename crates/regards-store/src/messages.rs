@@ -733,6 +733,22 @@ pub fn copies(conn: &Connection, account_id: &str, message_id: &str) -> Result<V
     Ok(rows)
 }
 
+/// The copy of a message to open for its Message-ID, in any account: the
+/// inbox's, then one in a folder other than Trash and Junk, then theirs;
+/// the newest first. `None` when no copy is stored.
+pub fn locate(conn: &Connection, message_id: &str) -> Result<Option<i64>, StoreError> {
+    Ok(conn
+        .query_row(
+            "SELECT m.id FROM messages m JOIN mailboxes b ON b.id = COALESCE(m.moving_to, m.mailbox_id) \
+             WHERE m.message_id_header = ?1 AND m.deleted = 0 \
+             ORDER BY COALESCE(b.role = 'inbox', 0) DESC, COALESCE(b.role IN ('trash', 'junk'), 0), \
+             m.received_at DESC, m.id DESC LIMIT 1",
+            [message_id],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
 /// The stored messages of a folder with these UIDs (those not stored left out).
 pub fn by_uids(conn: &Connection, mailbox_id: i64, uids: &[u32]) -> Result<Vec<Message>, StoreError> {
     let uids = serde_json::to_string(uids).expect("numbers always serialize");
@@ -882,6 +898,48 @@ mod tests {
                     .all(|step| !step.starts_with("SCAN") || step.starts_with("SCAN (subquery")),
             "{inbox:#?}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_message_id_finds_the_copy_to_open() {
+        let (_temp, store, inbox) = store_with_inbox().await;
+        let (in_trash, preferred, unknown) = store
+            .write(move |tx| {
+                let account: String =
+                    tx.query_row("SELECT account_id FROM mailboxes WHERE id = ?1", [inbox], |row| {
+                        row.get(0)
+                    })?;
+                let folder = |name: &str, role| RemoteMailbox {
+                    remote_name: name.as_bytes().to_vec(),
+                    name: name.into(),
+                    delimiter: Some('/'),
+                    role: Some(role),
+                    selectable: true,
+                    attributes: vec![],
+                };
+                mailboxes::reconcile(
+                    tx,
+                    &account,
+                    &[folder("INBOX", Role::Inbox), folder("Trash", Role::Trash)],
+                )?;
+                let trash = mailboxes::list(tx, &account)?
+                    .into_iter()
+                    .find(|m| m.role == Some(Role::Trash))
+                    .expect("listed")
+                    .id;
+                let mut copy = message(1, 1_000, "Plan");
+                copy.headers.message_id = Some("plan@x".into());
+                upsert(tx, trash, std::slice::from_ref(&copy))?;
+                let in_trash = locate(tx, "plan@x")?;
+                upsert(tx, inbox, &[copy])?;
+                Ok((in_trash, locate(tx, "plan@x")?, locate(tx, "other@x")?))
+            })
+            .await
+            .unwrap()
+            .value;
+        assert!(in_trash.is_some(), "only in Trash: that copy");
+        assert!(preferred.is_some() && preferred != in_trash, "the inbox's copy first");
+        assert_eq!(unknown, None);
     }
 
     #[tokio::test]

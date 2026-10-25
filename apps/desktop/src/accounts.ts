@@ -504,11 +504,18 @@ export interface MessageDetail {
    */
   images_from_sender?: boolean;
   attachments: Attachment[];
+  /** A link that opens it in Regards: by its Message-ID, so it still works once the message has moved. */
+  link?: string;
 }
 
 /** One message with its body; downloaded from the server the first time. */
 export function getMessage(id: number): Promise<MessageDetail> {
   return invoke<MessageDetail>("message_get", { id });
+}
+
+/** The stored message a `regards://message-id/…` link names, or null if none is. */
+export function locateMessage(messageId: string): Promise<number | null> {
+  return invoke<{ id: number | null }>("message_locate", { messageId }).then((result) => result.id);
 }
 
 /** Mirrors `MessageSource`: a message as it came, headers and all. */

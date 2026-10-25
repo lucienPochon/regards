@@ -10,9 +10,10 @@ use regards_core::{body, html};
 use regards_imap::SearchTerm;
 use regards_ipc::protocol::{
     AccountRef, ConnectionLogSettings, ConversationIdsResult, MessageCursor, MessageDetail, MessageHtml,
-    MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageRef, MessageSource, MessageSummary,
-    ReadingSettings, RpcError, SearchParams, SearchResult, SenderBlockedResult, SenderImagesParams, SenderImagesResult,
-    ServerSearchResult, ThreadEntry, ThreadView, View, ViewParams, codes,
+    MessageHtmlParams, MessageIds, MessageListParams, MessageListResult, MessageLocateParams, MessageLocateResult,
+    MessageRef, MessageSource, MessageSummary, ReadingSettings, RpcError, SearchParams, SearchResult,
+    SenderBlockedResult, SenderImagesParams, SenderImagesResult, ServerSearchResult, ThreadEntry, ThreadView, View,
+    ViewParams, codes,
 };
 use regards_store::mailboxes::Mailbox;
 use regards_store::marks::{self, Mark, Marks};
@@ -525,6 +526,7 @@ pub(crate) async fn get(state: &State, params: MessageRef) -> Result<Value, RpcE
     .map_err(crate::session::internal)?;
     Ok(json!(MessageDetail {
         mailbox_id: message.moving_to.unwrap_or(message.mailbox_id),
+        link: link(message.id, message.message_id.as_deref()),
         to: message.to.clone(),
         cc: message.cc.clone(),
         text: body.text,
@@ -534,6 +536,34 @@ pub(crate) async fn get(state: &State, params: MessageRef) -> Result<Value, RpcE
         attachments: body.attachments,
         message: summary(message, &info),
     }))
+}
+
+/// `regards://message-id/…` for a message with a Message-ID (percent-encoded
+/// but for unreserved characters and `@`), else `regards://message/<id>`.
+fn link(id: i64, message_id: Option<&str>) -> String {
+    use std::fmt::Write;
+    let Some(message_id) = message_id.filter(|message_id| !message_id.is_empty()) else {
+        return format!("regards://message/{id}");
+    };
+    let mut link = String::from("regards://message-id/");
+    for byte in message_id.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~@".contains(&byte) {
+            link.push(char::from(byte));
+        } else {
+            let _ = write!(link, "%{byte:02X}");
+        }
+    }
+    link
+}
+
+/// `message.locate`: the stored copy a `regards://message-id/…` link opens.
+pub(crate) async fn locate(state: &State, params: MessageLocateParams) -> Result<Value, RpcError> {
+    let id = state
+        .store
+        .read(move |conn| messages::locate(conn, &params.message_id))
+        .await
+        .map_err(crate::session::internal)?;
+    Ok(json!(MessageLocateResult { id }))
 }
 
 /// The daemon's key for the connection log: "on", or off.
@@ -1019,6 +1049,16 @@ pub(crate) fn plain_summary(m: Message) -> MessageSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_link_names_the_message_by_its_message_id_when_it_has_one() {
+        assert_eq!(
+            link(7, Some("CA+abc/1=x@mail.example.test")),
+            "regards://message-id/CA%2Babc%2F1%3Dx@mail.example.test"
+        );
+        assert_eq!(link(7, None), "regards://message/7");
+        assert_eq!(link(7, Some("")), "regards://message/7");
+    }
 
     #[test]
     fn the_source_is_shown_as_text_up_to_a_megabyte() {

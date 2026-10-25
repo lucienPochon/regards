@@ -90,6 +90,9 @@ pub mod methods {
     pub const MESSAGE_LIST: &str = "message.list";
     /// One message with its body, downloading it if needed. `ui` only for now.
     pub const MESSAGE_GET: &str = "message.get";
+    /// The stored message a `regards://message-id/…` link names, by its
+    /// Message-ID ([`MessageLocateParams`] → [`MessageLocateResult`]). `ui` only.
+    pub const MESSAGE_LOCATE: &str = "message.locate";
     /// The sanitised HTML version of a message (ADR-0006 §4). `ui` only for now.
     pub const MESSAGE_HTML: &str = "message.html";
     /// A message as it came, headers and all ("See the original message"):
@@ -1252,6 +1255,24 @@ pub struct MessageDetail {
     #[serde(default)]
     pub images_from_sender: bool,
     pub attachments: Vec<Attachment>,
+    /// A link that opens it in Regards: by its Message-ID
+    /// (`regards://message-id/…`), so it still works once the message has
+    /// moved; by its number without one.
+    #[serde(default)]
+    pub link: String,
+}
+
+/// Parameters of [`methods::MESSAGE_LOCATE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageLocateParams {
+    /// Without angle brackets, as in a `regards://message-id/…` link (decoded).
+    pub message_id: String,
+}
+
+/// Result of [`methods::MESSAGE_LOCATE`]: the copy to open, if one is stored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageLocateResult {
+    pub id: Option<i64>,
 }
 
 /// Parameters of [`methods::MESSAGE_SET_FLAGS`]. Omitted flags stay as they are.
