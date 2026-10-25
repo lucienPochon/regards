@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { t, tc } from "./i18n";
 
 /**
  * What agents (Claude Code, Codex, Cursor and others, through the
@@ -117,14 +118,14 @@ export interface AgentAccessLevel {
 
 /** The levels, each allowing what the one before it does, and more. */
 export const AGENT_ACCESS_LEVELS: AgentAccessLevel[] = [
-  { value: "off", label: "Off", allows: "Agents don't see this account." },
-  { value: "read", label: "Read", allows: "List, search and read mail. Reading doesn't mark it read." },
+  { value: "off", label: t("Off"), allows: t("Agents don't see this account.") },
+  { value: "read", label: tc("agent level", "Read"), allows: t("List, search and read mail. Reading doesn't mark it read.") },
   {
     value: "triage",
-    label: "Triage",
-    allows: "Read, and write drafts and organise: archive, move, flag, pin, snooze, senders.",
+    label: tc("agent level", "Triage"),
+    allows: t("Read, and write drafts and organise: archive, move, flag, pin, snooze, senders."),
   },
-  { value: "send", label: "Send", allows: "Triage, and send." },
+  { value: "send", label: tc("agent level", "Send"), allows: t("Triage, and send.") },
 ];
 
 export const setAgentAccess = (accountId: string, access: AgentAccess) =>

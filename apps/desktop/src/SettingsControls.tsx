@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
 import { radioKeys, radioTab } from "./radios";
+import { t } from "./i18n";
 
 /** A setting: what it is on the left, the control on the right. */
 export function Option({
@@ -119,7 +120,7 @@ export function LinkRow({ icon, label, detail, onOpen }: { icon: IconName; label
 export function SubPageHead({ title, onBack }: { title: string; onBack: () => void }) {
   return (
     <div className="subpage-head">
-      <button type="button" className="icon-btn" aria-label="Back" title="Back" onClick={onBack}>
+      <button type="button" className="icon-btn" aria-label={t("Back")} title={t("Back")} onClick={onBack}>
         <Icon name="back" size={17} />
       </button>
       <h3>{title}</h3>

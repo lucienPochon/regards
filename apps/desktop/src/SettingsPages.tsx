@@ -94,12 +94,12 @@ export function GeneralPage({ accounts }: { accounts: AccountSummary[] }) {
       </Option>
       <Option
         icon="logo"
-        label="Start Regards when you log in"
-        description="In the tray, without opening a window, so mail is up to date when you look."
+        label={t("Start Regards when you log in")}
+        description={t("In the tray, without opening a window, so mail is up to date when you look.")}
       >
         {background && (
           <Toggle
-            label="Start Regards when you log in"
+            label={t("Start Regards when you log in")}
             on={background.start_at_login}
             onChange={(on) => changeBackground("start_at_login", on)}
           />
@@ -107,104 +107,104 @@ export function GeneralPage({ accounts }: { accounts: AccountSummary[] }) {
       </Option>
       <Option
         icon="clock"
-        label="Keep running when the window is closed"
+        label={t("Keep running when the window is closed")}
         description={
           background?.close_to_tray === false
-            ? "Off: closing the window quits Regards. Snoozed mail, reminders and scheduled messages then wait until it is open again."
-            : "Regards stays in the tray, so snoozed mail comes back and scheduled messages go. They need this computer to be on."
+            ? t("Off: closing the window quits Regards. Snoozed mail, reminders and scheduled messages then wait until it is open again.")
+            : t("Regards stays in the tray, so snoozed mail comes back and scheduled messages go. They need this computer to be on.")
         }
       >
         {background && (
           <Toggle
-            label="Keep running when the window is closed"
+            label={t("Keep running when the window is closed")}
             on={background.close_to_tray}
             onChange={(on) => changeBackground("close_to_tray", on)}
           />
         )}
       </Option>
       <MailApp />
-      <Option icon="archive" label="After archiving or deleting a message">
+      <Option icon="archive" label={t("After archiving or deleting a message")}>
         <Select
-          label="After archiving or deleting a message"
+          label={t("After archiving or deleting a message")}
           value={prefs.afterMove}
           options={[
-            { id: "next", label: "Open the next one" },
-            { id: "previous", label: "Open the previous one" },
-            { id: "list", label: "Go back to the list" },
+            { id: "next", label: t("Open the next one") },
+            { id: "previous", label: t("Open the previous one") },
+            { id: "list", label: t("Go back to the list") },
           ]}
           onChange={(afterMove) => setPrefs({ afterMove })}
         />
       </Option>
-      <Option icon="pin" label="When a pinned message is archived">
+      <Option icon="pin" label={t("When a pinned message is archived")}>
         <Select
-          label="When a pinned message is archived"
+          label={t("When a pinned message is archived")}
           value={prefs.pinnedArchive}
           options={[
-            { id: "keep", label: "Keep it pinned" },
-            { id: "unpin", label: "Unpin it" },
+            { id: "keep", label: t("Keep it pinned") },
+            { id: "unpin", label: t("Unpin it") },
           ]}
           onChange={(pinnedArchive) => setPrefs({ pinnedArchive })}
         />
       </Option>
       <Option
         icon="send"
-        label="Undo send"
-        description="How long a message waits in the Outbox after you send it, so you can call it back."
+        label={t("Undo send")}
+        description={t("How long a message waits in the Outbox after you send it, so you can call it back.")}
       >
         <Select
-          label="Undo send"
+          label={t("Undo send")}
           value={prefs.undoSeconds}
-          options={[5, 10, 15, 30, 45, 60].map((seconds) => ({ id: seconds, label: seconds === 60 ? "1 minute" : `${seconds} seconds` }))}
+          options={[5, 10, 15, 30, 45, 60].map((seconds) => ({ id: seconds, label: seconds === 60 ? t("1 minute") : t("{count} seconds", { count: seconds }) }))}
           onChange={(undoSeconds) => setPrefs({ undoSeconds })}
         />
       </Option>
       <Option
         icon="mailOpen"
-        label="Mark as read"
-        description="When a message you open is marked read. Passing messages with the arrow keys beside the list leaves them unread."
+        label={t("Mark as read")}
+        description={t("When a message you open is marked read. Passing messages with the arrow keys beside the list leaves them unread.")}
       >
         <Select
-          label="Mark as read"
+          label={t("Mark as read")}
           value={prefs.markRead}
           options={[
-            { id: "now", label: "When opened" },
-            { id: "2s", label: "After 2 seconds" },
-            { id: "5s", label: "After 5 seconds" },
-            { id: "never", label: "Never: I mark it myself" },
+            { id: "now", label: t("When opened") },
+            { id: "2s", label: t("After 2 seconds") },
+            { id: "5s", label: t("After 5 seconds") },
+            { id: "never", label: t("Never: I mark it myself") },
           ]}
           onChange={(markRead) => setPrefs({ markRead })}
         />
       </Option>
       <Option
         icon="mail"
-        label="Fold older messages in a conversation"
-        description="Older messages show as one line each; the one you opened is shown in full."
+        label={t("Fold older messages in a conversation")}
+        description={t("Older messages show as one line each; the one you opened is shown in full.")}
       >
-        <Toggle label="Fold older messages in a conversation" on={prefs.collapseOlder} onChange={(collapseOlder) => setPrefs({ collapseOlder })} />
+        <Toggle label={t("Fold older messages in a conversation")} on={prefs.collapseOlder} onChange={(collapseOlder) => setPrefs({ collapseOlder })} />
       </Option>
       <Option
         icon="image"
-        label="Load images from the web"
-        description="Senders can tell when you open their message from these images. Off: each message asks before loading them."
+        label={t("Load images from the web")}
+        description={t("Senders can tell when you open their message from these images. Off: each message asks before loading them.")}
       >
-        <Toggle label="Load images from the web" on={prefs.remoteImages} onChange={(remoteImages) => setPrefs({ remoteImages })} />
+        <Toggle label={t("Load images from the web")} on={prefs.remoteImages} onChange={(remoteImages) => setPrefs({ remoteImages })} />
       </Option>
       {!prefs.remoteImages && (
         <LinkRow
           icon="people"
-          label="Senders whose images load"
-          detail="Allowed from a message with “Always from this sender”"
+          label={t("Senders whose images load")}
+          detail={t("Allowed from a message with “Always from this sender”")}
           onOpen={() => setSenders(true)}
         />
       )}
       <Option
         icon="shield"
-        label="Remove tracking from links"
-        description="Takes out the parts of a link that only tell who clicked (utm_…, fbclid …); the rest of the link stays. Also for what agents read."
+        label={t("Remove tracking from links")}
+        description={t("Takes out the parts of a link that only tell who clicked (utm_…, fbclid …); the rest of the link stays. Also for what agents read.")}
       >
         {reading !== null && (
           <Toggle
-            label="Remove tracking from links"
+            label={t("Remove tracking from links")}
             on={reading.clean_links}
             onChange={(on) => {
               setError(null);
@@ -219,16 +219,16 @@ export function GeneralPage({ accounts }: { accounts: AccountSummary[] }) {
       </Option>
       <Option
         icon="archive"
-        label="Download recent mail ahead of time"
+        label={t("Download recent mail ahead of time")}
         description={
           prefetch
-            ? "Your inboxes' mail from the last 30 days (up to 25 MB each) is downloaded now, then every 10 minutes: it opens at once, even offline, and all its text is searchable. Uses data and disk space."
-            : "Off: a message is downloaded when you open it. On: the last 30 days of your inboxes, so they open at once, even offline, and all their text is searchable. Uses data and disk space."
+            ? t("Your inboxes' mail from the last 30 days (up to 25 MB each) is downloaded now, then every 10 minutes: it opens at once, even offline, and all its text is searchable. Uses data and disk space.")
+            : t("Off: a message is downloaded when you open it. On: the last 30 days of your inboxes, so they open at once, even offline, and all their text is searchable. Uses data and disk space.")
         }
       >
         {prefetch !== null && (
           <Toggle
-            label="Download recent mail ahead of time"
+            label={t("Download recent mail ahead of time")}
             on={prefetch}
             onChange={(on) => {
               setError(null);
@@ -274,23 +274,23 @@ function MailApp() {
   const description = error
     ? error
     : status.registered
-      ? "Email links on web pages and in other apps open a new message here. Nothing is sent until you send it."
+      ? t("Email links on web pages and in other apps open a new message here. Nothing is sent until you send it.")
       : !status.can_register
-        ? "On a Mac, the mail app is chosen in Mail, under Settings › General: choose Regards there."
+        ? t("On a Mac, the mail app is chosen in Mail, under Settings › General: choose Regards there.")
         : asked && /Win/.test(navigator.platform)
-          ? "Confirm it in Default apps, which just opened: choose Regards for MAILTO."
-          : "Email links on web pages and in other apps would open a new message here.";
+          ? t("Confirm it in Default apps, which just opened: choose Regards for MAILTO.")
+          : t("Email links on web pages and in other apps would open a new message here.");
   return (
-    <Option icon="mail" label="Mail app" description={description}>
+    <Option icon="mail" label={t("Mail app")} description={description}>
       {status.registered ? (
         <span className="muted mail-app-yes">
           <Icon name="check" size={15} />
-          Regards
+          {t("Regards")}
         </span>
       ) : (
         status.can_register && (
           <button type="button" className="btn small" onClick={make}>
-            Make Regards your mail app
+            {t("Make Regards your mail app")}
           </button>
         )
       )}
@@ -319,14 +319,13 @@ function ImageSendersPage({ accounts, onBack }: { accounts: AccountSummary[]; on
   const none = lists !== null && accounts.every((account) => (lists[account.id] ?? []).length === 0);
   return (
     <>
-      <SubPageHead title="Senders whose images load" onBack={onBack} />
+      <SubPageHead title={t("Senders whose images load")} onBack={onBack} />
       <p className="muted settings-note">
-        Their messages show images from the web without asking, so they can tell when you open them. To add one, open a
-        message from them and choose “Always from this sender”.
+        {t("Their messages show images from the web without asking, so they can tell when you open them. To add one, open a message from them and choose “Always from this sender”.")}
       </p>
       {error && <p className="error" role="alert">{error}</p>}
-      {lists === null && !error && <p className="muted">Loading…</p>}
-      {none && <p className="muted">Nobody yet: every message asks before loading images.</p>}
+      {lists === null && !error && <p className="muted">{t("Loading…")}</p>}
+      {none && <p className="muted">{t("Nobody yet: every message asks before loading images.")}</p>}
       {lists !== null &&
         accounts.map((account) => {
           const list = lists[account.id] ?? [];
@@ -340,11 +339,11 @@ function ImageSendersPage({ accounts, onBack }: { accounts: AccountSummary[]; on
                     <Icon name={who.startsWith("@") ? "people" : "user"} size={18} />
                   </span>
                   <span className="option-text">
-                    <strong>{who.startsWith("@") ? `Anyone at ${who.slice(1)}` : who}</strong>
+                    <strong>{who.startsWith("@") ? t("Anyone at {domain}", { domain: who.slice(1) }) : who}</strong>
                   </span>
                   <span className="option-control">
                     <button type="button" className="btn small" onClick={() => block(account.id, who)}>
-                      Block again
+                      {t("Block again")}
                     </button>
                   </span>
                 </div>
@@ -357,9 +356,9 @@ function ImageSendersPage({ accounts, onBack }: { accounts: AccountSummary[]; on
 }
 
 const THEMES: { id: Theme; label: string }[] = [
-  { id: "system", label: "As this computer" },
-  { id: "light", label: "Light" },
-  { id: "dark", label: "Dark" },
+  { id: "system", label: t("As this computer") },
+  { id: "light", label: t("Light") },
+  { id: "dark", label: t("Dark") },
 ];
 
 /** Appearance: theme, layout, the list and the sidebar, and each account's colour. */
@@ -379,10 +378,10 @@ export function AppearancePage({
   const layoutChoice = layout.mode === "split" ? "split" : layout.handle ? "switch" : "single";
   return (
     <>
-      <h3>Appearance</h3>
-      <Option icon="sun" label="Theme">
+      <h3>{t("Appearance")}</h3>
+      <Option icon="sun" label={t("Theme")}>
         <Select
-          label="Theme"
+          label={t("Theme")}
           value={theme}
           options={THEMES}
           onChange={(next) => {
@@ -393,78 +392,78 @@ export function AppearancePage({
       </Option>
       <Option
         icon={layout.mode === "split" ? "split" : "single"}
-        label="Layout"
-        description="A message opens in place of the list, beside it, or in place of it with a handle on the list's edge to show both."
+        label={t("Layout")}
+        description={t("A message opens in place of the list, beside it, or in place of it with a handle on the list's edge to show both.")}
       >
         <Select
-          label="Layout"
+          label={t("Layout")}
           value={layoutChoice}
           options={[
-            { id: "single", label: "In place of the list" },
-            { id: "split", label: "Beside the list" },
-            { id: "switch", label: "In place, with a handle" },
+            { id: "single", label: t("In place of the list") },
+            { id: "split", label: t("Beside the list") },
+            { id: "switch", label: t("In place, with a handle") },
           ]}
           onChange={(choice) =>
             onLayout(choice === "split" ? { mode: "split" } : { mode: "single", handle: choice === "switch" })
           }
         />
       </Option>
-      <Option icon="sidebar" label="Sidebar" description={
+      <Option icon="sidebar" label={t("Sidebar")} description={
           <>
-            Keep the folders open beside the mail, or fold them to icons. <kbd>/</kbd> does the same.
+            {t("Keep the folders open beside the mail, or fold them to icons.")} <kbd>/</kbd> {t("does the same.")}
           </>
         }
       >
         <Select
-          label="Sidebar"
+          label={t("Sidebar")}
           value={layout.locked ? "open" : "icons"}
           options={[
-            { id: "open", label: "Open beside the mail" },
-            { id: "icons", label: "Icons" },
+            { id: "open", label: t("Open beside the mail") },
+            { id: "icons", label: t("Icons") },
           ]}
           onChange={(value) => onLayout({ locked: value === "open" })}
         />
       </Option>
-      <Option icon="text" label="List density" description="When the list fills the window.">
+      <Option icon="text" label={t("List density")} description={t("When the list fills the window.")}>
         <Select
-          label="List density"
+          label={t("List density")}
           value={prefs.density}
           options={[
-            { id: "comfortable", label: "Comfortable" },
-            { id: "compact", label: "Compact" },
+            { id: "comfortable", label: t("Comfortable") },
+            { id: "compact", label: t("Compact") },
           ]}
           onChange={(density) => setPrefs({ density })}
         />
       </Option>
-      <Option icon="user" label="Pictures of people" description="The coloured circles with initials. Regards never fetches people's pictures.">
+      <Option icon="user" label={t("Pictures of people")} description={t("The coloured circles with initials. Regards never fetches people's pictures.")}>
         <Select
-          label="Pictures of people"
+          label={t("Pictures of people")}
           value={prefs.avatars}
           options={[
-            { id: "everywhere", label: "Everywhere" },
-            { id: "reader", label: "In messages only" },
-            { id: "list", label: "In the list only" },
-            { id: "nowhere", label: "Nowhere" },
+            { id: "everywhere", label: t("Everywhere") },
+            { id: "reader", label: t("In messages only") },
+            { id: "list", label: t("In the list only") },
+            { id: "nowhere", label: t("Nowhere") },
           ]}
           onChange={(avatars) => setPrefs({ avatars })}
         />
       </Option>
-      <Option icon="text" label="Preview lines" description="Lines of each message's start in the list, when it is beside the reader.">
+      <Option icon="text" label={t("Preview lines")} description={t("Lines of each message's start in the list, when it is beside the reader.")}>
         <Select
-          label="Preview lines"
+          label={t("Preview lines")}
           value={prefs.previewLines}
           options={[
-            { id: 0, label: "None" },
-            { id: 1, label: "1 line" },
-            { id: 2, label: "2 lines" },
+            { id: 0, label: t("None") },
+            { id: 1, label: t("1 line") },
+            { id: 2, label: t("2 lines") },
           ]}
           onChange={(previewLines) => setPrefs({ previewLines: previewLines as Prefs["previewLines"] })}
         />
       </Option>
       <LinkRow
         icon="user"
-        label="Colour for each account"
-        detail={prefs.colourCoding ? "On: a ring in each account's colour around pictures" : "Off"}
+        label={t("Colour for each account")}
+        detail={prefs.colourCoding ? t("On: a ring in each account's colour around pictures") : t("Off")}
         onOpen={() => setColours(true)}
       />
     </>
@@ -475,14 +474,14 @@ function AccountColours({ accounts, onBack }: { accounts: AccountSummary[]; onBa
   const prefs = usePrefs();
   return (
     <>
-      <SubPageHead title="Colour for each account" onBack={onBack} />
+      <SubPageHead title={t("Colour for each account")} onBack={onBack} />
       <Option
         icon="user"
-        label="Colour-code accounts"
-        description="A ring in the account's colour around pictures in the list and the sidebar, so you can tell accounts apart in the unified inbox."
+        label={t("Colour-code accounts")}
+        description={t("A ring in the account's colour around pictures in the list and the sidebar, so you can tell accounts apart in the unified inbox.")}
       >
         <Toggle
-          label="Colour-code accounts"
+          label={t("Colour-code accounts")}
           on={prefs.colourCoding}
           onChange={(colourCoding) => {
             // Each account gets a colour of its own at once; the person can change it below.
@@ -527,29 +526,29 @@ function AccountColours({ accounts, onBack }: { accounts: AccountSummary[]; onBa
 
 const platform = navigator.platform;
 /** Where the unread count shows: the dock on a Mac, the taskbar elsewhere. */
-const DOCK = /Mac/.test(platform) ? "dock" : "taskbar";
+const ON_MAC = /Mac/.test(platform);
 const BADGE_NOTE = /Win/.test(platform)
-  ? "The inboxes' unread mail, as in the sidebar, up to 9+. Not mail set aside or snoozed."
-  : "The inboxes' unread mail, as in the sidebar. Not mail set aside or snoozed.";
+  ? t("The inboxes' unread mail, as in the sidebar, up to 9+. Not mail set aside or snoozed.")
+  : t("The inboxes' unread mail, as in the sidebar. Not mail set aside or snoozed.");
 
 const NEW_MAIL: { id: NewMail; label: string; detail: string }[] = [
-  { id: "all", label: "All new mail", detail: "Everything that arrives in the inbox." },
-  { id: "smart", label: "People and Priority", detail: "Mail from people and Priority; not new senders, notifications or newsletters." },
-  { id: "priority", label: "Priority only", detail: "Only mail in Priority." },
-  { id: "none", label: "None", detail: "Nothing for new mail." },
+  { id: "all", label: t("All new mail"), detail: t("Everything that arrives in the inbox.") },
+  { id: "smart", label: t("People and Priority"), detail: t("Mail from people and Priority; not new senders, notifications or newsletters.") },
+  { id: "priority", label: t("Priority only"), detail: t("Only mail in Priority.") },
+  { id: "none", label: t("None"), detail: t("Nothing for new mail.") },
 ];
 
 /** The notices besides new mail, each its own switch. */
 const NOTICES: { id: Exclude<keyof NotificationSettings, "new_mail">; label: string; description: string; icon: IconName }[] = [
-  { id: "snooze_ended", label: "Snoozed mail comes back", description: "When its time comes.", icon: "clock" },
-  { id: "reminder_due", label: "Nobody has replied", description: "By the time a reminder was set for.", icon: "bell" },
+  { id: "snooze_ended", label: t("Snoozed mail comes back"), description: t("When its time comes."), icon: "clock" },
+  { id: "reminder_due", label: t("Nobody has replied"), description: t("By the time a reminder was set for."), icon: "bell" },
   {
     id: "sending",
-    label: "A message did not go",
-    description: "Not sent, perhaps not sent, or held because this computer was off when it was due.",
+    label: t("A message did not go"),
+    description: t("Not sent, perhaps not sent, or held because this computer was off when it was due."),
     icon: "alert",
   },
-  { id: "agents", label: "Agents", description: "An agent waits for your answer, or is sending a message.", icon: "agent" },
+  { id: "agents", label: t("Agents"), description: t("An agent waits for your answer, or is sending a message."), icon: "agent" },
 ];
 
 /**
@@ -595,20 +594,20 @@ export function NotificationsPage({ accounts }: { accounts: AccountSummary[] }) 
   };
   return (
     <>
-      <h3>Notifications</h3>
+      <h3>{t("Notifications")}</h3>
       {error && <p className="error" role="alert">{error}</p>}
       <Option
         icon="bell"
-        label="Show notifications"
+        label={t("Show notifications")}
         description={
           off
-            ? "Off: Regards shows none, whatever is chosen below. The tray icon's menu has the same switch."
-            : "They show who and the subject, never the message. The tray icon's menu has the same switch."
+            ? t("Off: Regards shows none, whatever is chosen below. The tray icon's menu has the same switch.")
+            : t("They show who and the subject, never the message. The tray icon's menu has the same switch.")
         }
       >
         {shown !== null && (
           <Toggle
-            label="Show notifications"
+            label={t("Show notifications")}
             on={shown}
             onChange={(on) => {
               setError(null);
@@ -622,7 +621,7 @@ export function NotificationsPage({ accounts }: { accounts: AccountSummary[] }) 
       </Option>
       {settings && (
         <div className={off ? "notice-choices dimmed" : "notice-choices"} aria-disabled={off || undefined}>
-          <h4 className="settings-subhead">New mail</h4>
+          <h4 className="settings-subhead">{t("New mail")}</h4>
           {accounts.map((account) => {
             const choice = settings.new_mail[account.id] ?? "smart";
             return (
@@ -633,12 +632,12 @@ export function NotificationsPage({ accounts }: { accounts: AccountSummary[] }) 
                   colour={accountColour(prefs, account.id)}
                 />
                 <span className="option-text">
-                  <strong>{accounts.length > 1 ? accountLabel(prefs, account) : "New mail"}</strong>
+                  <strong>{accounts.length > 1 ? accountLabel(prefs, account) : t("New mail")}</strong>
                   <span>{NEW_MAIL.find((option) => option.id === choice)?.detail}</span>
                 </span>
                 <span className="option-control">
                   <Select
-                    label={`New mail in ${account.email}`}
+                    label={t("New mail in {account}", { account: account.email })}
                     value={choice}
                     options={NEW_MAIL}
                     onChange={(next) => change({ ...settings, new_mail: { ...settings.new_mail, [account.id]: next } })}
@@ -648,10 +647,9 @@ export function NotificationsPage({ accounts }: { accounts: AccountSummary[] }) 
             );
           })}
           <p className="muted settings-note">
-            Mail that came while Regards was off is told of when it starts. Not the mail already there when an account is
-            added, nor what you already read elsewhere. When several arrive at once, they come as one.
+            {t("Mail that came while Regards was off is told of when it starts. Not the mail already there when an account is added, nor what you already read elsewhere. When several arrive at once, they come as one.")}
           </p>
-          <h4 className="settings-subhead">Also tell me when</h4>
+          <h4 className="settings-subhead">{t("Also tell me when")}</h4>
           {NOTICES.map((notice) => (
             <Option key={notice.id} icon={notice.icon} label={notice.label} description={notice.description}>
               <Toggle
@@ -665,25 +663,29 @@ export function NotificationsPage({ accounts }: { accounts: AccountSummary[] }) 
       )}
       <LinkRow
         icon="settings"
-        label="This computer's notification settings"
-        detail="Sounds, banners and quiet hours are set there, for Regards as for any app"
+        label={t("This computer's notification settings")}
+        detail={t("Sounds, banners and quiet hours are set there, for Regards as for any app")}
         onOpen={systemSettings}
       />
       {badge && (
         <>
-          <h4 className="settings-subhead">On the {DOCK}</h4>
-          <Option icon="inbox" label={`Unread count on the ${DOCK}`} description={BADGE_NOTE}>
-            <Toggle label={`Unread count on the ${DOCK}`} on={badge.on} onChange={(on) => changeBadge({ ...badge, on })} />
+          <h4 className="settings-subhead">{ON_MAC ? t("On the dock") : t("On the taskbar")}</h4>
+          <Option icon="inbox" label={ON_MAC ? t("Unread count on the dock") : t("Unread count on the taskbar")} description={BADGE_NOTE}>
+            <Toggle
+              label={ON_MAC ? t("Unread count on the dock") : t("Unread count on the taskbar")}
+              on={badge.on}
+              onChange={(on) => changeBadge({ ...badge, on })}
+            />
           </Option>
           {badge.on && (
-            <Option icon="people" label="What it counts" description="Unread mail in the inbox: all of it, or only some.">
+            <Option icon="people" label={t("What it counts")} description={t("Unread mail in the inbox: all of it, or only some.")}>
               <Select
-                label="What it counts"
+                label={t("What it counts")}
                 value={badge.count}
                 options={[
-                  { id: "inbox", label: "All unread mail" },
-                  { id: "people", label: "Unread from people" },
-                  { id: "priority", label: "Unread priority mail" },
+                  { id: "inbox", label: t("All unread mail") },
+                  { id: "people", label: t("Unread from people") },
+                  { id: "priority", label: t("Unread priority mail") },
                 ]}
                 onChange={(count) => changeBadge({ ...badge, count })}
               />
@@ -702,7 +704,7 @@ export function NotificationsPage({ accounts }: { accounts: AccountSummary[] }) 
                   />
                   <span className="option-text">
                     <strong>{accountLabel(prefs, account)}</strong>
-                    <span>{counted ? "Counted" : "Not counted"}</span>
+                    <span>{counted ? t("Counted") : t("Not counted")}</span>
                   </span>
                   <span className="option-control">
                     <Toggle
@@ -722,9 +724,9 @@ export function NotificationsPage({ accounts }: { accounts: AccountSummary[] }) 
             })}
         </>
       )}
-      <h4 className="settings-subhead">In Regards</h4>
-      <Option icon="inbox" label="Unread counts in the sidebar" description="Beside the inbox and each account's inbox.">
-        <Toggle label="Unread counts in the sidebar" on={prefs.sidebarCounts} onChange={(sidebarCounts) => setPrefs({ sidebarCounts })} />
+      <h4 className="settings-subhead">{t("In Regards")}</h4>
+      <Option icon="inbox" label={t("Unread counts in the sidebar")} description={t("Beside the inbox and each account's inbox.")}>
+        <Toggle label={t("Unread counts in the sidebar")} on={prefs.sidebarCounts} onChange={(sidebarCounts) => setPrefs({ sidebarCounts })} />
       </Option>
     </>
   );
@@ -732,11 +734,11 @@ export function NotificationsPage({ accounts }: { accounts: AccountSummary[] }) 
 
 type Picker = "snooze" | "send" | "reminders";
 const PICKERS: Record<Picker, { title: string; detail: string; defs: PresetDef[]; key: "snoozePresets" | "sendPresets" | "reminderPresets" }> = {
-  snooze: { title: "Snooze", detail: "The times offered when you snooze a message", defs: SNOOZE_PRESETS, key: "snoozePresets" },
-  send: { title: "Send later", detail: "The times offered when you send a message later", defs: SEND_PRESETS, key: "sendPresets" },
+  snooze: { title: t("Snooze"), detail: t("The times offered when you snooze a message"), defs: SNOOZE_PRESETS, key: "snoozePresets" },
+  send: { title: t("Send later"), detail: t("The times offered when you send a message later"), defs: SEND_PRESETS, key: "sendPresets" },
   reminders: {
-    title: "Reminders",
-    detail: "The times offered for a reminder if nobody replies",
+    title: t("Reminders"),
+    detail: t("The times offered for a reminder if nobody replies"),
     defs: REMINDER_PRESETS,
     key: "reminderPresets",
   },
@@ -748,13 +750,12 @@ export function SchedulingPage() {
   if (picker) return <PresetsPage picker={picker} onBack={() => setPicker(null)} />;
   return (
     <>
-      <h3>Scheduling</h3>
+      <h3>{t("Scheduling")}</h3>
       {(Object.keys(PICKERS) as Picker[]).map((id) => (
         <LinkRow key={id} icon={id === "send" ? "sendLater" : id === "snooze" ? "clock" : "bell"} label={PICKERS[id].title} detail={PICKERS[id].detail} onOpen={() => setPicker(id)} />
       ))}
       <p className="muted settings-note">
-        Every picker also takes any date and time you choose. Snoozes, reminders and scheduled messages are carried out by
-        this computer, so it must be on at that time.
+        {t("Every picker also takes any date and time you choose. Snoozes, reminders and scheduled messages are carried out by this computer, so it must be on at that time.")}
       </p>
     </>
   );
@@ -781,7 +782,7 @@ function PresetsPage({ picker, onBack }: { picker: Picker; onBack: () => void })
               <input
                 type="time"
                 className="settings-select preset-time"
-                aria-label={`Time for ${def.label}`}
+                aria-label={t("Time for {choice}", { choice: def.label })}
                 value={current[def.id]?.time ?? def.time}
                 disabled={!on}
                 onChange={(event) => event.target.value && change(def.id, { time: event.target.value })}
@@ -792,7 +793,7 @@ function PresetsPage({ picker, onBack }: { picker: Picker; onBack: () => void })
         );
       })}
       <button type="button" className="btn small" onClick={() => setPrefs({ [key]: {} } as Partial<Prefs>)}>
-        Back to the usual times
+        {t("Back to the usual times")}
       </button>
     </>
   );
@@ -819,14 +820,13 @@ export function BlockedSendersPage({ accounts, onBack }: { accounts: AccountSumm
   const none = lists !== null && accounts.every((account) => (lists[account.id] ?? []).length === 0);
   return (
     <>
-      <SubPageHead title="Blocked senders" onBack={onBack} />
+      <SubPageHead title={t("Blocked senders")} onBack={onBack} />
       <p className="muted settings-note">
-        Their mail goes to Junk, and so does what they send later. Unblocking lets their new mail in; what is already in
-        Junk stays there. To block someone, open a message from them and choose Block.
+        {t("Their mail goes to Junk, and so does what they send later. Unblocking lets their new mail in; what is already in Junk stays there. To block someone, open a message from them and choose Block.")}
       </p>
       {error && <p className="error" role="alert">{error}</p>}
-      {lists === null && !error && <p className="muted">Loading…</p>}
-      {none && <p className="muted">Nobody is blocked.</p>}
+      {lists === null && !error && <p className="muted">{t("Loading…")}</p>}
+      {none && <p className="muted">{t("Nobody is blocked.")}</p>}
       {lists !== null &&
         accounts.map((account) => {
           const list = lists[account.id] ?? [];
@@ -840,11 +840,11 @@ export function BlockedSendersPage({ accounts, onBack }: { accounts: AccountSumm
                     <Icon name={who.startsWith("@") ? "people" : "user"} size={18} />
                   </span>
                   <span className="option-text">
-                    <strong>{who.startsWith("@") ? `Anyone at ${who.slice(1)}` : who}</strong>
+                    <strong>{who.startsWith("@") ? t("Anyone at {domain}", { domain: who.slice(1) }) : who}</strong>
                   </span>
                   <span className="option-control">
                     <button type="button" className="btn small" onClick={() => unblock(account.id, who)}>
-                      Unblock
+                      {t("Unblock")}
                     </button>
                   </span>
                 </div>
@@ -867,29 +867,29 @@ export function EmailGroupsPage({ accounts, onBack }: { accounts: AccountSummary
   }, []);
   return (
     <>
-      <SubPageHead title="Email groups" onBack={onBack} />
+      <SubPageHead title={t("Email groups")} onBack={onBack} />
       <Option
         icon="clock"
-        label="Where groups sit"
-        description="Notifications, Newsletters, Invitations and Pinned, each as one row of the Smart Inbox."
+        label={t("Where groups sit")}
+        description={t("Notifications, Newsletters, Invitations and Pinned, each as one row of the Smart Inbox.")}
       >
         <Select
-          label="Where groups sit"
+          label={t("Where groups sit")}
           value={prefs.groupsPosition}
           options={[
-            { id: "today", label: "With today's mail" },
-            { id: "chronological", label: "At their newest message's day" },
+            { id: "today", label: t("With today's mail") },
+            { id: "chronological", label: t("At their newest message's day") },
           ]}
           onChange={(groupsPosition) => setPrefs({ groupsPosition })}
         />
       </Option>
-      <h4 className="settings-subhead">Categories</h4>
+      <h4 className="settings-subhead">{t("Categories")}</h4>
       {(
         [
-          { key: "notifications", label: "Notifications", icon: "bell" },
-          { key: "newsletters", label: "Newsletters", icon: "newspaper" },
-          { key: "invitations", label: "Invitations", icon: "calendar" },
-          { key: "pinned", label: "Pinned", icon: "pin" },
+          { key: "notifications", label: t("Notifications"), icon: "bell" },
+          { key: "newsletters", label: t("Newsletters"), icon: "newspaper" },
+          { key: "invitations", label: t("Invitations"), icon: "calendar" },
+          { key: "pinned", label: t("Pinned"), icon: "pin" },
         ] as const
       ).map((category) => (
         <Option key={category.key} icon={category.icon} label={category.label}>
@@ -897,20 +897,20 @@ export function EmailGroupsPage({ accounts, onBack }: { accounts: AccountSummary
             label={category.label}
             value={prefs.grouped[category.key] ? "group" : "all"}
             options={[
-              { id: "group", label: "As one row" },
+              { id: "group", label: t("As one row") },
               {
                 id: "all",
-                label: category.key === "pinned" ? "Only in Pinned, in the sidebar" : "With everything else",
+                label: category.key === "pinned" ? t("Only in Pinned, in the sidebar") : t("With everything else"),
               },
             ]}
             onChange={(value) => grouped(category.key, value === "group")}
           />
         </Option>
       ))}
-      <h4 className="settings-subhead">Your groups</h4>
+      <h4 className="settings-subhead">{t("Your groups")}</h4>
       {searches.length === 0 ? (
         <p className="muted settings-note">
-          Save a search ("Save this search", under its results) to make a group of your own: everything it finds in the inbox, as one row.
+          {t("Save a search (\"Save this search\", under its results) to make a group of your own: everything it finds in the inbox, as one row.")}
         </p>
       ) : (
         searches.map((saved) => (
@@ -919,8 +919,8 @@ export function EmailGroupsPage({ accounts, onBack }: { accounts: AccountSummary
               label={saved.name}
               value={prefs.searchGroups.includes(saved.id) ? "group" : "sidebar"}
               options={[
-                { id: "group", label: "As one row" },
-                { id: "sidebar", label: "Only in the sidebar" },
+                { id: "group", label: t("As one row") },
+                { id: "sidebar", label: t("Only in the sidebar") },
               ]}
               onChange={(value) =>
                 setPrefs({
@@ -936,20 +936,20 @@ export function EmailGroupsPage({ accounts, onBack }: { accounts: AccountSummary
       )}
       {accounts.length > 1 && (
         <>
-          <h4 className="settings-subhead">Accounts in the unified inbox</h4>
+          <h4 className="settings-subhead">{t("Accounts in the unified inbox")}</h4>
           {accounts.map((account) => (
             <div key={account.id} className="option">
               <Avatar person={{ name: account.display_name, address: account.email }} size="sm" />
               <span className="option-text">
                 <strong>{accountLabel(prefs, account)}</strong>
-                <span>{hidden.has(account.id) ? "Only in its own inbox, under the sidebar's Inbox" : "In the unified inbox"}</span>
+                <span>{hidden.has(account.id) ? t("Only in its own inbox, under the sidebar's Inbox") : t("In the unified inbox")}</span>
               </span>
               <Select
-                label={`Where ${account.email}'s mail shows`}
+                label={t("Where {account}'s mail shows", { account: account.email })}
                 value={hidden.has(account.id) ? "hide" : "show"}
                 options={[
-                  { id: "show", label: "In the unified inbox" },
-                  { id: "hide", label: "Only in its own inbox" },
+                  { id: "show", label: t("In the unified inbox") },
+                  { id: "hide", label: t("Only in its own inbox") },
                 ]}
                 onChange={(value) =>
                   setPrefs({
@@ -972,13 +972,13 @@ export function EmailGroupsPage({ accounts, onBack }: { accounts: AccountSummary
 export function PriorityRows() {
   const prefs = usePrefs();
   return (
-    <Option icon="boltFilled" label="Priority card" description="How many priority messages it shows before “View all”.">
+    <Option icon="boltFilled" label={t("Priority card")} description={t("How many priority messages it shows before “View all”.")}>
       <Select
-        label="Priority card"
+        label={t("Priority card")}
         value={prefs.priorityRows}
         options={[
           ...Array.from({ length: 10 }, (_, index) => ({ id: index + 1, label: `${index + 1}` })),
-          { id: 0, label: "All" },
+          { id: 0, label: t("All") },
         ]}
         onChange={(priorityRows) => setPrefs({ priorityRows })}
       />
@@ -1020,28 +1020,30 @@ function AutoCopyRow({ account, label }: { account: AccountSummary; label: strin
         <Icon name="mail" size={18} />
       </span>
       <span className="option-text">
-        <strong>{label ?? "Every new message"}</strong>
+        <strong>{label ?? t("Every new message")}</strong>
         <span aria-live="polite" className={error ? "error-text" : undefined}>
           {error ??
             (state === "saving"
-              ? "Saving…"
+              ? t("Saving…")
               : state === "saved"
-                ? "Saved."
+                ? t("Saved.")
                 : kind === "off"
-                  ? "No copy."
+                  ? t("No copy.")
                   : address.trim()
-                    ? `${kind === "cc" ? "A copy" : "A blind copy"} to ${address.trim()}.`
-                    : "Enter the address to copy.")}
+                    ? kind === "cc"
+                      ? t("A copy to {address}.", { address: address.trim() })
+                      : t("A blind copy to {address}.", { address: address.trim() })
+                    : t("Enter the address to copy."))}
         </span>
       </span>
       <span className="option-control auto-copy-control">
         <Select
-          label={`Always copy, ${account.email}`}
+          label={t("Always copy, {account}", { account: account.email })}
           value={kind}
           options={[
-            { id: "off", label: "Off" },
-            { id: "cc", label: "Cc" },
-            { id: "bcc", label: "Bcc" },
+            { id: "off", label: t("Off") },
+            { id: "cc", label: t("Cc") },
+            { id: "bcc", label: t("Bcc") },
           ]}
           onChange={(next) => {
             setKind(next);
@@ -1053,7 +1055,7 @@ function AutoCopyRow({ account, label }: { account: AccountSummary; label: strin
           <input
             className="input auto-copy-address"
             type="email"
-            aria-label={`Address to copy, ${account.email}`}
+            aria-label={t("Address to copy, {account}", { account: account.email })}
             placeholder="name@example.org"
             value={address}
             onChange={(event) => {
@@ -1085,62 +1087,60 @@ export function ComposerPage({
   if (signatures) return <SignaturesPage accounts={accounts} confirm={confirm} onBack={() => setSignatures(false)} />;
   return (
     <>
-      <h3>Composer</h3>
+      <h3>{t("Composer")}</h3>
       {accounts.length > 1 && (
         <Option
           icon="compose"
-          label="New messages are from"
-          description="Unless you are in one account's folder, or replying: then it is that account."
+          label={t("New messages are from")}
+          description={t("Unless you are in one account's folder, or replying: then it is that account.")}
         >
           <Select
-            label="New messages are from"
+            label={t("New messages are from")}
             value={prefs.defaultFrom ?? ""}
             options={[
-              { id: "", label: "The first account" },
-              { id: "last", label: "The last one used" },
+              { id: "", label: t("The first account") },
+              { id: "last", label: t("The last one used") },
               ...accounts.map((account) => ({ id: account.id, label: accountLabel(prefs, account) })),
             ]}
             onChange={(defaultFrom) => setPrefs({ defaultFrom: defaultFrom || null })}
           />
         </Option>
       )}
-      <Option icon="reply" label="Replies and forwards open" description="Over the conversation, to keep it in view, or full size.">
+      <Option icon="reply" label={t("Replies and forwards open")} description={t("Over the conversation, to keep it in view, or full size.")}>
         <Select
-          label="Replies and forwards open"
+          label={t("Replies and forwards open")}
           value={prefs.replyOpens}
           options={[
-            { id: "panel", label: "Over the conversation" },
-            { id: "full", label: "Full size" },
+            { id: "panel", label: t("Over the conversation") },
+            { id: "full", label: t("Full size") },
           ]}
           onChange={(replyOpens) => setPrefs({ replyOpens })}
         />
       </Option>
       <Option
         icon="check"
-        label="Done after replying"
-        description="Once a reply or forward is sent, its conversation leaves the inbox, with Undo, as when you mark it done."
+        label={t("Done after replying")}
+        description={t("Once a reply or forward is sent, its conversation leaves the inbox, with Undo, as when you mark it done.")}
       >
-        <Toggle label="Done after replying" on={prefs.doneAfterReply} onChange={(doneAfterReply) => setPrefs({ doneAfterReply })} />
+        <Toggle label={t("Done after replying")} on={prefs.doneAfterReply} onChange={(doneAfterReply) => setPrefs({ doneAfterReply })} />
       </Option>
       <Option
         icon="people"
-        label="Suggest people as you type"
-        description="In To, Cc and Bcc: the people you write to first, from your own mail."
+        label={t("Suggest people as you type")}
+        description={t("In To, Cc and Bcc: the people you write to first, from your own mail.")}
       >
-        <Toggle label="Suggest people as you type" on={prefs.suggestPeople} onChange={(suggestPeople) => setPrefs({ suggestPeople })} />
+        <Toggle label={t("Suggest people as you type")} on={prefs.suggestPeople} onChange={(suggestPeople) => setPrefs({ suggestPeople })} />
       </Option>
-      <LinkRow icon="text" label="Signatures" detail="Which one each address adds, and every signature" onOpen={() => setSignatures(true)} />
-      <LinkRow icon="user" label="Addresses" detail="Send as an alias: in Accounts" onOpen={onAccounts} />
-      <h4 className="settings-subhead">Always copy</h4>
+      <LinkRow icon="text" label={t("Signatures")} detail={t("Which one each address adds, and every signature")} onOpen={() => setSignatures(true)} />
+      <LinkRow icon="user" label={t("Addresses")} detail={t("Send as an alias: in Accounts")} onOpen={onAccounts} />
+      <h4 className="settings-subhead">{t("Always copy")}</h4>
       {accounts.map((account) => (
         <AutoCopyRow key={account.id} account={account} label={accounts.length > 1 ? accountLabel(prefs, account) : null} />
       ))}
       <p className="muted settings-note">
-        Added to every new message, reply and forward from that account, those agents and the command line write too,
-        unless the address is already there. Remove it from one message in the composer like any other. Drafts already
-        written stay as they are.
+        {t("Added to every new message, reply and forward from that account, those agents and the command line write too, unless the address is already there. Remove it from one message in the composer like any other. Drafts already written stay as they are.")}
       </p>
-      <p className="muted settings-note">How long you can call a message back after sending it is under General, “Undo send”.</p>
+      <p className="muted settings-note">{t("How long you can call a message back after sending it is under General, “Undo send”.")}</p>
     </>
   );
 }
@@ -1150,14 +1150,14 @@ export function AccessibilityPage() {
   const prefs = usePrefs();
   return (
     <>
-      <h3>Accessibility</h3>
+      <h3>{t("Accessibility")}</h3>
       <Option
         icon="search"
-        label="Zoom"
-        description={`Makes everything in the window larger or smaller. ${MOD_KEY} + and ${MOD_KEY} − change it from anywhere; ${MOD_KEY} 0 goes back to 100 %.`}
+        label={t("Zoom")}
+        description={t("Makes everything in the window larger or smaller. {key} + and {key} − change it from anywhere; {key} 0 goes back to 100 %.", { key: MOD_KEY })}
       >
         <Select
-          label="Zoom"
+          label={t("Zoom")}
           value={prefs.zoom}
           options={ZOOMS.map((zoom) => ({ id: zoom, label: `${Math.round(zoom * 100)} %` }))}
           onChange={(zoom) => setPrefs({ zoom })}
@@ -1165,14 +1165,14 @@ export function AccessibilityPage() {
       </Option>
       <Option
         icon="keyboard"
-        label="Single-key shortcuts"
+        label={t("Single-key shortcuts")}
         description={
           prefs.singleKeys
-            ? "Keys such as e (archive) and # (delete) act on their own."
-            : `Off: only shortcuts with ${MOD_KEY}, and keys such as Escape and the arrows, act. Speech input or a stray key can't archive or delete mail.`
+            ? t("Keys such as e (archive) and # (delete) act on their own.")
+            : t("Off: only shortcuts with {key}, and keys such as Escape and the arrows, act. Speech input or a stray key can't archive or delete mail.", { key: MOD_KEY })
         }
       >
-        <Toggle label="Single-key shortcuts" on={prefs.singleKeys} onChange={(singleKeys) => setPrefs({ singleKeys })} />
+        <Toggle label={t("Single-key shortcuts")} on={prefs.singleKeys} onChange={(singleKeys) => setPrefs({ singleKeys })} />
       </Option>
     </>
   );
@@ -1212,20 +1212,20 @@ function Troubleshooting({
   };
   return (
     <>
-      <h4 className="settings-subhead">Troubleshooting</h4>
+      <h4 className="settings-subhead">{t("Troubleshooting")}</h4>
       {error && <p className="error" role="alert">{error}</p>}
       <Option
         icon="text"
-        label="Detailed logs"
+        label={t("Detailed logs")}
         description={
           changed
-            ? "Takes effect the next time Regards starts."
-            : "The service writes down more of what it does, to find a problem. Takes effect the next time Regards starts."
+            ? t("Takes effect the next time Regards starts.")
+            : t("The service writes down more of what it does, to find a problem. Takes effect the next time Regards starts.")
         }
       >
         {detailed !== null && (
           <Toggle
-            label="Detailed logs"
+            label={t("Detailed logs")}
             on={detailed}
             onChange={(on) => {
               setError(null);
@@ -1242,16 +1242,16 @@ function Troubleshooting({
       </Option>
       <Option
         icon="refresh"
-        label="Log connections"
+        label={t("Log connections")}
         description={
           connections
-            ? "Logging now: the commands and replies between Regards and your mail servers, never your mail, addresses or passwords. Saved diagnostics include it, and so name your mail servers."
-            : "The commands and replies between Regards and your mail servers, never your mail, addresses or passwords. Starts and stops at once."
+            ? t("Logging now: the commands and replies between Regards and your mail servers, never your mail, addresses or passwords. Saved diagnostics include it, and so name your mail servers.")
+            : t("The commands and replies between Regards and your mail servers, never your mail, addresses or passwords. Starts and stops at once.")
         }
       >
         {connections !== null && (
           <Toggle
-            label="Log connections"
+            label={t("Log connections")}
             on={connections}
             onChange={(on) => {
               setError(null);
@@ -1268,16 +1268,16 @@ function Troubleshooting({
           <Icon name="paperclip" size={18} />
         </span>
         <span className="option-text">
-          <strong>Diagnostics</strong>
+          <strong>{t("Diagnostics")}</strong>
           <span>
             {saved
-              ? `Saved to ${saved}. Attach it to your report.`
-              : "Versions, the service's state, how many accounts of each kind, and its log, in a file you choose. No mail, addresses, passwords or tokens, and nothing is sent."}
+              ? t("Saved to {path}. Attach it to your report.", { path: saved })
+              : t("Versions, the service's state, how many accounts of each kind, and its log, in a file you choose. No mail, addresses, passwords or tokens, and nothing is sent.")}
           </span>
         </span>
         <span className="option-control">
           <button type="button" className="btn small" onClick={save} disabled={saving}>
-            {saving ? "Saving…" : "Save diagnostics…"}
+            {saving ? t("Saving…") : t("Save diagnostics…")}
           </button>
         </span>
       </div>
@@ -1311,8 +1311,8 @@ export function SupportPage({
     );
   };
   const links = [
-    { label: "Report a problem or ask for a feature", url: `${PROJECT_URL}/issues` },
-    { label: "Read the documentation", url: `${PROJECT_URL}#readme` },
+    { label: t("Report a problem or ask for a feature"), url: `${PROJECT_URL}/issues` },
+    { label: t("Read the documentation"), url: `${PROJECT_URL}#readme` },
   ];
   if (licences) return <LicencesPage onBack={() => setLicences(false)} />;
   return (
@@ -1320,19 +1320,19 @@ export function SupportPage({
       <div className="about-head">
         <AppMark size={56} />
         <div>
-          <h3>Regards</h3>
-          <p className="muted">Pre-alpha · local-first email</p>
+          <h3>{t("Regards")}</h3>
+          <p className="muted">{t("Pre-alpha · local-first email")}</p>
         </div>
       </div>
       <AboutUpdates />
-      <h4 className="settings-subhead">Background service</h4>
+      <h4 className="settings-subhead">{t("Background service")}</h4>
       <ServiceStatus check={service} />
       <button type="button" className="btn" onClick={onRecheck} disabled={service.state === "checking"}>
         <Icon name="refresh" size={15} />
-        Check again
+        {t("Check again")}
       </button>
       <Troubleshooting accounts={accounts} confirm={confirm} />
-      <h4 className="settings-subhead">Get help</h4>
+      <h4 className="settings-subhead">{t("Get help")}</h4>
       {error && <p className="error" role="alert">{error}</p>}
       {links.map((link) => (
         <div key={link.url} className="option help-row">
@@ -1345,13 +1345,13 @@ export function SupportPage({
           </span>
           <span className="help-buttons">
             <button type="button" className="btn small" onClick={() => open(link.url)}>
-              Open
+              {t("Open")}
             </button>
             <button
               type="button"
               className="icon-btn small"
-              title={copied === link.url ? "Copied" : "Copy link"}
-              aria-label={copied === link.url ? "Copied" : "Copy link"}
+              title={copied === link.url ? t("Copied") : t("Copy link")}
+              aria-label={copied === link.url ? t("Copied") : t("Copy link")}
               onClick={() => copy(link.url)}
             >
               <Icon name={copied === link.url ? "check" : "copy"} size={14} />
@@ -1361,37 +1361,37 @@ export function SupportPage({
       ))}
       <LinkRow
         icon="text"
-        label="Open-source licences"
-        detail="Regards' own, and those of the projects it is built on"
+        label={t("Open-source licences")}
+        detail={t("Regards' own, and those of the projects it is built on")}
         onOpen={() => setLicences(true)}
       />
-      <h4 className="settings-subhead">This computer</h4>
+      <h4 className="settings-subhead">{t("This computer")}</h4>
       <EraseEverything confirm={confirm} />
     </>
   );
 }
 
 function ServiceStatus({ check }: { check: ServiceCheck }) {
-  if (check.state === "checking") return <p className="muted">Checking…</p>;
-  if (check.state === "failed") return <p className="error" role="alert">Could not check the service: {check.message}</p>;
+  if (check.state === "checking") return <p className="muted">{t("Checking…")}</p>;
+  if (check.state === "failed") return <p className="error" role="alert">{t("Could not check the service: {problem}", { problem: check.message })}</p>;
   const { status } = check;
   if (status.error || !status.running) {
     return (
       <p className="error" role="alert">
-        <span className="status-dot bad" aria-hidden="true" /> The service could not be started. {status.error}
+        <span className="status-dot bad" aria-hidden="true" /> {t("The service could not be started.")} {status.error}
       </p>
     );
   }
   return (
     <>
       <p>
-        <span className="status-dot ok" aria-hidden="true" /> Running · version {status.version} · pid {status.pid} · up{" "}
-        {status.uptimeSecs ?? 0}s
+        <span className="status-dot ok" aria-hidden="true" />{" "}
+        {t("Running · version {version} · pid {pid} · up {seconds} s", { version: status.version ?? "?", pid: status.pid ?? "?", seconds: status.uptimeSecs ?? 0 })}
       </p>
       <p className="muted small">
-        {status.desktopAccess ? "This app has desktop access." : "This app has agent access only."}
-        {status.started && " Started by this app."}
-        {status.replaced && " An older or separately started service was replaced."}
+        {status.desktopAccess ? t("This app has desktop access.") : t("This app has agent access only.")}
+        {status.started && t(" Started by this app.")}
+        {status.replaced && t(" An older or separately started service was replaced.")}
       </p>
     </>
   );
