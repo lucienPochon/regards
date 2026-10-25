@@ -227,7 +227,18 @@ function explanationOf(message: FixtureMessage): Explanation {
   const account = accountOfMailbox(message.mailboxId);
   const accountId = account?.account.id ?? "";
   const address = (message.from.address ?? "").toLowerCase();
-  const choice = choices.get(choiceKey(accountId, address)) ?? choices.get(choiceKey(accountId, `@${address.split("@")[1]}`));
+  const domainKey = `@${address.split("@")[1]}`;
+  const forDomain = choices.get(choiceKey(accountId, domainKey));
+  const own = choices.get(choiceKey(accountId, address));
+  const choice = own || forDomain ? { ...forDomain, ...own, priority: (own?.priority ?? false) || (forDomain?.priority ?? false), policy: own?.policy ?? forDomain?.policy ?? null } : undefined;
+  const domain = {
+    address: domainKey,
+    policy: forDomain?.policy ?? null,
+    priority: forDomain?.priority ?? false,
+    written_to: false,
+    blocked: forDomain?.blocked ?? false,
+    quiet: forDomain?.quiet ?? false,
+  };
   const sent = account?.mailboxes.find((m) => m.role === "sent")?.id;
   const written =
     KNOWN.has(address) ||
@@ -241,7 +252,7 @@ function explanationOf(message: FixtureMessage): Explanation {
     quiet: choice?.quiet ?? false,
   };
   const local = address.split("@")[0];
-  const placed = (section: Section, reason: Explanation["reason"]): Explanation => ({ section, reason, sender });
+  const placed = (section: Section, reason: Explanation["reason"]): Explanation => ({ section, reason, sender, domain });
   if (address === account?.account.email.toLowerCase()) return placed("people", "from_you");
   if (sender.priority) return placed("priority", "priority_sender");
   if (sender.policy) return placed(sender.policy, "your_choice");
@@ -1964,7 +1975,8 @@ function handle(cmd: string, args: Args): unknown {
       const key = choiceKey(account_id, address);
       choices.set(key, { policy, priority, blocked: choices.get(key)?.blocked ?? false });
       changed();
-      return { changed: messages.filter((m) => m.from.address?.toLowerCase() === address.toLowerCase()).length };
+      const of = (m: FixtureMessage) => (address.startsWith("@") ? m.from.address?.toLowerCase().endsWith(address.toLowerCase()) : m.from.address?.toLowerCase() === address.toLowerCase());
+      return { changed: messages.filter(of).length };
     }
     case "sender_quiet": {
       const { account_id, address, quiet } = args.sender as { account_id: string; address: string; quiet: boolean };
