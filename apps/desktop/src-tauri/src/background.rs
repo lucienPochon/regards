@@ -18,10 +18,13 @@
 use crate::badge::BadgeChoices;
 use crate::notify::NotifyChoices;
 use regards_core::paths::DataDirs;
+use regards_ipc::protocol::{DaemonWaitingResult, methods};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, AppHandle, Manager, Wry};
@@ -325,7 +328,7 @@ pub(crate) fn setup(app: &App) -> tauri::Result<()> {
                     eprintln!("notifications: {error}");
                 }
             }
-            "quit" => app.exit(0),
+            "quit" => self::quit(app),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -381,6 +384,102 @@ pub(crate) fn show(app: &AppHandle) {
     }
 }
 
+/// Set while "Quit Regards?" is asked, so quitting again does not ask twice.
+static ASKING: AtomicBool = AtomicBool::new(false);
+
+/// Quit Regards fully (the tray, ⌄ Quit): its daemon stops with it, and with
+/// it scheduled work. When some waits for it, ask first.
+pub(crate) fn quit(app: &AppHandle) {
+    ask_then(app, |app| app.exit(0));
+}
+
+/// Close the main window outside background mode, asking first as [`quit`]
+/// does: Regards quits once its last window has closed.
+pub(crate) fn close_main(app: &AppHandle) {
+    ask_then(app, |app| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.destroy();
+        }
+    });
+}
+
+fn ask_then(app: &AppHandle, then: impl FnOnce(&AppHandle) + Send + 'static) {
+    if ASKING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let Some(text) = waiting_text(waiting(&app).await) else {
+            ASKING.store(false, Ordering::SeqCst);
+            then(&app);
+            return;
+        };
+        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+        let mut dialog = app
+            .dialog()
+            .message(text)
+            .title("Quit Regards?")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Quit".into(),
+                "Keep running".into(),
+            ));
+        if let Some(window) = app
+            .get_webview_window("main")
+            .filter(|window| window.is_visible().unwrap_or(false))
+        {
+            dialog = dialog.parent(&window);
+        }
+        let asker = app.clone();
+        dialog.show(move |quit| {
+            ASKING.store(false, Ordering::SeqCst);
+            if quit {
+                then(&asker);
+            }
+        });
+    });
+}
+
+/// What waits for the daemon; nothing if it does not answer in time, which
+/// must not keep Regards from quitting.
+async fn waiting(app: &AppHandle) -> DaemonWaitingResult {
+    let ask = async {
+        let mut client = app.state::<crate::Bridge>().connect().await.ok()?.client;
+        client.call(methods::DAEMON_WAITING, Value::Null).await.ok()
+    };
+    tokio::time::timeout(Duration::from_secs(2), ask)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+}
+
+/// "2 messages to send and 1 reminder are waiting. …", or `None` for nothing.
+fn waiting_text(waiting: DaemonWaitingResult) -> Option<String> {
+    let count = |n: u32, one: &str, many: &str| match n {
+        0 => None,
+        1 => Some(format!("1 {one}")),
+        n => Some(format!("{n} {many}")),
+    };
+    let parts: Vec<String> = [
+        count(waiting.sends, "message to send", "messages to send"),
+        count(waiting.snoozed, "snoozed message", "snoozed messages"),
+        count(waiting.reminders, "reminder", "reminders"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let (list, verb) = match parts.as_slice() {
+        [] => return None,
+        [one] => (one.clone(), if one.starts_with("1 ") { "is" } else { "are" }),
+        [rest @ .., last] => (format!("{} and {last}", rest.join(", ")), "are"),
+    };
+    Some(format!(
+        "{list} {verb} waiting. Regards sends messages and brings mail back only while it runs: \
+         after you quit, they wait until you open it again."
+    ))
+}
+
 /// Register or remove the login item to match the setting. It is written
 /// again each time, so it follows the app when it moves or updates.
 pub(crate) fn start_at_login(app: &AppHandle, on: bool) {
@@ -398,5 +497,31 @@ pub(crate) fn start_at_login(app: &AppHandle, on: bool) {
     };
     if let Err(error) = result {
         eprintln!("start at login: {error}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn what_waits_is_said_in_a_sentence_or_not_at_all() {
+        let waiting = |sends, snoozed, reminders| {
+            waiting_text(DaemonWaitingResult {
+                sends,
+                snoozed,
+                reminders,
+            })
+        };
+        assert_eq!(waiting(0, 0, 0), None, "nothing to ask about");
+        let one = waiting(1, 0, 0).unwrap();
+        assert!(one.starts_with("1 message to send is waiting."), "{one}");
+        let two = waiting(0, 2, 0).unwrap();
+        assert!(two.starts_with("2 snoozed messages are waiting."), "{two}");
+        let all = waiting(3, 1, 2).unwrap();
+        assert!(
+            all.starts_with("3 messages to send, 1 snoozed message and 2 reminders are waiting."),
+            "{all}"
+        );
     }
 }

@@ -2,8 +2,8 @@
 
 use crate::{
     State, access, accounts, actions, agents, assistant, attachments, audit, compose, context, discover, draft_sync,
-    erase, folders, holds, identities, labels, mail, notes, notices, oauth, people, prefetch, saved, signatures, smart,
-    templates, unsubscribe, voice,
+    erase, folders, holds, identities, labels, mail, notes, notices, oauth, people, prefetch, saved, scheduler,
+    signatures, smart, templates, unsubscribe, voice,
 };
 use regards_core::agents::Access;
 use regards_core::build_info::{BUILD_ID, VERSION};
@@ -244,6 +244,10 @@ impl Session {
                 // Once the reply is out: its files can go when nothing holds them.
                 self.stop_after_reply = true;
                 Ok(erased)
+            }
+            methods::DAEMON_WAITING => {
+                self.require_ui()?;
+                scheduler::waiting(&self.state).await
             }
             methods::DAEMON_SHUTDOWN => {
                 tracing::info!("shutdown requested by a client");

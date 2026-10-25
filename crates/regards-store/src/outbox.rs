@@ -330,6 +330,16 @@ pub fn next_due_at(conn: &Connection) -> Result<Option<i64>, StoreError> {
     )?)
 }
 
+/// Messages still to go from this device (scheduled, in their undo time,
+/// waiting out a retry, or going now), for a word before quitting.
+pub fn waiting_here(conn: &Connection) -> Result<u32, StoreError> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM outbox WHERE state IN ('queued', 'sending') AND executor = 'device'",
+        [],
+        |row| row.get(0),
+    )?)
+}
+
 /// The Sent copy failed: try it again at `next`.
 pub fn copy_later(tx: &Transaction<'_>, id: i64, next: i64) -> Result<(), StoreError> {
     tx.execute(
@@ -475,6 +485,7 @@ mod tests {
         assert_eq!((kept.executor, kept.state), (Executor::SendService, State::Queued));
         assert!(store.read(|conn| due(conn, 1_000)).await.unwrap().is_empty());
         assert_eq!(store.read(next_due_at).await.unwrap(), None);
+        assert_eq!(store.read(waiting_here).await.unwrap(), 0, "it goes from elsewhere");
         assert!(!store.write(move |tx| claim(tx, id, 1_000)).await.unwrap().value);
     }
 
@@ -564,6 +575,11 @@ mod tests {
         // Past its undo window, but not its time.
         assert!(store.read(move |c| due(c, 999)).await.unwrap().is_empty());
         assert_eq!(store.read(next_due_at).await.unwrap(), Some(1_000));
+        assert_eq!(
+            store.read(waiting_here).await.unwrap(),
+            1,
+            "it needs this computer at 1_000"
+        );
         assert!(!store.write(move |tx| claim(tx, id, 999)).await.unwrap().value);
         // A new time: the bytes stay, the time moves.
         assert!(
@@ -584,6 +600,11 @@ mod tests {
         assert!(store.read(move |c| due(c, 10_000)).await.unwrap().is_empty());
         assert_eq!(store.read(next_due_at).await.unwrap(), None);
         assert_eq!(store.read(list).await.unwrap()[0].state, State::Held);
+        assert_eq!(
+            store.read(waiting_here).await.unwrap(),
+            0,
+            "it waits for the person, not the time"
+        );
 
         // The person sends it now.
         assert!(

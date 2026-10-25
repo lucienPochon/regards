@@ -1912,10 +1912,11 @@ fn remove_all_but_marker(dirs: &DataDirs) -> bool {
 }
 
 /// Quit Regards fully, as the tray's Quit does: the app's own daemon stops
-/// with it (`RunEvent::Exit`), and with it scheduled work.
+/// with it (`RunEvent::Exit`), and with it scheduled work, so it asks first
+/// when some waits ([`background::quit`]).
 #[tauri::command]
 fn app_quit(app: AppHandle) {
-    app.exit(0);
+    background::quit(&app);
 }
 
 /// Whether Regards keeps running in the background (ADR-0017 §1).
@@ -2032,14 +2033,19 @@ fn main() {
                 window.state::<badge::Badge>().poke();
             }
             // In background mode, closing the main window leaves Regards in the
-            // tray; a message's own window just closes.
+            // tray; otherwise it closes, after asking when work waits for it
+            // (Regards quits with its last window). A message's own window
+            // just closes.
             if let WindowEvent::CloseRequested { api, .. } = event
                 && window.label() == "main"
-                && window.state::<background::Background>().on()
             {
                 api.prevent_close();
-                let _ = window.hide();
-                window.state::<background::Background>().hidden(window.app_handle());
+                if window.state::<background::Background>().on() {
+                    let _ = window.hide();
+                    window.state::<background::Background>().hidden(window.app_handle());
+                } else {
+                    background::close_main(window.app_handle());
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
