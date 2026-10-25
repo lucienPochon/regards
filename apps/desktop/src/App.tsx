@@ -53,7 +53,7 @@ import {
 import { Confirm, type ConfirmRequest } from "./Confirm";
 import { DraftsList } from "./DraftsList";
 import { Icon, type IconName } from "./icons";
-import { type Layout, LIST_MAX, LIST_MIN, clampList, useLayout } from "./layout";
+import { type Layout, LIST_MAX, LIST_MIN, clampList, inboxViewOf, useLayout } from "./layout";
 import {
   type ListItem,
   type MessageFeed,
@@ -393,19 +393,22 @@ export function App() {
             entry.account.id === view.accountId && entry.mailboxes.some((m) => m.id === view.mailboxId && m.role === "inbox"),
         )
       : undefined;
+  // With several accounts, one account's inbox can look its own way.
+  const ownViewOf = accounts.length > 1 && accountInbox ? accountInbox.account.id : null;
+  const inboxView = inboxViewOf(layout, ownViewOf);
   const smartScope = useMemo(
-    () => (layout.inboxView !== "smart" ? null : inInbox ? unified : accountInbox ? [accountInbox] : null),
-    [layout.inboxView, inInbox, unified, accountInbox],
+    () => (inboxView !== "smart" ? null : inInbox ? unified : accountInbox ? [accountInbox] : null),
+    [inboxView, inInbox, unified, accountInbox],
   );
   const smartOn = smartScope !== null && search === null;
   // Show Done (Ctrl+E): the inbox by date with its Done mail mixed in, greyed.
   const [showDone, setShowDone] = useState(false);
-  const inboxByDate = (inInbox || accountInbox !== null) && layout.inboxView === "date" && search === null;
+  const inboxByDate = (inInbox || accountInbox !== null) && inboxView === "date" && search === null;
   const doneShown = showDone && inboxByDate;
   // The inbox as cards: unread mail by kind, then what has been read.
   const cardScope = useMemo(
-    () => (layout.inboxView !== "cards" ? null : inInbox ? unified : accountInbox ? [accountInbox] : null),
-    [layout.inboxView, inInbox, unified, accountInbox],
+    () => (inboxView !== "cards" ? null : inInbox ? unified : accountInbox ? [accountInbox] : null),
+    [inboxView, inInbox, unified, accountInbox],
   );
   const cardsOn = cardScope !== null && search === null;
   const found = useSearch(accounts, search ? searchFor : "", search?.accountId ?? null, searchRound);
@@ -2378,8 +2381,22 @@ export function App() {
       {chooser && (
         <ViewChooser
           anchor={chooser}
-          current={layout.inboxView}
-          onChoose={(inboxView) => setLayout({ inboxView })}
+          current={inboxView}
+          onChoose={(choice) =>
+            ownViewOf ? setLayout({ accountViews: { ...layout.accountViews, [ownViewOf]: choice } }) : setLayout({ inboxView: choice })
+          }
+          forAccount={
+            ownViewOf && accountInbox
+              ? {
+                  label: accountLabel(appPrefs, accountInbox.account),
+                  own: layout.accountViews[ownViewOf] !== undefined,
+                  onShared: () => {
+                    const { [ownViewOf]: _left, ...rest } = layout.accountViews;
+                    setLayout({ accountViews: rest });
+                  },
+                }
+              : undefined
+          }
           accounts={
             accounts.length > 1
               ? [
