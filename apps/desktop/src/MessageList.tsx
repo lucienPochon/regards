@@ -511,6 +511,11 @@ export function MessageList({
           <span className="from">{who(item, own)}</span>
           <span className="subject">
             {item.pinned && <Icon name="pinFilled" size={13} className="pinned" />}
+            {item.muted && (
+              <span className="muted-mark" title="Muted: new mail here tells of nothing">
+                <Icon name="bellOff" size={13} />
+              </span>
+            )}
             {labelsOf?.(item).map((label) => (
               <span key={label.id} className="label-chip">
                 {label.name}

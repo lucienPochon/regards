@@ -6,8 +6,8 @@ use crate::State;
 use regards_core::mailbox::Role;
 use regards_ipc::protocol::{
     AsideParams, CopyResult, DeleteResult, MarkAllReadParams, MarkResult, MessageIds, MoveParams, MoveResult,
-    PinParams, RemindParams, RpcError, SenderBlockParams, SetFlagsParams, SetFlagsResult, SnoozeParams, UndoInfo,
-    UndoParams, UndoResult, codes,
+    MuteParams, PinParams, RemindParams, RpcError, SenderBlockParams, SenderQuietParams, SetFlagsParams,
+    SetFlagsResult, SnoozeParams, UndoInfo, UndoParams, UndoResult, codes,
 };
 use regards_store::marks::{self, Mark};
 use regards_store::operations::{self, FlagName, NewOperation, OperationKind};
@@ -344,6 +344,22 @@ pub(crate) async fn delete_forever(state: &Arc<State>, params: MessageIds) -> Re
 pub(crate) async fn pin(state: &State, params: PinParams) -> Result<Value, RpcError> {
     let done = if params.pinned { "Pinned" } else { "Unpinned" };
     mark_messages(state, params.ids, Mark::Pinned, Target::Toggle(params.pinned), done).await
+}
+
+/// Mute conversations (or unmute): their new mail tells of nothing.
+pub(crate) async fn mute(state: &State, params: MuteParams) -> Result<Value, RpcError> {
+    let done = if params.muted { "Muted" } else { "Unmuted" };
+    mark_messages(state, params.ids, Mark::Muted, Target::Toggle(params.muted), done).await
+}
+
+/// Make a sender (or `@domain`) quiet, or not: their new mail tells of nothing.
+pub(crate) async fn quiet(state: &State, params: SenderQuietParams) -> Result<Value, RpcError> {
+    state
+        .store
+        .write(move |tx| regards_store::smart::set_quiet(tx, &params.account_id, &params.address, params.quiet))
+        .await
+        .map_err(conflict)?;
+    Ok(json!({ "quiet": true }))
 }
 
 pub(crate) async fn set_aside(state: &State, params: AsideParams) -> Result<Value, RpcError> {

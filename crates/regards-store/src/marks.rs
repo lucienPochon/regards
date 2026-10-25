@@ -10,7 +10,7 @@
 use crate::StoreError;
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -24,6 +24,8 @@ pub enum Mark {
     Reminded,
     /// Came back to the inbox at this time; listed there by it.
     Surfaced,
+    /// The conversation is muted: new mail in it tells of nothing.
+    Muted,
 }
 
 impl Mark {
@@ -35,6 +37,7 @@ impl Mark {
             Self::Remind => "remind_at",
             Self::Reminded => "reminded_at",
             Self::Surfaced => "surfaced_at",
+            Self::Muted => "muted_at",
         }
     }
 }
@@ -48,6 +51,7 @@ pub struct Marks {
     pub remind_at: Option<i64>,
     pub reminded_at: Option<i64>,
     pub surfaced_at: Option<i64>,
+    pub muted_at: Option<i64>,
 }
 
 impl Marks {
@@ -59,11 +63,12 @@ impl Marks {
             Mark::Remind => self.remind_at,
             Mark::Reminded => self.reminded_at,
             Mark::Surfaced => self.surfaced_at,
+            Mark::Muted => self.muted_at,
         }
     }
 }
 
-const MARK_COLUMNS: &str = "pinned_at, aside_at, snoozed_until, remind_at, reminded_at, surfaced_at";
+const MARK_COLUMNS: &str = "pinned_at, aside_at, snoozed_until, remind_at, reminded_at, surfaced_at, muted_at";
 
 fn marks_from(row: &Row<'_>) -> rusqlite::Result<Marks> {
     Ok(Marks {
@@ -73,6 +78,7 @@ fn marks_from(row: &Row<'_>) -> rusqlite::Result<Marks> {
         remind_at: row.get(3)?,
         reminded_at: row.get(4)?,
         surfaced_at: row.get(5)?,
+        muted_at: row.get(6)?,
     })
 }
 
@@ -85,6 +91,21 @@ pub fn get(conn: &Connection, account_id: &str, message_id: &str) -> Result<Mark
         )
         .optional()?
         .unwrap_or_default())
+}
+
+/// Of these conversations, those muted: a message of theirs is marked.
+pub fn muted_threads(conn: &Connection, account_id: &str, threads: &[i64]) -> Result<HashSet<i64>, StoreError> {
+    if threads.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let threads = serde_json::to_string(threads).expect("numbers always serialize");
+    let mut statement = conn.prepare_cached(
+        "SELECT DISTINCT t.thread_id FROM messages t \
+         JOIN marks k ON k.account_id = ?1 AND k.message_id = t.message_id_header \
+         WHERE k.muted_at IS NOT NULL AND t.thread_id IN (SELECT value FROM json_each(?2))",
+    )?;
+    let rows = statement.query_map(params![account_id, threads], |row| row.get(0))?;
+    Ok(rows.collect::<Result<_, _>>()?)
 }
 
 /// Set or clear one mark; returns what it was before (for undo).
@@ -107,7 +128,7 @@ pub fn set(
     tx.execute(
         "DELETE FROM marks WHERE account_id = ?1 AND message_id = ?2 \
          AND pinned_at IS NULL AND aside_at IS NULL AND snoozed_until IS NULL \
-         AND remind_at IS NULL AND reminded_at IS NULL AND surfaced_at IS NULL",
+         AND remind_at IS NULL AND reminded_at IS NULL AND surfaced_at IS NULL AND muted_at IS NULL",
         params![account_id, message_id],
     )?;
     Ok(before)
