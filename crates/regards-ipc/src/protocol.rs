@@ -149,6 +149,9 @@ pub mod methods {
     pub const UNDO_APPLY: &str = "undo.apply";
     /// Pin or unpin messages (kept on this device); undoable. `ui` only for now.
     pub const MESSAGE_PIN: &str = "message.pin";
+    /// Mute conversations, or unmute them: new mail in a muted one tells of
+    /// nothing (kept on this device); undoable ([`MuteParams`] → [`MarkResult`]).
+    pub const MESSAGE_MUTE: &str = "message.mute";
     /// Set messages aside (out of the inbox) or bring them back; undoable.
     pub const MESSAGE_SET_ASIDE: &str = "message.set_aside";
     /// Leave the mailing list a message came from (RFC 2369 `List-Unsubscribe`):
@@ -170,6 +173,9 @@ pub mod methods {
     /// Block a sender or `@domain` (their inbox mail goes to Junk, and what
     /// arrives later; undoable), or unblock.
     pub const SENDER_BLOCK: &str = "sender.block";
+    /// Make a sender or `@domain` quiet (their new mail tells of nothing), or
+    /// not ([`SenderQuietParams`]). `ui` only.
+    pub const SENDER_QUIET: &str = "sender.quiet";
     /// Let a sender's or `@domain`'s remote images load from then on, or
     /// block them again (ADR-0015 §4). `ui` only: a reading-privacy choice.
     pub const SENDER_SET_IMAGES: &str = "sender.set_images";
@@ -1203,6 +1209,9 @@ pub struct MessageSummary {
     /// Pinned on this device (plan §5.5).
     #[serde(default)]
     pub pinned: bool,
+    /// Its conversation is muted: new mail in it tells of nothing.
+    #[serde(default)]
+    pub muted: bool,
     /// Set aside: out of the inbox until brought back.
     #[serde(default)]
     pub aside: bool,
@@ -1440,6 +1449,13 @@ pub struct PinParams {
     pub pinned: bool,
 }
 
+/// Parameters of [`methods::MESSAGE_MUTE`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MuteParams {
+    pub ids: Vec<i64>,
+    pub muted: bool,
+}
+
 /// Parameters of [`methods::MESSAGE_SET_ASIDE`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AsideParams {
@@ -1486,6 +1502,9 @@ pub struct SenderView {
     /// Blocked, by address or domain: their mail goes to Junk.
     #[serde(default)]
     pub blocked: bool,
+    /// Quiet, by address or domain: their new mail tells of nothing.
+    #[serde(default)]
+    pub quiet: bool,
 }
 
 /// Parameters of [`methods::SENDER_SET_IMAGES`].
@@ -1516,6 +1535,15 @@ pub struct SenderBlockParams {
     /// An address, or a whole domain as `@example.org`.
     pub address: String,
     pub blocked: bool,
+}
+
+/// Parameters of [`methods::SENDER_QUIET`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SenderQuietParams {
+    pub account_id: String,
+    /// An address, or a whole domain as `@example.org`.
+    pub address: String,
+    pub quiet: bool,
 }
 
 /// Parameters and result of [`methods::SMART_SET_SCREENING`] and [`methods::SMART_SCREENING`].

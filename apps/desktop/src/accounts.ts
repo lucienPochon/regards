@@ -420,6 +420,8 @@ export interface MessageSummary {
   size: number | null;
   /** Pinned on this device. */
   pinned: boolean;
+  /** Its conversation is muted: new mail in it tells of nothing. */
+  muted?: boolean;
   /** Set aside: out of the inbox until brought back. */
   aside: boolean;
   /** Out of the inbox until then (Unix ms), if snoozed. */
@@ -705,6 +707,11 @@ export interface MarkResult {
 /** Pin or unpin (kept on this device); the result can be undone like a move. */
 export function pinMessages(ids: number[], pinned: boolean): Promise<MarkResult> {
   return invoke<MarkResult>("message_pin", { ids, pinned });
+}
+
+/** Mute conversations (their new mail tells of nothing), or unmute them; undoable. */
+export function muteMessages(ids: number[], muted: boolean): Promise<MarkResult> {
+  return invoke<MarkResult>("message_mute", { ids, muted });
 }
 
 /** Set aside (out of the inbox) or bring back; undoable. */

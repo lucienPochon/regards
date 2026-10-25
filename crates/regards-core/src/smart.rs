@@ -102,6 +102,8 @@ pub struct Sender {
     /// The person blocked them: their mail goes to Junk (the section still
     /// says what it would be).
     pub blocked: bool,
+    /// The person made them quiet: their mail comes in without a notification.
+    pub quiet: bool,
 }
 
 /// How mail from new senders is shown (plan §5.4, screening).

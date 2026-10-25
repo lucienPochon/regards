@@ -11,7 +11,10 @@ use rusqlite::{Connection, Transaction, params};
 const KEPT_MS: i64 = 24 * 3600 * 1000;
 
 /// The messages of `uids` in `mailbox_id` came in: those still unread and
-/// in the folder (not sent on to Junk) are new mail. Returns how many.
+/// in the folder (not sent on to Junk) are new mail, unless the person asked
+/// for quiet: a conversation muted (a message of it, or the message itself,
+/// marked), or a sender made quiet (their address, or their `@domain`).
+/// Returns how many.
 pub fn add(
     tx: &Transaction<'_>,
     mailbox_id: i64,
@@ -26,9 +29,15 @@ pub fn add(
     let uids = serde_json::to_string(uids).expect("numbers always serialize");
     Ok(tx.execute(
         "INSERT INTO arrivals (message_id, account_id, arrived_at) \
-         SELECT id, ?2, ?4 FROM messages \
-         WHERE mailbox_id = ?1 AND uid IN (SELECT value FROM json_each(?3)) \
-         AND seen = 0 AND deleted = 0 AND moving_to IS NULL ORDER BY uid",
+         SELECT m.id, ?2, ?4 FROM messages m \
+         WHERE m.mailbox_id = ?1 AND m.uid IN (SELECT value FROM json_each(?3)) \
+         AND m.seen = 0 AND m.deleted = 0 AND m.moving_to IS NULL \
+         AND NOT EXISTS (SELECT 1 FROM marks k WHERE k.account_id = ?2 AND k.muted_at IS NOT NULL \
+             AND k.message_id IN (SELECT t.message_id_header FROM messages t \
+                 WHERE t.id = m.id OR (m.thread_id IS NOT NULL AND t.thread_id = m.thread_id))) \
+         AND NOT EXISTS (SELECT 1 FROM senders s WHERE s.account_id = ?2 AND s.quiet = 1 \
+             AND s.address IN (lower(m.from_address), lower(substr(m.from_address, instr(m.from_address, '@'))))) \
+         ORDER BY m.uid",
         params![mailbox_id, account_id, uids, now],
     )?)
 }
@@ -154,5 +163,80 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(left, 0);
+    }
+
+    #[tokio::test]
+    async fn a_muted_conversation_or_a_quiet_sender_tells_of_nothing() {
+        use regards_core::headers::Person;
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&DataDirs::at(temp.path())).await.unwrap();
+        let sent = |uid: u32, from: &str, replying_to: Option<&str>| {
+            let mut new = mail(uid, false);
+            new.headers.from = Some(Person {
+                name: None,
+                address: Some(from.into()),
+            });
+            new.headers.in_reply_to = replying_to.map(|id| vec![id.to_owned()]).unwrap_or_default();
+            new.headers.references = new.headers.in_reply_to.clone();
+            new
+        };
+        let added = store
+            .write(move |tx| {
+                let server = Server {
+                    host: "h".into(),
+                    port: 993,
+                    security: Security::Tls,
+                };
+                accounts::insert(
+                    tx,
+                    NewAccount {
+                        id: "a1".into(),
+                        display_name: "Me".into(),
+                        email: "me@example.org".into(),
+                        auth_kind: AuthKind::Password,
+                        username: "me".into(),
+                        secret_key: "k".into(),
+                        imap: server.clone(),
+                        smtp: server,
+                        imap_capabilities: vec![],
+                    },
+                )?;
+                mailboxes::reconcile(
+                    tx,
+                    "a1",
+                    &[RemoteMailbox {
+                        remote_name: b"INBOX".to_vec(),
+                        name: "INBOX".into(),
+                        delimiter: Some('/'),
+                        role: Some(Role::Inbox),
+                        selectable: true,
+                        attributes: vec![],
+                    }],
+                )?;
+                let inbox = mailboxes::list(tx, "a1")?[0].id;
+                // A long thread, muted from its first message.
+                messages::upsert(tx, inbox, &[sent(1, "list@example.net", None)])?;
+                crate::marks::set(tx, "a1", "m1@example.org", crate::marks::Mark::Muted, Some(5))?;
+                crate::smart::set_quiet(tx, "a1", "bot@example.com", true)?;
+                crate::smart::set_quiet(tx, "a1", "@alerts.example", true)?;
+                messages::upsert(
+                    tx,
+                    inbox,
+                    &[
+                        sent(2, "list@example.net", Some("m1@example.org")),
+                        sent(3, "Bot@Example.com", None),
+                        sent(4, "night@alerts.example", None),
+                        sent(5, "lena@example.net", None),
+                    ],
+                )?;
+                add(tx, inbox, "a1", &[2, 3, 4, 5], 10_000)
+            })
+            .await
+            .unwrap()
+            .value;
+        assert_eq!(
+            added, 1,
+            "only Lena's tells: the muted reply and the quiet senders do not"
+        );
     }
 }

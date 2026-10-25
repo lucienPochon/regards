@@ -2439,6 +2439,13 @@ button.list-title:hover {
   vertical-align: -2px;
 }
 
+/* A muted conversation: its new mail tells of nothing. */
+.row .subject .muted-mark {
+  margin-right: 5px;
+  color: var(--text-3, var(--text-2));
+  vertical-align: -2px;
+}
+
 .row .date {
   justify-self: end;
   color: var(--muted);
@@ -4649,6 +4656,8 @@ button.list-title:hover {
 
 .sender-rows {
   display: grid;
+  /* The card's width, not its longest line's: details are cut with an ellipsis. */
+  grid-template-columns: minmax(0, 1fr);
   padding-top: 5px;
 }
 

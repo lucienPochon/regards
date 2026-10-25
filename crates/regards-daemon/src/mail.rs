@@ -20,8 +20,8 @@ use regards_store::marks::{self, Mark, Marks};
 use regards_store::messages::{self, Cursor, Message};
 use regards_store::{StoreError, mailboxes};
 use serde_json::{Value, json};
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 const DEFAULT_PAGE: u32 = 50;
@@ -121,6 +121,8 @@ fn done_page(
 struct PageInfo {
     marks: HashMap<String, Marks>,
     threads: HashMap<i64, u32>,
+    /// The rows' conversations that are muted.
+    muted: HashSet<i64>,
     /// In a folder's list, where a conversation is one row: how each looks
     /// from all its messages there, by (folder, thread).
     conversations: HashMap<(i64, i64), messages::ConversationState>,
@@ -134,6 +136,7 @@ fn page_info(conn: &rusqlite::Connection, account_id: &str, rows: &[Message]) ->
     Ok(PageInfo {
         marks: marks::of(conn, account_id, &ids)?,
         threads: messages::thread_sizes(conn, &threads)?,
+        muted: marks::muted_threads(conn, account_id, &threads)?,
         conversations: HashMap::new(),
     })
 }
@@ -260,6 +263,7 @@ fn page_info_any(conn: &rusqlite::Connection, rows: &[Message]) -> Result<PageIn
         let more = page_info(conn, &account, &rows)?;
         info.marks.extend(more.marks);
         info.threads.extend(more.threads);
+        info.muted.extend(more.muted);
     }
     Ok(info)
 }
@@ -923,6 +927,7 @@ fn summary(m: Message, info: &PageInfo) -> MessageSummary {
     MessageSummary {
         mailbox_id: m.moving_to.unwrap_or(m.mailbox_id),
         pinned: mark.pinned_at.is_some(),
+        muted: mark.muted_at.is_some() || m.thread_id.is_some_and(|thread| info.muted.contains(&thread)),
         aside: mark.aside_at.is_some(),
         snoozed_until: mark.snoozed_until,
         remind_at: mark.remind_at,
