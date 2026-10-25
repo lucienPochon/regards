@@ -247,7 +247,8 @@ export function MessageList({
   onDoneAll?: (items: ListItem[]) => void;
   /** The command palette, for these actions (right-click and the ⋯ buttons); `about` is the one message. */
   onPalette: (actions: Action[], title: string, about?: ListItem) => void;
-  empty: { title: string; body: string };
+  /** `arriving`: the mail is still coming in for the first time, not missing. */
+  empty: { title: string; body: string; arriving?: boolean };
   /** Show the reading pane beside the list (the handle on the list's edge). */
   onSplit?: () => void;
   /** The person's own addresses, lowercase: their mail reads "to Lena". */
@@ -697,9 +698,9 @@ export function MessageList({
               </p>
             </div>
           ) : (
-            <div className="empty list-empty">
+            <div className="empty list-empty" role={empty.arriving ? "status" : undefined}>
               <span className="zero-mark" aria-hidden="true">
-                <Icon name="check" size={34} />
+                {empty.arriving ? <span className="spinner" /> : <Icon name="check" size={34} />}
               </span>
               <h2>{empty.title}</h2>
               <p>{empty.body}</p>

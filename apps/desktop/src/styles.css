@@ -2746,6 +2746,12 @@ button.list-title:hover {
   outline-offset: 10px;
 }
 
+.zero-mark .spinner {
+  width: 34px;
+  height: 34px;
+  border-width: 3px;
+}
+
 .stack {
   position: relative;
   width: 132px;
