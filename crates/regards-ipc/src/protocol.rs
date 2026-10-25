@@ -32,6 +32,10 @@ pub mod methods {
     /// credential at once, then the daemon stops and its files go once
     /// nothing holds them ([`DaemonEraseParams`] → [`DaemonErased`]). `ui` only.
     pub const DAEMON_ERASE: &str = "daemon.erase";
+    /// What waits for the daemon to be running ([`DaemonWaitingResult`]):
+    /// sends from this computer, snoozes and reminders, for a word before
+    /// quitting. `ui` only.
+    pub const DAEMON_WAITING: &str = "daemon.waiting";
     /// List mail accounts. `ui` only, until agent access levels exist (ADR-0012).
     pub const ACCOUNT_LIST: &str = "account.list";
     /// Verify a password sign-in and add the account. `ui` only (ADR-0006).
@@ -546,6 +550,19 @@ pub struct HealthResult {
     pub uptime_secs: u64,
     /// Revision of the latest committed change to the mail database (ADR-0007).
     pub revision: i64,
+}
+
+/// Result of [`methods::DAEMON_WAITING`]: after quitting, these wait until
+/// Regards runs again.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaemonWaitingResult {
+    /// Messages to go from this computer: scheduled, in their undo time or
+    /// waiting out a retry.
+    pub sends: u32,
+    /// Snoozed messages with a time to come back.
+    pub snoozed: u32,
+    /// Reminders not yet come.
+    pub reminders: u32,
 }
 
 /// How a connection is encrypted. There is no plaintext option.

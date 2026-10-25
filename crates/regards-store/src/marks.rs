@@ -125,6 +125,16 @@ pub fn due_snoozes(conn: &Connection, now: i64) -> Result<Vec<(String, String)>,
     )
 }
 
+/// Snoozes with a time to come back ("someday" has none) and reminders not
+/// yet come: what waits for the daemon, for a word before quitting.
+pub fn waiting(conn: &Connection) -> Result<(u32, u32), StoreError> {
+    Ok(conn.query_row(
+        "SELECT COUNT(CASE WHEN snoozed_until < ?1 THEN 1 END), COUNT(remind_at) FROM marks",
+        [SOMEDAY],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?)
+}
+
 /// Reminders whose time has come: (account, Message-ID).
 pub fn due_reminders(conn: &Connection, now: i64) -> Result<Vec<(String, String)>, StoreError> {
     due(
@@ -316,5 +326,18 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+
+        // What waits for the daemon: a snooze with a time, not "someday"; a reminder.
+        let a = account.clone();
+        store
+            .write(move |tx| {
+                set(tx, &a, "soon@x", Mark::Snoozed, Some(1_000))?;
+                set(tx, &a, "someday@x", Mark::Snoozed, Some(SOMEDAY))?;
+                set(tx, &a, "sent@x", Mark::Remind, Some(2_000))?;
+                set(tx, &a, "pinned@x", Mark::Pinned, Some(3_000))
+            })
+            .await
+            .unwrap();
+        assert_eq!(store.read(waiting).await.unwrap(), (1, 1));
     }
 }

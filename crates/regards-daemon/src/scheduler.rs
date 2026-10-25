@@ -15,9 +15,11 @@
 
 use crate::State;
 use crate::compose::now_ms;
+use regards_ipc::protocol::{DaemonWaitingResult, RpcError};
 use regards_store::marks::{self, Mark};
 use regards_store::notices::{self, Kind, NewNotice};
-use regards_store::{StoreError, accounts, messages};
+use regards_store::{StoreError, accounts, messages, outbox};
+use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -36,6 +38,21 @@ impl Scheduler {
     pub(crate) fn wake(&self) {
         self.notify.notify_one();
     }
+}
+
+/// What waits for Regards to run (`daemon.waiting`): sends from this
+/// computer, snoozes and reminders, for a word before quitting.
+pub(crate) async fn waiting(state: &State) -> Result<Value, RpcError> {
+    let (sends, (snoozed, reminders)) = state
+        .store
+        .read(|conn| Ok((outbox::waiting_here(conn)?, marks::waiting(conn)?)))
+        .await
+        .map_err(crate::session::internal)?;
+    Ok(json!(DaemonWaitingResult {
+        sends,
+        snoozed,
+        reminders
+    }))
 }
 
 pub(crate) async fn run(state: Arc<State>) {
