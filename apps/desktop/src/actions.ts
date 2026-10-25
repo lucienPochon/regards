@@ -6,6 +6,7 @@ import {
   copyMessages,
   deleteForever,
   moveMessages,
+  muteMessages,
   pinMessages,
   remindMessages,
   setAside,
@@ -39,6 +40,8 @@ export interface Target {
   disposable: boolean;
   /** All pinned. */
   pinned: boolean;
+  /** Its conversation is muted. */
+  muted?: boolean;
   /** All set aside. */
   aside: boolean;
   /** All snoozed. */
@@ -125,7 +128,8 @@ export type ActionId =
   | "delete"
   | "unsubscribe"
   | "label"
-  | "copy";
+  | "copy"
+  | "mute";
 
 export interface Action {
   id: ActionId;
@@ -159,6 +163,7 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
     unsubscribe: [],
     label: ["l"],
     copy: [],
+    mute: [],
   },
   classic: {
     reply: ["r"],
@@ -178,6 +183,7 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
     unsubscribe: [],
     label: ["l"],
     copy: [],
+    mute: ["m"],
   },
 };
 
@@ -238,6 +244,20 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       shown: true,
       run: () => {
         pinMessages(ids, !target.pinned).then(host.marked).catch(host.failed);
+      },
+    },
+    {
+      id: "mute",
+      label: target.muted ? "Unmute conversation" : "Mute conversation",
+      icon: target.muted ? "bell" : "bellOff",
+      keys: keys.mute,
+      shown: true,
+      // The whole conversation: new mail in it tells of nothing from then on.
+      run: () => {
+        all()
+          .then((list) => muteMessages(list, !target.muted))
+          .then(host.marked)
+          .catch(host.failed);
       },
     },
     {

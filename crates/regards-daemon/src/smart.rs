@@ -115,6 +115,7 @@ pub(crate) async fn explain(state: &State, params: MessageRef) -> Result<Value, 
                         priority: known.priority,
                         written_to: known.written_to,
                         blocked: known.blocked,
+                        quiet: known.quiet,
                     })
                 }
                 None => None,

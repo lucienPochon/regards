@@ -175,6 +175,7 @@ export function ReadingPane({
     flagged: message.flagged,
     disposable: disposable(folder?.role ?? item.role),
     pinned: message.pinned,
+    muted: message.muted === true,
     aside: message.aside,
     snoozed: message.snoozed_until !== null,
     reminding: message.remind_at !== null,

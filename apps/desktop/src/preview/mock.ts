@@ -46,7 +46,7 @@ const undos = new Map<
   { description: string; restore: Map<number, number>; marks?: Map<number, Marks>; also?: () => void }
 >();
 const SOMEDAY = 32_503_680_000_000;
-type Marks = Pick<FixtureMessage, "pinned" | "aside" | "snoozed_until" | "remind_at" | "reminded" | "surfaced_at">;
+type Marks = Pick<FixtureMessage, "pinned" | "muted" | "aside" | "snoozed_until" | "remind_at" | "reminded" | "surfaced_at">;
 const parked = (m: FixtureMessage) => m.aside === true || (m.snoozed_until ?? 0) > Date.now();
 /** Its place in the inbox: what came back is listed by when it did, as the daemon does. */
 const inboxPlace = (m: FixtureMessage) =>
@@ -194,7 +194,7 @@ let notifications = true;
 // The Smart Inbox, sorted roughly as the daemon's rules do. New senders get
 // their own card unless `?screen=off|hold` says otherwise.
 let screeningMode = (params.get("screen") ?? "section") as Screening;
-type Choice = { policy: Policy | null; priority: boolean; blocked: boolean };
+type Choice = { policy: Policy | null; priority: boolean; blocked: boolean; quiet?: boolean };
 const choices = new Map<string, Choice>();
 /** Per account, the senders (addresses and `@domain`s) whose remote images load. */
 const imageSenders = new Map<string, Set<string>>();
@@ -236,6 +236,7 @@ function explanationOf(message: FixtureMessage): Explanation {
     priority: choice?.priority ?? false,
     written_to: written,
     blocked: choice?.blocked ?? false,
+    quiet: choice?.quiet ?? false,
   };
   const local = address.split("@")[0];
   const placed = (section: Section, reason: Explanation["reason"]): Explanation => ({ section, reason, sender });
@@ -694,6 +695,7 @@ function summary(message: FixtureMessage, listedAt = message.received_at): Messa
     size: message.text.length,
     mailbox_id: message.mailboxId,
     pinned: message.pinned ?? false,
+    muted: message.muted ?? false,
     aside: message.aside ?? false,
     snoozed_until: message.snoozed_until ?? null,
     remind_at: message.remind_at ?? null,
@@ -711,8 +713,8 @@ function mark(ids: number[], change: (message: FixtureMessage) => void, descript
   const marks = new Map<number, Marks>();
   for (const id of ids) {
     const message = byId(id);
-    const { pinned, aside, snoozed_until, remind_at, reminded, surfaced_at } = message;
-    marks.set(id, { pinned, aside, snoozed_until, remind_at, reminded, surfaced_at });
+    const { pinned, muted, aside, snoozed_until, remind_at, reminded, surfaced_at } = message;
+    marks.set(id, { pinned, muted, aside, snoozed_until, remind_at, reminded, surfaced_at });
     change(message);
   }
   const id = nextId++;
@@ -1606,6 +1608,8 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return { deleted: ids.size };
     }
+    case "message_mute":
+      return mark(args.ids as number[], (m) => (m.muted = args.muted as boolean), args.muted ? "Muted" : "Unmuted");
     case "message_pin":
       return mark(args.ids as number[], (m) => (m.pinned = args.pinned as boolean), args.pinned ? "Pinned" : "Unpinned");
     case "message_set_aside":
@@ -1948,6 +1952,13 @@ function handle(cmd: string, args: Args): unknown {
       choices.set(key, { policy, priority, blocked: choices.get(key)?.blocked ?? false });
       changed();
       return { changed: messages.filter((m) => m.from.address?.toLowerCase() === address.toLowerCase()).length };
+    }
+    case "sender_quiet": {
+      const { account_id, address, quiet } = args.sender as { account_id: string; address: string; quiet: boolean };
+      const key = choiceKey(account_id, address);
+      const before = choices.get(key);
+      choices.set(key, { policy: before?.policy ?? null, priority: before?.priority ?? false, blocked: before?.blocked ?? false, quiet });
+      return { quiet: true };
     }
     case "sender_block": {
       const { account_id, address, blocked } = args.sender as { account_id: string; address: string; blocked: boolean };

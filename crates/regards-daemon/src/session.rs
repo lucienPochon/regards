@@ -12,7 +12,7 @@ use regards_ipc::protocol::{
     AccountRef, AsideParams, AttachmentRef, ChangesNotification, ClientKind, DraftCreateParams, DraftForwardParams,
     DraftListParams, DraftRef, DraftReplyParams, DraftSendParams, DraftSetFromParams, DraftUpdateParams, HealthResult,
     HelloParams, HelloResult, HoldRef, JSONRPC, MemoryParams, MessageHtmlParams, MessageIds, MessageListParams,
-    MessageRef, MoveParams, NoteAddParams, NoteListParams, NoteRef, Notification, PROTOCOL_VERSIONS,
+    MessageRef, MoveParams, MuteParams, NoteAddParams, NoteListParams, NoteRef, Notification, PROTOCOL_VERSIONS,
     PeopleSuggestParams, PinParams, Principal, RemindParams, Request, Response, RpcError, SearchParams,
     SenderBlockParams, SenderSetParams, SetFlagsParams, SnoozeParams, ViewParams, VoiceSuggestParams, codes, methods,
     negotiate, notifications,
@@ -775,6 +775,15 @@ impl Session {
                 let params: PinParams = params(request)?;
                 self.allow_change(Access::Triage, &params.ids, request).await?;
                 actions::pin(&self.state, params).await
+            }
+            methods::MESSAGE_MUTE => {
+                let params: MuteParams = params(request)?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
+                actions::mute(&self.state, params).await
+            }
+            methods::SENDER_QUIET => {
+                self.require_ui()?;
+                actions::quiet(&self.state, params(request)?).await
             }
             methods::MESSAGE_SET_ASIDE => {
                 let params: AsideParams = params(request)?;

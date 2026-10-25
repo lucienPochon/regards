@@ -21,6 +21,7 @@ export interface FixtureMessage {
   /** Messages with the same thread key form a conversation. */
   thread: string;
   pinned?: boolean;
+  muted?: boolean;
   aside?: boolean;
   snoozed_until?: number | null;
   remind_at?: number | null;
