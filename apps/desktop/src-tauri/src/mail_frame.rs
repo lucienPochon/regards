@@ -26,8 +26,11 @@ use tauri::{Manager, UriSchemeContext, UriSchemeResponder, Url, Wry};
 
 pub(crate) const SCHEME: &str = "regards-mail";
 
-/// Only the main window's reading pane may load messages.
-const ALLOWED_WEBVIEW: &str = "main";
+/// Only the main window's reading pane, and a conversation's own window
+/// (`thread-<id>`), may load messages; not a message being written.
+fn may_load(webview: &str) -> bool {
+    webview == "main" || webview.starts_with("thread-")
+}
 
 /// Without randomness, links are left as they are (and do nothing).
 static LINK_TOKEN: LazyLock<Option<String>> = LazyLock::new(|| {
@@ -43,7 +46,7 @@ enum Route {
 }
 
 pub(crate) fn handle(ctx: UriSchemeContext<'_, Wry>, request: Request<Vec<u8>>, responder: UriSchemeResponder) {
-    if ctx.webview_label() != ALLOWED_WEBVIEW {
+    if !may_load(ctx.webview_label()) {
         return responder.respond(text(StatusCode::FORBIDDEN, "not available here"));
     }
     let token = LINK_TOKEN.as_deref();
@@ -306,6 +309,12 @@ fn text(status: StatusCode, message: &str) -> Response<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn messages_load_in_the_main_window_and_a_conversation_s_own() {
+        assert!(may_load("main") && may_load("thread-42"));
+        assert!(!may_load("compose-7") && !may_load("mainly"));
+    }
 
     fn request(uri: &str) -> Request<Vec<u8>> {
         Request::builder().uri(uri).body(Vec::new()).unwrap()

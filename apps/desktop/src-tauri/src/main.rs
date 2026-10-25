@@ -22,6 +22,7 @@ mod mail_frame;
 mod notify;
 mod support;
 mod system;
+mod thread_window;
 mod updates;
 
 use regards_core::paths::DataDirs;
@@ -2155,6 +2156,7 @@ fn main() {
             people_forget,
             compose_window::composer_window,
             compose_window::composer_window_open,
+            thread_window::thread_window,
             draft_check,
             reading_settings,
             set_reading_settings,

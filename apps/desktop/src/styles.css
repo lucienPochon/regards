@@ -1654,6 +1654,25 @@ button.link:hover {
   --band: 32px;
 }
 
+/* A conversation in a window of its own: the reader alone, under the window's band. */
+.thread-own {
+  --band: 0px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding-top: var(--band);
+  background: var(--reader-bg);
+}
+
+.thread-own.framed {
+  --band: 32px;
+}
+
+.thread-own-problem {
+  margin: 12px 16px 0;
+}
+
 .list-pane {
   position: relative;
   display: flex;

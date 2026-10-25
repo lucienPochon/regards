@@ -76,6 +76,7 @@ import {
 import { type OpenLink, onOpenLink, takeLink } from "./links";
 import { recentFolders, rememberFolder } from "./recent-folders";
 import { useRecentSearches } from "./recent-searches";
+import { UNDO_ELSEWHERE, openThreadWindow } from "./thread-window";
 import {
   type SavedSearch,
   listSavedSearches,
@@ -1028,6 +1029,11 @@ export function App() {
     const stop = listen<SentElsewhere>("composer_queued", (event) => sentElsewhere.current(event.payload));
     return () => void stop.then((unlisten) => unlisten()).catch(() => {});
   }, []);
+  // What was done in a conversation's own window: its undo shows here.
+  useEffect(() => {
+    const stop = listen<UndoInfo>(UNDO_ELSEWHERE, (event) => setUndo(event.payload));
+    return () => void stop.then((unlisten) => unlisten()).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const stops = [onFilesDrag(setFilesOver), onFilesDropped((drop) => dropped.current(drop))];
@@ -1974,6 +1980,7 @@ export function App() {
       labels={labelsOf(openItem)}
       onLabel={(mailboxId) => changeView({ kind: "mailbox", mailboxId, accountId: openItem.accountId })}
       onDraft={editDraft}
+      onOwnWindow={() => void openThreadWindow(openItem.id, openItem.subject).catch(failed)}
       stepped={openedByStep}
       folders={folders}
       mode={layout.mode}

@@ -92,6 +92,7 @@ export const TOUR: Group[] = [
       { id: "thread-open", label: "A conversation, unfolded", note: "Settings › General › Fold older messages, off.", prefs: { collapseOlder: false }, steps: openRow("Garden plot") },
       { id: "invitation", label: "An invitation", note: "When, where and from whom, in your time; Accept, Maybe or Decline answers the organizer by email.", steps: openRow("Plot planning") },
       { id: "thread-draft", label: "A reply being written", note: "An unsent reply shows under its conversation; it opens to go on writing.", steps: openRow("Book club") },
+      { id: "thread-window", label: "A conversation in its own window", note: "The message's ⋯ › Open in its own window: the reader alone; replying opens the composer in a window too.", params: { thread: "1" } },
       { id: "find", label: "Find in this message", note: "Ctrl+Shift+F, or the message's ⋯ menu. Enter and Shift+Enter step through the matches.", steps: [...openRow("Garden plot"), "wait:700", "key:Mod+Shift+F", "wait:300", "type:the"] },
       { id: "sender-card", label: "About the sender", note: "Why it is here, and what to do with this sender's mail.", params: { link: NEWSLETTER }, steps: ["wait:900", "click:.mail-avatar"] },
       { id: "images-always", label: "Images always from this sender", note: "After choosing it once, this sender's images load without asking.", params: { link: NEWSLETTER }, steps: ["wait:900", "text:.images-notice button=Always"] },

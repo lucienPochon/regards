@@ -92,6 +92,7 @@ export function ReadingPane({
   labels = [],
   onLabel,
   onDraft,
+  onOwnWindow,
   stepped = false,
 }: {
   item: ListItem;
@@ -114,6 +115,8 @@ export function ReadingPane({
   onLabel?: (id: number) => void;
   /** Go on writing a reply being written in the conversation (its draft). */
   onDraft?: (id: number) => void;
+  /** Open the conversation in a window of its own; absent in that window. */
+  onOwnWindow?: () => void;
   /** Opened by stepping through the list with the keyboard: read only if one stays. */
   stepped?: boolean;
 }) {
@@ -337,6 +340,7 @@ export function ReadingPane({
                   onSender={onSender}
                   conversation={conversation}
                   onAssistant={onAssistant}
+                  onOwnWindow={onOwnWindow}
                 />
               );
             })}
@@ -381,6 +385,7 @@ function ThreadMessage({
   onSender,
   conversation,
   onAssistant,
+  onOwnWindow,
 }: {
   ref?: Ref<HTMLLIElement>;
   entry: ThreadEntry;
@@ -398,6 +403,7 @@ function ThreadMessage({
   /** A conversation of several messages: open them all, or fold the older ones. */
   conversation?: { openAll: () => void; foldOlder: () => void; print: () => void };
   onAssistant?: (messageId: number, kind: "summary" | "reply") => void;
+  onOwnWindow?: () => void;
 }) {
   const own = useDetail(entry.message.id, given === null && expanded);
   const load = given ?? own;
@@ -540,6 +546,7 @@ function ThreadMessage({
     if (ready) {
       extra.push(
         { label: "Find in this message…", icon: "search", keys: "Mod+Shift+F", onSelect: () => setFinding(true) },
+        ...(onOwnWindow ? [{ label: "Open in its own window", icon: "popOut" as const, onSelect: onOwnWindow }] : []),
         {
           label: "Copy link",
           icon: "link",
