@@ -21,7 +21,7 @@ import type { ListItem } from "./mail";
 import { type Anchor, type MenuEntry, anchorOf } from "./Menu";
 import { MARK_READ_AFTER, STEP_DWELL, getPrefs, usePrefs } from "./prefs";
 import { senderImages, setSenderImages } from "./smart";
-import { asMarkdown, printMessage, textParts } from "./messageText";
+import { asMarkdown, printMessage, printMessages, textParts } from "./messageText";
 import { openUrl } from "./background";
 import { useDark } from "./theme";
 import { SourceDialog } from "./SourceDialog";
@@ -202,6 +202,12 @@ export function ReadingPane({
       ? {
           openAll: () => setExpanded(new Set(entries.map((entry) => entry.message.id))),
           foldOlder: () => setExpanded(new Set([item.id])),
+          // Every message's text, oldest first; one that cannot be loaded is left out.
+          print: () =>
+            void Promise.allSettled(entries.map((entry) => getMessage(entry.message.id))).then((loaded) => {
+              const details = loaded.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+              if (details.length > 0) printMessages(details, subject);
+            }),
         }
       : undefined;
   useShortcuts(conversation ? { "Shift+O": conversation.openAll, o: conversation.foldOlder } : {});
@@ -358,7 +364,7 @@ function ThreadMessage({
   onPalette: Palette;
   onSender?: SenderOpener;
   /** A conversation of several messages: open them all, or fold the older ones. */
-  conversation?: { openAll: () => void; foldOlder: () => void };
+  conversation?: { openAll: () => void; foldOlder: () => void; print: () => void };
   onAssistant?: (messageId: number, kind: "summary" | "reply") => void;
 }) {
   const own = useDetail(entry.message.id, given === null && expanded);
@@ -508,6 +514,7 @@ function ThreadMessage({
           onSelect: () => void navigator.clipboard?.writeText(asMarkdown(ready)).catch(() => {}),
         },
         { label: "Print…", icon: "text", onSelect: () => printMessage(ready) },
+        ...(conversation ? [{ label: "Print the whole conversation…", icon: "text" as const, onSelect: conversation.print }] : []),
         { label: "See the original message", icon: "quote", onSelect: () => setSource(true) },
       );
     }
