@@ -193,6 +193,32 @@ addEventListener('mouseover',e=>{const a=e.target instanceof Element?e.target.cl
 show(a?goes(a):null);});\
 document.documentElement.addEventListener('mouseleave',()=>show(null));})();";
 
+/// The third part: find in the message, as the reading pane asks (only it:
+/// `{regardsMailFind: {query, step}}`). Every match is marked, ignoring
+/// case, the current one more strongly (the Custom Highlight API; selected
+/// where it is missing), and the pane is told how many there are, which one
+/// is current and where it is (`regardsMailFound`). An empty query clears.
+const FIND: &str = "(()=>{let hits=[],at=-1,last='',css=null;const hl=window.CSS&&CSS.highlights&&window.Highlight;\
+const look=q=>{hits=[];const w=document.body?document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT):null;\
+for(let n=w&&w.nextNode();n&&hits.length<1000;n=w.nextNode()){\
+if(/^(SCRIPT|STYLE|NOSCRIPT)$/.test(n.parentNode.nodeName))continue;const t=n.data.toLowerCase();\
+for(let i=t.indexOf(q);i!==-1&&hits.length<1000;i=t.indexOf(q,i+q.length)){const r=document.createRange();\
+r.setStart(n,i);r.setEnd(n,i+q.length);hits.push(r);}}};\
+const mark=()=>{if(hl){if(!css){css=document.createElement('style');\
+css.textContent='::highlight(regards-find){background:#ffe066;color:inherit}::highlight(regards-find-now){background:#ff9632;color:#000}';\
+(document.head||document.documentElement).append(css);}\
+CSS.highlights.set('regards-find',new Highlight(...hits));\
+CSS.highlights.set('regards-find-now',hits[at]?new Highlight(hits[at]):new Highlight());}\
+else{const s=getSelection();s.removeAllRanges();if(hits[at])s.addRange(hits[at]);}};\
+addEventListener('message',e=>{if(e.source!==parent)return;const f=e.data&&e.data.regardsMailFind;\
+if(!f||typeof f.query!=='string')return;const q=f.query.toLowerCase();\
+if(q!==last){last=q;if(q)look(q);else hits=[];at=hits.length?0:-1;}\
+else if(hits.length)at=((at+(Number(f.step)||0))%hits.length+hits.length)%hits.length;\
+mark();const r=hits[at];let top=0,bottom=0;\
+if(r){const el=r.startContainer.parentElement;if(el)el.scrollIntoView({block:'nearest'});\
+const b=r.getBoundingClientRect();top=b.top;bottom=b.bottom;}\
+if(q)parent.postMessage({regardsMailFound:{count:hits.length,at,top,bottom}},'*');});})();";
+
 /// A value used once, for this page's script alone; `None` without
 /// randomness, and then no script runs (the frame keeps a fixed height).
 fn nonce() -> Option<String> {
@@ -201,12 +227,12 @@ fn nonce() -> Option<String> {
     Some(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// The message's HTML with [`MEASURE`] and [`RELAY`] at the end of its body.
+/// The message's HTML with [`MEASURE`], [`RELAY`] and [`FIND`] at the end of its body.
 fn measured(html: String, nonce: Option<&str>) -> String {
     let Some(nonce) = nonce else {
         return html;
     };
-    let script = format!("<script nonce=\"{nonce}\">{MEASURE}{RELAY}</script>");
+    let script = format!("<script nonce=\"{nonce}\">{MEASURE}{RELAY}{FIND}</script>");
     match html.to_ascii_lowercase().rfind("</body>") {
         Some(at) => format!("{}{script}{}", &html[..at], &html[at..]),
         None => html + &script,
@@ -413,8 +439,10 @@ mod tests {
         assert!(page.starts_with("<html><body><p>Hi</p><script nonce=\"n1\">"), "{page}");
         assert!(page.ends_with("</script></BODY></html>"), "{page}");
         assert!(
-            page.contains("regardsMailHeight") && page.contains("regardsMailKey") && page.contains("regardsMailLink"),
-            "one script: the height, keys, and where links go"
+            ["regardsMailHeight", "regardsMailKey", "regardsMailLink", "regardsMailFind"]
+                .iter()
+                .all(|part| page.contains(part)),
+            "one script: the height, keys, where links go, and find"
         );
         assert!(!RELAY.contains("searchParams.get('t')"), "never the link token");
         assert!(measured("<p>Hi</p>".into(), Some("n1")).ends_with("</script>"));

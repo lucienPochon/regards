@@ -3035,6 +3035,55 @@ button.list-title:hover {
   background: #fff;
 }
 
+/* Find in this message: at the top of the pane while it scrolls. */
+.find-bar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 5px 6px 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-md);
+}
+
+.find-bar input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  outline: none;
+}
+
+.find-count {
+  white-space: nowrap;
+}
+
+/* The back arrow, turned to point up and down. */
+.find-previous svg {
+  transform: rotate(90deg);
+}
+
+.find-next svg {
+  transform: rotate(-90deg);
+}
+
+/* Matches in a text message; an HTML one marks its own, the same way (mail_frame.rs). */
+::highlight(regards-find) {
+  background-color: #ffe066;
+  color: inherit;
+}
+
+::highlight(regards-find-now) {
+  background-color: #ff9632;
+  color: #000;
+}
+
 /* Where the link under the pointer goes: kept in view at the bottom of the pane, taking no room. */
 .link-goes {
   position: sticky;
