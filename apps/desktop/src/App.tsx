@@ -1581,8 +1581,22 @@ export function App() {
               : cardsOn
                 ? "By category"
                 : "By date";
-  const empty =
-    view.kind === "role" && view.role === "inbox"
+  // An account's mail still coming in for the first time: its folders are
+  // not empty, the messages are not here yet.
+  const arriving =
+    view.kind !== "marked" &&
+    view.kind !== "drafts" &&
+    view.kind !== "outbox" &&
+    accounts.some(
+      (entry) => syncAccounts.includes(entry.account.id) && entry.error === null && !entry.sync?.last_success_at,
+    );
+  const empty = arriving
+    ? {
+        title: "Your mail is coming in",
+        body: "Messages show here as they download. The first time can take a few minutes.",
+        arriving: true,
+      }
+    : view.kind === "role" && view.role === "inbox"
       ? { title: "You're all caught up", body: "New mail shows here as it arrives." }
       : view.kind === "section"
         ? view.section === "new_senders"
