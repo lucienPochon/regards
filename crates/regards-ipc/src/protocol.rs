@@ -164,6 +164,9 @@ pub mod methods {
     pub const SENDER_SET_IMAGES: &str = "sender.set_images";
     /// The senders an account loads remote images from. `ui` only.
     pub const SENDER_IMAGES: &str = "sender.images";
+    /// The senders and `@domain`s an account blocked, to unblock from a
+    /// list (unblocking is [`SENDER_BLOCK`] with `blocked: false`). `ui` only.
+    pub const SENDER_BLOCKED: &str = "sender.blocked";
     /// How new senders' mail is shown: off, section or hold.
     pub const SMART_SCREENING: &str = "smart.screening";
     pub const SMART_SET_SCREENING: &str = "smart.set_screening";
@@ -1426,6 +1429,12 @@ pub struct SenderImagesParams {
 /// The result of [`methods::SENDER_IMAGES`]: addresses and `@domain`s, sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SenderImagesResult {
+    pub senders: Vec<String>,
+}
+
+/// The result of [`methods::SENDER_BLOCKED`]: addresses and `@domain`s, sorted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SenderBlockedResult {
     pub senders: Vec<String>,
 }
 

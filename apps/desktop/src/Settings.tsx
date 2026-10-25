@@ -26,6 +26,7 @@ import { Choice, LinkRow, Option, Select, Toggle } from "./SettingsControls";
 import {
   AccessibilityPage,
   AppearancePage,
+  BlockedSendersPage,
   ComposerPage,
   EmailGroupsPage,
   GeneralPage,
@@ -639,7 +640,9 @@ function InboxTab({
 }) {
   const [problem, setProblem] = useState<string | null>(null);
   const [groups, setGroups] = useState(false);
+  const [blocked, setBlocked] = useState(false);
   if (groups) return <EmailGroupsPage accounts={accounts} onBack={() => setGroups(false)} />;
+  if (blocked) return <BlockedSendersPage accounts={accounts} onBack={() => setBlocked(false)} />;
   const screen = (mode: Screening) => {
     const before = screening;
     onScreening(mode);
@@ -693,6 +696,12 @@ function InboxTab({
         label="Email groups"
         detail="Where Notifications, Newsletters and Pinned sit, and which accounts are in the unified inbox"
         onOpen={() => setGroups(true)}
+      />
+      <LinkRow
+        icon="thumbDown"
+        label="Blocked senders"
+        detail="Their mail goes to Junk; unblock them here"
+        onOpen={() => setBlocked(true)}
       />
       <p className="muted settings-note">
         Sorting happens on this computer, from the headers and who you have written to. Nothing is sent anywhere. Open a

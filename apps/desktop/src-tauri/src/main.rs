@@ -43,12 +43,12 @@ use regards_ipc::protocol::{
     NoteUpdateParams, NoteView, NotesForgotten, OauthFlowRef, OauthProvidersResult, OauthStartParams, OauthStartResult,
     OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult, PinParams, Principal, RemindParams,
     SavedSearchListResult, SavedSearchOrderParams, SavedSearchRef, SavedSearchSaveParams, SavedSearchView, Screening,
-    ScreeningParams, SearchParams, SearchResult, Section, SenderBlockParams, SenderImagesParams, SenderImagesResult,
-    SenderSetParams, SenderSetResult, ServerCheckParams, ServerCheckResult, ServerSearchResult, ServerSettings,
-    SetFlagsParams, SetFlagsResult, SetLabelsParams, SetLabelsResult, SignatureListResult, SignatureRef,
-    SignatureSaveParams, SignatureView, SmartOverviewResult, SnoozeParams, SyncResult, TemplateListResult, TemplateRef,
-    TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult, UnsubscribeParams, UnsubscribeResult, View,
-    ViewParams, codes, methods,
+    ScreeningParams, SearchParams, SearchResult, Section, SenderBlockParams, SenderBlockedResult, SenderImagesParams,
+    SenderImagesResult, SenderSetParams, SenderSetResult, ServerCheckParams, ServerCheckResult, ServerSearchResult,
+    ServerSettings, SetFlagsParams, SetFlagsResult, SetLabelsParams, SetLabelsResult, SignatureListResult,
+    SignatureRef, SignatureSaveParams, SignatureView, SmartOverviewResult, SnoozeParams, SyncResult,
+    TemplateListResult, TemplateRef, TemplateSaveParams, TemplateView, ThreadView, UndoParams, UndoResult,
+    UnsubscribeParams, UnsubscribeResult, View, ViewParams, codes, methods,
 };
 use regards_ipc::{Client, ClientError, UiToken};
 use serde::{Deserialize, Serialize};
@@ -927,6 +927,16 @@ async fn sender_images(bridge: State<'_, Bridge>, account_id: String) -> Result<
     let mut client = bridge.connect().await?.client;
     client
         .call(methods::SENDER_IMAGES, AccountRef { account_id })
+        .await
+        .map_err(describe)
+}
+
+/// The senders and domains an account blocked, to unblock from a list.
+#[tauri::command]
+async fn sender_blocked(bridge: State<'_, Bridge>, account_id: String) -> Result<SenderBlockedResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::SENDER_BLOCKED, AccountRef { account_id })
         .await
         .map_err(describe)
 }
@@ -2115,6 +2125,7 @@ fn main() {
             sender_block,
             sender_set_images,
             sender_images,
+            sender_blocked,
             smart_screening,
             smart_set_screening,
             message_get,

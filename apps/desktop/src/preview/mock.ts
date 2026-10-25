@@ -950,6 +950,11 @@ function handle(cmd: string, args: Args): unknown {
       imageSenders.set(sender.account_id, allowed);
       return { allow: sender.allow };
     }
+    case "sender_blocked": {
+      const prefix = `${args.accountId as string} `;
+      const senders = [...choices].filter(([key, choice]) => key.startsWith(prefix) && choice.blocked).map(([key]) => key.slice(prefix.length));
+      return { senders: senders.sort() };
+    }
     case "sender_images":
       return { senders: [...(imageSenders.get(args.accountId as string) ?? [])].sort() };
     case "background_settings":
