@@ -55,6 +55,7 @@ export const TOUR: Group[] = [
       { id: "screen-hold", label: "New senders held aside", note: "Settings › Inbox › new senders: held until accepted.", params: { screen: "hold" } },
       { id: "screen-off", label: "New senders not screened", note: "New senders' mail goes straight into the inbox.", params: { screen: "off" } },
       { id: "reminder-due", label: "A reminder came due", note: "Nobody replied in time: the message you sent comes back to the inbox, with a bell.", params: { reminder: "1" }, steps: ["wait:900", "see:.reminder.due="] },
+      { id: "sidebar-order", label: "Rows in your order", note: "Drag a row of the sidebar to another place in its section, or right-click › Move up / Move down. Its edge makes it wider or narrower.", steps: ["wait:700", "right:.sidebar .side-gap + .side-entry + .side-entry .side-item", "wait:300", "text:.menu-item=Move up", "wait:300"] },
       { id: "context-menu", label: "Right-click on a message", note: "Every action on a message, with its key.", steps: ["wait:700", "right:.row-main"] },
       { id: "muted", label: "A muted conversation", note: "Right-click › Mute conversation: its new mail tells of nothing, and the row says so.", steps: ["wait:700", "right:.row-main", "wait:300", "text:.menu-item=Mute conversation", "wait:600"] },
       { id: "palette", label: "Commands", note: "Everything by name (Ctrl+K).", steps: ["wait:700", "key:Mod+k"] },
