@@ -3035,6 +3035,32 @@ button.list-title:hover {
   background: #fff;
 }
 
+/* Where the link under the pointer goes: kept in view at the bottom of the pane, taking no room. */
+.link-goes {
+  position: sticky;
+  bottom: 10px;
+  z-index: 2;
+  height: 0;
+  pointer-events: none;
+}
+
+.link-goes span {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  max-width: min(100%, 560px);
+  overflow: hidden;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-md);
+  color: var(--text-2);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* In the dark theme the page darkens itself, on the card's own colour. */
 .html-body.dark {
   background: transparent;
