@@ -204,6 +204,9 @@ pub mod methods {
     pub const DRAFT_REPLY: &str = "draft.reply";
     /// Start forwarding a stored message.
     pub const DRAFT_FORWARD: &str = "draft.forward";
+    /// Start a new message saying what a stored one said ("Send again"): its
+    /// people, subject, text and files, from the address it went from.
+    pub const DRAFT_AGAIN: &str = "draft.again";
     pub const DRAFT_GET: &str = "draft.get";
     /// What to ask about before a draft goes: no recipients, no subject, an
     /// attachment it speaks of but lacks, something left to fill in.

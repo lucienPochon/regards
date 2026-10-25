@@ -157,6 +157,8 @@ export const replyDraft = (messageId: number, all: boolean) =>
 /** A forward, with the original's files (and formatting, when it has some). */
 export const forwardDraft = (messageId: number) =>
   invoke<Draft>("draft_forward", { messageId, utcOffsetMinutes: localOffset() }).then(started);
+/** "Send again": a new draft with what a message said, to the same people, with its files. */
+export const againDraft = (messageId: number) => invoke<Draft>("draft_again", { messageId }).then(started);
 export const listDrafts = () => invoke<{ drafts: Draft[] }>("draft_list");
 export const getDraft = (id: number) => invoke<Draft>("draft_get", { id });
 /** Pick files with the system dialog and attach them; `null` if cancelled. */

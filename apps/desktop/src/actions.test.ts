@@ -121,3 +121,15 @@ describe("Mute", () => {
     expect(sent("message_mute")).toEqual({ ids: [1, 7, 8], muted: false });
   });
 });
+
+describe("Send again", () => {
+  it("is offered on mail the person sent, and starts a new draft from it", async () => {
+    const shown = (on: Target) =>
+      messageActions(on, host() as never).find((action) => action.id === "again")?.shown;
+    expect(shown(target(false))).toBe(false);
+    expect(shown({ ...target(false), sent: true })).toBe(true);
+    const used = await run({ ...target(false), sent: true }, "again");
+    expect(sent("draft_again")).toEqual({ messageId: 1 });
+    expect(used.compose).toHaveBeenCalled();
+  });
+});

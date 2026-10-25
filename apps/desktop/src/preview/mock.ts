@@ -1687,6 +1687,15 @@ function handle(cmd: string, args: Args): unknown {
         body: `\n\n---------- Forwarded message ----------\nFrom: ${message.from.name} <${message.from.address}>\nSubject: ${message.subject}\n\n${message.text}`,
       });
     }
+    case "draft_again": {
+      const message = byId(args.messageId as number);
+      return newDraftFor(accountOfMailbox(message.mailboxId)?.account.id ?? "", {
+        to: message.to,
+        cc: message.cc,
+        subject: message.subject,
+        body: message.text,
+      });
+    }
     case "draft_list":
       return { drafts: [...drafts].sort((a, b) => b.updated_at - a.updated_at) };
     case "draft_get":

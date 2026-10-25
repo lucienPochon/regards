@@ -15,7 +15,7 @@ import {
 } from "./accounts";
 import { type KeySet, getPrefs } from "./prefs";
 import type { Person } from "./accounts";
-import { type Draft, forwardDraft, replyDraft } from "./compose";
+import { type Draft, againDraft, forwardDraft, replyDraft } from "./compose";
 import type { ConfirmRequest } from "./Confirm";
 import type { IconName } from "./icons";
 import type { Anchor } from "./Menu";
@@ -42,6 +42,8 @@ export interface Target {
   pinned: boolean;
   /** Its conversation is muted. */
   muted?: boolean;
+  /** The one message is mail the person sent (in a Sent folder): Send again is offered. */
+  sent?: boolean;
   /** All set aside. */
   aside: boolean;
   /** All snoozed. */
@@ -115,6 +117,7 @@ export type ActionId =
   | "reply"
   | "replyAll"
   | "forward"
+  | "again"
   | "unread"
   | "read"
   | "flag"
@@ -149,6 +152,7 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
     reply: ["Shift+R"],
     replyAll: ["r"],
     forward: ["f"],
+    again: [],
     unread: ["u"],
     read: ["u"],
     flag: ["i"],
@@ -169,6 +173,7 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
     reply: ["r"],
     replyAll: ["a"],
     forward: ["f"],
+    again: [],
     unread: ["Shift+U"],
     read: ["Shift+I"],
     flag: ["s"],
@@ -222,6 +227,7 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       { id: "reply", label: "Reply", icon: "reply", keys: keys.reply, shown: true, run: () => host.compose(replyDraft(id, false)) },
       { id: "replyAll", label: "Reply all", icon: "replyAll", keys: keys.replyAll, shown: true, run: () => host.compose(replyDraft(id, true)) },
       { id: "forward", label: "Forward", icon: "forward", keys: keys.forward, shown: true, run: () => host.compose(forwardDraft(id)) },
+      { id: "again", label: "Send again", icon: "send", keys: keys.again, shown: target.sent === true, run: () => host.compose(againDraft(id)) },
     );
   }
   actions.push(
