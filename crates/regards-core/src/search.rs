@@ -60,6 +60,8 @@ pub enum FileKind {
     Presentation,
     /// zip, rar, 7z, tar, gz.
     Archive,
+    /// An invitation to an event: a calendar part or an `.ics` file.
+    Invitation,
 }
 
 impl FileKind {
@@ -115,6 +117,7 @@ impl FileKind {
                 ],
                 &["zip", "rar", "7z", "tar", "gz", "tgz"],
             ),
+            Self::Invitation => (&["text/calendar", "application/ics"], &["ics"]),
         }
     }
 }
@@ -230,6 +233,7 @@ fn apply(query: &mut Query, text: &str) -> bool {
                 "spreadsheet" | "spreadsheets" | "sheet" | "sheets" => FileKind::Spreadsheet,
                 "presentation" | "presentations" | "slides" => FileKind::Presentation,
                 "archive" | "archives" | "zip" | "zips" => FileKind::Archive,
+                "invitation" | "invitations" | "invite" | "invites" | "event" | "events" => FileKind::Invitation,
                 _ => return false,
             };
             if !query.file_kinds.contains(&kind) {
@@ -632,6 +636,8 @@ mod tests {
         assert!(query.has_attachment);
         assert_eq!(query.text, Some(r#""budget"*"#.into()));
         assert_eq!(parse("has:sheets has:slides has:zip has:docs").file_kinds.len(), 4);
+        assert_eq!(parse("has:invitation").file_kinds, [FileKind::Invitation]);
+        assert_eq!(parse("has:invites").file_kinds, [FileKind::Invitation]);
         // Not a kind, nor a name: searched as words.
         assert!(parse("has:cake").file_kinds.is_empty() && parse("has:cake").text.is_some());
         assert!(parse("filename:").file_names.is_empty());

@@ -677,6 +677,31 @@ pub fn marked(
     Ok(messages)
 }
 
+/// An account's invitations still to answer: messages in its inbox (or on
+/// their way there) carrying a calendar part or an `.ics` file, as
+/// `has:invitation` finds them, not answered yet. Newest first.
+pub fn invitations(
+    conn: &Connection,
+    account_id: &str,
+    limit: u32,
+    before: Option<Cursor>,
+) -> Result<Vec<Message>, StoreError> {
+    let (received_at, id) = before.map_or((i64::MAX, i64::MAX), |c| (c.received_at, c.id));
+    let mut statement = conn.prepare_cached(&format!(
+        "SELECT {COLUMNS} FROM messages m WHERE COALESCE(m.moving_to, m.mailbox_id) = \
+             (SELECT id FROM mailboxes WHERE account_id = ?1 AND role = 'inbox') \
+         AND m.deleted = 0 AND m.answered = 0 \
+         AND EXISTS (SELECT 1 FROM message_files f WHERE f.message_id = m.id \
+             AND (f.mime IN ('text/calendar', 'application/ics') OR lower(f.name) LIKE '%.ics')) \
+         AND (m.received_at, m.id) < (?2, ?3) ORDER BY m.received_at DESC, m.id DESC LIMIT ?4"
+    ))?;
+    let messages = statement
+        .query_map(params![account_id, received_at, id, limit], from_row)?
+        .map(|row| row?)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(messages)
+}
+
 /// Each of `ids` with the other messages of its conversation in the same
 /// folder (one on its way into a folder counts as there), not deleted: what
 /// an action on a conversation's row covers. In the order given, newest first
@@ -941,6 +966,70 @@ mod tests {
         assert!(in_trash.is_some(), "only in Trash: that copy");
         assert!(preferred.is_some() && preferred != in_trash, "the inbox's copy first");
         assert_eq!(unknown, None);
+    }
+
+    #[tokio::test]
+    async fn invitations_to_answer_are_the_inboxs_unanswered_calendar_mail() {
+        let (_temp, store, inbox) = store_with_inbox().await;
+        let (found, answered_left) = store
+            .write(move |tx| {
+                let account: String =
+                    tx.query_row("SELECT account_id FROM mailboxes WHERE id = ?1", [inbox], |row| {
+                        row.get(0)
+                    })?;
+                let mut answered = message(3, 3_000, "Answered already");
+                answered.flags.answered = true;
+                upsert(
+                    tx,
+                    inbox,
+                    &[
+                        message(1, 1_000, "Plot planning"),
+                        message(2, 2_000, "Minutes"),
+                        answered,
+                        message(4, 4_000, "Harvest supper"),
+                    ],
+                )?;
+                let calendar = |name: Option<&str>, mime: &str| FileShape {
+                    name: name.map(Into::into),
+                    mime: mime.into(),
+                };
+                set_details(tx, inbox, 1, false, None, &[calendar(None, "text/calendar")])?;
+                set_details(
+                    tx,
+                    inbox,
+                    2,
+                    true,
+                    None,
+                    &[calendar(Some("minutes.pdf"), "application/pdf")],
+                )?;
+                set_details(tx, inbox, 3, false, None, &[calendar(None, "text/calendar")])?;
+                set_details(
+                    tx,
+                    inbox,
+                    4,
+                    true,
+                    None,
+                    &[calendar(Some("Supper.ICS"), "application/octet-stream")],
+                )?;
+                let all = invitations(tx, &account, 10, None)?;
+                let first = &all[0];
+                let rest = invitations(
+                    tx,
+                    &account,
+                    10,
+                    Some(Cursor {
+                        received_at: first.received_at,
+                        id: first.id,
+                    }),
+                )?;
+                let subjects = |list: &[Message]| list.iter().map(|m| m.subject.clone()).collect::<Vec<_>>();
+                Ok((subjects(&all), subjects(&rest)))
+            })
+            .await
+            .unwrap()
+            .value;
+        assert_eq!(found, ["Harvest supper", "Plot planning"]);
+        assert_eq!(answered_left, ["Plot planning"]);
     }
 
     #[tokio::test]
