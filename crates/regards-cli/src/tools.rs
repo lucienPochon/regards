@@ -477,6 +477,15 @@ pub(crate) const TOOLS: &[Tool] = &[
         read_only: false,
     },
     Tool {
+        name: "send_again",
+        description: "Start a new message saying what a sent one said: the same people, subject, text and files. Not sent.",
+        access: Access::Triage,
+        method: "draft.again",
+        params: &[MESSAGE],
+        links: Links::Drafts,
+        read_only: false,
+    },
+    Tool {
         name: "edit",
         description: "Change a draft: the whole of it (recipients, subject and text) as given.",
         access: Access::Triage,
@@ -626,7 +635,7 @@ pub(crate) fn request(tool: &Tool, args: &Map<String, Value>) -> Result<Value, S
             "account_id": text("account_id"),
             "text": text("text"),
         }),
-        "read" | "thread" | "forward" => json!({ "id": number("message_id") }),
+        "read" | "thread" | "forward" | "send_again" => json!({ "id": number("message_id") }),
         "view" => json!({
             "account_id": text("account_id"),
             "view": text("view"),
@@ -975,7 +984,7 @@ mod tests {
                 methods::MESSAGE_LIST => reads::<MessageListParams>(name, request),
                 methods::SEARCH | methods::SEARCH_SERVER => reads::<SearchParams>(name, request),
                 methods::PEOPLE_SUGGEST => reads::<PeopleSuggestParams>(name, request),
-                methods::MESSAGE_GET | methods::THREAD_GET | methods::DRAFT_FORWARD => {
+                methods::MESSAGE_GET | methods::THREAD_GET | methods::DRAFT_FORWARD | methods::DRAFT_AGAIN => {
                     reads::<MessageRef>(name, request)
                 }
                 methods::MESSAGE_VIEW => reads::<ViewParams>(name, request),

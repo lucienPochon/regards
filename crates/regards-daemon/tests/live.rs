@@ -2245,6 +2245,43 @@ async fn live_a_forward_carries_the_original_files() {
 
 #[tokio::test]
 #[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
+async fn live_send_again_starts_the_same_message_over() {
+    let live = live();
+    let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)
+        .await
+        .unwrap();
+    let report = b"From: Ada <ada@example.test>\r\nTo: Bob <bob@example.test>\r\nCc: Carol <carol@example.test>\r\n\
+        Subject: Re: Report\r\nDate: Sun, 18 Oct 2026 11:00:00 +0000\r\nMessage-ID: <again-2@example.test>\r\n\
+        In-Reply-To: <again-1@example.test>\r\nReferences: <again-1@example.test>\r\nMIME-Version: 1.0\r\n\
+        Content-Type: multipart/mixed; boundary=\"b\"\r\n\r\n\
+        --b\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nHere it is again.\r\n\
+        --b\r\nContent-Type: application/pdf; name=\"report.pdf\"\r\n\
+        Content-Disposition: attachment; filename=\"report.pdf\"\r\nContent-Transfer-Encoding: base64\r\n\r\n\
+        JVBERi0xLjQK\r\n--b--\r\n";
+    seed.append(b"INBOX", &[], report).await.unwrap();
+    let (_temp, mut desktop, _account, inbox, handle) = daemon_with_account(&live).await;
+    let original = messages(&mut desktop, inbox).await.messages[0].id;
+
+    let draft: DraftView = desktop
+        .call(methods::DRAFT_AGAIN, MessageRef { id: original })
+        .await
+        .unwrap();
+    // The same people, subject, text and files; nothing added.
+    let addresses =
+        |people: &[Person]| -> Vec<String> { people.iter().filter_map(|person| person.address.clone()).collect() };
+    assert_eq!(addresses(&draft.to), ["bob@example.test"]);
+    assert_eq!(addresses(&draft.cc), ["carol@example.test"]);
+    assert_eq!(draft.subject, "Re: Report");
+    assert_eq!(draft.body.trim_end(), "Here it is again.");
+    assert_eq!(draft.attachments.len(), 1);
+    assert_eq!(draft.attachments[0].name, "report.pdf");
+
+    seed.logout().await;
+    handle.abort();
+}
+
+#[tokio::test]
+#[ignore = "needs a real IMAP server (REGARDS_TEST_IMAP, REGARDS_TEST_IMAP_CA)"]
 async fn live_pin_and_set_aside_stay_on_the_device_and_can_be_undone() {
     let live = live();
     let mut seed = Session::login(&live.server, &live.user, &live.password, &live.tls)

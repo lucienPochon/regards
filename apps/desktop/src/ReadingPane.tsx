@@ -176,6 +176,7 @@ export function ReadingPane({
     disposable: disposable(folder?.role ?? item.role),
     pinned: message.pinned,
     muted: message.muted === true,
+    sent: (folder?.role ?? item.role) === "sent",
     aside: message.aside,
     snoozed: message.snoozed_until !== null,
     reminding: message.remind_at !== null,
@@ -514,6 +515,7 @@ function ThreadMessage({
     snoozed: (ready?.message.snoozed_until ?? message.snoozed_until) !== null,
     reminding: (ready?.message.remind_at ?? message.remind_at) !== null,
     reminded: ready?.message.reminded ?? message.reminded,
+    sent: entry.mailbox_role === "sent",
   });
   // The message's own view options join its actions in the palette.
   const more = () => {
@@ -670,7 +672,7 @@ function ThreadMessage({
       </div>
       {ready && (
         <div className="mail-foot">
-          {choose(actions, "reply", "forward").map((action) => (
+          {choose(actions, "reply", "forward", "again").map((action) => (
             <button
               key={action.id}
               type="button"

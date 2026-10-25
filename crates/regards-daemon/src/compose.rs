@@ -10,7 +10,7 @@ use regards_core::headers::{self, Person};
 use regards_ipc::protocol::{
     DraftAttachFileParams, DraftAttachImageParams, DraftAttachment, DraftCheckResult, DraftCreateParams,
     DraftDetachParams, DraftForwardParams, DraftImage, DraftImagesResult, DraftListParams, DraftListResult, DraftRef,
-    DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView,
+    DraftReplyParams, DraftSendParams, DraftSendResult, DraftSetFromParams, DraftUpdateParams, DraftView, MessageRef,
     OutboxEntryView, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxState, OutboxUndoResult, RpcError,
     codes,
 };
@@ -250,6 +250,57 @@ pub(crate) async fn forward(state: &State, params: DraftForwardParams) -> Result
                 ..Content::default()
             };
             let id = drafts::create(tx, &account_id, &content, now)?;
+            for (hash, name, mime, size) in &files {
+                drafts::attach(tx, id, hash, name, mime, *size)?;
+            }
+            Ok(id)
+        })
+        .await
+        .map_err(conflict)?
+        .value;
+    view(state, id).await
+}
+
+/// "Send again": a new draft saying what a stored message said, to the same
+/// people, from the address it went from (the default one when that is not
+/// the account's any more), with its files, in its conversation. Nothing is
+/// added: its signature is already in it.
+pub(crate) async fn again(state: &State, params: MessageRef) -> Result<Value, RpcError> {
+    let (message, source) = crate::mail::load(state, params.id).await?;
+    let mailbox_id = message.mailbox_id;
+    let original = headers::parse(&source);
+    let formatted = regards_core::html::quotable(&source);
+    let (text, files) = text_and_files(state, source).await?;
+    let now = now_ms();
+    let id = state
+        .store
+        .write(move |tx| {
+            let mailbox = mailboxes::get(tx, mailbox_id)?
+                .ok_or_else(|| StoreError::Conflict("the folder no longer exists".into()))?;
+            let account = accounts::get(tx, &mailbox.account_id)?
+                .ok_or_else(|| StoreError::Conflict("the message's account no longer exists".into()))?;
+            let from: Vec<&str> = original
+                .from
+                .iter()
+                .filter_map(|person| person.address.as_deref())
+                .collect();
+            let identity = match identities::for_addresses(tx, &account.id, &from)? {
+                Some(found) => found,
+                None => identity_of(tx, &account, None)?,
+            };
+            let content = Content {
+                to: original.to,
+                cc: original.cc,
+                bcc: original.bcc,
+                subject: original.subject,
+                body: text,
+                in_reply_to: original.in_reply_to.first().cloned(),
+                references: original.references,
+                identity_id: stored(&identity),
+                html: formatted,
+                ..Content::default()
+            };
+            let id = drafts::create(tx, &account.id, &content, now)?;
             for (hash, name, mime, size) in &files {
                 drafts::attach(tx, id, hash, name, mime, *size)?;
             }
