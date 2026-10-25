@@ -106,9 +106,10 @@ pub fn render_with(raw: &[u8], allow_remote: bool, links: Option<&str>, clean_li
 }
 
 /// Formatting a message written in Regards may carry: text styles, lists,
-/// quotes, headings, web or mail links, and its own images (`cid:`, sent
-/// with it). Everything else (scripts, styles, images from the web, frames,
-/// forms, event handlers) is removed before sending.
+/// quotes, headings, web or mail links, a colour or highlight on some text,
+/// and its own images (`cid:`, sent with it), at a size. Everything else
+/// (scripts, other styles, images from the web, frames, forms, event
+/// handlers) is removed before sending.
 pub fn sanitize_outgoing(html: &str) -> String {
     let clean = Builder::empty()
         .add_tags([
@@ -132,15 +133,19 @@ pub fn sanitize_outgoing(html: &str) -> String {
             "h3",
             "hr",
             "img",
+            "span",
         ])
         .add_tag_attributes("a", ["href"])
-        .add_tag_attributes("img", ["src", "alt"])
+        .add_tag_attributes("img", ["src", "alt", "width", "height"])
+        .add_tag_attributes("span", ["style"])
         // `type="cite"`: quoted history, which readers fold (fold_quotes).
         .add_tag_attributes("blockquote", ["type"])
         .add_url_schemes(["http", "https", "mailto", "cid"])
         // An image is one of the message's own, never fetched from the web.
         .attribute_filter(|element, attribute, value| match (element, attribute) {
             ("img", "src") if !value.starts_with("cid:") => None,
+            ("img", "width" | "height") => pixels(value).map(Into::into),
+            ("span", "style") => colours(value).map(Into::into),
             ("blockquote", "type") if value != "cite" => None,
             ("a", "href") if value.starts_with("cid:") => None,
             _ => Some(value.into()),
@@ -151,6 +156,29 @@ pub fn sanitize_outgoing(html: &str) -> String {
         .clean(html)
         .to_string();
     without_empty_images(&clean)
+}
+
+/// An image's width or height as whole pixels, 1 to 9999; `None` otherwise.
+fn pixels(value: &str) -> Option<String> {
+    let value = value.trim();
+    let whole = (1..=4).contains(&value.len()) && value.bytes().all(|b| b.is_ascii_digit());
+    (whole && value.parse::<u16>().is_ok_and(|n| n > 0)).then(|| value.to_owned())
+}
+
+/// Of a span's style, only its text colour and highlight, each a six-digit
+/// hex colour (as the composer offers them); `None` when nothing is left.
+fn colours(style: &str) -> Option<String> {
+    let kept: Vec<String> = style
+        .split(';')
+        .filter_map(|declaration| {
+            let (name, value) = declaration.split_once(':')?;
+            let (name, value) = (name.trim().to_ascii_lowercase(), value.trim());
+            let hex = value.len() == 7 && value.starts_with('#') && value[1..].bytes().all(|b| b.is_ascii_hexdigit());
+            (hex && (name == "color" || name == "background-color"))
+                .then(|| format!("{name}: {}", value.to_ascii_lowercase()))
+        })
+        .collect();
+    (!kept.is_empty()).then(|| kept.join("; "))
 }
 
 /// A message's HTML, to quote under a reply or a forward: as
@@ -808,6 +836,32 @@ mod tests {
         assert!(
             text.contains("Hello Bob") && text.contains("one") && text.contains("quoted"),
             "{text}"
+        );
+    }
+
+    #[test]
+    fn written_colours_and_picture_sizes_go_out_and_nothing_more() {
+        let written = "<p><span style=\"color: #C62828; background-color: #fff59d\">urgent</span> \
+            <span style=\"color: #1565c0; font-size: 40px; position: fixed\">blue</span> \
+            <span style=\"color: red\">named</span> <span style=\"background: url(https://t.test/x)\">sneaky</span> \
+            <img src=\"cid:lake@regards\" alt=\"\" width=\"320\" height=\"0\"> \
+            <img src=\"cid:hill@regards\" alt=\"\" width=\"100%\" height=\"180\"></p>";
+        let clean = sanitize_outgoing(written);
+        assert!(
+            clean.contains("<span style=\"color: #c62828; background-color: #fff59d\">urgent</span>"),
+            "{clean}"
+        );
+        assert!(clean.contains("<span style=\"color: #1565c0\">blue</span>"), "{clean}");
+        for gone in ["font-size", "position", "red", "url(", "100%", "height=\"0\""] {
+            assert!(!clean.contains(gone), "{gone} survived: {clean}");
+        }
+        assert!(
+            clean.contains("named") && clean.contains("sneaky"),
+            "the words stay: {clean}"
+        );
+        assert!(
+            clean.contains("width=\"320\"") && clean.contains("height=\"180\""),
+            "{clean}"
         );
     }
 

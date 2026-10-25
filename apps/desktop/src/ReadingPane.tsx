@@ -14,6 +14,7 @@ import {
 } from "./accounts";
 import { type Action, type Target, actionKeys, actionTitle, choose, newSendersOf } from "./actions";
 import { AttachmentTiles } from "./AttachmentTiles";
+import { FindBar } from "./FindBar";
 import { Avatar } from "./Avatar";
 import { useChanges } from "./changes";
 import { fullDate, peopleFull, peopleShort, personName } from "./format";
@@ -404,6 +405,10 @@ function ThreadMessage({
   const [allowRemote, setAllowRemote] = useState(() => getPrefs().remoteImages);
   const [details, setDetails] = useState(false);
   const [source, setSource] = useState(false);
+  // Find in this message (Ctrl+Shift+F), the open one's only: in its frame, or its text here.
+  const [finding, setFinding] = useState(false);
+  const textBody = useRef<HTMLPreElement>(null);
+  useShortcuts(given !== null && given.state === "ready" ? { "Mod+Shift+F": () => setFinding(true) } : {});
   // The HTML frame is as tall as the message: its own script says how tall (mail_frame.rs).
   // It also passes on keys pressed in the message, and where the link under the pointer goes.
   const frame = useRef<HTMLIFrameElement>(null);
@@ -532,6 +537,7 @@ function ThreadMessage({
     }
     if (ready) {
       extra.push(
+        { label: "Find in this message…", icon: "search", keys: "Mod+Shift+F", onSelect: () => setFinding(true) },
         {
           label: "Copy link",
           icon: "link",
@@ -611,6 +617,7 @@ function ThreadMessage({
         {load.state === "failed" && <p className="error" role="alert">{load.message}</p>}
         {ready && (
           <>
+            {finding && <FindBar frame={frame} text={textBody} onClose={() => setFinding(false)} />}
             {ready.has_html && !showText && ready.remote_images > 0 && !allowRemote && !trusted && (
               <div className="notice images-notice">
                 <Icon name="shield" size={16} />
@@ -646,7 +653,7 @@ function ThreadMessage({
                 onMouseLeave={() => setLinkGoes(null)}
               />
             ) : (
-              <TextBody text={ready.text.trim()} onFailed={setImagesError} />
+              <TextBody ref={textBody} text={ready.text.trim()} onFailed={setImagesError} />
             )}
             {linkGoes && ready.has_html && !showText && (
               // Where the link under the pointer goes, as a browser shows it.
@@ -654,7 +661,7 @@ function ThreadMessage({
                 <span>{linkGoes}</span>
               </div>
             )}
-            <AttachmentTiles messageId={message.id} attachments={ready.attachments} />
+            <AttachmentTiles messageId={message.id} attachments={ready.attachments} spaceOpens={given !== null} />
           </>
         )}
       </div>
@@ -679,11 +686,24 @@ function ThreadMessage({
 }
 
 /** A message's plain text, its web addresses as links that open in the browser. */
-function TextBody({ text, onFailed }: { text: string; onFailed: (problem: string) => void }) {
+function TextBody({
+  ref,
+  text,
+  onFailed,
+}: {
+  ref?: Ref<HTMLPreElement>;
+  text: string;
+  onFailed: (problem: string) => void;
+}) {
   const parts = useMemo(() => textParts(text), [text]);
-  if (!text) return <pre className="text-body">(no text)</pre>;
+  if (!text)
+    return (
+      <pre ref={ref} className="text-body">
+        (no text)
+      </pre>
+    );
   return (
-    <pre className="text-body">
+    <pre ref={ref} className="text-body">
       {parts.map((part, at) =>
         part.url ? (
           <a

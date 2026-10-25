@@ -30,7 +30,17 @@ import {
 import { type UndoInfo, listAccounts } from "./accounts";
 import { type Identity, listIdentities } from "./identities";
 import { type Signature, listSignatures, signatureIn } from "./signatures";
-import { IMAGE_TYPES, attachImage, draftImages, fileBase64, insertImage, toEditorHtml, toStoredHtml } from "./images";
+import {
+  IMAGE_TYPES,
+  attachImage,
+  coloursAsMarks,
+  coloursAsStyles,
+  draftImages,
+  fileBase64,
+  insertImage,
+  toEditorHtml,
+  toStoredHtml,
+} from "./images";
 import type { Template } from "./templates";
 import { fileKind, fileSize, laterDate } from "./format";
 import { Icon } from "./icons";
@@ -142,9 +152,9 @@ export function Composer({
     signatureKnown.current = false;
     getDraft(draftId)
       .then(async (loaded) => {
-        // Images in the text are shown from their bytes while writing.
+        // Images in the text are shown from their bytes while writing, colours as the editor marks them.
         let html = loaded.html ?? textToHtml(loaded.body);
-        if (html.includes('src="cid:')) html = toEditorHtml(html, await draftImages(loaded.id));
+        html = toEditorHtml(html, html.includes('src="cid:') ? await draftImages(loaded.id) : []);
         if (!current) return;
         const initial: Fields = {
           to: formatRecipients(loaded.to),
@@ -404,13 +414,14 @@ export function Composer({
    */
   const insertTemplate = async (anchor: Anchor) => {
     if (!pickTemplate || !fields) return;
-    const template = await pickTemplate(anchor, { subject: fields.subject, html: fields.html });
+    // Kept as a message is: colours as styles.
+    const template = await pickTemplate(anchor, { subject: fields.subject, html: coloursAsStyles(fields.html) });
     if (!template) return;
     const first = parseRecipients(fields.to)[0];
     const names = { to: first?.name ?? null, me: draft?.from.name ?? null };
     const filled = {
       body: fillPlaceholders(template.body, names),
-      html: template.html === null ? null : fillPlaceholders(template.html, names, true),
+      html: template.html === null ? null : coloursAsMarks(fillPlaceholders(template.html, names, true)),
     };
     setFields((current) =>
       current

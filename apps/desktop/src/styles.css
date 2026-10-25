@@ -3091,6 +3091,55 @@ button.list-title:hover {
   background: #fff;
 }
 
+/* Find in this message: at the top of the pane while it scrolls. */
+.find-bar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 5px 6px 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-md);
+}
+
+.find-bar input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  outline: none;
+}
+
+.find-count {
+  white-space: nowrap;
+}
+
+/* The back arrow, turned to point up and down. */
+.find-previous svg {
+  transform: rotate(90deg);
+}
+
+.find-next svg {
+  transform: rotate(-90deg);
+}
+
+/* Matches in a text message; an HTML one marks its own, the same way (mail_frame.rs). */
+::highlight(regards-find) {
+  background-color: #ffe066;
+  color: inherit;
+}
+
+::highlight(regards-find-now) {
+  background-color: #ff9632;
+  color: #000;
+}
+
 /* Where the link under the pointer goes: kept in view at the bottom of the pane, taking no room. */
 .link-goes {
   position: sticky;
@@ -4009,6 +4058,104 @@ button.list-title:hover {
   border: 1px solid var(--border-strong);
   border-radius: 7px;
   background: var(--bg);
+}
+
+.format-bar .text-style {
+  height: 30px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.format-bar .text-style:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* "A" over a bar of the colour in use; "ab" on the highlight in use. */
+.format-bar .colour-button {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+
+.colour-bar {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.highlight-mark {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--chip);
+}
+
+.swatches {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+}
+
+.format-bar .swatch {
+  min-width: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgb(0 0 0 / 0.15);
+  border-radius: 50%;
+}
+
+.format-bar .swatch[aria-pressed="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The colours offered (RichEditor.tsx), marked in the editor, whose CSP allows no inline styles. */
+.compose-body [data-colour="#c62828"] { color: #c62828; }
+.compose-body [data-colour="#e65100"] { color: #e65100; }
+.compose-body [data-colour="#2e7d32"] { color: #2e7d32; }
+.compose-body [data-colour="#1565c0"] { color: #1565c0; }
+.compose-body [data-colour="#6a1b9a"] { color: #6a1b9a; }
+.compose-body [data-colour="#616161"] { color: #616161; }
+.compose-body [data-highlight="#fff59d"] { background: #fff59d; }
+.compose-body [data-highlight="#c8e6c9"] { background: #c8e6c9; }
+.compose-body [data-highlight="#bbdefb"] { background: #bbdefb; }
+.compose-body [data-highlight="#f8bbd0"] { background: #f8bbd0; }
+.compose-body [data-highlight="#ffe0b2"] { background: #ffe0b2; }
+
+/* A picture's corners, to make it smaller or larger: shown on hover and while chosen. */
+.compose-body [data-resize-handle] {
+  z-index: 1;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--bg-elev);
+  border-radius: 3px;
+  background: var(--accent);
+  opacity: 0;
+}
+
+.compose-body [data-resize-handle="top-left"],
+.compose-body [data-resize-handle="bottom-right"] {
+  cursor: nwse-resize;
+}
+
+.compose-body [data-resize-handle="top-right"],
+.compose-body [data-resize-handle="bottom-left"] {
+  cursor: nesw-resize;
+}
+
+.compose-body [data-resize-container]:hover [data-resize-handle],
+.compose-body .ProseMirror-selectednode [data-resize-handle],
+.compose-body [data-resize-state="true"] [data-resize-handle] {
+  opacity: 1;
 }
 
 .compose-body.ProseMirror {

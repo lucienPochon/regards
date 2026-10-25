@@ -89,6 +89,7 @@ export const TOUR: Group[] = [
       { id: "thread", label: "A conversation", note: "Older messages fold to one line each.", steps: openRow("Garden plot") },
       { id: "thread-open", label: "A conversation, unfolded", note: "Settings › General › Fold older messages, off.", prefs: { collapseOlder: false }, steps: openRow("Garden plot") },
       { id: "thread-draft", label: "A reply being written", note: "An unsent reply shows under its conversation; it opens to go on writing.", steps: openRow("Book club") },
+      { id: "find", label: "Find in this message", note: "Ctrl+Shift+F, or the message's ⋯ menu. Enter and Shift+Enter step through the matches.", steps: [...openRow("Garden plot"), "wait:700", "key:Mod+Shift+F", "wait:300", "type:the"] },
       { id: "sender-card", label: "About the sender", note: "Why it is here, and what to do with this sender's mail.", params: { link: NEWSLETTER }, steps: ["wait:900", "click:.mail-avatar"] },
       { id: "images-always", label: "Images always from this sender", note: "After choosing it once, this sender's images load without asking.", params: { link: NEWSLETTER }, steps: ["wait:900", "text:.images-notice button=Always"] },
       { id: "snooze", label: "Snooze", note: "The b key. Its times come from Settings › Scheduling.", params: { link: NEWSLETTER }, steps: ["wait:900", "key:b"] },
@@ -133,6 +134,7 @@ export const TOUR: Group[] = [
     title: "Writing",
     stops: [
       { id: "compose", label: "New message", note: "The c key.", steps: ["wait:700", "key:c"] },
+      { id: "compose-colour", label: "Text colour", note: "In the formatting bar, with highlight, headings and Clear.", steps: ["wait:700", "key:c", "wait:600", "click:[aria-label='Text colour']"] },
       { id: "reply", label: "Reply", note: "The r key, in a conversation.", steps: [...openRow("Garden plot"), "wait:600", "key:r"] },
       { id: "suggest", label: "People suggested as you type", note: "Those you write to first; arrows and Enter put one in.", steps: ["wait:700", "key:c", "wait:600", "type:ma", "wait:500"] },
       { id: "template", label: "Insert a template", note: "Ctrl+Shift+T in the composer.", steps: ["wait:700", "key:c", "wait:500", "click:[aria-label='Insert a template']"] },

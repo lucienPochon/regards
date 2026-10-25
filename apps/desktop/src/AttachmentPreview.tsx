@@ -69,7 +69,8 @@ export function AttachmentViewer({
   const go = (step: number) => {
     if (files.length > 1) setAt((now) => (now + step + files.length) % files.length);
   };
-  useShortcuts({ Escape: onClose, ArrowLeft: () => go(-1), ArrowRight: () => go(1) }, { modal: true });
+  // Space closes it, as it opened it (AttachmentTiles).
+  useShortcuts({ Escape: onClose, " ": onClose, ArrowLeft: () => go(-1), ArrowRight: () => go(1) }, { modal: true });
 
   useEffect(() => {
     setActual(false);
