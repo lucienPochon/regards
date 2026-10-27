@@ -1332,10 +1332,20 @@ async fn message_snooze(
     ids: Vec<i64>,
     until: Option<i64>,
     someday: bool,
+    quiet: Option<bool>,
 ) -> Result<MarkResult, String> {
     let mut client = bridge.connect().await?.client;
+    let quiet = quiet.unwrap_or(false);
     client
-        .call(methods::MESSAGE_SNOOZE, SnoozeParams { ids, until, someday })
+        .call(
+            methods::MESSAGE_SNOOZE,
+            SnoozeParams {
+                ids,
+                until,
+                someday,
+                quiet,
+            },
+        )
         .await
         .map_err(describe)
 }

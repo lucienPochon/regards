@@ -104,7 +104,7 @@ export const TOUR: Group[] = [
       { id: "find", label: "Find in this message", note: "Ctrl+Shift+F, or the message's ⋯ menu. Enter and Shift+Enter step through the matches.", steps: [...openRow("Garden plot"), "wait:700", "key:Mod+Shift+F", "wait:300", "type:the"] },
       { id: "sender-card", label: "About the sender", note: "Why it is here, and what to do with this sender's mail.", params: { link: NEWSLETTER }, steps: ["wait:900", "click:.mail-avatar"] },
       { id: "images-always", label: "Images always from this sender", note: "After choosing it once, this sender's images load without asking.", params: { link: NEWSLETTER }, steps: ["wait:900", "text:.images-notice button=Always"] },
-      { id: "snooze", label: "Snooze", note: "The b key. Its times come from Settings › Scheduling.", params: { link: NEWSLETTER }, steps: ["wait:900", "key:b"] },
+      { id: "snooze", label: "Snooze", note: "The s key (b in the Classic set). Its times come from Settings › Scheduling; under them, whether it comes back with an alert.", params: { link: NEWSLETTER }, steps: ["wait:900", "key:s"] },
       { id: "remind", label: "Remind me if nobody replies", note: "Shift+R.", params: { link: NEWSLETTER }, steps: ["wait:900", "key:Shift+R"] },
       { id: "move", label: "Move to a folder", note: "The v key.", params: { link: NEWSLETTER }, steps: ["wait:900", "key:v"] },
       { id: "undo", label: "Undo after archiving", note: "The undo bar; z undoes.", params: { link: NEWSLETTER }, steps: ["wait:900", "key:e"] },

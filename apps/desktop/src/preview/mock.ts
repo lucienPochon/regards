@@ -1631,6 +1631,7 @@ function handle(cmd: string, args: Args): unknown {
     case "message_set_aside":
       return mark(args.ids as number[], (m) => (m.aside = args.aside as boolean), args.aside ? "Set aside" : "Back in the inbox");
     case "message_snooze": {
+      // `quiet` matters only when it comes back: the preview never tells.
       const until = args.someday ? SOMEDAY : ((args.until as number | null) ?? null);
       return mark(args.ids as number[], (m) => (m.snoozed_until = until), until ? "Snoozed" : "Back in the inbox");
     }

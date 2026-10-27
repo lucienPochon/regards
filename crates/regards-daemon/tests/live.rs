@@ -2403,7 +2403,12 @@ async fn live_snoozed_mail_comes_back_as_new_or_when_someone_replies() {
             .unwrap()
             .as_millis() as i64
     };
-    let snooze = |ids: Vec<i64>, until: Option<i64>, someday: bool| SnoozeParams { ids, until, someday };
+    let snooze = |ids: Vec<i64>, until: Option<i64>, someday: bool| SnoozeParams {
+        ids,
+        until,
+        someday,
+        quiet: false,
+    };
 
     // In the past: refused.
     let past = desktop
@@ -2451,6 +2456,32 @@ async fn live_snoozed_mail_comes_back_as_new_or_when_someone_replies() {
     assert_eq!(back.snoozed_until, None);
     // ...and unread on the server too.
     server_flags_become(&mut seed, |flags| flags.iter().all(|f| !f.flags.seen)).await;
+
+    // Snoozed quietly: back the same way, with nothing to tell.
+    let _: MarkResult = desktop
+        .call(
+            methods::MESSAGE_SNOOZE,
+            SnoozeParams {
+                quiet: true,
+                ..snooze(vec![id("Stays")], Some(now() + 2000), false)
+            },
+        )
+        .await
+        .unwrap();
+    assert!(!subjects(messages(&mut desktop, inbox).await).contains(&"Stays".to_owned()));
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !subjects(messages(&mut desktop, inbox).await).contains(&"Stays".to_owned()) {
+        assert!(Instant::now() < deadline, "the quiet snooze did not end");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let told: NoticeListResult = desktop.call(methods::NOTICE_LIST, Value::Null).await.unwrap();
+    let ended: Vec<&str> = told
+        .notices
+        .iter()
+        .filter(|notice| notice.kind == NoticeKind::SnoozeEnded)
+        .map(|notice| notice.subject.as_str())
+        .collect();
+    assert_eq!(ended, ["Read already"], "only the snooze that was not quiet tells");
 
     // Snoozed "someday": a reply from someone else brings it back.
     let _: MarkResult = desktop

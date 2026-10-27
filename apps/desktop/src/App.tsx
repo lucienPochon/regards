@@ -110,7 +110,7 @@ import { type AssistantJob, AssistantDialog, useAssistantKind } from "./Assistan
 import { commandHint, commandOf, firstKey, keyText, useShortcuts } from "./shortcuts";
 import { type DragPayload, Sidebar } from "./Sidebar";
 import { useSidebarPrefs } from "./sidebar-prefs";
-import { presets, reminderPresets, sendPresets, snoozeMessages, timeHint } from "./snooze";
+import { type TimeOption, presets, reminderPresets, sendPresets, snoozeAlert, snoozeMessages, timeHint, timeOptionEntry } from "./snooze";
 import { TYPED_TIME_HINT, typedTimeEntries } from "./typedTime";
 import { ACCOUNT_COLOURS, COLOUR_NAMES, accountLabel, getPrefs, setPrefs, usePrefs, zoomStep } from "./prefs";
 import { useChanges } from "./changes";
@@ -680,37 +680,47 @@ export function App() {
     if (result.undo) setUndo(result.undo);
   }, []);
   /** A palette page of times, with a way to pick any date. */
+  /** A palette page of times, with a way to pick any date; `option`: a switch under them, read once a time is picked. */
   const pickTime = useCallback(
-    (title: string, confirmLabel: string, choices: { label: string; until: number | "someday" }[]) =>
+    (title: string, confirmLabel: string, choices: { label: string; until: number | "someday" }[], option?: TimeOption) =>
       new Promise<number | "someday" | null>((resolve) => {
-        setMenu({
-          anchor: { x: 0, y: 0 },
-          variant: "palette",
-          title,
-          label: title,
-          filter: TYPED_TIME_HINT,
-          typed: (query) => typedTimeEntries(query, resolve),
-          entries: [
-            ...choices.map((choice) => ({
-              label: choice.label,
-              icon: "clock" as const,
-              hint: timeHint(choice.until),
-              onSelect: () => resolve(choice.until),
-            })),
-            "separator" as const,
-            {
-              label: t("Pick a date and time…"),
-              icon: "plus" as const,
-              onSelect: () =>
-                setPicking({ title, confirm: confirmLabel, initial: Date.now() + 24 * 3600_000, resolve: (time) => resolve(time) }),
-            },
-          ],
-          onDismiss: () => resolve(null),
-        });
+        const show = () =>
+          setMenu({
+            anchor: { x: 0, y: 0 },
+            variant: "palette",
+            title,
+            label: title,
+            filter: TYPED_TIME_HINT,
+            typed: (query) => typedTimeEntries(query, resolve),
+            entries: [
+              ...choices.map((choice) => ({
+                label: choice.label,
+                icon: "clock" as const,
+                hint: timeHint(choice.until),
+                onSelect: () => resolve(choice.until),
+              })),
+              "separator" as const,
+              {
+                label: t("Pick a date and time…"),
+                icon: "plus" as const,
+                onSelect: () =>
+                  setPicking({ title, confirm: confirmLabel, initial: Date.now() + 24 * 3600_000, resolve: (time) => resolve(time) }),
+              },
+              ...(option ? [timeOptionEntry(option, show)] : []),
+            ],
+            onDismiss: () => resolve(null),
+          });
+        show();
       }),
     [],
   );
-  const pickSnooze = useCallback(() => pickTime(t("Snooze until"), t("Snooze"), presets(new Date(), getPrefs().snoozePresets)), [pickTime]);
+  // A snooze comes back with an alert, or quietly (still unread, in the inbox).
+  const pickSnooze = useCallback(() => {
+    const alert = snoozeAlert();
+    return pickTime(t("Snooze until"), t("Snooze"), presets(new Date(), getPrefs().snoozePresets), alert).then((until) =>
+      until === null ? null : { until, quiet: !alert.on },
+    );
+  }, [pickTime]);
   const pickReminder = useCallback(
     () =>
       pickTime(t("Remind me if no reply by"), t("Remind me"), reminderPresets(new Date(), getPrefs().reminderPresets)).then((time) =>
@@ -1448,8 +1458,8 @@ export function App() {
       if (target.mark === "pinned") pinMessages(ids, true).then(marked).catch(failed);
       else if (target.mark === "aside") setAside(ids, true).then(left).catch(failed);
       else if (target.mark === "snoozed") {
-        void pickSnooze().then((until) => {
-          if (until !== null) snoozeMessages(ids, until).then(left).catch(failed);
+        void pickSnooze().then((picked) => {
+          if (picked) snoozeMessages(ids, picked.until, picked.quiet).then(left).catch(failed);
         });
       } else if (target.mark === "reminders") {
         void pickReminder().then((at) => {
