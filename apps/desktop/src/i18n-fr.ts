@@ -1554,6 +1554,8 @@ export const FR: Record<string, Entry> = {
   "Delete this row": "Supprimer cette ligne",
   "Delete this column": "Supprimer cette colonne",
   "Delete the table": "Supprimer le tableau",
+  // A snooze that comes back quietly.
+  "Alert me when it comes back": "M’alerter à son retour",
   // Your groups: their messages leave the list.
   "What a group finds shows in its row only, not in the list below as well.":
     "Ce qu’un groupe trouve n’apparaît que dans sa ligne, pas aussi dans la liste en dessous.",

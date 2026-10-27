@@ -661,6 +661,7 @@ pub fn marked(
         crate::marks::Mark::Reminded => "k.reminded_at IS NOT NULL",
         crate::marks::Mark::Surfaced => "k.surfaced_at IS NOT NULL",
         crate::marks::Mark::Muted => "k.muted_at IS NOT NULL",
+        crate::marks::Mark::SnoozeQuiet => "k.snooze_quiet IS NOT NULL",
     };
     let (received_at, id) = before.map_or((i64::MAX, i64::MAX), |c| (c.received_at, c.id));
     let mut statement = conn.prepare_cached(&format!(

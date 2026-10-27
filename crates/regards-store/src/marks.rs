@@ -26,6 +26,8 @@ pub enum Mark {
     Surfaced,
     /// The conversation is muted: new mail in it tells of nothing.
     Muted,
+    /// The snooze comes back quietly: no notification (1), set with it.
+    SnoozeQuiet,
 }
 
 impl Mark {
@@ -38,6 +40,7 @@ impl Mark {
             Self::Reminded => "reminded_at",
             Self::Surfaced => "surfaced_at",
             Self::Muted => "muted_at",
+            Self::SnoozeQuiet => "snooze_quiet",
         }
     }
 }
@@ -52,6 +55,7 @@ pub struct Marks {
     pub reminded_at: Option<i64>,
     pub surfaced_at: Option<i64>,
     pub muted_at: Option<i64>,
+    pub snooze_quiet: Option<i64>,
 }
 
 impl Marks {
@@ -64,11 +68,13 @@ impl Marks {
             Mark::Reminded => self.reminded_at,
             Mark::Surfaced => self.surfaced_at,
             Mark::Muted => self.muted_at,
+            Mark::SnoozeQuiet => self.snooze_quiet,
         }
     }
 }
 
-const MARK_COLUMNS: &str = "pinned_at, aside_at, snoozed_until, remind_at, reminded_at, surfaced_at, muted_at";
+const MARK_COLUMNS: &str =
+    "pinned_at, aside_at, snoozed_until, remind_at, reminded_at, surfaced_at, muted_at, snooze_quiet";
 
 fn marks_from(row: &Row<'_>) -> rusqlite::Result<Marks> {
     Ok(Marks {
@@ -79,6 +85,7 @@ fn marks_from(row: &Row<'_>) -> rusqlite::Result<Marks> {
         reminded_at: row.get(4)?,
         surfaced_at: row.get(5)?,
         muted_at: row.get(6)?,
+        snooze_quiet: row.get(7)?,
     })
 }
 

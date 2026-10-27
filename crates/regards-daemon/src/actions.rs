@@ -382,7 +382,8 @@ pub(crate) async fn snooze(state: &State, params: SnoozeParams) -> Result<Value,
     } else {
         "Back in the inbox"
     };
-    let result = mark_messages(state, params.ids, Mark::Snoozed, Target::Snooze(until), done).await?;
+    let target = Target::Snooze(until, params.quiet);
+    let result = mark_messages(state, params.ids, Mark::Snoozed, target, done).await?;
     state.scheduler.wake();
     Ok(result)
 }
@@ -408,8 +409,8 @@ pub(crate) async fn remind(state: &State, params: RemindParams) -> Result<Value,
 enum Target {
     /// On (from now) or off.
     Toggle(bool),
-    /// Snoozed until then, or not.
-    Snooze(Option<i64>),
+    /// Snoozed until then, or not; quietly: it comes back with no notification.
+    Snooze(Option<i64>, bool),
     /// A reminder then, or none; and done with one that came due.
     Remind(Option<i64>),
 }
@@ -420,7 +421,11 @@ impl Target {
         let wanted = match self {
             Self::Toggle(on) if current.get(mark).is_some() == on => vec![],
             Self::Toggle(on) => vec![(mark, on.then_some(now))],
-            Self::Snooze(until) => vec![(mark, until)],
+            // The snooze first: a mark row holding only the quiet flag is not kept.
+            Self::Snooze(until, quiet) => vec![
+                (mark, until),
+                (Mark::SnoozeQuiet, (until.is_some() && quiet).then_some(1)),
+            ],
             Self::Remind(at) if current.reminded_at.is_some() => {
                 vec![(Mark::Remind, at), (Mark::Reminded, None), (Mark::Surfaced, None)]
             }
@@ -1060,6 +1065,33 @@ pub(crate) fn junk_blocked(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_snooze_comes_back_quietly_only_when_asked_and_only_while_snoozed() {
+        let none = marks::Marks::default();
+        assert_eq!(
+            Target::Snooze(Some(5_000), true).changes(Mark::Snoozed, &none, 0),
+            vec![(Mark::Snoozed, Some(5_000)), (Mark::SnoozeQuiet, Some(1))]
+        );
+        assert_eq!(
+            Target::Snooze(Some(5_000), false).changes(Mark::Snoozed, &none, 0),
+            vec![(Mark::Snoozed, Some(5_000))]
+        );
+        // Snoozed again with an alert, or ended: no longer quiet.
+        let quiet = marks::Marks {
+            snoozed_until: Some(5_000),
+            snooze_quiet: Some(1),
+            ..marks::Marks::default()
+        };
+        assert_eq!(
+            Target::Snooze(Some(9_000), false).changes(Mark::Snoozed, &quiet, 0),
+            vec![(Mark::Snoozed, Some(9_000)), (Mark::SnoozeQuiet, None)]
+        );
+        assert_eq!(
+            Target::Snooze(None, true).changes(Mark::Snoozed, &quiet, 0),
+            vec![(Mark::Snoozed, None), (Mark::SnoozeQuiet, None)]
+        );
+    }
 
     fn folder(id: i64, name: &str, role: Option<Role>) -> mailboxes::Mailbox {
         mailboxes::Mailbox {

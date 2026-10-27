@@ -92,9 +92,14 @@ async fn wake_due(state: &Arc<State>) -> Result<usize, StoreError> {
         .write(move |tx| {
             let mut accounts = BTreeSet::new();
             for (account, message_id) in &due {
+                // Snoozed to come back quietly: unread in the inbox, without a notification.
+                let quiet = marks::get(tx, account, message_id)?.snooze_quiet.is_some();
                 marks::set(tx, account, message_id, Mark::Snoozed, None)?;
+                marks::set(tx, account, message_id, Mark::SnoozeQuiet, None)?;
                 marks::set(tx, account, message_id, Mark::Surfaced, Some(now))?;
-                notice(tx, account, message_id, Kind::SnoozeEnded, now)?;
+                if !quiet {
+                    notice(tx, account, message_id, Kind::SnoozeEnded, now)?;
+                }
                 if crate::actions::mark_unread_everywhere(tx, account, message_id, now)? {
                     accounts.insert(account.clone());
                 }

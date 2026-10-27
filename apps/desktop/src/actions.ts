@@ -99,7 +99,8 @@ export interface ActionHost {
   /** Copies are on their way to a folder: say so. Without it, there is no Copy to. */
   copied?: (count: number, mailboxId: number) => void;
   /** Ask until when to snooze: a time (Unix ms), "someday", or null if cancelled. */
-  pickSnooze: (anchor: Anchor | null) => Promise<number | "someday" | null>;
+  /** A time to snooze until, and whether it comes back quietly; `null` if none was chosen. */
+  pickSnooze: (anchor: Anchor | null) => Promise<{ until: number | "someday"; quiet: boolean } | null>;
   /** Ask when to be reminded if nobody replies: a time (Unix ms), or null if cancelled. */
   pickReminder: (anchor: Anchor | null) => Promise<number | null>;
   /** The account's Junk folder, if it has one (for Mark as junk). */
@@ -313,8 +314,8 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
           snoozeMessages(ids, null).then(host.marked).catch(host.failed);
           return;
         }
-        void host.pickSnooze(anchor ?? null).then((until) => {
-          if (until !== null) snoozeMessages(ids, until).then(left).catch(host.failed);
+        void host.pickSnooze(anchor ?? null).then((picked) => {
+          if (picked) snoozeMessages(ids, picked.until, picked.quiet).then(left).catch(host.failed);
         });
       },
     },
