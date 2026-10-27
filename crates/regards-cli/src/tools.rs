@@ -243,7 +243,14 @@ pub(crate) const TOOLS: &[Tool] = &[
             ACCOUNT,
             needed(
                 "view",
-                Kind::OneOf(&["pinned", "aside", "snoozed", "reminders", "invitations"]),
+                Kind::OneOf(&[
+                    "pinned",
+                    "aside",
+                    "snoozed",
+                    "reminders",
+                    "invitations",
+                    "invitation_replies",
+                ]),
                 "Which.",
             ),
             LIMIT,

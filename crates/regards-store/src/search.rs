@@ -786,10 +786,12 @@ mod tests {
                         messages::FileShape {
                             name: Some("Billets Zürich–Lugano.PDF".into()),
                             mime: "application/pdf".into(),
+                            method: None,
                         },
                         messages::FileShape {
                             name: Some("map.png".into()),
                             mime: "image/png".into(),
+                            method: None,
                         },
                     ],
                 )

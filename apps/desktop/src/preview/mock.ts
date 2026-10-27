@@ -1654,6 +1654,8 @@ function handle(cmd: string, args: Args): unknown {
             ? m.pinned
             : args.view === "invitations"
               ? m.subject.startsWith("Invitation:") && !m.answered && owner?.mailboxes.find((b) => b.id === m.mailboxId)?.role === "inbox"
+              : args.view === "invitation_replies"
+                ? /^(Accepted|Declined|Tentative):/.test(m.subject) && owner?.mailboxes.find((b) => b.id === m.mailboxId)?.role === "inbox"
               : args.view === "aside"
                 ? m.aside
                 : args.view === "reminders"

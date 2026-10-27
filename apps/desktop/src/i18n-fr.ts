@@ -373,7 +373,7 @@ export const FR: Record<string, Entry> = {
   "Pick a date and time…": "Choisir une date et une heure…",
   "Pick a draft to keep writing": "Choisissez un brouillon pour continuer à écrire",
   "Pin": "Épingler",
-  "Pin a message (p) to keep it in reach here.": "Épinglez un message (p) pour le garder à portée de main ici.",
+  "Pin a message to keep it in reach here.": "Épinglez un message pour le garder à portée de main ici.",
   "Pin to the top": "Épingler en haut",
   "pinned": "épinglé",
   "Pinned": "Épinglés",
@@ -400,7 +400,7 @@ export const FR: Record<string, Entry> = {
   "Remind me": "Me le rappeler",
   "Remind me if no reply by": "Me le rappeler sans réponse d’ici",
   "Remind me…": "Me le rappeler…",
-  "Remind yourself (Shift+R) about a message you sent: if nobody replies by then, it comes back to the inbox.": "Programmez un rappel (Maj+R) pour un message envoyé : si personne ne répond d’ici là, il revient dans la boîte de réception.",
+  "Remind yourself about a message you sent: if nobody replies by then, it comes back to the inbox.": "Programmez un rappel pour un message envoyé : si personne ne répond d’ici là, il revient dans la boîte de réception.",
   "reminder set": "rappel programmé",
   "Reminders": "Rappels",
   "Reminds you {when} if nobody replies": "Vous le rappelle {when} si personne ne répond",
@@ -457,7 +457,7 @@ export const FR: Record<string, Entry> = {
   "Sends {when}. This computer must be on then.": "Part {when}. Cet ordinateur doit alors être allumé.",
   "Sent": "Envoyés",
   "sent by {address}": "envoyé par {address}",
-  "Set a message aside (Shift+A) to take it out of the inbox until you need it.": "Mettez un message de côté (Maj+A) pour le sortir de la boîte de réception jusqu’à ce que vous en ayez besoin.",
+  "Set a message aside to take it out of the inbox until you need it.": "Mettez un message de côté pour le sortir de la boîte de réception jusqu’à ce que vous en ayez besoin.",
   "Set aside": "Mettre de côté",
   "Set aside (Shift+A to add)": "Mis de côté (Maj+A pour ajouter)",
   "Set up the assistant…": "Configurer l’assistant…",
@@ -478,7 +478,7 @@ export const FR: Record<string, Entry> = {
   "Sign in again: {account}": "Reconnectez-vous : {account}",
   "Smart Inbox": "Boîte intelligente",
   "Snooze": "Reporter",
-  "Snooze a message (b) and it comes back as new at the time you pick.": "Reportez un message (b) : il revient comme nouveau au moment choisi.",
+  "Snooze a message and it comes back as new at the time you pick.": "Reportez un message : il revient comme nouveau au moment choisi.",
   "Snooze until": "Reporter jusqu’à",
   "Snooze…": "Reporter…",
   "Snoozed": "Reportés",
@@ -1530,6 +1530,11 @@ export const FR: Record<string, Entry> = {
   "About {who}": "À propos de {who}",
   // A snooze that comes back quietly.
   "Alert me when it comes back": "M’alerter à son retour",
+  // Answers to invitations, as a group.
+  "Invitation replies": "Réponses aux invitations",
+  "No replies to invitations": "Aucune réponse aux invitations",
+  "When someone accepts or declines one of your invitations, their answer waits here.":
+    "Quand quelqu’un accepte ou refuse l’une de vos invitations, sa réponse attend ici.",
   // A conversation made a priority.
   "Make the conversation a priority": "Rendre la conversation prioritaire",
   "No longer a priority": "Plus prioritaire",

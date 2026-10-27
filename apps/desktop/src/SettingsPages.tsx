@@ -889,6 +889,7 @@ export function EmailGroupsPage({ accounts, onBack }: { accounts: AccountSummary
           { key: "notifications", label: t("Notifications"), icon: "bell" },
           { key: "newsletters", label: t("Newsletters"), icon: "newspaper" },
           { key: "invitations", label: t("Invitations"), icon: "calendar" },
+          { key: "invitation_replies", label: t("Invitation replies"), icon: "calendar" },
           { key: "pinned", label: t("Pinned"), icon: "pin" },
         ] as const
       ).map((category) => (

@@ -502,6 +502,7 @@ export function App() {
   const newsletterItems = useFirstPage(useMemo(() => sectionSources(scope, "newsletters"), [scope]), 30, smartOn);
   const pinnedItems = useMarked(scope, "pinned", smartOn);
   const invitationItems = useMarked(scope, "invitations", smartOn && appPrefs.grouped.invitations);
+  const invitationReplyItems = useMarked(scope, "invitation_replies", smartOn && appPrefs.grouped.invitation_replies);
   // The card view's cards: the newest unread of each kind, and the pinned.
   const cardList = useMemo(() => cardScope ?? [], [cardScope]);
   const cardCounts = useSmartOverview(cardList, cardsOn);
@@ -1795,14 +1796,15 @@ export function App() {
           : { title: t("Nothing in {section}", { section: SECTION_LABELS[view.section] }), body: t("This part of the inbox is empty.") }
       : view.kind === "marked"
         ? {
-            pinned: { title: t("Nothing pinned"), body: t("Pin a message (p) to keep it in reach here.") },
-            snoozed: { title: t("Nothing snoozed"), body: t("Snooze a message (b) and it comes back as new at the time you pick.") },
+            pinned: { title: t("Nothing pinned"), body: t("Pin a message to keep it in reach here.") },
+            snoozed: { title: t("Nothing snoozed"), body: t("Snooze a message and it comes back as new at the time you pick.") },
             reminders: {
               title: t("No reminders"),
-              body: t("Remind yourself (Shift+R) about a message you sent: if nobody replies by then, it comes back to the inbox."),
+              body: t("Remind yourself about a message you sent: if nobody replies by then, it comes back to the inbox."),
             },
-            aside: { title: t("Nothing set aside"), body: t("Set a message aside (Shift+A) to take it out of the inbox until you need it.") },
+            aside: { title: t("Nothing set aside"), body: t("Set a message aside to take it out of the inbox until you need it.") },
             invitations: { title: t("No invitations to answer"), body: t("Invitations by email wait here until you accept or decline them.") },
+            invitation_replies: { title: t("No replies to invitations"), body: t("When someone accepts or declines one of your invitations, their answer waits here.") },
           }[view.mark]
         : { title: t("Nothing here"), body: t("This folder has no messages.") };
   const folders = openItem
@@ -1900,6 +1902,16 @@ export function App() {
             messages: invitationItems,
             newest: invitationItems[0]?.listed_at,
             onOpen: () => changeView({ kind: "marked", mark: "invitations" }),
+          },
+          {
+            key: "invitation_replies",
+            label: t("Invitation replies"),
+            icon: "calendar",
+            count: invitationReplyItems.length,
+            unread: invitationReplyItems.some((message) => !message.seen),
+            messages: invitationReplyItems,
+            newest: invitationReplyItems[0]?.listed_at,
+            onOpen: () => changeView({ kind: "marked", mark: "invitation_replies" }),
           },
           // Saved searches the person shows as groups: what each finds in the inbox.
           ...searchGroups.map(

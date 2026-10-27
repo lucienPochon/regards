@@ -1689,6 +1689,8 @@ pub enum View {
     Reminders,
     /// Invitations in the inbox not answered yet.
     Invitations,
+    /// Answers to invitations in the inbox: accepted, declined or maybe.
+    InvitationReplies,
 }
 
 /// Parameters of [`methods::MESSAGE_VIEW`].

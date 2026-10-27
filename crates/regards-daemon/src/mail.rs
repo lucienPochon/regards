@@ -169,7 +169,7 @@ fn conversation_states(
 }
 
 /// An account's pinned, set-aside or snoozed messages (one per Message-ID),
-/// or its invitations to answer; newest first.
+/// its invitations to answer, or the answers to its invitations; newest first.
 pub(crate) async fn view(state: &State, params: ViewParams) -> Result<Value, RpcError> {
     let limit = params.limit.unwrap_or(DEFAULT_PAGE);
     if !(1..=MAX_PAGE).contains(&limit) {
@@ -183,8 +183,9 @@ pub(crate) async fn view(state: &State, params: ViewParams) -> Result<Value, Rpc
         View::Aside => Some(Mark::Aside),
         View::Snoozed => Some(Mark::Snoozed),
         View::Reminders => Some(Mark::Remind),
-        View::Invitations => None,
+        View::Invitations | View::InvitationReplies => None,
     };
+    let replies = params.view == View::InvitationReplies;
     let before = params.before.map(|c| Cursor {
         received_at: c.received_at,
         id: c.id,
@@ -196,6 +197,7 @@ pub(crate) async fn view(state: &State, params: ViewParams) -> Result<Value, Rpc
         .read(move |conn| {
             let rows = match mark {
                 Some(mark) => messages::marked(conn, &account_id, mark, now, limit + 1, before)?,
+                None if replies => messages::invitation_replies(conn, &account_id, limit + 1, before)?,
                 None => messages::invitations(conn, &account_id, limit + 1, before)?,
             };
             let info = page_info(conn, &account_id, &rows)?;

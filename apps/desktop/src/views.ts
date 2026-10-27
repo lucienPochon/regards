@@ -28,6 +28,7 @@ export const MARKED_LABELS: Record<MessageView, string> = {
   reminders: t("Reminders"),
   aside: t("Set aside"),
   invitations: t("Invitations"),
+  invitation_replies: t("Invitation replies"),
 };
 
 export const MARKED_ICONS: Record<MessageView, IconName> = {
@@ -36,6 +37,7 @@ export const MARKED_ICONS: Record<MessageView, IconName> = {
   reminders: "bell",
   aside: "aside",
   invitations: "calendar",
+  invitation_replies: "calendar",
 };
 
 /** The sidebar order, under the inbox. */
