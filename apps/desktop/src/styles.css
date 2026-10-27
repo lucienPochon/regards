@@ -4739,7 +4739,8 @@ button.list-title:hover {
   color: var(--warm);
 }
 
-.smart-icon.invitations {
+.smart-icon.invitations,
+.smart-icon.invitation_replies {
   background: var(--pill-strong);
   color: var(--accent);
 }

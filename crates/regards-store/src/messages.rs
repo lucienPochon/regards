@@ -230,6 +230,8 @@ pub struct FileShape {
     pub name: Option<String>,
     /// `type/subtype`, lowercase.
     pub mime: String,
+    /// A calendar part's method (`request`, `reply`, `cancel`…), lowercase.
+    pub method: Option<String>,
 }
 
 /// What a list row shows beyond the headers: whether the message carries
@@ -253,9 +255,10 @@ pub fn set_details(
     let Some(id) = id else { return Ok(()) };
     tx.prepare_cached("DELETE FROM message_files WHERE message_id = ?1")?
         .execute([id])?;
-    let mut insert = tx.prepare_cached("INSERT INTO message_files (message_id, name, mime) VALUES (?1, ?2, ?3)")?;
+    let mut insert =
+        tx.prepare_cached("INSERT INTO message_files (message_id, name, mime, method) VALUES (?1, ?2, ?3, ?4)")?;
     for file in files {
-        insert.execute(params![id, file.name, file.mime])?;
+        insert.execute(params![id, file.name, file.mime, file.method])?;
     }
     Ok(())
 }
@@ -681,7 +684,8 @@ pub fn marked(
 
 /// An account's invitations still to answer: messages in its inbox (or on
 /// their way there) carrying a calendar part or an `.ics` file, as
-/// `has:invitation` finds them, not answered yet. Newest first.
+/// `has:invitation` finds them, not answered yet, and not themselves an
+/// answer to one ([`invitation_replies`]). Newest first.
 pub fn invitations(
     conn: &Connection,
     account_id: &str,
@@ -694,7 +698,31 @@ pub fn invitations(
              (SELECT id FROM mailboxes WHERE account_id = ?1 AND role = 'inbox') \
          AND m.deleted = 0 AND m.answered = 0 \
          AND EXISTS (SELECT 1 FROM message_files f WHERE f.message_id = m.id \
-             AND (f.mime IN ('text/calendar', 'application/ics') OR lower(f.name) LIKE '%.ics')) \
+             AND (f.mime IN ('text/calendar', 'application/ics') OR lower(f.name) LIKE '%.ics') \
+             AND f.method IS NOT 'reply') \
+         AND (m.received_at, m.id) < (?2, ?3) ORDER BY m.received_at DESC, m.id DESC LIMIT ?4"
+    ))?;
+    let messages = statement
+        .query_map(params![account_id, received_at, id, limit], from_row)?
+        .map(|row| row?)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(messages)
+}
+
+/// An account's answers to invitations in its inbox (or on their way
+/// there): calendar replies, accepted, declined or maybe. Newest first.
+pub fn invitation_replies(
+    conn: &Connection,
+    account_id: &str,
+    limit: u32,
+    before: Option<Cursor>,
+) -> Result<Vec<Message>, StoreError> {
+    let (received_at, id) = before.map_or((i64::MAX, i64::MAX), |c| (c.received_at, c.id));
+    let mut statement = conn.prepare_cached(&format!(
+        "SELECT {COLUMNS} FROM messages m WHERE COALESCE(m.moving_to, m.mailbox_id) = \
+             (SELECT id FROM mailboxes WHERE account_id = ?1 AND role = 'inbox') \
+         AND m.deleted = 0 \
+         AND EXISTS (SELECT 1 FROM message_files f WHERE f.message_id = m.id AND f.method = 'reply') \
          AND (m.received_at, m.id) < (?2, ?3) ORDER BY m.received_at DESC, m.id DESC LIMIT ?4"
     ))?;
     let messages = statement
@@ -989,11 +1017,13 @@ mod tests {
                         message(2, 2_000, "Minutes"),
                         answered,
                         message(4, 4_000, "Harvest supper"),
+                        message(5, 5_000, "Accepted: Plot planning"),
                     ],
                 )?;
                 let calendar = |name: Option<&str>, mime: &str| FileShape {
                     name: name.map(Into::into),
                     mime: mime.into(),
+                    method: None,
                 };
                 set_details(tx, inbox, 1, false, None, &[calendar(None, "text/calendar")])?;
                 set_details(
@@ -1013,6 +1043,17 @@ mod tests {
                     None,
                     &[calendar(Some("Supper.ICS"), "application/octet-stream")],
                 )?;
+                // An answer to an invitation: not one to answer.
+                let reply = FileShape {
+                    method: Some("reply".into()),
+                    ..calendar(None, "text/calendar")
+                };
+                set_details(tx, inbox, 5, false, None, &[reply])?;
+                let replies: Vec<String> = invitation_replies(tx, &account, 10, None)?
+                    .into_iter()
+                    .map(|m| m.subject)
+                    .collect();
+                assert_eq!(replies, ["Accepted: Plot planning"]);
                 let all = invitations(tx, &account, 10, None)?;
                 let first = &all[0];
                 let rest = invitations(

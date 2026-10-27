@@ -736,7 +736,7 @@ export function remindMessages(ids: number[], at: number | null): Promise<MarkRe
   return invoke<MarkResult>("message_remind", { ids, at });
 }
 
-export type MessageView = "pinned" | "aside" | "snoozed" | "reminders" | "invitations";
+export type MessageView = "pinned" | "aside" | "snoozed" | "reminders" | "invitations" | "invitation_replies";
 
 /** An account's pinned, set-aside, snoozed or reminder messages, or its invitations to answer, newest first; pass `next` back for more. */
 export function listView(

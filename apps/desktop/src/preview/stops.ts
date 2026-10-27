@@ -79,7 +79,7 @@ export const TOUR: Group[] = [
         id: "ungrouped",
         label: "Notifications with everything else",
         note: "Settings › Inbox › Email groups: Notifications not grouped into one row.",
-        prefs: { grouped: { notifications: false, newsletters: true, invitations: true, pinned: true } },
+        prefs: { grouped: { notifications: false, newsletters: true, invitations: true, invitation_replies: true, pinned: true } },
         steps: ["wait:900", "see:.row-main=Northline Rail"],
       },
       { id: "compact", label: "Compact, no pictures", note: "Settings › Appearance: compact density, pictures nowhere, no preview line.", prefs: { density: "compact", avatars: "nowhere", previewLines: 0 } },

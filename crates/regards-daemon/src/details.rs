@@ -87,6 +87,12 @@ async fn fetch(session: &mut Session, uids: &[u32]) -> Result<HashMap<u32, Detai
                 .map(|file| FileShape {
                     name: attachment::name_from_parameters(&file.params),
                     mime: file.mime.clone(),
+                    // An invitation, or an answer to one (`reply`): the calendar part says which.
+                    method: file
+                        .params
+                        .iter()
+                        .find(|(key, _)| key == "method")
+                        .map(|(_, value)| value.trim().to_ascii_lowercase()),
                 })
                 .collect();
         }
