@@ -46,6 +46,22 @@ export function fileBase64(file: Blob): Promise<string> {
 
 const IMG = /<img\b[^>]*>/g;
 const SPAN = /<span\b[^>]*>/g;
+/** Paragraphs and headings, which can be indented. */
+const BLOCK = /<(p|h[1-3])\b[^>]*>/g;
+const TABLE = /<table\b[^>]*>/g;
+const COLGROUP = /<colgroup\b[^>]*>[\s\S]*?<\/colgroup>/g;
+/** One indent step, in mail. */
+const INDENT_PX = 40;
+
+/** The fonts and sizes the editor marks (`data-font`, `data-size`), as mail carries them (`FONT_FAMILIES`, `FONT_SIZES` in the daemon). */
+const FONT_STYLES: Record<string, string> = {
+  sans: "Arial, Helvetica, sans-serif",
+  serif: "Georgia, 'Times New Roman', serif",
+  mono: "'Courier New', Courier, monospace",
+};
+const SIZE_STYLES: Record<string, string> = { small: "12px", large: "18px", huge: "24px" };
+const keyOf = (table: Record<string, string>, value: string | undefined) =>
+  value === undefined ? undefined : Object.keys(table).find((key) => table[key].toLowerCase() === value.trim().toLowerCase());
 const attribute = (tag: string, name: string) => new RegExp(`(?:^|\\s)${name}="([^"]*)"`).exec(tag)?.[1];
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -60,11 +76,12 @@ function size(tag: string): string {
 
 /**
  * The editor's HTML as it is kept: its images by Content-ID, without their
- * bytes, and its colours as styles (the editor marks them with `data-colour`
- * and `data-highlight`, its CSP allowing no inline styles).
+ * bytes, its colours, fonts, sizes and indents as styles (the editor marks
+ * them with `data-` attributes, its CSP allowing no inline styles), and its
+ * tables with lines mail programs draw.
  */
 export function toStoredHtml(html: string): string {
-  return coloursAsStyles(
+  return stylesForMail(
     html.replace(IMG, (tag) => {
       const cid = attribute(tag, "data-cid");
       // Not one of the message's own: sending leaves it out.
@@ -74,10 +91,37 @@ export function toStoredHtml(html: string): string {
   );
 }
 
+/** The editor's marks (text styles, indents) as mail styles, and its tables as mail draws them; a signature is kept so. */
+export const stylesForMail = (html: string) => tablesForMail(indentsAsStyles(coloursAsStyles(html)));
+
+/** Mail styles as the editor marks them: a kept message or signature, to edit. */
+export const stylesForEditor = (html: string) => indentsAsMarks(coloursAsMarks(html));
+
+/** Tables with lines and room in mail programs, without the editor's column sizes. */
+function tablesForMail(html: string): string {
+  return html.replace(COLGROUP, "").replace(TABLE, '<table border="1" cellpadding="6" cellspacing="0">');
+}
+
+/** The editor's indents (`data-indent`) as the margins mail carries, and back. */
+function indentsAsStyles(html: string): string {
+  return html.replace(BLOCK, (tag, name: string) => {
+    const steps = Number(attribute(tag, "data-indent"));
+    return steps >= 1 && steps <= 4 ? `<${name} style="margin-left: ${steps * INDENT_PX}px">` : tag;
+  });
+}
+
+function indentsAsMarks(html: string): string {
+  return html.replace(BLOCK, (tag, name: string) => {
+    const pixels = /(?:^|;)\s*margin-left:\s*(\d+)px/i.exec(attribute(tag, "style") ?? "")?.[1];
+    const steps = Math.min(4, Math.round(Number(pixels) / INDENT_PX));
+    return steps >= 1 ? `<${name} data-indent="${steps}">` : tag;
+  });
+}
+
 /** Kept HTML for the editor: each of its images shown from its bytes, its colours as the editor marks them. */
 export function toEditorHtml(html: string, images: DraftImage[]): string {
   const bytes = new Map(images.map((image) => [image.content_id, `data:${image.mime};base64,${image.data}`]));
-  return coloursAsMarks(
+  return stylesForEditor(
     html.replace(IMG, (tag) => {
       const cid = /\bsrc="cid:([^"]+)"/.exec(tag)?.[1];
       if (!cid) return tag;
@@ -86,25 +130,40 @@ export function toEditorHtml(html: string, images: DraftImage[]): string {
   );
 }
 
-/** The editor's colour marks (`data-colour`, `data-highlight`) as the styles mail carries. */
+/** The editor's text marks (`data-colour`, `data-highlight`, `data-font`, `data-size`) as the styles mail carries. */
 export function coloursAsStyles(html: string): string {
   return html.replace(SPAN, (tag) => {
+    const colour = attribute(tag, "data-colour");
+    const highlight = attribute(tag, "data-highlight");
+    const font = attribute(tag, "data-font");
+    const size = attribute(tag, "data-size");
     const styles = [
-      ["color", attribute(tag, "data-colour")],
-      ["background-color", attribute(tag, "data-highlight")],
-    ].filter(([, value]) => value && HEX.test(value));
+      ["color", colour && HEX.test(colour) ? colour : undefined],
+      ["background-color", highlight && HEX.test(highlight) ? highlight : undefined],
+      ["font-family", font ? FONT_STYLES[font] : undefined],
+      ["font-size", size ? SIZE_STYLES[size] : undefined],
+    ].filter(([, value]) => value);
     return styles.length > 0 ? `<span style="${styles.map(([name, value]) => `${name}: ${value}`).join("; ")}">` : tag;
   });
 }
 
-/** Colour styles as the editor marks them. */
+/** Text styles as the editor marks them. */
 export function coloursAsMarks(html: string): string {
   return html.replace(SPAN, (tag) => {
     const style = attribute(tag, "style") ?? "";
+    const declared = (name: string) => new RegExp(`(?:^|;)\\s*${name}:\\s*([^;]+)`, "i").exec(style)?.[1]?.trim();
     const colour = /(?:^|;)\s*color:\s*(#[0-9a-f]{6})/i.exec(style)?.[1];
     const highlight = /(?:^|;)\s*background-color:\s*(#[0-9a-f]{6})/i.exec(style)?.[1];
-    if (!colour && !highlight) return tag;
-    return `<span${colour ? ` data-colour="${colour}"` : ""}${highlight ? ` data-highlight="${highlight}"` : ""}>`;
+    const font = keyOf(FONT_STYLES, declared("font-family"));
+    const size = keyOf(SIZE_STYLES, declared("font-size"));
+    const marks = [
+      ["data-colour", colour],
+      ["data-highlight", highlight],
+      ["data-font", font],
+      ["data-size", size],
+    ].filter(([, value]) => value);
+    if (marks.length === 0) return tag;
+    return `<span${marks.map(([name, value]) => ` ${name}="${value}"`).join("")}>`;
   });
 }
 

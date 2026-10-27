@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { textSignature } from "./compose";
 import type { Identity } from "./identities";
-import { coloursAsMarks } from "./images";
+import { stylesForEditor } from "./images";
 
 /**
  * Signatures (ADR-0021): a list for every account, each named for the
@@ -19,9 +19,9 @@ export interface Signature {
   updated_at: number;
 }
 
-/** A signature as the composer's editor holds it: its formatted version (colours marked), or its text's; nothing for none. */
+/** A signature as the composer's editor holds it: its formatted version (styles marked), or its text's; nothing for none. */
 export const editorSignature = (signature: Signature | null): string =>
-  signature?.html ? coloursAsMarks(signature.html) : textSignature(signature?.body ?? "");
+  signature?.html ? stylesForEditor(signature.html) : textSignature(signature?.body ?? "");
 
 /** Most characters a signature may have. */
 export const SIGNATURE_MAX = 5000;
