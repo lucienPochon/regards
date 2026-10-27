@@ -91,7 +91,7 @@ import {
 import { openUrl } from "./background";
 import { type Anchor, Menu, type MenuEntry, type MenuRequest } from "./Menu";
 import { type Bundle, type InboxCard, ListHeader, MessageList, type Screener } from "./MessageList";
-import { useSearchGroups } from "./search-groups";
+import { groupedIds, useSearchGroups } from "./search-groups";
 import { SenderCard, type SenderRequest } from "./SenderCard";
 import { SECTION_LABELS, type Screening, type Section, blockSender, screening, setSender } from "./smart";
 import { ViewChooser } from "./ViewChooser";
@@ -1287,12 +1287,21 @@ export function App() {
   }, []);
   useEffect(loadSaved, [loadSaved]);
   useChanges(loadSaved);
-  // Those shown as groups of the Smart Inbox: of the one account whose inbox is open, or all.
+  // Those shown as groups of the Smart Inbox: of the one account whose inbox is open, or all;
+  // each found as far back as the list is loaded, as the list leaves their messages out.
   const searchGroups = useSearchGroups(
     savedSearches,
     appPrefs.searchGroups,
     !inInbox && accountInbox ? accountInbox.account.id : null,
     smartOn,
+    smartOn ? (shownFeed.items[shownFeed.items.length - 1]?.listed_at ?? null) : null,
+  );
+  // A group's messages show in the group alone, not in the list below as well.
+  const inGroups = useMemo(() => groupedIds(searchGroups), [searchGroups]);
+  const listFeed = useMemo(
+    (): MessageFeed =>
+      smartOn && inGroups.size > 0 ? { ...shownFeed, items: shownFeed.items.filter((item) => !inGroups.has(item.id)) } : shownFeed,
+    [smartOn, inGroups, shownFeed],
   );
   const openSaved = (saved: SavedSearch) => {
     if (layout.mode === "single") setOpen(null);
@@ -2006,7 +2015,7 @@ export function App() {
         onMarkAllRead={readTargets().length > 0 ? markAllHere : undefined}
         onEmpty={emptyRole(view) ? { label: `Empty ${ROLE_LABELS[emptyRole(view) ?? "trash"]}`, run: () => emptyHere(view) } : undefined}
         showDone={inboxByDate ? { on: showDone, toggle: () => setShowDone((now) => !now) } : undefined}
-        feed={shownFeed}
+        feed={listFeed}
         mode={layout.mode}
         openId={openItem?.id ?? null}
         picked={picked}

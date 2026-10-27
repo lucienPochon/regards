@@ -1513,6 +1513,9 @@ export const FR: Record<string, Entry> = {
   "Set aside or bring back {messages}": "Mettre de côté ou ramener {messages}",
   "Snooze {messages}": "Reporter {messages}",
   "Set reminders on {messages}": "Programmer des rappels sur {messages}",
+  // Your groups: their messages leave the list.
+  "What a group finds shows in its row only, not in the list below as well.":
+    "Ce qu’un groupe trouve n’apparaît que dans sa ligne, pas aussi dans la liste en dessous.",
   // Every shortcut changeable (Settings › Shortcuts).
   "Moving around": "Se déplacer",
   "Writing": "Écrire",
