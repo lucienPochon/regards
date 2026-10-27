@@ -2025,6 +2025,7 @@ export function App() {
           onFailed={failed}
           onSignIn={() => setSettings("accounts")}
           onPickTime={pickSendTime}
+          onUndo={setUndo}
         />
       </section>
     ) : (

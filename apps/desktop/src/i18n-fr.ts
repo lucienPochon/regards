@@ -1492,6 +1492,7 @@ export const FR: Record<string, Entry> = {
   "undo|Reminder set": "Rappel programmé",
   "undo|Reminder off": "Rappel retiré",
   "undo|Deleted a draft": "Brouillon supprimé",
+  "undo|Discarded a message that was not sent": "Message non envoyé supprimé",
   "({count} messages)": "({count} messages)",
   "{first}, {second} and {count} others": "{first}, {second} et {count} autres",
   "{first} and {second}": "{first} et {second}",
