@@ -908,6 +908,9 @@ export function EmailGroupsPage({ accounts, onBack }: { accounts: AccountSummary
         </Option>
       ))}
       <h4 className="settings-subhead">{t("Your groups")}</h4>
+      {searches.length > 0 && (
+        <p className="muted settings-note">{t("What a group finds shows in its row only, not in the list below as well.")}</p>
+      )}
       {searches.length === 0 ? (
         <p className="muted settings-note">
           {t("Save a search (\"Save this search\", under its results) to make a group of your own: everything it finds in the inbox, as one row.")}

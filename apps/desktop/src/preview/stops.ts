@@ -55,7 +55,7 @@ export const TOUR: Group[] = [
       { id: "unified", label: "Two accounts, one inbox", note: "Both accounts' mail together; the sidebar lists each account.", params: { accounts: "2" } },
       { id: "folded-sidebar", label: "Sidebar folded to icons", note: "The / key does the same.", params: { sidebar: "icons" } },
       { id: "folders-more", label: "More folders", note: "Folders beyond the usual ones.", steps: ["wait:700", "text:button=More"] },
-      { id: "search-group", label: "A group of your own", note: "A saved search shown as one row of the Smart Inbox (its right-click menu, or Settings › Email groups): what it finds in the inbox.", params: { view: "smart" }, prefs: { searchGroups: [9002] }, steps: ["wait:900", "see:.row.bundle=Garden"] },
+      { id: "search-group", label: "A group of your own", note: "A saved search shown as one row of the Smart Inbox (its right-click menu, or Settings › Email groups): what it finds in the inbox, which then leaves the list below.", params: { view: "smart" }, prefs: { searchGroups: [9002] }, steps: ["wait:900", "see:.row.bundle=Garden"] },
       { id: "group-open", label: "Notifications, opened", note: "A group row opens its own list.", params: { view: "smart" }, steps: openRow("Notifications") },
       { id: "pinned", label: "Pinned", note: "Pinned mail, from the sidebar.", steps: ["wait:700", "text:button=Pinned"] },
       { id: "invitations-open", label: "Invitations, opened", note: "Invitations not answered yet, as one row of the Smart Inbox; answering one takes it off.", params: { view: "smart" }, steps: openRow("Invitations") },
