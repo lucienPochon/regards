@@ -1322,6 +1322,30 @@ export function App() {
         saveSearch({ name, query, accountId }).then(() => setSaid(t("Saved: “{name}” is in the sidebar", { name }))),
     });
   };
+  // The sender card's "Group their mail": a saved search of their mail, shown as a group.
+  const senderGroupOf = (query: string, accountId: string) =>
+    savedSearches.find((saved) => saved.query.trim() === query && (saved.account_id === null || saved.account_id === accountId));
+  const senderGrouped = (query: string, accountId: string) => {
+    const saved = senderGroupOf(query, accountId);
+    return saved !== undefined && appPrefs.searchGroups.includes(saved.id);
+  };
+  const groupSender = (query: string, name: string, accountId: string, on: boolean) => {
+    const existing = senderGroupOf(query, accountId);
+    if (!on) {
+      if (existing) setPrefs({ searchGroups: getPrefs().searchGroups.filter((id) => id !== existing.id) });
+      return;
+    }
+    const shown = (saved: SavedSearch) => {
+      setPrefs({ searchGroups: [...getPrefs().searchGroups.filter((id) => id !== saved.id), saved.id] });
+      setSaid(t("“{name}” is now one row of the inbox by priority", { name: saved.name }));
+    };
+    if (existing) shown(existing);
+    else
+      saveSearch({ name, query, accountId }).then((saved) => {
+        loadSaved();
+        shown(saved);
+      }, failed);
+  };
   const savedMenu = (saved: SavedSearch): MenuEntry[] => {
     const change = (fields: Partial<{ name: string; query: string; color: string | null }>) =>
       saveSearch({ id: saved.id, name: saved.name, query: saved.query, accountId: saved.account_id, color: saved.color, ...fields });
@@ -2529,6 +2553,8 @@ export function App() {
             setSearch({ query: `${searchTerm("from", address)} `, accountId: null });
           }}
           onBlocked={(result) => moved(result.moved > 0 ? [sender.messageId] : [], result)}
+          grouped={(query) => senderGrouped(query, sender.accountId)}
+          onGroup={(query, name, on) => groupSender(query, name, sender.accountId, on)}
           onFailed={failed}
           onHolds={() => {
             setSenderCard(null);
