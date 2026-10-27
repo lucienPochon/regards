@@ -1492,6 +1492,8 @@ export const FR: Record<string, Entry> = {
   "undo|Reminder set": "Rappel programmé",
   "undo|Reminder off": "Rappel retiré",
   "undo|Deleted a draft": "Brouillon supprimé",
+  "undo|Made a priority": "Prioritaire",
+  "undo|No longer a priority": "Plus prioritaire",
   "undo|Discarded a message that was not sent": "Message non envoyé supprimé",
   "({count} messages)": "({count} messages)",
   "{first}, {second} and {count} others": "{first}, {second} et {count} autres",
@@ -1528,6 +1530,10 @@ export const FR: Record<string, Entry> = {
   "About {who}": "À propos de {who}",
   // A snooze that comes back quietly.
   "Alert me when it comes back": "M’alerter à son retour",
+  // A conversation made a priority.
+  "Make the conversation a priority": "Rendre la conversation prioritaire",
+  "No longer a priority": "Plus prioritaire",
+  "You made this conversation a priority.": "Vous avez rendu cette conversation prioritaire.",
   // Your groups: their messages leave the list.
   "What a group finds shows in its row only, not in the list below as well.":
     "Ce qu’un groupe trouve n’apparaît que dans sa ligne, pas aussi dans la liste en dessous.",

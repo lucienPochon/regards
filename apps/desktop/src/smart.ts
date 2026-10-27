@@ -27,6 +27,7 @@ export type Policy = "people" | "notifications" | "newsletters";
 
 /** The rule that placed a message: see `reasonText`. */
 export type Reason =
+  | "priority_conversation"
   | "your_choice"
   | "priority_sender"
   | "from_you"
@@ -127,6 +128,8 @@ export const setScreening = (mode: Screening) => invoke<{ mode: Screening }>("sm
 export function reasonText(explanation: Explanation): string {
   const who = explanation.sender?.address ?? t("the sender");
   switch (explanation.reason) {
+    case "priority_conversation":
+      return t("You made this conversation a priority.");
     case "your_choice":
       return t("You chose {section} for {who}.", { section: SECTION_LABELS[explanation.section], who });
     case "priority_sender":

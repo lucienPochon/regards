@@ -137,14 +137,19 @@ pub fn own_addresses(conn: &Connection, account_id: &str) -> Result<Vec<String>,
 }
 
 /// A message's section and why, from its traits (none known counts as none)
-/// and sender.
+/// and sender; in a conversation the person made a priority (`priority`),
+/// Priority, before any other rule.
 pub fn classify(
     conn: &Connection,
     account_id: &str,
     own: &[String],
     traits: Option<u32>,
     from: Option<&str>,
+    priority: bool,
 ) -> Result<(Section, Reason), StoreError> {
+    if priority {
+        return Ok((Section::Priority, Reason::PriorityConversation));
+    }
     let from_you = from.is_some_and(|address| own.iter().any(|mine| mine.eq_ignore_ascii_case(address)));
     let known = match from {
         Some(address) => sender(conn, account_id, address)?,
@@ -153,15 +158,48 @@ pub fn classify(
     Ok(smart::classify(traits.unwrap_or(0), known, from_you))
 }
 
+/// Whether a stored message (by id) is in a conversation the person made a
+/// priority: it, or another message of its thread, carries the mark.
+pub fn in_priority_conversation(conn: &Connection, account_id: &str, id: i64) -> Result<bool, StoreError> {
+    Ok(conn
+        .prepare_cached(
+            "SELECT EXISTS (SELECT 1 FROM messages t \
+             JOIN marks k ON k.account_id = ?1 AND k.message_id = t.message_id_header \
+             WHERE k.priority_at IS NOT NULL \
+             AND (t.id = ?2 OR t.thread_id = (SELECT thread_id FROM messages WHERE id = ?2)))",
+        )?
+        .query_row(params![account_id, id], |row| row.get(0))?)
+}
+
 /// Classify a stored message (by id) and record its section.
 pub fn reclassify(tx: &Transaction<'_>, account_id: &str, own: &[String], id: i64) -> Result<(), StoreError> {
     let (traits, from): (Option<u32>, Option<String>) =
         tx.query_row("SELECT traits, from_address FROM messages WHERE id = ?1", [id], |row| {
             Ok((row.get(0)?, row.get(1)?))
         })?;
-    let (section, _) = classify(tx, account_id, own, traits, from.as_deref())?;
+    let priority = in_priority_conversation(tx, account_id, id)?;
+    let (section, _) = classify(tx, account_id, own, traits, from.as_deref(), priority)?;
     tx.prepare_cached("UPDATE messages SET section = ?2 WHERE id = ?1 AND section IS NOT ?2")?
         .execute(params![id, section.as_str()])?;
+    Ok(())
+}
+
+/// Classify again every message of the conversation the message with
+/// `message_id` (its Message-ID) is in: it was made a priority, or no longer.
+pub fn reclassify_conversation(tx: &Transaction<'_>, account_id: &str, message_id: &str) -> Result<(), StoreError> {
+    let own = own_addresses(tx, account_id)?;
+    let ids: Vec<i64> = tx
+        .prepare_cached(
+            "SELECT m.id FROM messages m JOIN mailboxes b ON b.id = m.mailbox_id \
+             WHERE b.account_id = ?1 AND (m.message_id_header = ?2 OR m.thread_id IN ( \
+                 SELECT t.thread_id FROM messages t JOIN mailboxes tb ON tb.id = t.mailbox_id \
+                 WHERE tb.account_id = ?1 AND t.message_id_header = ?2 AND t.thread_id IS NOT NULL))",
+        )?
+        .query_map(params![account_id, message_id], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    for id in ids {
+        reclassify(tx, account_id, &own, id)?;
+    }
     Ok(())
 }
 
@@ -482,11 +520,50 @@ mod tests {
             .store
             .read(move |c| {
                 let own = own_addresses(c, &a)?;
-                classify(c, &a, &own, Some(traits::LIST), Some("news@shop.example"))
+                classify(c, &a, &own, Some(traits::LIST), Some("news@shop.example"), false)
             })
             .await
             .unwrap();
         assert_eq!(why, (Section::Newsletters, Reason::MailingList));
+    }
+
+    #[tokio::test]
+    async fn a_conversation_made_a_priority_goes_there_with_its_later_mail_and_comes_back() {
+        let f = fixture().await;
+        let inbox = f.inbox;
+        let first = vec![mail(1, "news@shop.example", "ada@example.test", "order", traits::LIST)];
+        f.store
+            .write(move |tx| messages::upsert(tx, inbox, &first))
+            .await
+            .unwrap();
+        let mark = |priority: Option<i64>| {
+            let a = f.account.clone();
+            f.store.write(move |tx| {
+                crate::marks::set(tx, &a, "order@x", crate::marks::Mark::Priority, priority)?;
+                reclassify_conversation(tx, &a, "order@x")
+            })
+        };
+        mark(Some(1)).await.unwrap();
+        assert_eq!(sections(&f).await, named(&[("order", "priority")]));
+
+        // A reply in it, through the same list, goes there too.
+        let mut reply = mail(2, "news@shop.example", "ada@example.test", "shipped", traits::LIST);
+        reply.headers.in_reply_to = vec!["order@x".into()];
+        f.store
+            .write(move |tx| messages::upsert(tx, inbox, &[reply]))
+            .await
+            .unwrap();
+        assert_eq!(
+            sections(&f).await,
+            named(&[("order", "priority"), ("shipped", "priority")])
+        );
+
+        // No longer a priority: both go back where the rules put them.
+        mark(None).await.unwrap();
+        assert_eq!(
+            sections(&f).await,
+            named(&[("order", "newsletters"), ("shipped", "newsletters")])
+        );
     }
 
     #[tokio::test]

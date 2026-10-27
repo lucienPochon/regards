@@ -1624,6 +1624,8 @@ function handle(cmd: string, args: Args): unknown {
       changed();
       return { deleted: ids.size };
     }
+    case "message_priority":
+      return mark(args.ids as number[], (m) => (m.priority = args.priority as boolean), args.priority ? "Made a priority" : "No longer a priority");
     case "message_mute":
       return mark(args.ids as number[], (m) => (m.muted = args.muted as boolean), args.muted ? "Muted" : "Unmuted");
     case "message_pin":

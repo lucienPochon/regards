@@ -178,6 +178,7 @@ function targetOf(items: ListItem[]): Target {
     disposable: items.length > 0 && items.every(trashLike),
     pinned: items.length > 0 && items.every((item) => item.pinned),
     muted: items.length > 0 && items.every((item) => item.muted === true),
+    priority: items.length > 0 && items.every((item) => item.priority === true),
     sent: items.length === 1 && items[0].role === "sent",
     aside: items.length > 0 && items.every((item) => item.aside),
     snoozed: items.length > 0 && items.every((item) => item.snoozed_until !== null),
@@ -215,6 +216,7 @@ const PALETTE_ACTIONS = [
   "unsubscribe",
   "label",
   "mute",
+  "priority",
 ] as const;
 
 type Picking = { title: string; confirm: string; initial: number; resolve: (time: number | null) => void };

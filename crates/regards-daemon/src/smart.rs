@@ -105,7 +105,8 @@ pub(crate) async fn explain(state: &State, params: MessageRef) -> Result<Value, 
                 conn.query_row("SELECT traits FROM messages WHERE id = ?1", [id], |row| row.get(0))?;
             let from = message.from.and_then(|person| person.address);
             let own = smart::own_addresses(conn, &account)?;
-            let (section, reason) = smart::classify(conn, &account, &own, traits, from.as_deref())?;
+            let priority = smart::in_priority_conversation(conn, &account, id)?;
+            let (section, reason) = smart::classify(conn, &account, &own, traits, from.as_deref(), priority)?;
             let domain = match from.as_deref().and_then(regards_core::smart::domain_key) {
                 Some(key) => {
                     let known = smart::entry(conn, &account, &key)?;

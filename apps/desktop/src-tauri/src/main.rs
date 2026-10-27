@@ -46,7 +46,7 @@ use regards_ipc::protocol::{
     MuteParams, NoteAddParams, NoteAddResult, NoteListParams, NoteListResult, NoteRef, NoteRemoved,
     NoteSetEnabledParams, NoteSettings, NoteUpdateParams, NoteView, NotesForgotten, OauthFlowRef, OauthProvidersResult,
     OauthStartParams, OauthStartResult, OutboxListResult, OutboxRef, OutboxRescheduleParams, OutboxUndoResult,
-    PinParams, Principal, RemindParams, SavedSearchListResult, SavedSearchOrderParams, SavedSearchRef,
+    PinParams, Principal, PriorityParams, RemindParams, SavedSearchListResult, SavedSearchOrderParams, SavedSearchRef,
     SavedSearchSaveParams, SavedSearchView, Screening, ScreeningParams, SearchParams, SearchResult, Section,
     SenderBlockParams, SenderBlockedResult, SenderImagesParams, SenderImagesResult, SenderQuietParams, SenderSetParams,
     SenderSetResult, ServerCheckParams, ServerCheckResult, ServerSearchResult, ServerSettings, SetFlagsParams,
@@ -1307,6 +1307,15 @@ async fn message_mute(bridge: State<'_, Bridge>, ids: Vec<i64>, muted: bool) -> 
 }
 
 #[tauri::command]
+async fn message_priority(bridge: State<'_, Bridge>, ids: Vec<i64>, priority: bool) -> Result<MarkResult, String> {
+    let mut client = bridge.connect().await?.client;
+    client
+        .call(methods::MESSAGE_PRIORITY, PriorityParams { ids, priority })
+        .await
+        .map_err(describe)
+}
+
+#[tauri::command]
 async fn message_pin(bridge: State<'_, Bridge>, ids: Vec<i64>, pinned: bool) -> Result<MarkResult, String> {
     let mut client = bridge.connect().await?.client;
     client
@@ -2257,6 +2266,7 @@ fn main() {
             undo_apply,
             message_pin,
             message_mute,
+            message_priority,
             message_set_aside,
             message_snooze,
             message_remind,

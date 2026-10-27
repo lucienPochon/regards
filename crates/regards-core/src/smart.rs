@@ -147,6 +147,8 @@ pub fn domain_key(address: &str) -> Option<String> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Reason {
+    /// The person made the conversation a priority.
+    PriorityConversation,
     /// The person chose this section for the sender.
     YourChoice,
     /// The person made the sender a priority.

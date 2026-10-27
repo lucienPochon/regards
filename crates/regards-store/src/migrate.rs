@@ -51,6 +51,7 @@ const MIGRATIONS: &[M<'static>] = &[
     M::up(include_str!("../migrations/0040_template_recipients_files.sql")),
     M::up(include_str!("../migrations/0041_mute.sql")),
     M::up(include_str!("../migrations/0042_snooze_quiet.sql")),
+    M::up(include_str!("../migrations/0043_priority_conversation.sql")),
 ];
 
 /// Backups kept before older ones are deleted.

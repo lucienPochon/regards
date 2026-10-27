@@ -158,6 +158,10 @@ pub mod methods {
     /// Mute conversations, or unmute them: new mail in a muted one tells of
     /// nothing (kept on this device); undoable ([`MuteParams`] → [`MarkResult`]).
     pub const MESSAGE_MUTE: &str = "message.mute";
+    /// Make conversations a priority, or no longer: their mail, and what
+    /// comes in them later, goes in Priority whoever sends it (kept on this
+    /// device); undoable ([`PriorityParams`] → [`MarkResult`]).
+    pub const MESSAGE_PRIORITY: &str = "message.priority";
     /// Set messages aside (out of the inbox) or bring them back; undoable.
     pub const MESSAGE_SET_ASIDE: &str = "message.set_aside";
     /// Leave the mailing list a message came from (RFC 2369 `List-Unsubscribe`):
@@ -1223,6 +1227,9 @@ pub struct MessageSummary {
     /// Its conversation is muted: new mail in it tells of nothing.
     #[serde(default)]
     pub muted: bool,
+    /// Its conversation was made a priority ([`methods::MESSAGE_PRIORITY`]).
+    #[serde(default)]
+    pub priority: bool,
     /// Set aside: out of the inbox until brought back.
     #[serde(default)]
     pub aside: bool,
@@ -1513,6 +1520,13 @@ pub struct PinParams {
 pub struct MuteParams {
     pub ids: Vec<i64>,
     pub muted: bool,
+}
+
+/// Parameters of [`methods::MESSAGE_PRIORITY`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PriorityParams {
+    pub ids: Vec<i64>,
+    pub priority: bool,
 }
 
 /// Parameters of [`methods::MESSAGE_SET_ASIDE`].

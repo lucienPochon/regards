@@ -13,7 +13,7 @@ use regards_ipc::protocol::{
     DraftListParams, DraftRef, DraftReplyParams, DraftSendParams, DraftSetFromParams, DraftUpdateParams, HealthResult,
     HelloParams, HelloResult, HoldRef, JSONRPC, MemoryParams, MessageHtmlParams, MessageIds, MessageListParams,
     MessageRef, MoveParams, MuteParams, NoteAddParams, NoteListParams, NoteRef, Notification, PROTOCOL_VERSIONS,
-    PeopleSuggestParams, PinParams, Principal, RemindParams, Request, Response, RpcError, SearchParams,
+    PeopleSuggestParams, PinParams, Principal, PriorityParams, RemindParams, Request, Response, RpcError, SearchParams,
     SenderBlockParams, SenderSetParams, SetFlagsParams, SnoozeParams, ViewParams, VoiceSuggestParams, codes, methods,
     negotiate, notifications,
 };
@@ -787,6 +787,11 @@ impl Session {
                 let params: MuteParams = params(request)?;
                 self.allow_change(Access::Triage, &params.ids, request).await?;
                 actions::mute(&self.state, params).await
+            }
+            methods::MESSAGE_PRIORITY => {
+                let params: PriorityParams = params(request)?;
+                self.allow_change(Access::Triage, &params.ids, request).await?;
+                actions::priority(&self.state, params).await
             }
             methods::SENDER_QUIET => {
                 self.require_ui()?;

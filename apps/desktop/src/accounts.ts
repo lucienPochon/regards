@@ -422,6 +422,8 @@ export interface MessageSummary {
   pinned: boolean;
   /** Its conversation is muted: new mail in it tells of nothing. */
   muted?: boolean;
+  /** Its conversation was made a priority: its mail goes in Priority, whoever sends it. */
+  priority?: boolean;
   /** Set aside: out of the inbox until brought back. */
   aside: boolean;
   /** Out of the inbox until then (Unix ms), if snoozed. */
@@ -712,6 +714,11 @@ export function pinMessages(ids: number[], pinned: boolean): Promise<MarkResult>
 /** Mute conversations (their new mail tells of nothing), or unmute them; undoable. */
 export function muteMessages(ids: number[], muted: boolean): Promise<MarkResult> {
   return invoke<MarkResult>("message_mute", { ids, muted });
+}
+
+/** Make conversations a priority (their mail, later mail too, goes in Priority), or no longer; undoable. */
+export function prioritizeMessages(ids: number[], priority: boolean): Promise<MarkResult> {
+  return invoke<MarkResult>("message_priority", { ids, priority });
 }
 
 /** Set aside (out of the inbox) or bring back; undoable. */

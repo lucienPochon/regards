@@ -6,8 +6,8 @@ use crate::State;
 use regards_core::mailbox::Role;
 use regards_ipc::protocol::{
     AsideParams, CopyResult, DeleteResult, MarkAllReadParams, MarkResult, MessageIds, MoveParams, MoveResult,
-    MuteParams, PinParams, RemindParams, RpcError, SenderBlockParams, SenderQuietParams, SetFlagsParams,
-    SetFlagsResult, SnoozeParams, UndoInfo, UndoParams, UndoResult, codes,
+    MuteParams, PinParams, PriorityParams, RemindParams, RpcError, SenderBlockParams, SenderQuietParams,
+    SetFlagsParams, SetFlagsResult, SnoozeParams, UndoInfo, UndoParams, UndoResult, codes,
 };
 use regards_store::marks::{self, Mark};
 use regards_store::operations::{self, FlagName, NewOperation, OperationKind};
@@ -350,6 +350,38 @@ pub(crate) async fn pin(state: &State, params: PinParams) -> Result<Value, RpcEr
 pub(crate) async fn mute(state: &State, params: MuteParams) -> Result<Value, RpcError> {
     let done = if params.muted { "Muted" } else { "Unmuted" };
     mark_messages(state, params.ids, Mark::Muted, Target::Toggle(params.muted), done).await
+}
+
+/// Make conversations a priority, or no longer: the mark on the messages
+/// given, then each of their conversations sorted again (later mail in one
+/// goes in Priority as it comes, `smart::reclassify`).
+pub(crate) async fn priority(state: &State, params: PriorityParams) -> Result<Value, RpcError> {
+    let done = if params.priority {
+        "Made a priority"
+    } else {
+        "No longer a priority"
+    };
+    let ids = params.ids.clone();
+    let result = mark_messages(state, params.ids, Mark::Priority, Target::Toggle(params.priority), done).await?;
+    state
+        .store
+        .write(move |tx| {
+            for id in &ids {
+                let Some(message) = messages::get(tx, *id)? else {
+                    continue;
+                };
+                let (Some(message_id), Some(mailbox)) =
+                    (message.message_id.as_deref(), mailboxes::get(tx, message.mailbox_id)?)
+                else {
+                    continue;
+                };
+                regards_store::smart::reclassify_conversation(tx, &mailbox.account_id, message_id)?;
+            }
+            Ok(())
+        })
+        .await
+        .map_err(conflict)?;
+    Ok(result)
 }
 
 /// Make a sender (or `@domain`) quiet, or not: their new mail tells of nothing.
@@ -799,6 +831,10 @@ pub(crate) async fn apply_undo(state: &Arc<State>, params: UndoParams) -> Result
             let (moved, _, accounts) = plan_moves(tx, &present, now)?;
             for (account, message_id, mark, before) in &inverse.marks {
                 marks::set(tx, account, message_id, *mark, *before)?;
+                // A conversation made a priority, or no longer: its mail is sorted again.
+                if *mark == Mark::Priority {
+                    regards_store::smart::reclassify_conversation(tx, account, message_id)?;
+                }
             }
             for (account, key) in &inverse.unblock {
                 regards_store::smart::set_blocked(tx, account, key, false)?;
