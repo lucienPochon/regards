@@ -49,6 +49,8 @@ impl World {
             crate::fake_smtp::Script {
                 password: crate::fake_imap::PASSWORD,
                 auth: "PLAIN LOGIN XOAUTH2",
+                // For a send that fails for good.
+                reject: &["refused@example.test"],
                 ..crate::fake_smtp::Script::new(crate::fake_smtp::Mode::StartTls {
                     offer: true,
                     inject: false,

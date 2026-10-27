@@ -6,6 +6,7 @@ import { listDate } from "./format";
 import { Icon } from "./icons";
 import { type Note, NOTE_MAX, addNote, listNotes, noteSettings, removeNote, updateNote } from "./notes";
 import type { Anchor } from "./Menu";
+import { searchTerm } from "./search";
 import { useShortcuts } from "./shortcuts";
 import { type Explanation, type Policy, SECTION_LABELS, blockSender, blockableDomain, explain, reasonText, setSender, setSenderQuiet } from "./smart";
 import { useDialogFocus } from "./dialogFocus";
@@ -34,6 +35,8 @@ export function SenderCard({
   onWrite,
   onSearch,
   onBlocked,
+  grouped,
+  onGroup,
   onFailed,
   onHolds,
 }: {
@@ -46,6 +49,10 @@ export function SenderCard({
   /** Search all mail from them. */
   onSearch?: (address: string) => void;
   onBlocked: (result: MoveResult) => void;
+  /** Whether the search `query` is one of the inbox's groups (Settings › Inbox › Your groups). */
+  grouped?: (query: string) => boolean;
+  /** Show the mail `query` finds as one row of the inbox (`on`), or no longer; `name` names a new one. */
+  onGroup?: (query: string, name: string, on: boolean) => void;
   onFailed: (error: unknown) => void;
 }) {
   const [explanation, setExplanation] = useState<Explanation | null>(null);
@@ -103,6 +110,26 @@ export function SenderCard({
   const copy = () => {
     void navigator.clipboard?.writeText(address).then(() => setCopied(true), () => {});
   };
+  // Their mail, or everyone's at their company, as one row of the inbox: a saved search shown as a group.
+  const groupRow = (query: string, name: string, label: string) => {
+    const on = grouped?.(query) ?? false;
+    return (
+      <button
+        type="button"
+        className="sender-row"
+        role="switch"
+        aria-checked={on}
+        onClick={() => onGroup?.(query, name, !on)}
+      >
+        <Icon name="sections" size={16} />
+        <span>
+          {label}
+          <span className="muted sender-row-detail">{t("One row in the inbox by priority")}</span>
+        </span>
+        <span className={on ? "toggle on" : "toggle"} aria-hidden="true" />
+      </button>
+    );
+  };
 
   return (
     <div className="menu-layer" onMouseDown={onClose}>
@@ -110,7 +137,7 @@ export function SenderCard({
         ref={card}
         className={position ? "sender-card" : "sender-card measuring"}
         role="dialog"
-        aria-label={`About ${person.name ?? address}`}
+        aria-label={t("About {who}", { who: person.name || address })}
         tabIndex={-1}
         style={position ?? undefined}
         onMouseDown={(event) => event.stopPropagation()}
@@ -220,6 +247,8 @@ export function SenderCard({
             </span>
             <span className={sender?.quiet ? "toggle on" : "toggle"} aria-hidden="true" />
           </button>
+          {onGroup && address && groupRow(searchTerm("from", address), person.name || address, t("Group their mail"))}
+          {onGroup && company && groupRow(searchTerm("from", company), company.slice(1), t("Group everyone at {domain}", { domain: company.slice(1) }))}
           <div className="sender-row why">
             <Icon name="info" size={16} />
             <span>

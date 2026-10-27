@@ -1492,6 +1492,7 @@ export const FR: Record<string, Entry> = {
   "undo|Reminder set": "Rappel programmé",
   "undo|Reminder off": "Rappel retiré",
   "undo|Deleted a draft": "Brouillon supprimé",
+  "undo|Discarded a message that was not sent": "Message non envoyé supprimé",
   "({count} messages)": "({count} messages)",
   "{first}, {second} and {count} others": "{first}, {second} et {count} autres",
   "{first} and {second}": "{first} et {second}",
@@ -1519,6 +1520,12 @@ export const FR: Record<string, Entry> = {
   "{count} waiting": { one: "{count} en attente", other: "{count} en attente" },
   "Go to {place}": "Aller à : {place}",
   "Search: {name}": "Recherche : {name}",
+  // The sender card: their mail as a group.
+  "Group their mail": "Grouper leurs messages",
+  "Group everyone at {domain}": "Grouper tout le monde chez {domain}",
+  "One row in the inbox by priority": "Une ligne dans la boîte de réception par priorité",
+  "“{name}” is now one row of the inbox by priority": "« {name} » est maintenant une ligne de la boîte de réception par priorité",
+  "About {who}": "À propos de {who}",
   // Your groups: their messages leave the list.
   "What a group finds shows in its row only, not in the list below as well.":
     "Ce qu’un groupe trouve n’apparaît que dans sa ligne, pas aussi dans la liste en dessous.",

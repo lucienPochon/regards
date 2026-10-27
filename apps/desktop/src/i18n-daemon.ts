@@ -45,6 +45,7 @@ export const UNDONE = [
   "Reminder set",
   "Reminder off",
   "Deleted a draft",
+  "Discarded a message that was not sent",
 ];
 
 /** The service's sentence patterns, each with what says it here. */

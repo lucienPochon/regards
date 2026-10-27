@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { UndoInfo } from "./accounts";
 import { Avatar } from "./Avatar";
 import { type OutboxEntry, dismissOutbox, reschedule, sendAgain, undoSend } from "./compose";
 import { fullDate, peopleShort } from "./format";
@@ -15,6 +16,7 @@ export function OutboxList({
   onFailed,
   onSignIn,
   onPickTime,
+  onUndo,
 }: {
   entries: OutboxEntry[];
   onEdit: (draftId: number) => void;
@@ -23,6 +25,8 @@ export function OutboxList({
   onSignIn?: () => void;
   /** Choose another time to send, as Send later does; `null` if none was chosen. */
   onPickTime?: () => Promise<number | null>;
+  /** A discarded message can come back as a draft for a while: the undo bar. */
+  onUndo?: (undo: UndoInfo) => void;
 }) {
   // While a message can still be called back, count down to when it goes.
   const [now, setNow] = useState(() => Date.now());
@@ -117,7 +121,16 @@ export function OutboxList({
                         </button>
                       )}
                       {entry.state === "failed" && (
-                        <button type="button" className="btn small" onClick={() => act(() => dismissOutbox(entry.id))}>
+                        <button
+                          type="button"
+                          className="btn small"
+                          onClick={() =>
+                            act(async () => {
+                              const result = await dismissOutbox(entry.id);
+                              if (result.undo) onUndo?.(result.undo);
+                            })
+                          }
+                        >
                           {t("Discard")}
                         </button>
                       )}

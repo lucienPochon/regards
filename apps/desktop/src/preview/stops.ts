@@ -172,6 +172,7 @@ export const TOUR: Group[] = [
       { id: "outbox-signin", label: "Waiting for a sign-in", note: "Sends once you sign in again.", params: { signin: "1" }, steps: ["wait:800", "text:button=Outbox"] },
       { id: "labels", label: "Labels (Gmail)", note: "Chips before the subject; L (Label…) adds or removes them.", params: { gmail: "1" }, steps: ["wait:900"] },
       { id: "send-failed", label: "A send that failed", note: "Said in the app too: the system notification is quiet while the window is in front.", params: { sendfail: "1" }, steps: ["wait:3200"] },
+      { id: "send-failed-discard", label: "Discarding a failed send", note: "Discard, then Undo: the message comes back as a draft.", params: { sendfail: "1" }, steps: ["wait:3200", "text:button=Outbox", "wait:400", "text:button=Discard"] },
     ],
   },
   {
