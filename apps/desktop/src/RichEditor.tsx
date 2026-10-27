@@ -1,5 +1,6 @@
-import type { Editor } from "@tiptap/core";
+import { type Editor, Extension } from "@tiptap/core";
 import Image from "@tiptap/extension-image";
+import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import { TextStyle } from "@tiptap/extension-text-style";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -37,10 +38,11 @@ const InlineImage = Image.extend({
 });
 
 /**
- * Colour and highlight on a span of text. The app's CSP allows no inline
- * styles, so the editor marks them with `data-colour` and `data-highlight`
- * (shown by styles.css, for the colours offered below); the HTML kept and
- * sent has them as styles (`toStoredHtml`).
+ * Colour, highlight, font and size on a span of text. The app's CSP allows
+ * no inline styles, so the editor marks them with `data-colour`,
+ * `data-highlight`, `data-font` and `data-size` (shown by styles.css, for
+ * those offered below); the HTML kept and sent has them as styles
+ * (`toStoredHtml`).
  */
 const Colours = TextStyle.extend({
   addAttributes() {
@@ -50,9 +52,74 @@ const Colours = TextStyle.extend({
       renderHTML: (attributes: Record<string, unknown>) =>
         attributes[name] ? { [`data-${name}`]: attributes[name] as string } : {},
     });
-    return { ...this.parent?.(), colour: kept("colour"), highlight: kept("highlight") };
+    return { ...this.parent?.(), colour: kept("colour"), highlight: kept("highlight"), font: kept("font"), size: kept("size") };
   },
 });
+
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    indent: {
+      /** One step further in (a list item: one level down). */
+      indent: () => ReturnType;
+      /** One step back out. */
+      outdent: () => ReturnType;
+    };
+  }
+}
+
+/** Steps a paragraph or heading can be indented: each is 40 pixels in mail (`toStoredHtml`). */
+export const MAX_INDENT = 4;
+
+/** A paragraph's or heading's indent, marked `data-indent` (1 to 4) as colours are. */
+const Indent = Extension.create({
+  name: "indent",
+  addGlobalAttributes() {
+    return [
+      {
+        types: ["paragraph", "heading"],
+        attributes: {
+          indent: {
+            default: 0,
+            parseHTML: (element: HTMLElement) => Math.min(MAX_INDENT, Number(element.getAttribute("data-indent")) || 0),
+            renderHTML: (attributes: Record<string, unknown>) =>
+              attributes.indent ? { "data-indent": String(attributes.indent) } : {},
+          },
+        },
+      },
+    ];
+  },
+  addCommands() {
+    const shift =
+      (by: 1 | -1) =>
+      () =>
+      ({ state, tr, dispatch }: { state: Editor["state"]; tr: Editor["state"]["tr"]; dispatch?: unknown }) => {
+        let changed = false;
+        state.doc.nodesBetween(state.selection.from, state.selection.to, (node, pos) => {
+          if (node.type.name !== "paragraph" && node.type.name !== "heading") return;
+          // In a list, items go a level down or up instead.
+          if (state.doc.resolve(pos).parent.type.name === "listItem") return;
+          const indent = Math.max(0, Math.min(MAX_INDENT, (Number(node.attrs.indent) || 0) + by));
+          if (indent === node.attrs.indent) return;
+          if (dispatch) tr.setNodeMarkup(pos, undefined, { ...node.attrs, indent });
+          changed = true;
+        });
+        return changed;
+      };
+    return { indent: shift(1), outdent: shift(-1) };
+  },
+});
+
+/** Fonts and sizes offered, as the daemon lets them through (`sanitize_outgoing`); none is the reader's own. */
+const FONTS = [
+  { value: "sans", label: t("Sans serif") },
+  { value: "serif", label: t("Serif") },
+  { value: "mono", label: t("Fixed width") },
+];
+const SIZES = [
+  { value: "small", label: t("Small") },
+  { value: "large", label: t("Large") },
+  { value: "huge", label: t("Huge") },
+];
 
 /** Text colours and highlights offered, as the daemon lets them through (`sanitize_outgoing`). */
 const TEXT_COLOURS = [
@@ -118,6 +185,12 @@ export function RichEditor({
       }),
       InlineImage,
       Colours,
+      Indent,
+      // Simple tables: a header row, then rows; columns keep their own widths.
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
     ],
     content: initial,
     injectCSS: false,
@@ -132,7 +205,7 @@ export function RichEditor({
         send.current(command === "sendDone");
         return true;
       },
-      attributes: { class: "compose-body", "aria-label": "Message", role: "textbox", "aria-multiline": "true" },
+      attributes: { class: "compose-body", "aria-label": t("Message"), role: "textbox", "aria-multiline": "true" },
       // Pasted images are stored first: the editor shows them once they are.
       handlePaste: (_view, event) => {
         const files = [...(event.clipboardData?.files ?? [])].filter((file) => IMAGE_TYPES.includes(file.type));
@@ -157,6 +230,10 @@ export function RichEditor({
       heading: ([1, 2, 3] as const).find((level) => editor?.isActive("heading", { level })) ?? 0,
       colour: (editor?.getAttributes("textStyle").colour as string | undefined) ?? null,
       highlight: (editor?.getAttributes("textStyle").highlight as string | undefined) ?? null,
+      font: (editor?.getAttributes("textStyle").font as string | undefined) ?? "",
+      size: (editor?.getAttributes("textStyle").size as string | undefined) ?? "",
+      table: editor?.isActive("table") ?? false,
+      listItem: editor?.isActive("listItem") ?? false,
     }),
   });
   const [linking, setLinking] = useState<string | null>(null);
@@ -203,10 +280,40 @@ export function RichEditor({
           <option value={2}>{t("Heading")}</option>
           <option value={3}>{t("Subheading")}</option>
         </select>
-        {button("B", active?.bold ?? false, () => chain().toggleBold().run(), "Bold")}
-        {button("I", active?.italic ?? false, () => chain().toggleItalic().run(), "Italic")}
-        {button("U", active?.underline ?? false, () => chain().toggleUnderline().run(), "Underline")}
-        {button("S", active?.strike ?? false, () => chain().toggleStrike().run(), "Strikethrough")}
+        <select
+          className="text-font"
+          aria-label={t("Font")}
+          title={t("Font")}
+          disabled={disabled}
+          value={active?.font ?? ""}
+          onChange={(event) => chain().setMark("textStyle", { font: event.target.value || null }).removeEmptyTextStyle().run()}
+        >
+          <option value="">{t("Font")}</option>
+          {FONTS.map((font) => (
+            <option key={font.value} value={font.value}>
+              {font.label}
+            </option>
+          ))}
+        </select>
+        <select
+          className="text-size"
+          aria-label={t("Text size")}
+          title={t("Text size")}
+          disabled={disabled}
+          value={active?.size ?? ""}
+          onChange={(event) => chain().setMark("textStyle", { size: event.target.value || null }).removeEmptyTextStyle().run()}
+        >
+          <option value="">{t("Normal")}</option>
+          {SIZES.map((size) => (
+            <option key={size.value} value={size.value}>
+              {size.label}
+            </option>
+          ))}
+        </select>
+        {button("B", active?.bold ?? false, () => chain().toggleBold().run(), t("Bold"))}
+        {button("I", active?.italic ?? false, () => chain().toggleItalic().run(), t("Italic"))}
+        {button("U", active?.underline ?? false, () => chain().toggleUnderline().run(), t("Underline"))}
+        {button("S", active?.strike ?? false, () => chain().toggleStrike().run(), t("Strikethrough"))}
         <button
           type="button"
           className="colour-button"
@@ -280,7 +387,19 @@ export function RichEditor({
         {button(t("• List"), active?.bullets ?? false, () => chain().toggleBulletList().run(), t("Bulleted list"))}
         {button(t("1. List"), active?.numbers ?? false, () => chain().toggleOrderedList().run(), t("Numbered list"))}
         {button(t("Quote"), active?.quote ?? false, () => chain().toggleBlockquote().run(), t("Quote"))}
+        {button("⇤", false, () => (active?.listItem ? chain().liftListItem("listItem").run() : chain().outdent().run()), t("Indent less"))}
+        {button("⇥", false, () => (active?.listItem ? chain().sinkListItem("listItem").run() : chain().indent().run()), t("Indent more"))}
+        {button(t("Table"), active?.table ?? false, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), t("Insert a table"))}
         {button(t("Clear"), false, () => chain().unsetAllMarks().clearNodes().run(), t("Clear formatting"))}
+        {active?.table && (
+          <span className="table-tools" role="group" aria-label={t("Table")}>
+            {button(t("+ Row"), false, () => chain().addRowAfter().run(), t("Add a row below"))}
+            {button(t("+ Column"), false, () => chain().addColumnAfter().run(), t("Add a column to the right"))}
+            {button(t("− Row"), false, () => chain().deleteRow().run(), t("Delete this row"))}
+            {button(t("− Column"), false, () => chain().deleteColumn().run(), t("Delete this column"))}
+            {button(t("No table"), false, () => chain().deleteTable().run(), t("Delete the table"))}
+          </span>
+        )}
         {linking !== null && (
           <span className="link-input">
             <input

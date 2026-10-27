@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
-const { attachImage, attachPictures, coloursAsMarks, coloursAsStyles, toEditorHtml, toStoredHtml } = await import("./images");
+const { attachImage, attachPictures, coloursAsMarks, coloursAsStyles, stylesForEditor, stylesForMail, toEditorHtml, toStoredHtml } =
+  await import("./images");
 
 describe("images in the text", () => {
   it("are kept by Content-ID, without their bytes, and shown from them again", () => {
@@ -53,6 +54,20 @@ describe("colours and picture sizes in the text", () => {
   it("leave other spans and styles alone, for the daemon to judge", () => {
     expect(coloursAsStyles(`<span data-colour="red">x</span><span>y</span>`)).toBe(`<span data-colour="red">x</span><span>y</span>`);
     expect(coloursAsMarks(`<span style="font-size: 40px">x</span>`)).toBe(`<span style="font-size: 40px">x</span>`);
+  });
+
+  it("carry fonts, sizes, indents and tables to mail and back", () => {
+    const edited =
+      `<p data-indent="2"><span data-font="serif" data-size="large">calm</span></p>` +
+      `<table style="min-width: 75px"><colgroup><col style="min-width: 25px"></colgroup><tbody><tr><th colspan="1" rowspan="1"><p>Day</p></th></tr></tbody></table>`;
+    const mail = stylesForMail(edited);
+    expect(mail).toBe(
+      `<p style="margin-left: 80px"><span style="font-family: Georgia, 'Times New Roman', serif; font-size: 18px">calm</span></p>` +
+        `<table border="1" cellpadding="6" cellspacing="0"><tbody><tr><th colspan="1" rowspan="1"><p>Day</p></th></tr></tbody></table>`,
+    );
+    expect(stylesForEditor(mail)).toContain(`<p data-indent="2"><span data-font="serif" data-size="large">calm</span></p>`);
+    // An indent or size the composer does not offer stays as it is, for the daemon to judge.
+    expect(stylesForEditor(`<p style="margin-left: 9px">x</p>`)).toBe(`<p style="margin-left: 9px">x</p>`);
   });
 });
 
