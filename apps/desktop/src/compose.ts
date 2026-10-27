@@ -202,7 +202,9 @@ export const undoSend = (id: number) => invoke<{ draft_id: number | null }>("out
 export const sendAgain = (id: number) => invoke("outbox_send_again", { id });
 /** A scheduled or held message: at another time, or now (`null`). */
 export const reschedule = (id: number, sendAt: number | null) => invoke("outbox_reschedule", { id, sendAt });
-export const dismissOutbox = (id: number) => invoke("outbox_dismiss", { id });
+/** Forget a failed or uncertain message; a failed one can come back as a draft for a while (`undo`). */
+export const dismissOutbox = (id: number) =>
+  invoke<{ dismissed: boolean; undo: UndoInfo | null }>("outbox_dismiss", { id });
 
 /**
  * Parse what is typed in an address field: `Ada <ada@example.org>, bob@example.org`.
