@@ -1513,6 +1513,12 @@ export const FR: Record<string, Entry> = {
   "Set aside or bring back {messages}": "Mettre de côté ou ramener {messages}",
   "Snooze {messages}": "Reporter {messages}",
   "Set reminders on {messages}": "Programmer des rappels sur {messages}",
+  // The sender card: their mail as a group.
+  "Group their mail": "Grouper leurs messages",
+  "Group everyone at {domain}": "Grouper tout le monde chez {domain}",
+  "One row in the inbox by priority": "Une ligne dans la boîte de réception par priorité",
+  "“{name}” is now one row of the inbox by priority": "« {name} » est maintenant une ligne de la boîte de réception par priorité",
+  "About {who}": "À propos de {who}",
   // Your groups: their messages leave the list.
   "What a group finds shows in its row only, not in the list below as well.":
     "Ce qu’un groupe trouve n’apparaît que dans sa ligne, pas aussi dans la liste en dessous.",
