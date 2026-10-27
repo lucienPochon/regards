@@ -1533,6 +1533,9 @@ pub struct SnoozeParams {
     /// No time: they come back only when asked (or when someone replies).
     #[serde(default)]
     pub someday: bool,
+    /// They come back without a notification (still unread, in the inbox).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub quiet: bool,
 }
 
 /// One section of the Smart Inbox: how many messages, how many unread.

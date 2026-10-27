@@ -1,19 +1,42 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { MarkResult } from "./accounts";
 import { appLocale, t } from "./i18n";
+import type { MenuItem } from "./Menu";
 
 /**
  * Snooze until `until` (Unix ms), "someday" (`until: "someday"`), or end a
  * snooze (`null`). Snoozed messages leave the inbox and come back unread at
- * that time, or sooner if someone replies. Undoable like a move.
+ * that time, or sooner if someone replies; `quiet`: without a notification.
+ * Undoable like a move.
  */
-export function snoozeMessages(ids: number[], until: number | "someday" | null): Promise<MarkResult> {
+export function snoozeMessages(ids: number[], until: number | "someday" | null, quiet = false): Promise<MarkResult> {
   return invoke<MarkResult>("message_snooze", {
     ids,
     until: typeof until === "number" ? until : null,
     someday: until === "someday",
+    quiet,
   });
 }
+
+/** A switch under a time picker's choices, flipped in place; read once a time is picked. */
+export interface TimeOption {
+  label: string;
+  on: boolean;
+}
+
+/** A snooze's alert when it comes back: on, unless switched off in the picker. */
+export const snoozeAlert = (): TimeOption => ({ label: t("Alert me when it comes back"), on: true });
+
+/** The switch as a menu row: picking it flips it and shows the menu again (`show`). */
+export const timeOptionEntry = (option: TimeOption, show: () => void): MenuItem => ({
+  label: option.label,
+  icon: "bell",
+  checked: option.on,
+  onSelect: () => {
+    option.on = !option.on;
+    show();
+  },
+});
 
 export interface Preset {
   label: string;

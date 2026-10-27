@@ -11,7 +11,7 @@ import { Menu, type MenuEntry, type MenuRequest } from "./Menu";
 import { getPrefs } from "./prefs";
 import { ReadingPane } from "./ReadingPane";
 import { recentFolders, rememberFolder } from "./recent-folders";
-import { presets, reminderPresets, timeHint } from "./snooze";
+import { type TimeOption, presets, reminderPresets, snoozeAlert, timeHint, timeOptionEntry } from "./snooze";
 import { UNDO_ELSEWHERE } from "./thread-window";
 import { TimePicker } from "./TimePicker";
 import { PLATFORM, TitleBar } from "./TitleBar";
@@ -80,31 +80,34 @@ export function ThreadWindow({ messageId }: { messageId: number }) {
   };
 
   /** A palette page of times, with a way to pick any date (as the main window asks). */
-  const pickTime = (title: string, confirm: string, choices: { label: string; until: number | "someday" }[]) =>
+  const pickTime = (title: string, confirm: string, choices: { label: string; until: number | "someday" }[], option?: TimeOption) =>
     new Promise<number | "someday" | null>((resolve) => {
-      setMenu({
-        anchor: { x: 0, y: 0 },
-        variant: "palette",
-        title,
-        label: title,
-        filter: TYPED_TIME_HINT,
-        typed: (query) => typedTimeEntries(query, resolve),
-        entries: [
-          ...choices.map((choice) => ({
-            label: choice.label,
-            icon: "clock" as const,
-            hint: timeHint(choice.until),
-            onSelect: () => resolve(choice.until),
-          })),
-          "separator" as const,
-          {
-            label: t("Pick a date and time…"),
-            icon: "plus" as const,
-            onSelect: () => setPicking({ title, confirm, initial: Date.now() + 24 * 3600_000, resolve }),
-          },
-        ],
-        onDismiss: () => resolve(null),
-      });
+      const show = () =>
+        setMenu({
+          anchor: { x: 0, y: 0 },
+          variant: "palette",
+          title,
+          label: title,
+          filter: TYPED_TIME_HINT,
+          typed: (query) => typedTimeEntries(query, resolve),
+          entries: [
+            ...choices.map((choice) => ({
+              label: choice.label,
+              icon: "clock" as const,
+              hint: timeHint(choice.until),
+              onSelect: () => resolve(choice.until),
+            })),
+            "separator" as const,
+            {
+              label: t("Pick a date and time…"),
+              icon: "plus" as const,
+              onSelect: () => setPicking({ title, confirm, initial: Date.now() + 24 * 3600_000, resolve }),
+            },
+            ...(option ? [timeOptionEntry(option, show)] : []),
+          ],
+          onDismiss: () => resolve(null),
+        });
+      show();
     });
 
   const host: ActionHost = {
@@ -142,7 +145,12 @@ export function ThreadWindow({ messageId }: { messageId: number }) {
         });
       }),
     copied: () => setProblem(null),
-    pickSnooze: () => pickTime(t("Snooze until"), t("Snooze"), presets(new Date(), getPrefs().snoozePresets)),
+    pickSnooze: () => {
+      const alert = snoozeAlert();
+      return pickTime(t("Snooze until"), t("Snooze"), presets(new Date(), getPrefs().snoozePresets), alert).then((until) =>
+        until === null ? null : { until, quiet: !alert.on },
+      );
+    },
     pickReminder: () =>
       pickTime(t("Remind me if no reply by"), t("Remind me"), reminderPresets(new Date(), getPrefs().reminderPresets)).then((time) =>
         typeof time === "number" ? time : null,

@@ -586,6 +586,7 @@ fn end_answered_snoozes(
         }
         for snoozed in marks::snoozed_in_thread_of(tx, &account.id, message_id)? {
             marks::set(tx, &account.id, &snoozed, Mark::Snoozed, None)?;
+            marks::set(tx, &account.id, &snoozed, Mark::SnoozeQuiet, None)?;
         }
         for waiting in marks::reminders_in_thread_of(tx, &account.id, message_id)? {
             let came_due = marks::get(tx, &account.id, &waiting)?.reminded_at.is_some();

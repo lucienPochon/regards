@@ -18,6 +18,8 @@ export interface MenuItem {
   depth?: number;
   /** Shown only until something is typed: a quick way to an entry the list has too (a recent folder). */
   quick?: boolean;
+  /** A switch, on or off: picking it flips it (`onSelect`) and the menu stays open. */
+  checked?: boolean;
   onSelect: () => void;
 }
 
@@ -131,7 +133,7 @@ export function Menu({ request, onClose }: { request: MenuRequest; onClose: () =
 
   const pick = (item: MenuItem) => {
     if (item.disabled) return;
-    onClose();
+    if (item.checked === undefined) onClose();
     item.onSelect();
   };
 
@@ -206,7 +208,8 @@ export function Menu({ request, onClose }: { request: MenuRequest; onClose: () =
               <button
                 key={`${entry.label}-${index}`}
                 type="button"
-                role={searchable ? "option" : "menuitem"}
+                role={searchable ? "option" : entry.checked === undefined ? "menuitem" : "menuitemcheckbox"}
+                aria-checked={entry.checked}
                 id={searchable && items.includes(entry) ? `${listId}-${items.indexOf(entry)}` : undefined}
                 aria-selected={searchable ? entry === highlighted : undefined}
                 tabIndex={searchable ? -1 : undefined}
@@ -227,6 +230,7 @@ export function Menu({ request, onClose }: { request: MenuRequest; onClose: () =
                 <span className="menu-label">{entry.label}</span>
                 {entry.detail && <span className="menu-detail">{entry.detail}</span>}
                 {entry.hint && <kbd className="menu-hint">{entry.hint}</kbd>}
+                {entry.checked !== undefined && <span className={entry.checked ? "toggle on" : "toggle"} aria-hidden="true" />}
                 {entry.keys && (
                   <span className="keycaps">
                     {keyCaps(entry.keys).map((cap, at) => (
