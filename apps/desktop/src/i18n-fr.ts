@@ -1514,6 +1514,12 @@ export const FR: Record<string, Entry> = {
   "Set aside or bring back {messages}": "Mettre de côté ou ramener {messages}",
   "Snooze {messages}": "Reporter {messages}",
   "Set reminders on {messages}": "Programmer des rappels sur {messages}",
+  // Agent activity as a folder; view titles.
+  "What agents did, newest first": "Ce que les agents ont fait, du plus récent au plus ancien",
+  "{count} drafts": { one: "{count} brouillon", other: "{count} brouillons" },
+  "{count} waiting": { one: "{count} en attente", other: "{count} en attente" },
+  "Go to {place}": "Aller à : {place}",
+  "Search: {name}": "Recherche : {name}",
   // The sender card: their mail as a group.
   "Group their mail": "Grouper leurs messages",
   "Group everyone at {domain}": "Grouper tout le monde chez {domain}",

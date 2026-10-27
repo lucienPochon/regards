@@ -183,6 +183,7 @@ export const TOUR: Group[] = [
       { id: "agents-off", label: "Agents turned off", note: "One switch for every agent; each account keeps its level.", steps: settings("Agents", "wait:300", "click:.agents-gate [role=switch]", "wait:300") },
       { id: "agent-connect", label: "Connect an agent", note: "The command to run, or the lines to paste, for Claude Code, Codex, Cursor and others.", steps: settings("Agents", "wait:300", "see:.agent-connect=Connect") },
       { id: "agents", label: "Agent settings", note: "Access per account, sending, limits, activity and undo.", steps: settings("Agents") },
+      { id: "agents-activity-folder", label: "Agent activity, as a folder", note: "From More (All folders), or the command palette: what agents did, beside the mail.", steps: ["wait:800", "text:button=More", "wait:400", "text:button=Agent activity"] },
     ],
   },
   {
