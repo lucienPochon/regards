@@ -99,6 +99,7 @@ import { OutboxList } from "./OutboxList";
 import { ReadingPane } from "./ReadingPane";
 import { SendToast } from "./SendToast";
 import { Settings, type SettingsTab } from "./Settings";
+import { AgentActivity } from "./AgentActivity";
 import { AgentsMenu } from "./AgentsMenu";
 import { ConnectDialog, type ConnectId } from "./ConnectDialog";
 import { ShortcutHelp } from "./ShortcutHelp";
@@ -1480,12 +1481,13 @@ export function App() {
       entries.push(...extra, "separator");
     }
     const go = (target: View, label: string, icon: IconName) =>
-      entries.push({ label: `Go to ${label}`, icon, onSelect: () => changeView(target) });
-    go(INBOX, "Inbox", "inbox");
+      entries.push({ label: t("Go to {place}", { place: label }), icon, onSelect: () => changeView(target) });
+    go(INBOX, t("Inbox"), "inbox");
     for (const mark of MARKED_VIEWS) go({ kind: "marked", mark }, MARKED_LABELS[mark], MARKED_ICONS[mark]);
-    go({ kind: "drafts" }, "Drafts", "draft");
+    go({ kind: "drafts" }, t("Drafts"), "draft");
     for (const role of ["sent", "archive", "junk", "trash"] as const) go({ kind: "role", role }, ROLE_LABELS[role], ROLE_ICONS[role]);
-    go({ kind: "outbox" }, "Outbox", "outbox");
+    go({ kind: "outbox" }, t("Outbox"), "outbox");
+    if (accounts.length > 0) go({ kind: "activity" }, t("Agent activity"), "agent");
     entries.push({ label: t("Go to folder…"), icon: "folder", keys: firstKey("goFolder"), onSelect: goToFolder });
     entries.push("separator");
     if (readTargets().length > 0) entries.push({ label: t("Mark everything here read"), icon: "mailOpen", onSelect: markAllHere });
@@ -1501,7 +1503,7 @@ export function App() {
         },
       },
       ...(search?.query.trim() && !savedNow ? [{ label: t("Save this search…"), icon: "star" as const, onSelect: saveThisSearch }] : []),
-      ...savedSearches.map((saved) => ({ label: `Search: ${saved.name}`, icon: "search" as const, detail: saved.query, onSelect: () => openSaved(saved) })),
+      ...savedSearches.map((saved) => ({ label: t("Search: {name}", { name: saved.name }), icon: "search" as const, detail: saved.query, onSelect: () => openSaved(saved) })),
       { label: t("Check for new mail"), icon: "refresh", keys: firstKey("sync"), onSelect: syncNow },
       { label: layout.locked ? t("Fold the sidebar") : t("Show the sidebar"), icon: "sidebar", keys: firstKey("sidebar"), onSelect: toggleSidebar },
       // Back beside the list from here; leaving it is chosen in Settings › Appearance, not by a stray pick.
@@ -1708,30 +1710,38 @@ export function App() {
         : view.kind === "mailbox"
           ? viewMailbox
             ? leafName(viewMailbox)
-            : "Folder"
+            : t("Folder")
           : view.kind === "drafts"
-            ? "Drafts"
-            : "Outbox";
+            ? t("Drafts")
+            : view.kind === "outbox"
+              ? t("Outbox")
+              : t("Agent activity");
+  const inboxOwner = view.kind === "section" ? accounts.find((entry) => entry.account.id === view.inbox?.accountId) : undefined;
   const subtitle =
     view.kind === "section"
-      ? `Inbox${view.inbox ? ` · ${(() => { const owner = accounts.find((entry) => entry.account.id === view.inbox?.accountId); return owner ? accountLabel(appPrefs, owner.account) : ""; })()}` : ""}`
+      ? inboxOwner
+        ? `${t("Inbox")} · ${accountLabel(appPrefs, inboxOwner.account)}`
+        : t("Inbox")
       : view.kind === "mailbox"
-        ? `${viewAccount ? accountLabel(appPrefs, viewAccount.account) : ""}${accountInbox ? (smartOn ? " · By priority" : cardsOn ? " · By category" : " · By date") : ""}`
+        ? `${viewAccount ? accountLabel(appPrefs, viewAccount.account) : ""}${accountInbox ? ` · ${smartOn ? t("By priority") : cardsOn ? t("By category") : t("By date")}` : ""}`
         : view.kind === "drafts"
-          ? `${drafts.length} ${drafts.length === 1 ? "draft" : "drafts"}`
+          ? tn(drafts.length, "1 draft", "{count} drafts")
           : view.kind === "outbox"
-            ? `${outbox.length} waiting`
-            : smartOn
-              ? t("By priority")
-              : cardsOn
-                ? t("By category")
-                : t("By date");
+            ? tn(outbox.length, "1 waiting", "{count} waiting")
+            : view.kind === "activity"
+              ? t("What agents did, newest first")
+              : smartOn
+                ? t("By priority")
+                : cardsOn
+                  ? t("By category")
+                  : t("By date");
   // An account's mail still coming in for the first time: its folders are
   // not empty, the messages are not here yet.
   const arriving =
     view.kind !== "marked" &&
     view.kind !== "drafts" &&
     view.kind !== "outbox" &&
+    view.kind !== "activity" &&
     accounts.some(
       (entry) => syncAccounts.includes(entry.account.id) && entry.error === null && !entry.sync?.last_success_at,
     );
@@ -1991,6 +2001,19 @@ export function App() {
           </button>
         </ListHeader>
         <DraftsList drafts={drafts} open={composer?.id ?? null} onOpen={editDraft} onFailed={failed} onUndo={setUndo} />
+      </section>
+    ) : view.kind === "activity" ? (
+      <section className="list-pane" aria-label={t("Agent activity")}>
+        <ListHeader title={title} subtitle={subtitle} />
+        <div className="list-scroll activity-scroll">
+          <AgentActivity
+            accounts={accounts.map(({ account }) => ({ id: account.id, email: account.email }))}
+            folderName={(mailboxId) => {
+              const mailbox = accounts.flatMap((entry) => entry.mailboxes).find((m) => m.id === mailboxId);
+              return mailbox ? leafName(mailbox) : null;
+            }}
+          />
+        </div>
       </section>
     ) : view.kind === "outbox" ? (
       <section className="list-pane" aria-label={t("Outbox")}>

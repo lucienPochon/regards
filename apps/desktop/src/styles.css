@@ -6176,6 +6176,21 @@ button.sender-row:hover:not(:disabled) {
   font-size: 15px;
 }
 
+/* Agent activity as a folder: in the list column, under the column's own title. */
+.activity-scroll {
+  padding: 0 16px 16px;
+}
+
+.activity-scroll .agent-activity {
+  margin-top: 0;
+  padding-top: 4px;
+  border-top: 0;
+}
+
+.activity-scroll .activity-head h4 {
+  display: none;
+}
+
 .activity-empty {
   padding: 18px 0;
   font-size: 13px;

@@ -32,6 +32,7 @@ const INBOX: Row = { view: { kind: "role", role: "inbox" }, icon: "inbox", label
 const PINNED: Row = { view: { kind: "marked", mark: "pinned" }, icon: "pin", label: MARKED_LABELS.pinned };
 const DRAFTS: Row = { view: { kind: "drafts" }, icon: "draft", label: t("Drafts") };
 const OUTBOX: Row = { view: { kind: "outbox" }, icon: "outbox", label: t("Outbox") };
+const ACTIVITY: Row = { view: { kind: "activity" }, icon: "agent", label: t("Agent activity") };
 const role = (r: Role): Row => ({ view: { kind: "role", role: r }, icon: ROLE_ICONS[r], label: ROLE_LABELS[r] });
 const marked = (mark: "snoozed" | "reminders" | "aside"): Row => ({
   view: { kind: "marked", mark },
@@ -49,7 +50,7 @@ const ARCHIVE: Row = { ...role("archive"), icon: "check" };
 /** The rows the sidebar has unless taken out (they then wait in the All folders panel). */
 const STANDARD = [...TOP, ARCHIVE];
 /** The other system views, only in the All folders panel unless starred. */
-const EXTRA: Row[] = [marked("snoozed"), marked("reminders"), marked("aside"), role("junk"), role("all"), role("flagged")];
+const EXTRA: Row[] = [marked("snoozed"), marked("reminders"), marked("aside"), role("junk"), role("all"), role("flagged"), ACTIVITY];
 /** Roles that can be opened per account from a chevron. */
 const PER_ACCOUNT: Role[] = ["inbox", "sent", "trash"];
 
@@ -173,7 +174,7 @@ export function Sidebar({
 
   // Messages dropped on a folder go there (see App's onDrop for what each one does).
   const droppable = (target: View) =>
-    !(target.kind === "drafts" || target.kind === "outbox" || (target.kind === "role" && (target.role === "sent" || target.role === "drafts")));
+    !(target.kind === "drafts" || target.kind === "outbox" || target.kind === "activity" || (target.kind === "role" && (target.role === "sent" || target.role === "drafts")));
   const dragProps = (target: View) =>
     droppable(target)
       ? {

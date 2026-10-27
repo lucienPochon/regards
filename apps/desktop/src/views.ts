@@ -11,6 +11,7 @@ import type { Section } from "./smart";
  * this device, across accounts (or the invitations to answer, from the
  * inbox). A `section` view is one Smart Inbox section
  * (Priority, Newsletters …) of every inbox, or of the one it was opened from.
+ * `activity` is what agents did, as Settings › Agents also shows it.
  */
 export type View =
   | { kind: "role"; role: Role }
@@ -18,7 +19,8 @@ export type View =
   | { kind: "marked"; mark: MessageView }
   | { kind: "section"; section: Section; inbox?: { mailboxId: number; accountId: string } }
   | { kind: "drafts" }
-  | { kind: "outbox" };
+  | { kind: "outbox" }
+  | { kind: "activity" };
 
 export const MARKED_LABELS: Record<MessageView, string> = {
   pinned: t("Pinned"),
