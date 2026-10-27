@@ -1515,10 +1515,8 @@ export const FR: Record<string, Entry> = {
   "Set reminders on {messages}": "Programmer des rappels sur {messages}",
   // Agent activity as a folder; view titles.
   "What agents did, newest first": "Ce que les agents ont fait, du plus récent au plus ancien",
-  "1 draft": "{count} brouillon",
-  "{count} drafts": "{count} brouillons",
-  "1 waiting": "{count} en attente",
-  "{count} waiting": "{count} en attente",
+  "{count} drafts": { one: "{count} brouillon", other: "{count} brouillons" },
+  "{count} waiting": { one: "{count} en attente", other: "{count} en attente" },
   "Go to {place}": "Aller à : {place}",
   "Search: {name}": "Recherche : {name}",
   // Your groups: their messages leave the list.
