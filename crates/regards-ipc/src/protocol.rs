@@ -306,6 +306,8 @@ pub mod methods {
     /// Send a failed or uncertain message again: the user decided.
     pub const OUTBOX_SEND_AGAIN: &str = "outbox.send_again";
     /// Forget a failed or uncertain message (for example: it did go out).
+    /// A failed one can be undone for a while (`undo` in the answer): it
+    /// comes back as a draft.
     pub const OUTBOX_DISMISS: &str = "outbox.dismiss";
     /// What to tell the person that has not been shown yet: a snooze ended, a
     /// reminder came due, a send held or failed (ADR-0011). `ui` only.

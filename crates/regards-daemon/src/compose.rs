@@ -437,37 +437,44 @@ pub(crate) async fn delete(state: &State, params: DraftRef) -> Result<Value, Rpc
     let undo = state
         .store
         .write(move |tx| {
-            let Some(draft) = drafts::get(tx, id)? else {
+            let Some(kept) = keep_draft(tx, id)? else {
                 return Ok(None);
             };
-            let files = drafts::attachments(tx, id)?
-                .into_iter()
-                .map(|file| (file.blob_hash, file.name, file.mime, file.size, file.content_id))
-                .collect();
             if !drafts::delete(tx, id)? {
                 return Ok(None);
             }
-            let kept = KeptDraft {
-                account_id: draft.account_id,
-                to: draft.to,
-                cc: draft.cc,
-                bcc: draft.bcc,
-                subject: draft.subject,
-                body: draft.body,
-                html: draft.html,
-                in_reply_to: draft.in_reply_to,
-                references: draft.references,
-                replying_to: draft.replying_to,
-                identity_id: draft.identity_id,
-                files,
-            };
-            crate::actions::record_draft_undo(tx, kept, now).map(Some)
+            crate::actions::record_draft_undo(tx, "Deleted a draft", kept, now).map(Some)
         })
         .await
         .map_err(conflict)?
         .value
         .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "no such draft"))?;
     Ok(json!({ "deleted": true, "undo": undo }))
+}
+
+/// A draft as it is, to make it again if its deletion is undone; `None` if there is none.
+fn keep_draft(tx: &Transaction<'_>, id: i64) -> Result<Option<KeptDraft>, StoreError> {
+    let Some(draft) = drafts::get(tx, id)? else {
+        return Ok(None);
+    };
+    let files = drafts::attachments(tx, id)?
+        .into_iter()
+        .map(|file| (file.blob_hash, file.name, file.mime, file.size, file.content_id))
+        .collect();
+    Ok(Some(KeptDraft {
+        account_id: draft.account_id,
+        to: draft.to,
+        cc: draft.cc,
+        bcc: draft.bcc,
+        subject: draft.subject,
+        body: draft.body,
+        html: draft.html,
+        in_reply_to: draft.in_reply_to,
+        references: draft.references,
+        replying_to: draft.replying_to,
+        identity_id: draft.identity_id,
+        files,
+    }))
 }
 
 /// A deleted draft as it was, to make it again when its deletion is undone.
@@ -1131,21 +1138,45 @@ pub(crate) async fn send_again(state: &State, params: OutboxRef) -> Result<Value
     Ok(json!({ "queued": true }))
 }
 
+/// `outbox.dismiss`: forget a failed or uncertain message. A failed one's
+/// draft is kept for a while, so Undo (`undo` in the answer) brings it back
+/// to Drafts; one that did go out ("It was sent") has none.
 pub(crate) async fn dismiss(state: &State, params: OutboxRef) -> Result<Value, RpcError> {
-    let id = params.id;
+    let (id, now) = (params.id, now_ms());
     let dismissed = state
         .store
-        .write(move |tx| outbox::dismiss(tx, id))
+        .write(move |tx| {
+            let kept = match outbox::get(tx, id)? {
+                Some(entry) if entry.state == outbox::State::Failed => match entry.draft_id {
+                    Some(draft) => keep_draft(tx, draft)?,
+                    None => None,
+                },
+                _ => None,
+            };
+            if !outbox::dismiss(tx, id)? {
+                return Ok(None);
+            }
+            let undo = match kept {
+                Some(kept) => Some(crate::actions::record_draft_undo(
+                    tx,
+                    "Discarded a message that was not sent",
+                    kept,
+                    now,
+                )?),
+                None => None,
+            };
+            Ok(Some(undo))
+        })
         .await
         .map_err(crate::session::internal)?
         .value;
-    if !dismissed {
+    let Some(undo) = dismissed else {
         return Err(RpcError::new(
             codes::CONFLICT,
             "only failed or uncertain messages can be dismissed",
         ));
-    }
-    Ok(json!({ "dismissed": true }))
+    };
+    Ok(json!({ "dismissed": true, "undo": undo }))
 }
 
 pub(crate) async fn view(state: &State, id: i64) -> Result<Value, RpcError> {

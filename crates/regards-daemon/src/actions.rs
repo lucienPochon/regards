@@ -534,13 +534,14 @@ struct Inverse {
     drafts_deleted: Vec<crate::compose::KeptDraft>,
 }
 
-/// Keep how to undo a draft's deletion, for a while.
+/// Keep how to undo a draft's deletion (or a failed message's, `description`
+/// says which), for a while: undone, it is a draft again.
 pub(crate) fn record_draft_undo(
     tx: &rusqlite::Transaction<'_>,
+    description: &str,
     kept: crate::compose::KeptDraft,
     now: i64,
 ) -> Result<UndoInfo, StoreError> {
-    let description = "Deleted a draft";
     let inverse = serde_json::to_string(&Inverse {
         drafts_deleted: vec![kept],
         ..Inverse::default()

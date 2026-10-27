@@ -2075,12 +2075,18 @@ function handle(cmd: string, args: Args): unknown {
       screeningMode = args.mode as Screening;
       changed();
       return { mode: screeningMode };
-    case "outbox_send_again":
-    case "outbox_dismiss": {
+    case "outbox_send_again": {
       const index = outbox.findIndex((e) => e.id === args.id);
       if (index !== -1) outbox.splice(index, 1);
       changed();
       return null;
+    }
+    case "outbox_dismiss": {
+      const index = outbox.findIndex((e) => e.id === args.id);
+      const failed = index !== -1 && outbox[index].state === "failed";
+      if (index !== -1) outbox.splice(index, 1);
+      changed();
+      return { dismissed: index !== -1, undo: failed ? { id: 9101, description: "Discarded a message that was not sent" } : null };
     }
   }
   throw new Error(`The preview does not know "${cmd}".`);
