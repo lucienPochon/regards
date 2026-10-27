@@ -106,9 +106,10 @@ pub fn render_with(raw: &[u8], allow_remote: bool, links: Option<&str>, clean_li
 }
 
 /// Formatting a message written in Regards may carry: text styles, lists,
-/// quotes, headings, web or mail links, a colour or highlight on some text,
-/// and its own images (`cid:`, sent with it), at a size. Everything else
-/// (scripts, other styles, images from the web, frames, forms, event
+/// quotes, headings, web or mail links, a colour, highlight, font or size on
+/// some text (those the composer offers), a paragraph's indent, simple
+/// tables, and its own images (`cid:`, sent with it), at a size. Everything
+/// else (scripts, other styles, images from the web, frames, forms, event
 /// handlers) is removed before sending.
 pub fn sanitize_outgoing(html: &str) -> String {
     written(html, Pictures::Attached)
@@ -174,10 +175,25 @@ fn written(html: &str, pictures: Pictures) -> String {
             "hr",
             "img",
             "span",
+            "table",
+            "thead",
+            "tbody",
+            "tr",
+            "th",
+            "td",
         ])
         .add_tag_attributes("a", ["href"])
         .add_tag_attributes("img", ["src", "alt", "width", "height"])
         .add_tag_attributes("span", ["style"])
+        // A paragraph's or heading's indent.
+        .add_tag_attributes("p", ["style"])
+        .add_tag_attributes("h1", ["style"])
+        .add_tag_attributes("h2", ["style"])
+        .add_tag_attributes("h3", ["style"])
+        // A table's lines, as mail programs draw them without styles.
+        .add_tag_attributes("table", ["border", "cellpadding", "cellspacing"])
+        .add_tag_attributes("th", ["colspan", "rowspan"])
+        .add_tag_attributes("td", ["colspan", "rowspan"])
         // `type="cite"`: quoted history, which readers fold (fold_quotes).
         .add_tag_attributes("blockquote", ["type"])
         .add_url_schemes(["http", "https", "mailto", "cid", "data"])
@@ -187,7 +203,10 @@ fn written(html: &str, pictures: Pictures) -> String {
             ("img", "src") if pictures == Pictures::Embedded && !embedded_picture(value) => None,
             ("img", "width" | "height") => pixels(value).map(Into::into),
             ("a", "href") if value.starts_with("data:") => None,
-            ("span", "style") => colours(value).map(Into::into),
+            ("span", "style") => text_style(value).map(Into::into),
+            ("p" | "h1" | "h2" | "h3", "style") => indent(value).map(Into::into),
+            ("table", _) => small_number(value, 0, 20).map(Into::into),
+            ("th" | "td", _) => small_number(value, 1, 99).map(Into::into),
             ("blockquote", "type") if value != "cite" => None,
             ("a", "href") if value.starts_with("cid:") => None,
             _ => Some(value.into()),
@@ -207,20 +226,60 @@ fn pixels(value: &str) -> Option<String> {
     (whole && value.parse::<u16>().is_ok_and(|n| n > 0)).then(|| value.to_owned())
 }
 
+/// The fonts the composer offers, as mail carries them.
+pub const FONT_FAMILIES: [&str; 3] = [
+    "Arial, Helvetica, sans-serif",
+    "Georgia, 'Times New Roman', serif",
+    "'Courier New', Courier, monospace",
+];
+
+/// The text sizes the composer offers besides the reader's own.
+pub const FONT_SIZES: [&str; 3] = ["12px", "18px", "24px"];
+
 /// Of a span's style, only its text colour and highlight, each a six-digit
-/// hex colour (as the composer offers them); `None` when nothing is left.
-fn colours(style: &str) -> Option<String> {
+/// hex colour, and its font and size, as the composer offers them; `None`
+/// when nothing is left.
+fn text_style(style: &str) -> Option<String> {
     let kept: Vec<String> = style
         .split(';')
         .filter_map(|declaration| {
             let (name, value) = declaration.split_once(':')?;
             let (name, value) = (name.trim().to_ascii_lowercase(), value.trim());
             let hex = value.len() == 7 && value.starts_with('#') && value[1..].bytes().all(|b| b.is_ascii_hexdigit());
-            (hex && (name == "color" || name == "background-color"))
-                .then(|| format!("{name}: {}", value.to_ascii_lowercase()))
+            match name.as_str() {
+                "color" | "background-color" if hex => Some(format!("{name}: {}", value.to_ascii_lowercase())),
+                "font-family" => FONT_FAMILIES
+                    .iter()
+                    .find(|font| font.eq_ignore_ascii_case(value))
+                    .map(|font| format!("font-family: {font}")),
+                "font-size" => FONT_SIZES
+                    .contains(&value.to_ascii_lowercase().as_str())
+                    .then(|| format!("font-size: {}", value.to_ascii_lowercase())),
+                _ => None,
+            }
         })
         .collect();
     (!kept.is_empty()).then(|| kept.join("; "))
+}
+
+/// Of a paragraph's style, only its indent: one to four steps of 40 pixels.
+fn indent(style: &str) -> Option<String> {
+    style.split(';').find_map(|declaration| {
+        let (name, value) = declaration.split_once(':')?;
+        let pixels = value.trim().to_ascii_lowercase();
+        (name.trim().eq_ignore_ascii_case("margin-left")
+            && ["40px", "80px", "120px", "160px"].contains(&pixels.as_str()))
+        .then(|| format!("margin-left: {pixels}"))
+    })
+}
+
+/// A whole number from `least` to `most`, as written; `None` otherwise.
+fn small_number(value: &str, least: u8, most: u8) -> Option<String> {
+    let value = value.trim();
+    let number = (value.len() <= 2 && value.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| value.parse::<u8>().ok())
+        .flatten()?;
+    (least..=most).contains(&number).then(|| number.to_string())
 }
 
 /// A message's HTML, to quote under a reply or a forward: as
@@ -907,6 +966,47 @@ mod tests {
             "{}",
             sanitize_outgoing(signature)
         );
+    }
+
+    #[test]
+    fn written_fonts_sizes_indents_and_tables_go_out_and_nothing_more() {
+        let written = "<p style=\"margin-left: 80px\"><span style=\"font-family: Georgia, 'Times New Roman', serif; font-size: 18px\">calm</span> \
+            <span style=\"font-family: Comic Sans MS; font-size: 9px\">odd</span></p>\
+            <h2 style=\"margin-left: 9999px; color: red\">far</h2>\
+            <table border=\"1\" cellpadding=\"6\" cellspacing=\"0\" style=\"width: 9999px\" onclick=\"x()\">\
+            <colgroup><col style=\"min-width: 25px\"></colgroup><tbody><tr><th colspan=\"2\" rowspan=\"1\"><p>Day</p></th></tr>\
+            <tr><td colspan=\"1000\" rowspan=\"x\"><p>Mon</p></td><td><p>Tue</p></td></tr></tbody></table>";
+        let clean = sanitize_outgoing(written);
+        assert!(clean.contains("<p style=\"margin-left: 80px\">"), "{clean}");
+        assert!(
+            clean.contains(
+                "<span style=\"font-family: Georgia, 'Times New Roman', serif; font-size: 18px\">calm</span>"
+            ),
+            "{clean}"
+        );
+        assert!(clean.contains("odd"), "the words stay: {clean}");
+        assert!(clean.contains("<h2>far</h2>"), "{clean}");
+        assert!(
+            clean.contains("<table border=\"1\" cellpadding=\"6\" cellspacing=\"0\">"),
+            "{clean}"
+        );
+        assert!(
+            clean.contains("<th colspan=\"2\" rowspan=\"1\"><p>Day</p></th>"),
+            "{clean}"
+        );
+        assert!(clean.contains("<td><p>Mon</p></td>"), "{clean}");
+        for gone in [
+            "Comic",
+            "9px",
+            "9999px",
+            "colgroup",
+            "min-width",
+            "onclick",
+            "1000",
+            "width",
+        ] {
+            assert!(!clean.contains(gone), "{gone} survived: {clean}");
+        }
     }
 
     #[test]

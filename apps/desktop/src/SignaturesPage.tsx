@@ -5,7 +5,7 @@ import type { ConfirmRequest } from "./Confirm";
 import { textSignature } from "./compose";
 import { type Identity, listIdentities } from "./identities";
 import { Icon } from "./icons";
-import { coloursAsMarks, coloursAsStyles, fileBase64 } from "./images";
+import { fileBase64, stylesForEditor, stylesForMail } from "./images";
 import { LinkRow, Option, Select, SubPageHead } from "./SettingsControls";
 import { type Signature, SIGNATURE_MAX, listSignatures, removeSignature, saveSignature, setDefaultSignature } from "./signatures";
 import { t, tn } from "./i18n";
@@ -127,7 +127,7 @@ function SignatureEditor({
   const [name, setName] = useState(signature?.name ?? "");
   // Written with formatting and pictures: its text is the editor's, its HTML kept beside it.
   const [initial] = useState(() =>
-    signature?.html ? coloursAsMarks(signature.html) : textSignature(signature?.body ?? ""),
+    signature?.html ? stylesForEditor(signature.html) : textSignature(signature?.body ?? ""),
   );
   const [html, setHtml] = useState(initial);
   const [body, setBody] = useState(signature?.body ?? "");
@@ -162,7 +162,7 @@ function SignatureEditor({
     });
   };
   const save = () =>
-    run(() => saveSignature({ id: signature?.id ?? null, name: name.trim(), body, html: coloursAsStyles(html) }));
+    run(() => saveSignature({ id: signature?.id ?? null, name: name.trim(), body, html: stylesForMail(html) }));
   const remove = () => {
     if (!signature) return;
     void confirm({

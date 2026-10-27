@@ -4217,7 +4217,9 @@ button.list-title:hover {
   background: var(--bg);
 }
 
-.format-bar .text-style {
+.format-bar .text-style,
+.format-bar .text-font,
+.format-bar .text-size {
   height: 30px;
   padding: 0 6px;
   border: 0;
@@ -4228,7 +4230,9 @@ button.list-title:hover {
   font-weight: 600;
 }
 
-.format-bar .text-style:hover:not(:disabled) {
+.format-bar .text-style:hover:not(:disabled),
+.format-bar .text-font:hover:not(:disabled),
+.format-bar .text-size:hover:not(:disabled) {
   background: var(--hover);
   color: var(--text);
 }
@@ -4287,6 +4291,55 @@ button.list-title:hover {
 .compose-body [data-highlight="#bbdefb"] { background: #bbdefb; }
 .compose-body [data-highlight="#f8bbd0"] { background: #f8bbd0; }
 .compose-body [data-highlight="#ffe0b2"] { background: #ffe0b2; }
+
+/* Fonts, sizes and indents the composer offers, as mail carries them (toStoredHtml). */
+.compose-body [data-font="sans"] { font-family: Arial, Helvetica, sans-serif; }
+.compose-body [data-font="serif"] { font-family: Georgia, "Times New Roman", serif; }
+.compose-body [data-font="mono"] { font-family: "Courier New", Courier, monospace; }
+.compose-body [data-size="small"] { font-size: 12px; }
+.compose-body [data-size="large"] { font-size: 18px; }
+.compose-body [data-size="huge"] { font-size: 24px; }
+.compose-body [data-indent="1"] { margin-left: 40px; }
+.compose-body [data-indent="2"] { margin-left: 80px; }
+.compose-body [data-indent="3"] { margin-left: 120px; }
+.compose-body [data-indent="4"] { margin-left: 160px; }
+
+/* A table, with the lines mail programs draw. */
+.compose-body table {
+  margin: 8px 0;
+  border-collapse: collapse;
+}
+
+.compose-body th,
+.compose-body td {
+  min-width: 60px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-strong, var(--border));
+  vertical-align: top;
+}
+
+.compose-body th {
+  background: var(--hover);
+  font-weight: 600;
+  text-align: left;
+}
+
+.compose-body th p,
+.compose-body td p {
+  margin: 0;
+}
+
+.compose-body .selectedCell {
+  background: var(--selection, var(--hover));
+}
+
+/* What can be done to the table the cursor is in. */
+.format-bar .table-tools {
+  display: inline-flex;
+  gap: 2px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
+}
 
 /* A picture's corners, to make it smaller or larger: shown on hover and while chosen. */
 .compose-body [data-resize-handle] {
