@@ -28,6 +28,8 @@ pub enum Mark {
     Muted,
     /// The snooze comes back quietly: no notification (1), set with it.
     SnoozeQuiet,
+    /// The conversation is a priority: its mail, new mail included, goes in Priority.
+    Priority,
 }
 
 impl Mark {
@@ -41,6 +43,7 @@ impl Mark {
             Self::Surfaced => "surfaced_at",
             Self::Muted => "muted_at",
             Self::SnoozeQuiet => "snooze_quiet",
+            Self::Priority => "priority_at",
         }
     }
 }
@@ -56,6 +59,7 @@ pub struct Marks {
     pub surfaced_at: Option<i64>,
     pub muted_at: Option<i64>,
     pub snooze_quiet: Option<i64>,
+    pub priority_at: Option<i64>,
 }
 
 impl Marks {
@@ -69,12 +73,13 @@ impl Marks {
             Mark::Surfaced => self.surfaced_at,
             Mark::Muted => self.muted_at,
             Mark::SnoozeQuiet => self.snooze_quiet,
+            Mark::Priority => self.priority_at,
         }
     }
 }
 
 const MARK_COLUMNS: &str =
-    "pinned_at, aside_at, snoozed_until, remind_at, reminded_at, surfaced_at, muted_at, snooze_quiet";
+    "pinned_at, aside_at, snoozed_until, remind_at, reminded_at, surfaced_at, muted_at, snooze_quiet, priority_at";
 
 fn marks_from(row: &Row<'_>) -> rusqlite::Result<Marks> {
     Ok(Marks {
@@ -86,6 +91,7 @@ fn marks_from(row: &Row<'_>) -> rusqlite::Result<Marks> {
         surfaced_at: row.get(5)?,
         muted_at: row.get(6)?,
         snooze_quiet: row.get(7)?,
+        priority_at: row.get(8)?,
     })
 }
 
@@ -100,17 +106,32 @@ pub fn get(conn: &Connection, account_id: &str, message_id: &str) -> Result<Mark
         .unwrap_or_default())
 }
 
+/// Of these conversations, those made a priority: a message of theirs is marked.
+pub fn priority_threads(conn: &Connection, account_id: &str, threads: &[i64]) -> Result<HashSet<i64>, StoreError> {
+    threads_marked(conn, account_id, threads, "priority_at")
+}
+
 /// Of these conversations, those muted: a message of theirs is marked.
 pub fn muted_threads(conn: &Connection, account_id: &str, threads: &[i64]) -> Result<HashSet<i64>, StoreError> {
+    threads_marked(conn, account_id, threads, "muted_at")
+}
+
+/// Of these conversations, those with a message carrying the mark in `column`.
+fn threads_marked(
+    conn: &Connection,
+    account_id: &str,
+    threads: &[i64],
+    column: &str,
+) -> Result<HashSet<i64>, StoreError> {
     if threads.is_empty() {
         return Ok(HashSet::new());
     }
     let threads = serde_json::to_string(threads).expect("numbers always serialize");
-    let mut statement = conn.prepare_cached(
+    let mut statement = conn.prepare_cached(&format!(
         "SELECT DISTINCT t.thread_id FROM messages t \
          JOIN marks k ON k.account_id = ?1 AND k.message_id = t.message_id_header \
-         WHERE k.muted_at IS NOT NULL AND t.thread_id IN (SELECT value FROM json_each(?2))",
-    )?;
+         WHERE k.{column} IS NOT NULL AND t.thread_id IN (SELECT value FROM json_each(?2))"
+    ))?;
     let rows = statement.query_map(params![account_id, threads], |row| row.get(0))?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
@@ -135,7 +156,8 @@ pub fn set(
     tx.execute(
         "DELETE FROM marks WHERE account_id = ?1 AND message_id = ?2 \
          AND pinned_at IS NULL AND aside_at IS NULL AND snoozed_until IS NULL \
-         AND remind_at IS NULL AND reminded_at IS NULL AND surfaced_at IS NULL AND muted_at IS NULL",
+         AND remind_at IS NULL AND reminded_at IS NULL AND surfaced_at IS NULL AND muted_at IS NULL \
+         AND priority_at IS NULL",
         params![account_id, message_id],
     )?;
     Ok(before)

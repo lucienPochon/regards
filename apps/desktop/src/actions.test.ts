@@ -6,6 +6,7 @@ const invoke = vi.fn(async (command: string, args?: { ids?: number[] }) => {
   if (command === "message_archive") return { moved: args?.ids?.length ?? 0, undo: null };
   if (command === "message_set_flags") return { changed: args?.ids?.length ?? 0 };
   if (command === "message_mute") return { changed: args?.ids?.length ?? 0, undo: null };
+  if (command === "message_priority") return { changed: args?.ids?.length ?? 0, undo: null };
   if (command === "message_copy") return { copied: args?.ids?.length ?? 0 };
   if (command === "draft_again") return { id: 9 };
   return null;
@@ -120,6 +121,16 @@ describe("Mute", () => {
     expect(used.marked).toHaveBeenCalledWith({ changed: 3, undo: null });
     await run({ ...target(true), muted: true }, "mute");
     expect(sent("message_mute")).toEqual({ ids: [1, 7, 8], muted: false });
+  });
+});
+
+describe("Priority for a conversation", () => {
+  it("covers the whole conversation, and takes it back from one that is", async () => {
+    const used = await run(target(true), "priority");
+    expect(sent("message_priority")).toEqual({ ids: [1, 7, 8], priority: true });
+    expect(used.marked).toHaveBeenCalledWith({ changed: 3, undo: null });
+    await run({ ...target(true), priority: true }, "priority");
+    expect(sent("message_priority")).toEqual({ ids: [1, 7, 8], priority: false });
   });
 });
 

@@ -191,6 +191,7 @@ export function ReadingPane({
     disposable: disposable(folder?.role ?? item.role),
     pinned: message.pinned,
     muted: message.muted === true,
+    priority: message.priority === true,
     sent: (folder?.role ?? item.role) === "sent",
     aside: message.aside,
     snoozed: message.snoozed_until !== null,

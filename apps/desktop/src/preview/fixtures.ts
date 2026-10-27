@@ -22,6 +22,7 @@ export interface FixtureMessage {
   thread: string;
   pinned?: boolean;
   muted?: boolean;
+  priority?: boolean;
   aside?: boolean;
   snoozed_until?: number | null;
   remind_at?: number | null;

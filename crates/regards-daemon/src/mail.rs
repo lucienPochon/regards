@@ -123,6 +123,8 @@ struct PageInfo {
     threads: HashMap<i64, u32>,
     /// The rows' conversations that are muted.
     muted: HashSet<i64>,
+    /// The rows' conversations made a priority.
+    prioritized: HashSet<i64>,
     /// In a folder's list, where a conversation is one row: how each looks
     /// from all its messages there, by (folder, thread).
     conversations: HashMap<(i64, i64), messages::ConversationState>,
@@ -137,6 +139,7 @@ fn page_info(conn: &rusqlite::Connection, account_id: &str, rows: &[Message]) ->
         marks: marks::of(conn, account_id, &ids)?,
         threads: messages::thread_sizes(conn, &threads)?,
         muted: marks::muted_threads(conn, account_id, &threads)?,
+        prioritized: marks::priority_threads(conn, account_id, &threads)?,
         conversations: HashMap::new(),
     })
 }
@@ -929,6 +932,7 @@ fn summary(m: Message, info: &PageInfo) -> MessageSummary {
         mailbox_id: m.moving_to.unwrap_or(m.mailbox_id),
         pinned: mark.pinned_at.is_some(),
         muted: mark.muted_at.is_some() || m.thread_id.is_some_and(|thread| info.muted.contains(&thread)),
+        priority: mark.priority_at.is_some() || m.thread_id.is_some_and(|thread| info.prioritized.contains(&thread)),
         aside: mark.aside_at.is_some(),
         snoozed_until: mark.snoozed_until,
         remind_at: mark.remind_at,

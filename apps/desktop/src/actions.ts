@@ -7,6 +7,7 @@ import {
   deleteForever,
   moveMessages,
   muteMessages,
+  prioritizeMessages,
   pinMessages,
   remindMessages,
   setAside,
@@ -43,6 +44,8 @@ export interface Target {
   pinned: boolean;
   /** Its conversation is muted. */
   muted?: boolean;
+  /** Its conversation was made a priority. */
+  priority?: boolean;
   /** The one message is mail the person sent (in a Sent folder): Send again is offered. */
   sent?: boolean;
   /** All set aside. */
@@ -134,7 +137,8 @@ export type ActionId =
   | "unsubscribe"
   | "label"
   | "copy"
-  | "mute";
+  | "mute"
+  | "priority";
 
 export interface Action {
   id: ActionId;
@@ -170,6 +174,7 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
     label: ["l"],
     copy: [],
     mute: [],
+    priority: [],
   },
   classic: {
     reply: ["r"],
@@ -191,6 +196,7 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
     label: ["l"],
     copy: [],
     mute: ["m"],
+    priority: [],
   },
 };
 
@@ -224,6 +230,7 @@ export const KEYED_ACTIONS: { id: ActionId; label: string }[] = [
   { id: "label", label: t("Labels (Gmail)") },
   { id: "junk", label: t("Mark as junk") },
   { id: "mute", label: t("Mute the conversation") },
+  { id: "priority", label: t("Make the conversation a priority") },
   { id: "unsubscribe", label: t("Unsubscribe") },
 ];
 
@@ -297,6 +304,20 @@ export function messageActions(target: Target, host: ActionHost): Action[] {
       run: () => {
         all()
           .then((list) => muteMessages(list, !target.muted))
+          .then(host.marked)
+          .catch(host.failed);
+      },
+    },
+    {
+      id: "priority",
+      label: target.priority ? t("No longer a priority") : t("Make the conversation a priority"),
+      icon: target.priority ? "boltFilled" : "bolt",
+      keys: keys.priority,
+      shown: true,
+      // The whole conversation, and what comes in it later: in Priority, whoever sends it.
+      run: () => {
+        all()
+          .then((list) => prioritizeMessages(list, !target.priority))
           .then(host.marked)
           .catch(host.failed);
       },

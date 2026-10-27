@@ -45,6 +45,8 @@ export const UNDONE = [
   "Reminder set",
   "Reminder off",
   "Deleted a draft",
+  "Made a priority",
+  "No longer a priority",
   "Discarded a message that was not sent",
 ];
 
