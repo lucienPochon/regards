@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { ShortcutsTab } from "./Settings";
+import { ShortcutList } from "./Settings";
 import { useShortcuts } from "./shortcuts";
 import { useDialogFocus } from "./dialogFocus";
 import { t } from "./i18n";
@@ -20,7 +20,7 @@ export function ShortcutHelp({ onClose }: { onClose: () => void }) {
         aria-label={t("Keyboard shortcuts")}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <ShortcutsTab />
+        <ShortcutList />
         <div className="dialog-actions">
           <button type="button" className="btn primary" onClick={onClose} autoFocus>
             {t("Close")}

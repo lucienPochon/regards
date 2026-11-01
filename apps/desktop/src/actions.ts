@@ -15,6 +15,7 @@ import {
   trashMessages,
 } from "./accounts";
 import { t, tn } from "./i18n";
+import { type BaseSet, OTHER_APP_KEYS, baseOf } from "./keysets";
 import { type KeySet, getPrefs } from "./prefs";
 import type { Person } from "./accounts";
 import { type Draft, againDraft, forwardDraft, replyDraft } from "./compose";
@@ -152,13 +153,13 @@ export interface Action {
   run: (anchor?: Anchor | null) => void;
 }
 
-/** Each action's keys in each key set (Settings › Shortcuts). */
-const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
+/** Each action's keys in each full key set (Settings › Shortcuts); another mail app's differ from the standard ones. */
+const ACTION_KEYS: Record<BaseSet, Record<ActionId, string[]>> = {
   standard: {
     reply: ["Shift+R"],
     replyAll: ["r"],
     forward: ["f"],
-    again: [],
+    again: ["Mod+Shift+J"],
     unread: ["u"],
     read: ["u"],
     flag: ["i"],
@@ -202,36 +203,37 @@ const ACTION_KEYS: Record<KeySet, Record<ActionId, string[]>> = {
 
 /** Each action's keys: the key set's, or the ones the person chose instead. */
 export function keysFor(set: KeySet, mine: Record<string, string[]>): Record<ActionId, string[]> {
-  const keys = { ...ACTION_KEYS[set] };
+  const keys = { ...ACTION_KEYS[baseOf(set)] };
+  const own = OTHER_APP_KEYS[set];
   for (const id of Object.keys(keys) as ActionId[]) {
-    const chosen = mine[id];
+    const chosen = mine[id] ?? own?.[id];
     if (Array.isArray(chosen)) keys[id] = chosen;
   }
   return keys;
 }
 
 /** The message actions whose keys can be changed, as Settings › Shortcuts names them. */
-export const KEYED_ACTIONS: { id: ActionId; label: string }[] = [
-  { id: "archive", label: t("Done (archive)") },
-  { id: "delete", label: t("Delete") },
-  { id: "reply", label: t("Reply") },
-  { id: "replyAll", label: t("Reply all") },
-  { id: "forward", label: t("Forward") },
-  { id: "again", label: t("Send again") },
-  { id: "read", label: t("Mark read") },
-  { id: "unread", label: t("Mark unread") },
-  { id: "flag", label: t("Flag or unflag") },
-  { id: "pin", label: t("Pin or unpin") },
-  { id: "snooze", label: t("Snooze") },
-  { id: "remind", label: t("Remind me if nobody replies") },
-  { id: "aside", label: t("Set aside") },
-  { id: "move", label: t("Move to a folder") },
-  { id: "copy", label: t("Copy to a folder") },
-  { id: "label", label: t("Labels (Gmail)") },
-  { id: "junk", label: t("Mark as junk") },
-  { id: "mute", label: t("Mute the conversation") },
-  { id: "priority", label: t("Make the conversation a priority") },
-  { id: "unsubscribe", label: t("Unsubscribe") },
+export const KEYED_ACTIONS: { id: ActionId; label: string; icon: IconName }[] = [
+  { id: "archive", label: t("Done (archive)"), icon: "archive" },
+  { id: "delete", label: t("Delete"), icon: "trash" },
+  { id: "reply", label: t("Reply"), icon: "reply" },
+  { id: "replyAll", label: t("Reply all"), icon: "replyAll" },
+  { id: "forward", label: t("Forward"), icon: "forward" },
+  { id: "again", label: t("Send again"), icon: "send" },
+  { id: "read", label: t("Mark read"), icon: "mailOpen" },
+  { id: "unread", label: t("Mark unread"), icon: "mail" },
+  { id: "flag", label: t("Flag or unflag"), icon: "flag" },
+  { id: "pin", label: t("Pin or unpin"), icon: "pin" },
+  { id: "snooze", label: t("Snooze"), icon: "clock" },
+  { id: "remind", label: t("Remind me if nobody replies"), icon: "bell" },
+  { id: "aside", label: t("Set aside"), icon: "aside" },
+  { id: "move", label: t("Move to a folder"), icon: "move" },
+  { id: "copy", label: t("Copy to a folder"), icon: "copy" },
+  { id: "label", label: t("Labels (Gmail)"), icon: "tag" },
+  { id: "junk", label: t("Mark as junk"), icon: "junk" },
+  { id: "mute", label: t("Mute the conversation"), icon: "bellOff" },
+  { id: "priority", label: t("Make the conversation a priority"), icon: "bolt" },
+  { id: "unsubscribe", label: t("Unsubscribe"), icon: "unsubscribe" },
 ];
 
 /** An action's name with its first key, for a tooltip. */

@@ -6631,35 +6631,131 @@ button.sender-row:hover:not(:disabled) {
   border-radius: 12px;
 }
 
-/* Settings › Shortcuts: everything a key does, by part, its keys, and changing them. */
-.my-keys {
-  margin: 0 0 8px;
+/* Settings › Shortcuts: the keys in use, then everything a key does with its key in a field. */
+.key-set {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--notice);
+}
+
+.key-set > .icon {
+  flex: none;
+  color: var(--accent);
+}
+
+.key-set strong {
+  flex: 1;
+}
+
+.settings-pane .key-set-choice {
+  justify-content: space-between;
+  min-width: 180px;
+  margin-top: 0;
+  padding: 0 10px 0 12px;
+  border-color: var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.key-set-about {
+  margin: 8px 2px 0;
+}
+
+.key-set-reset {
+  margin-top: 10px;
+}
+
+.key-part-title {
+  margin: 26px 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.key-rows {
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.my-keys li {
+.key-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto 3.5em;
+  grid-template-columns: 18px minmax(0, 1fr) 216px;
   align-items: center;
-  gap: 8px;
-  padding: 5px 0;
-  border-bottom: 1px solid var(--border);
+  gap: 2px 12px;
+  padding: 3px 0;
 }
 
-.my-keys-keys {
-  display: flex;
-  gap: 4px;
-  justify-content: flex-end;
-}
-
-.my-keys .key-capture {
-  border-color: var(--accent);
+.key-row > .icon {
   color: var(--accent);
 }
 
-.my-keys-reset {
-  margin: 4px 0 8px;
+/* Looks like a field: clicking it waits for a key. */
+.key-field {
+  position: relative;
+  display: flex;
+}
+
+.key-field-main {
+  overflow: hidden;
+  width: 100%;
+  height: 32px;
+  padding: 0 60px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: border-color 0.12s;
+}
+
+.key-field-main:hover {
+  border-color: var(--border-strong);
+}
+
+.key-field-main.capturing {
+  border-color: var(--accent);
+  background: var(--pill);
+  color: var(--accent-hover);
+}
+
+.key-field-tools {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: flex;
+  gap: 1px;
+}
+
+.key-field-tool {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.key-field-tool.kept,
+.key-row:hover .key-field-tool,
+.key-field:focus-within .key-field-tool {
+  opacity: 1;
+}
+
+.key-field-tool:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.key-row-note {
+  grid-column: 2 / -1;
+  margin: 0 0 4px;
 }
 
 .shortcut-list {

@@ -16,13 +16,14 @@ import { OauthWaiting, PROVIDERS, useOauth } from "./OauthSignIn";
 import { Avatar } from "./Avatar";
 import type { ConfirmRequest } from "./Confirm";
 import { Icon, type IconName } from "./icons";
+import { Menu, type MenuRequest, anchorOf } from "./Menu";
 import type { Layout } from "./layout";
 import { type Screening, setScreening } from "./smart";
 import { TemplatesEditor } from "./TemplatesEditor";
 import type { AccountMail, MailState, ServiceCheck } from "./mail";
 import { KEYED_ACTIONS, keysFor } from "./actions";
 import { COMMANDS, MOD_KEY, commandHint, commandKeys, keyText, pressedNames, refusedKey, shortcutList, useShortcuts } from "./shortcuts";
-import { ACCOUNT_COLOURS, COLOUR_NAMES, type Prefs, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
+import { ACCOUNT_COLOURS, COLOUR_NAMES, type KeySet, type Prefs, accountColour, accountLabel, setPrefs, usePrefs } from "./prefs";
 import { Choice, LinkRow, Option, Select, Toggle } from "./SettingsControls";
 import {
   AccessibilityPage,
@@ -37,7 +38,7 @@ import {
   SupportPage,
 } from "./SettingsPages";
 import { useDialogFocus } from "./dialogFocus";
-import { appLocale, t } from "./i18n";
+import { appLocale, t, tn } from "./i18n";
 
 export type SettingsTab =
   | "accounts"
@@ -172,7 +173,7 @@ export function Settings({
           {tab === "scheduling" && <SchedulingPage />}
           {tab === "composer" && <ComposerPage accounts={accounts} confirm={confirm} onAccounts={() => onTab("accounts")} />}
           {tab === "accessibility" && <AccessibilityPage />}
-          {tab === "shortcuts" && <ShortcutsTab editable />}
+          {tab === "shortcuts" && <ShortcutsTab confirm={confirm} />}
           {tab === "support" && <SupportPage service={service} onRecheck={onRecheck} accounts={accounts} confirm={confirm} />}
         </div>
       </section>
@@ -769,42 +770,36 @@ function TemplatesTab() {
   );
 }
 
-/** Every action's and command's keys now, by id, and their names. */
-function allKeys(prefs: Prefs): { keys: Record<string, string[]>; labels: Record<string, string> } {
+/** Every action's and command's keys now, by id, their names and their icons. */
+function allKeys(prefs: Prefs): { keys: Record<string, string[]>; labels: Record<string, string>; icons: Record<string, IconName> } {
+  const all = [...KEYED_ACTIONS, ...COMMANDS];
   return {
     keys: { ...keysFor(prefs.keySet, prefs.myKeys), ...commandKeys(prefs.keySet, prefs.myKeys) },
-    labels: Object.fromEntries([...KEYED_ACTIONS, ...COMMANDS].map((one) => [one.id, one.label])),
+    labels: Object.fromEntries(all.map((one) => [one.id, one.label])),
+    icons: Object.fromEntries(all.map((one) => [one.id, one.icon])),
   };
 }
 
-/** The keys: the key set, the person's own keys (in Settings), and the full list. */
-export function ShortcutsTab({ editable = false }: { editable?: boolean }) {
+function SingleKeysOff() {
+  return (
+    <p className="muted settings-note">
+      {t("Single-key shortcuts are off (Settings › Accessibility): only those with {key}, and keys such as Escape and the arrows, act.", { key: MOD_KEY })}
+    </p>
+  );
+}
+
+function FrameNote() {
+  return <p className="muted small">{t("After clicking inside a message's text, click outside it for the keys to work again.")}</p>;
+}
+
+/** The ? panel: every key now, to read; Settings › Shortcuts changes them. */
+export function ShortcutList() {
   const prefs = usePrefs();
   const { keys, labels } = allKeys(prefs);
   return (
     <>
       <h3>{t("Keyboard shortcuts")}</h3>
-      <Option
-        icon="keyboard"
-        label={t("Keys")}
-        description={t("Standard: E done, S snooze, R reply all, Shift+R reply, as in most desktop mail apps. Classic: the keys of earlier Regards versions.")}
-      >
-        <Select
-          label={t("Keys")}
-          value={prefs.keySet}
-          options={[
-            { id: "standard", label: t("Standard") },
-            { id: "classic", label: t("Classic") },
-          ]}
-          onChange={(keySet) => setPrefs({ keySet })}
-        />
-      </Option>
-      {!prefs.singleKeys && (
-        <p className="muted settings-note">
-          {t("Single-key shortcuts are off (Settings › Accessibility): only those with {key}, and keys such as Escape and the arrows, act.", { key: MOD_KEY })}
-        </p>
-      )}
-      {editable && <MyKeys />}
+      {!prefs.singleKeys && <SingleKeysOff />}
       <dl className="shortcut-list">
         {shortcutList(prefs.keySet, keys, labels).map((shortcut) => (
           <div key={shortcut.action}>
@@ -817,7 +812,77 @@ export function ShortcutsTab({ editable = false }: { editable?: boolean }) {
           </div>
         ))}
       </dl>
-      <p className="muted small">{t("After clicking inside a message's text, click outside it for the keys to work again.")}</p>
+      <FrameNote />
+      <p className="muted small">{t("To change them: Settings › Shortcuts.")}</p>
+    </>
+  );
+}
+
+/** What can be chosen as the keys in use: Regards' own, or those of a mail app the person knows. */
+const KEY_SETS: { id: KeySet; name: string; about: string }[] = [
+  { id: "standard", name: "Regards", about: t("E done, S snooze, R reply all, Shift+R reply.") },
+  { id: "classic", name: t("Regards Classic"), about: t("The keys of earlier Regards versions.") },
+  { id: "apple", name: "Apple Mail", about: t("Apple Mail's keys, with {key} for Command. What it has no key for keeps its Regards key.", { key: MOD_KEY }) },
+  { id: "gmail", name: "Gmail", about: t("Gmail's keys, one at a time: two-key moves such as G then I are not here.") },
+  { id: "superhuman", name: "Superhuman", about: t("Superhuman's keys. Enter opens a message here, so A is reply all.") },
+];
+
+/** Settings › Shortcuts: which keys are in use, then each thing a key does with its key, changed by pressing another. */
+export function ShortcutsTab({ confirm }: { confirm: (request: ConfirmRequest) => Promise<boolean> }) {
+  const prefs = usePrefs();
+  const [menu, setMenu] = useState<MenuRequest | null>(null);
+  const current = KEY_SETS.find((set) => set.id === prefs.keySet) ?? KEY_SETS[0];
+  const changed = Object.keys(prefs.myKeys).length;
+  // The person's own keys were chosen around the set in use: another set starts clean.
+  const choose = async (set: (typeof KEY_SETS)[number]) => {
+    if (set.id === prefs.keySet) return;
+    const ok =
+      changed === 0 ||
+      (await confirm({
+        title: t("Switch to {set}?", { set: set.name }),
+        body: tn(changed, "The key you changed goes back to this set's.", "The {count} keys you changed go back to this set's."),
+        confirm: t("Switch"),
+      }));
+    if (ok) setPrefs({ keySet: set.id, myKeys: {} });
+  };
+  return (
+    <>
+      <h3>{t("Keyboard shortcuts")}</h3>
+      <div className="key-set">
+        <Icon name="keyboard" size={18} />
+        <strong>{t("Keys in use")}</strong>
+        <button
+          type="button"
+          className="btn key-set-choice"
+          aria-haspopup="menu"
+          aria-label={t("Keys in use: {set}", { set: current.name })}
+          onClick={(event) =>
+            setMenu({
+              anchor: anchorOf(event.currentTarget, "end"),
+              label: t("Keys in use"),
+              entries: KEY_SETS.map((set) => ({
+                label: set.name,
+                icon: set === current ? ("check" as const) : ("blank" as const),
+                onSelect: () => void choose(set),
+              })),
+            })
+          }
+        >
+          {current.name}
+          <Icon name="upDown" size={14} />
+        </button>
+      </div>
+      <p className="muted small key-set-about">{current.about}</p>
+      {changed > 0 && (
+        <button type="button" className="btn small key-set-reset" onClick={() => setPrefs({ myKeys: {} })}>
+          {t("Back to the key set's keys")}
+        </button>
+      )}
+      {!prefs.singleKeys && <SingleKeysOff />}
+      <KeyRows />
+      <p className="muted small">{t("Esc, Enter, Tab, the arrows and {key}+C, X and V always do the same thing.", { key: MOD_KEY })}</p>
+      <FrameNote />
+      {menu && <Menu request={menu} onClose={() => setMenu(null)} />}
     </>
   );
 }
@@ -827,27 +892,63 @@ const MODIFIERS = ["Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock", "O
 /** Read and unread are one toggle's halves: they may share a key. */
 const halves = (one: string, other: string) => (one === "read" && other === "unread") || (one === "unread" && other === "read");
 
-/** Settings › Shortcuts, by part: the message actions with what else acts on messages, then the commands. */
-const KEY_PARTS: { title: string; ids: string[] }[] = [
-  { title: t("Moving around"), ids: COMMANDS.filter((one) => one.part === "moving").map((one) => one.id) },
+/** Settings › Shortcuts, by part: what acts on messages first, from one message to the next. */
+export const KEY_PARTS: { title: string; ids: string[] }[] = [
   {
     title: t("Message actions"),
-    ids: [...KEYED_ACTIONS.map((one) => one.id), ...COMMANDS.filter((one) => one.part === "messages").map((one) => one.id)],
+    ids: [
+      "next",
+      "previous",
+      "print",
+      "reply",
+      "replyAll",
+      "forward",
+      "read",
+      "unread",
+      "delete",
+      "junk",
+      "archive",
+      "flag",
+      "pin",
+      "aside",
+      "snooze",
+      "remind",
+      "label",
+      "move",
+      "copy",
+      "again",
+      "openAll",
+      "foldOlder",
+      "mute",
+      "priority",
+      "unsubscribe",
+      "select",
+      "selectAll",
+      "preview",
+      "undo",
+    ],
   },
+  { title: t("Moving around"), ids: COMMANDS.filter((one) => one.part === "moving").map((one) => one.id) },
   { title: t("Writing"), ids: COMMANDS.filter((one) => one.part === "writing").map((one) => one.id) },
   { title: t("The app"), ids: COMMANDS.filter((one) => one.part === "app").map((one) => one.id) },
 ];
 
+/** A key as its field shows it: a letter as printed on the key, and "Ctrl + K" with room to read. */
+const fieldKey = (name: string) => {
+  const text = keyText(name);
+  return (/^\p{Ll}$/u.test(text) ? text.toUpperCase() : text).replace(/(?<=.)\+(?=.)/g, " + ");
+};
+
 /**
- * Settings › Shortcuts: the person's own key for everything a key does.
- * Escape, Enter, Tab, the arrows and Ctrl+C/X/V keep theirs.
+ * Everything a key does, each with its key in a field: click the field and
+ * press the new key. Escape, Enter, Tab, the arrows and Ctrl+C/X/V keep theirs.
  */
-function MyKeys() {
+function KeyRows() {
   const prefs = usePrefs();
   const [capturing, setCapturing] = useState<string | null>(null);
-  // What the last change said, shown under its part.
+  // What the last change said, shown under its row.
   const [note, setNote] = useState<{ id: string; text: string } | null>(null);
-  const { keys, labels } = allKeys(prefs);
+  const { keys, labels, icons } = allKeys(prefs);
   const choose = (id: string, chosen: string[] | null) => {
     const { [id]: _left, ...rest } = prefs.myKeys;
     setPrefs({ myKeys: chosen === null ? rest : { ...rest, [id]: chosen } });
@@ -882,80 +983,85 @@ function MyKeys() {
     setCapturing(null);
     setNote(
       from.length > 0
-        ? { id, text: t("{key} is now {action}, no longer {before}.", { key: keyText(names[0]), action: labels[id], before: from.join(", ") }) }
+        ? { id, text: t("{key} is now {action}, no longer {before}.", { key: fieldKey(names[0]), action: labels[id], before: from.join(", ") }) }
         : null,
     );
   };
   return (
     <>
       {KEY_PARTS.map((part) => (
-        <section key={part.title} className="my-keys-part">
-          <h4 className="settings-subhead">{part.title}</h4>
-          <ul className="my-keys">
-            {part.ids.map((id) => (
-              <li key={id}>
-                <span className="my-keys-what">{labels[id]}</span>
-                <span className="my-keys-keys">
-                  {keys[id].length > 0 ? keys[id].map((name) => <kbd key={name}>{keyText(name)}</kbd>) : <span className="muted">{t("No key")}</span>}
-                </span>
-                {capturing === id ? (
-                  <button
-                    type="button"
-                    className="btn small key-capture"
-                    ref={(element) => element?.focus()}
-                    onKeyDown={capture(id)}
-                    onBlur={() => setCapturing(null)}
-                  >
-                    {t("Press a key…")}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn small"
-                    aria-label={t("Change the key of {action}", { action: labels[id] })}
-                    onClick={() => {
-                      setNote(null);
-                      setCapturing(id);
-                    }}
-                  >
-                    {t("Change")}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="btn small"
-                  aria-label={t("No key for {action}", { action: labels[id] })}
-                  disabled={keys[id].length === 0}
-                  onClick={() => choose(id, [])}
-                >
-                  {t("Clear")}
-                </button>
-                <button
-                  type="button"
-                  className="link"
-                  aria-label={t("{action}: back to the key set's key", { action: labels[id] })}
-                  hidden={!Array.isArray(prefs.myKeys[id])}
-                  onClick={() => choose(id, null)}
-                >
-                  {t("Reset")}
-                </button>
-              </li>
-            ))}
+        <section key={part.title}>
+          <h4 className="key-part-title">{part.title}</h4>
+          <ul className="key-rows">
+            {part.ids.map((id) => {
+              const shown = keys[id].map(fieldKey).join(", ");
+              return (
+                <li key={id} className="key-row">
+                  <Icon name={icons[id]} size={18} />
+                  <span>{labels[id]}</span>
+                  <span className="key-field">
+                    {capturing === id ? (
+                      <button
+                        type="button"
+                        className="key-field-main capturing"
+                        ref={(element) => element?.focus()}
+                        onKeyDown={capture(id)}
+                        onBlur={() => setCapturing(null)}
+                      >
+                        {t("Press a key…")}
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="key-field-main"
+                          aria-label={t("Change the key of {action}", { action: labels[id] })}
+                          title={t("Click, then press the new key")}
+                          onClick={() => {
+                            setNote(null);
+                            setCapturing(id);
+                          }}
+                        >
+                          {shown || <span className="muted">{t("No key")}</span>}
+                        </button>
+                        <span className="key-field-tools">
+                          {Array.isArray(prefs.myKeys[id]) && (
+                            <button
+                              type="button"
+                              className="key-field-tool kept"
+                              aria-label={t("{action}: back to the key set's key", { action: labels[id] })}
+                              title={t("Back to the key set's key")}
+                              onClick={() => choose(id, null)}
+                            >
+                              <Icon name="back" size={13} />
+                            </button>
+                          )}
+                          {shown && (
+                            <button
+                              type="button"
+                              className="key-field-tool"
+                              aria-label={t("No key for {action}", { action: labels[id] })}
+                              title={t("No key")}
+                              onClick={() => choose(id, [])}
+                            >
+                              <Icon name="close" size={13} />
+                            </button>
+                          )}
+                        </span>
+                      </>
+                    )}
+                  </span>
+                  {note?.id === id && (
+                    <p className="muted small key-row-note" role="status">
+                      {note.text}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
           </ul>
-          {note && part.ids.includes(note.id) && (
-            <p className="muted settings-note" role="status">
-              {note.text}
-            </p>
-          )}
         </section>
       ))}
-      {Object.keys(prefs.myKeys).length > 0 && (
-        <button type="button" className="btn small my-keys-reset" onClick={() => setPrefs({ myKeys: {} })}>
-          {t("Back to the key set's keys")}
-        </button>
-      )}
-      <h4 className="settings-subhead">{t("Every shortcut")}</h4>
     </>
   );
 }
-

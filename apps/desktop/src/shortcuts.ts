@@ -1,5 +1,7 @@
 import { type RefObject, useEffect, useRef } from "react";
 import { spoken, t } from "./i18n";
+import type { IconName } from "./icons";
+import { type BaseSet, OTHER_APP_KEYS, baseOf } from "./keysets";
 import { type KeySet, getPrefs } from "./prefs";
 
 /**
@@ -48,10 +50,17 @@ export function useShortcuts(shortcuts: Shortcuts, options: { modal?: boolean } 
   }, [modal]);
 }
 
+/** What the web page itself would do with these: reload, print, open a window. Nothing here wants that. */
+const PAGE_KEYS = ["Mod+r", "Mod+p", "Mod+n"];
+
 function onKeyDown(event: KeyboardEvent) {
-  if (event.defaultPrevented || event.isComposing || typing(event.target)) return;
+  if (event.defaultPrevented || event.isComposing) return;
+  const pressed = pressedNames(event);
+  // A key set may give them something that cannot act just now, as Reply with no message open.
+  if (pressed.some((name) => PAGE_KEYS.includes(name))) event.preventDefault();
+  if (typing(event.target)) return;
   const singleKeys = getPrefs().singleKeys;
-  const names = pressedNames(event).filter((name) => singleKeys || !characterKey(name));
+  const names = pressed.filter((name) => singleKeys || !characterKey(name));
   if (names.length === 0) return;
   const keys = currentKeys();
   const wanted = [...names, ...COMMANDS.filter(({ id }) => keys[id].some((key) => names.includes(key))).map(({ id }) => id)];
@@ -199,65 +208,67 @@ export type CommandPart = "moving" | "messages" | "writing" | "app";
 interface Command {
   id: CommandId;
   label: string;
+  icon: IconName;
   part: CommandPart;
-  /** Its keys in each key set. */
-  keys: Record<KeySet, string[]>;
+  /** Its keys in each full key set; another mail app's differ from the standard ones (keysets.ts). */
+  keys: Record<BaseSet, string[]>;
   /** It acts while typing (in the composer, or zoom from anywhere): its keys need Ctrl/⌘. */
   typing?: true;
 }
 
-const both = (...keys: string[]): Record<KeySet, string[]> => ({ standard: keys, classic: keys });
-const standardOnly = (...keys: string[]): Record<KeySet, string[]> => ({ standard: keys, classic: [] });
+const both = (...keys: string[]): Record<BaseSet, string[]> => ({ standard: keys, classic: keys });
+const standardOnly = (...keys: string[]): Record<BaseSet, string[]> => ({ standard: keys, classic: [] });
 
 /** Everything a key does other than a message action, as Settings › Shortcuts names it. */
 export const COMMANDS: Command[] = [
-  { id: "next", label: t("Next message"), part: "moving", keys: both("j") },
-  { id: "previous", label: t("Previous message"), part: "moving", keys: both("k") },
-  { id: "commands", label: t("Commands"), part: "moving", keys: both("Mod+k") },
-  { id: "search", label: t("Search the list"), part: "moving", keys: both("Mod+f") },
-  { id: "find", label: t("Find in the open message"), part: "moving", keys: both("Mod+Shift+F") },
-  { id: "sidebar", label: t("Show or fold the sidebar"), part: "moving", keys: { standard: ["/", "Mod+/"], classic: ["/"] } },
-  { id: "goAside", label: t("Go to Set aside"), part: "moving", keys: standardOnly("Mod+g") },
-  { id: "goPinned", label: t("Go to Pinned"), part: "moving", keys: standardOnly("Mod+d") },
-  { id: "goSnoozed", label: t("Go to Snoozed"), part: "moving", keys: standardOnly("Mod+s") },
-  { id: "goFolder", label: t("Go to a folder"), part: "moving", keys: standardOnly("Mod+Shift+G") },
-  { id: "inboxPriority", label: t("Inbox by priority"), part: "moving", keys: standardOnly("Mod+Alt+1") },
-  { id: "inboxCategory", label: t("Inbox by category"), part: "moving", keys: standardOnly("Mod+Alt+2") },
-  { id: "inboxDate", label: t("Inbox by date"), part: "moving", keys: standardOnly("Mod+Alt+3") },
-  { id: "showDone", label: t("Show or hide Done mail"), part: "moving", keys: both("Mod+e") },
-  { id: "select", label: t("Select or unselect the open message"), part: "messages", keys: both("x") },
-  { id: "selectAll", label: t("Select every message"), part: "messages", keys: both("Mod+a") },
-  { id: "openAll", label: t("Open every message of the conversation"), part: "messages", keys: both("Shift+O") },
-  { id: "foldOlder", label: t("Fold the older messages"), part: "messages", keys: both("o") },
-  { id: "preview", label: t("Preview the attachments"), part: "messages", keys: both(" ") },
-  { id: "print", label: t("Print the open message"), part: "messages", keys: standardOnly("p") },
-  { id: "undo", label: t("Undo"), part: "messages", keys: both("z", "Mod+z") },
-  { id: "compose", label: t("New message"), part: "writing", keys: both("c") },
-  { id: "send", label: t("Send"), part: "writing", keys: both("Mod+Enter"), typing: true },
-  { id: "sendDone", label: t("Send, and the conversation is Done"), part: "writing", keys: both("Mod+Shift+Enter"), typing: true },
-  { id: "attach", label: t("Attach files"), part: "writing", keys: both("Mod+Shift+A"), typing: true },
-  { id: "template", label: t("Insert a template"), part: "writing", keys: both("Mod+Shift+T"), typing: true },
-  { id: "discard", label: t("Discard the draft"), part: "writing", keys: both("Mod+Shift+\\"), typing: true },
-  { id: "toFrom", label: t("Go to From"), part: "writing", keys: both("Mod+1"), typing: true },
-  { id: "toSubject", label: t("Go to Subject"), part: "writing", keys: both("Mod+2"), typing: true },
-  { id: "toTo", label: t("Go to To"), part: "writing", keys: both("Mod+3"), typing: true },
-  { id: "toCc", label: t("Go to Cc"), part: "writing", keys: both("Mod+4"), typing: true },
-  { id: "toBcc", label: t("Go to Bcc"), part: "writing", keys: both("Mod+5"), typing: true },
-  { id: "toText", label: t("Go to the text"), part: "writing", keys: both("Mod+6"), typing: true },
-  { id: "newFolder", label: t("New folder"), part: "app", keys: both("Mod+Shift+U") },
-  { id: "sync", label: t("Check for new mail"), part: "app", keys: standardOnly("Mod+r") },
-  { id: "zoomIn", label: t("Zoom in"), part: "app", keys: both("Mod+=", "Mod++"), typing: true },
-  { id: "zoomOut", label: t("Zoom out"), part: "app", keys: both("Mod+-"), typing: true },
-  { id: "zoomReset", label: t("Actual size"), part: "app", keys: both("Mod+0"), typing: true },
-  { id: "settings", label: t("Settings"), part: "app", keys: both("Mod+,") },
-  { id: "help", label: t("Show these shortcuts"), part: "app", keys: both("?") },
-  { id: "quit", label: t("Quit Regards"), part: "app", keys: both("Mod+q") },
+  { id: "next", label: t("Next message"), icon: "chevronRight", part: "messages", keys: both("j") },
+  { id: "previous", label: t("Previous message"), icon: "chevronLeft", part: "messages", keys: both("k") },
+  { id: "commands", label: t("Commands"), icon: "menu", part: "moving", keys: both("Mod+k") },
+  { id: "search", label: t("Search the list"), icon: "search", part: "moving", keys: both("Mod+f") },
+  { id: "find", label: t("Find in the open message"), icon: "text", part: "moving", keys: both("Mod+Shift+F") },
+  { id: "sidebar", label: t("Show or fold the sidebar"), icon: "sidebar", part: "moving", keys: { standard: ["/", "Mod+/"], classic: ["/"] } },
+  { id: "goAside", label: t("Go to Set aside"), icon: "aside", part: "moving", keys: standardOnly("Mod+g") },
+  { id: "goPinned", label: t("Go to Pinned"), icon: "pin", part: "moving", keys: standardOnly("Mod+d") },
+  { id: "goSnoozed", label: t("Go to Snoozed"), icon: "clock", part: "moving", keys: standardOnly("Mod+s") },
+  { id: "goFolder", label: t("Go to a folder"), icon: "folder", part: "moving", keys: standardOnly("Mod+Shift+G") },
+  { id: "inboxPriority", label: t("Inbox by priority"), icon: "bolt", part: "moving", keys: standardOnly("Mod+Alt+1") },
+  { id: "inboxCategory", label: t("Inbox by category"), icon: "sections", part: "moving", keys: standardOnly("Mod+Alt+2") },
+  { id: "inboxDate", label: t("Inbox by date"), icon: "calendar", part: "moving", keys: standardOnly("Mod+Alt+3") },
+  { id: "showDone", label: t("Show or hide Done mail"), icon: "check", part: "moving", keys: both("Mod+e") },
+  { id: "select", label: t("Select or unselect the open message"), icon: "check", part: "messages", keys: both("x") },
+  { id: "selectAll", label: t("Select every message"), icon: "check", part: "messages", keys: both("Mod+a") },
+  { id: "openAll", label: t("Open every message of the conversation"), icon: "expand", part: "messages", keys: both("Shift+O") },
+  { id: "foldOlder", label: t("Fold the older messages"), icon: "shrink", part: "messages", keys: both("o") },
+  { id: "preview", label: t("Preview the attachments"), icon: "eye", part: "messages", keys: both(" ") },
+  { id: "print", label: t("Print the open message"), icon: "print", part: "messages", keys: standardOnly("p") },
+  { id: "undo", label: t("Undo"), icon: "back", part: "messages", keys: both("z", "Mod+z") },
+  { id: "compose", label: t("New message"), icon: "compose", part: "writing", keys: both("c") },
+  { id: "send", label: t("Send"), icon: "send", part: "writing", keys: both("Mod+Enter"), typing: true },
+  { id: "sendDone", label: t("Send, and the conversation is Done"), icon: "send", part: "writing", keys: both("Mod+Shift+Enter"), typing: true },
+  { id: "attach", label: t("Attach files"), icon: "paperclip", part: "writing", keys: both("Mod+Shift+A"), typing: true },
+  { id: "template", label: t("Insert a template"), icon: "text", part: "writing", keys: both("Mod+Shift+T"), typing: true },
+  { id: "discard", label: t("Discard the draft"), icon: "trash", part: "writing", keys: both("Mod+Shift+\\"), typing: true },
+  { id: "toFrom", label: t("Go to From"), icon: "user", part: "writing", keys: both("Mod+1"), typing: true },
+  { id: "toSubject", label: t("Go to Subject"), icon: "text", part: "writing", keys: both("Mod+2"), typing: true },
+  { id: "toTo", label: t("Go to To"), icon: "mail", part: "writing", keys: both("Mod+3"), typing: true },
+  { id: "toCc", label: t("Go to Cc"), icon: "people", part: "writing", keys: both("Mod+4"), typing: true },
+  { id: "toBcc", label: t("Go to Bcc"), icon: "people", part: "writing", keys: both("Mod+5"), typing: true },
+  { id: "toText", label: t("Go to the text"), icon: "compose", part: "writing", keys: both("Mod+6"), typing: true },
+  { id: "newFolder", label: t("New folder"), icon: "folder", part: "app", keys: both("Mod+Shift+U") },
+  { id: "sync", label: t("Check for new mail"), icon: "refresh", part: "app", keys: standardOnly("Mod+r") },
+  { id: "zoomIn", label: t("Zoom in"), icon: "expand", part: "app", keys: both("Mod+=", "Mod++"), typing: true },
+  { id: "zoomOut", label: t("Zoom out"), icon: "shrink", part: "app", keys: both("Mod+-"), typing: true },
+  { id: "zoomReset", label: t("Actual size"), icon: "single", part: "app", keys: both("Mod+0"), typing: true },
+  { id: "settings", label: t("Settings"), icon: "settings", part: "app", keys: both("Mod+,") },
+  { id: "help", label: t("Show these shortcuts"), icon: "help", part: "app", keys: both("?") },
+  { id: "quit", label: t("Quit Regards"), icon: "close", part: "app", keys: both("Mod+q") },
 ];
 
 /** Each command's keys: the key set's, or the ones the person chose instead. */
 export function commandKeys(set: KeySet, mine: Record<string, string[]>): Record<CommandId, string[]> {
+  const own = OTHER_APP_KEYS[set];
   return Object.fromEntries(
-    COMMANDS.map(({ id, keys }) => [id, Array.isArray(mine[id]) ? mine[id] : keys[set]]),
+    COMMANDS.map(({ id, keys }) => [id, Array.isArray(mine[id]) ? mine[id] : (own?.[id] ?? keys[baseOf(set)])]),
   ) as Record<CommandId, string[]>;
 }
 
@@ -362,7 +373,7 @@ interface Line {
  */
 export function shortcutList(set: KeySet, keys: Record<string, string[]>, labels: Record<string, string> = {}): { keys: string[]; action: string }[] {
   const shown = (line: Line) => [...new Set([...(line.ids ?? []).flatMap((id) => keys[id] ?? []), ...(line.fixed ?? [])])].map(keyText);
-  const lines = set === "classic" ? CLASSIC : STANDARD;
+  const lines = set === "standard" ? STANDARD : CLASSIC;
   const listed = new Set(lines.flatMap((line) => line.ids ?? []));
   const extra = Object.keys(keys)
     .filter((id) => !listed.has(id))
