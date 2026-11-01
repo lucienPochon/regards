@@ -58,7 +58,7 @@ export interface Prefs {
    * key cannot archive or delete mail (WCAG 2.1.4).
    */
   singleKeys: boolean;
-  /** Which keys do what (Settings › Shortcuts): the standard set, or the earlier Regards one. */
+  /** Which keys do what (Settings › Shortcuts): Regards' own set, an earlier one, or another mail app's. */
   keySet: KeySet;
   /**
    * Keys the person chose for message actions, by action (Settings ›
@@ -80,8 +80,9 @@ export interface Prefs {
 /**
  * "standard": the keys desktop mail apps commonly share (E done, S snooze,
  * R reply all, Shift+R reply). "classic": the keys of earlier Regards versions.
+ * The others: those of another mail app, for people used to it (keysets.ts).
  */
-export type KeySet = "standard" | "classic";
+export type KeySet = "standard" | "classic" | "gmail" | "apple" | "superhuman";
 /** "system": French on a French system, English otherwise. */
 export type Language = "system" | "en" | "fr";
 

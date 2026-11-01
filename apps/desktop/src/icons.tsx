@@ -367,6 +367,16 @@ const PATHS = {
   ),
   single: <rect x="3" y="4.5" width="18" height="15" rx="2.5" />,
   moon: <path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z" />,
+  // A printer: the paper in, the paper out.
+  print: (
+    <>
+      <path d="M7 8.5V4h10v4.5" />
+      <path d="M7 17H5.5A2.5 2.5 0 0 1 3 14.5v-3.5a2.5 2.5 0 0 1 2.5-2.5h13A2.5 2.5 0 0 1 21 11v3.5a2.5 2.5 0 0 1-2.5 2.5H17" />
+      <path d="M7 14h10v6H7z" />
+    </>
+  ),
+  // Nothing: keeps a menu's labels in line beside a check.
+  blank: null,
   // An open eye: show.
   eye: (
     <>

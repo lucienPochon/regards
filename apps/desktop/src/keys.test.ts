@@ -5,7 +5,8 @@ const { KEYED_ACTIONS, keysFor } = await import("./actions");
 const { COMMANDS, commandKeys, keyText, refusedKey, shortcutList } = await import("./shortcuts");
 
 const labels = Object.fromEntries([...KEYED_ACTIONS, ...COMMANDS].map((one) => [one.id, one.label]));
-const everyKey = (set: "standard" | "classic", mine: Record<string, string[]>) => ({ ...keysFor(set, mine), ...commandKeys(set, mine) });
+const SETS = ["standard", "classic", "gmail", "apple", "superhuman"] as const;
+const everyKey = (set: (typeof SETS)[number], mine: Record<string, string[]>) => ({ ...keysFor(set, mine), ...commandKeys(set, mine) });
 
 describe("keys the person chose", () => {
   it("take the place of the key set's, and none is a choice too", () => {
@@ -70,7 +71,7 @@ describe("keys that cannot be given", () => {
 
 describe("the key sets", () => {
   it("give no key to two things", () => {
-    for (const set of ["standard", "classic"] as const) {
+    for (const set of SETS) {
       const keys = everyKey(set, {});
       const owners = new Map<string, string>();
       for (const [id, names] of Object.entries(keys)) {
@@ -82,5 +83,36 @@ describe("the key sets", () => {
         }
       }
     }
+  });
+
+  it("use no key that can never be given", () => {
+    for (const set of SETS) {
+      for (const [id, names] of Object.entries(everyKey(set, {}))) {
+        for (const name of names) expect([set, id, refusedKey(id, [name])]).toEqual([set, id, null]);
+      }
+    }
+  });
+
+  it("are the other app's where the two meet", () => {
+    const gmail = everyKey("gmail", {}) as Record<string, string[]>;
+    expect([gmail.archive, gmail.delete, gmail.replyAll, gmail.unread, gmail.read]).toEqual([["e"], ["#", "Delete"], ["a"], ["Shift+U"], ["Shift+I"]]);
+    expect([gmail.flag, gmail.snooze, gmail.junk, gmail.move, gmail.label]).toEqual([["s"], ["b"], ["!"], ["v"], ["l"]]);
+    expect(gmail.search[0]).toBe("/");
+    const apple = everyKey("apple", {}) as Record<string, string[]>;
+    expect([apple.compose, apple.reply, apple.replyAll, apple.forward]).toEqual([["Mod+n"], ["Mod+r"], ["Mod+Shift+R"], ["Mod+Shift+F"]]);
+    expect([apple.read, apple.unread, apple.junk, apple.sync, apple.send[0]]).toEqual([["Mod+Shift+U"], ["Mod+Shift+U"], ["Mod+Shift+J"], ["Mod+Shift+N"], "Mod+Shift+D"]);
+    const superhuman = everyKey("superhuman", {}) as Record<string, string[]>;
+    expect([superhuman.archive, superhuman.snooze, superhuman.unsubscribe, superhuman.mute]).toEqual([["e"], ["h"], ["Mod+u"], ["Shift+M"]]);
+  });
+
+  it("leave G free where it starts a two-key move elsewhere", () => {
+    expect(everyKey("gmail", {}).aside).toEqual([]);
+    expect(everyKey("superhuman", {}).aside).toEqual([]);
+    expect(everyKey("standard", {}).aside).toEqual(["g"]);
+  });
+
+  it("are listed without the arrows only the standard set steps with", () => {
+    const list = shortcutList("gmail", everyKey("gmail", {}), labels);
+    expect(list.find((line) => line.action === "Next message")?.keys).toEqual(["j", "↓"]);
   });
 });
