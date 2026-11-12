@@ -10,7 +10,7 @@ import { accountColour, accountLabel, usePrefs } from "./prefs";
 import { useShortcuts, withKey } from "./shortcuts";
 import { t } from "./i18n";
 import { useOnline } from "./online";
-import { MARKED_ICONS, MARKED_LABELS, ROLE_ICONS, ROLE_LABELS, type View, depth, leafName, sameView, viewKey } from "./views";
+import { MARKED_ICONS, MARKED_LABELS, ROLE_ICONS, ROLE_LABELS, type View, depth, leafName, sameView, sortFolders, viewKey } from "./views";
 import { useDialogFocus } from "./dialogFocus";
 import type { SavedSearch } from "./search";
 
@@ -127,15 +127,17 @@ export function Sidebar({
   const [rowOver, setRowOver] = useState<string | null>(null);
   const accounts = mail.state === "ready" ? mail.accounts : [];
   const many = accounts.length > 1;
-  // Each account under a chevron: with several; under Inbox also with one, for "Add an account…".
-  const listed = (r: Role) => many || (r === "inbox" && onAddAccount !== undefined && accounts.length > 0);
+  const appPrefs = usePrefs();
+  // Where each account's folders show (Settings › Appearance): in a list of accounts, one account at a time, or under the inbox.
+  const how = appPrefs.sidebarAccounts;
+  // Under the inbox: each account under a chevron, with several; under Inbox also with one, for "Add an account…".
+  const listed = (r: Role) => how === "inbox" && (many || (r === "inbox" && onAddAccount !== undefined && accounts.length > 0));
   // An account added: the inbox's list opens on it.
   const counted = useRef(accounts.length);
   useEffect(() => {
     if (accounts.length > counted.current && counted.current > 0) setOpen((now) => new Set(now).add("inbox"));
     counted.current = accounts.length;
   }, [accounts.length]);
-  const appPrefs = usePrefs();
   const nameOf = (account: { id: string; email: string }) => accountLabel(appPrefs, account);
   const me = accounts[0]?.account;
   const waitingText =
@@ -317,21 +319,135 @@ export function Sidebar({
     );
   };
 
+  const folded = new Set(prefs.folded);
+  // An account's folders in its own list: the system ones first. Not its Drafts: what is being written is in the Drafts row.
+  const foldersOf = (account: AccountMail) => sortFolders(account.mailboxes).filter((m) => m.role !== "drafts");
+  // Its mail still coming in for the first time.
+  const firstSync = (account: AccountMail) => account.error === null && !account.sync?.last_success_at;
+  const inboxOf = (account: AccountMail): View | null => {
+    const inbox = account.mailboxes.find((m) => m.role === "inbox" && m.selectable);
+    return inbox ? { kind: "mailbox", mailboxId: inbox.id, accountId: account.account.id } : null;
+  };
+
+  const foldChevron = (account: AccountMail) => {
+    const unfolded = !folded.has(account.account.id);
+    return (
+      <button
+        type="button"
+        className="side-chevron"
+        aria-label={unfolded ? t("Hide folders") : t("Show folders")}
+        aria-expanded={unfolded}
+        onClick={() => changes.fold(account.account.id, unfolded)}
+      >
+        <Icon name={unfolded ? "chevronDown" : "chevronRight"} size={12} />
+      </button>
+    );
+  };
+
+  /** One of an account's folders: small under its account ("own"), deeper under the inbox's ("nested"), or a row like the main ones. */
+  const folderItem = (account: AccountMail, mailbox: MailboxSummary, as: "own" | "nested" | "main") => {
+    const target: View = { kind: "mailbox", mailboxId: mailbox.id, accountId: account.account.id };
+    const key = viewKey(target);
+    const active = sameView(view, target);
+    const icon: IconName = mailbox.role === "archive" ? "check" : mailbox.role ? ROLE_ICONS[mailbox.role] : "folder";
+    const level = depth(mailbox);
+    const classes = [
+      "side-item",
+      active ? "active" : "",
+      dropOn === key ? "drop" : "",
+      level ? `depth-${level}` : "",
+      mailbox.selectable ? "" : "static",
+    ].join(" ");
+    const inside = (
+      <>
+        <Icon name={icon} size={as === "main" ? 19 : 16} />
+        <span className="label">{leafName(mailbox)}</span>
+        {mailbox.unread ? <span className="count unread-count">{mailbox.unread}</span> : null}
+      </>
+    );
+    return (
+      <li key={key} className={as === "main" ? "side-entry" : `side-entry account-folder ${as}`}>
+        {mailbox.selectable ? (
+          <button
+            type="button"
+            className={classes}
+            aria-current={active ? "page" : undefined}
+            onClick={() => go(target)}
+            onContextMenu={(event) => rowMenu(event, [], target)}
+            {...dragProps(target)}
+          >
+            {inside}
+          </button>
+        ) : (
+          <span className={classes}>{inside}</span>
+        )}
+      </li>
+    );
+  };
+
+  /** An account's row in the list of accounts: it opens its inbox; the chevron folds its folders away. */
+  const accountHead = (account: AccountMail) => {
+    const id = account.account.id;
+    const inbox = account.mailboxes.find((m) => m.role === "inbox" && m.selectable);
+    const first = firstSync(account);
+    return (
+      <li key={`account-${id}`} className="side-entry account-head">
+        {foldChevron(account)}
+        <button
+          type="button"
+          className="side-item"
+          title={first ? t("Its mail is coming in") : account.account.email}
+          onClick={() => {
+            changes.fold(id, false);
+            const target = inboxOf(account);
+            if (target) go(target);
+          }}
+        >
+          <Avatar
+            person={{ name: account.account.display_name, address: account.account.email }}
+            size="xs"
+            ring
+            colour={accountColour(appPrefs, id)}
+          />
+          <span className="label">{nameOf(account.account)}</span>
+          {first ? (
+            <span className="spinner small side-first-sync" role="img" aria-label={t("Its mail is coming in")} />
+          ) : folded.has(id) && inbox?.unread ? (
+            <span className="count unread-count">{inbox.unread}</span>
+          ) : null}
+        </button>
+        {onNewFolder && (
+          <button
+            type="button"
+            className="account-new"
+            title={t("New folder in {account}", { account: account.account.email })}
+            aria-label={t("New folder in {account}", { account: account.account.email })}
+            onClick={() => onNewFolder(id)}
+          >
+            <Icon name="plus" size={14} />
+          </button>
+        )}
+      </li>
+    );
+  };
+
   // Each account's folder with that role, under the chevron; under Inbox, "Add an account…" last.
   const perAccount = (r: Role) =>
     listed(r) &&
     open.has(r) && [
       ...accounts.flatMap((account) => {
         const mailbox = account.mailboxes.find((m) => m.role === r && m.selectable);
-        // Its mail still coming in for the first time.
-        const first = account.error === null && !account.sync?.last_success_at;
+        const first = firstSync(account);
         // A new account shows in the inbox's list before its folders are known.
         if (!mailbox && !(r === "inbox" && first)) return [];
         const target: View | null = mailbox ? { kind: "mailbox", mailboxId: mailbox.id, accountId: account.account.id } : null;
         const active = target !== null && sameView(view, target);
         const person = { name: account.account.display_name, address: account.account.email };
+        // Under the inbox, each account opens onto its other folders.
+        const others = r === "inbox" && expanded ? foldersOf(account).filter((m) => m.role !== "inbox") : [];
         return [
           <li key={`${r}-${account.account.id}`} className="side-entry account">
+            {others.length > 0 && foldChevron(account)}
             <button
               type="button"
               className={active ? "side-item active" : "side-item"}
@@ -348,25 +464,28 @@ export function Sidebar({
               ) : null}
             </button>
           </li>,
+          ...(folded.has(account.account.id) ? [] : others.map((other) => folderItem(account, other, "nested"))),
         ];
       }),
-      r === "inbox" && onAddAccount && (
-        <li key="inbox-add-account" className="side-entry account">
-          <button
-            type="button"
-            className="side-item side-add"
-            title={expanded ? undefined : t("Add an account…")}
-            aria-label={expanded ? undefined : t("Add an account…")}
-            onClick={onAddAccount}
-          >
-            <span className="side-add-mark" aria-hidden="true">
-              <Icon name="plus" size={11} />
-            </span>
-            {expanded && <span className="label">{t("Add an account…")}</span>}
-          </button>
-        </li>
-      ),
+      r === "inbox" && addAccount,
     ];
+
+  const addAccount = onAddAccount && (
+    <li key="add-account" className="side-entry account">
+      <button
+        type="button"
+        className="side-item side-add"
+        title={expanded ? undefined : t("Add an account…")}
+        aria-label={expanded ? undefined : t("Add an account…")}
+        onClick={onAddAccount}
+      >
+        <span className="side-add-mark" aria-hidden="true">
+          <Icon name="plus" size={11} />
+        </span>
+        {expanded && <span className="label">{t("Add an account…")}</span>}
+      </button>
+    </li>
+  );
 
   const hideMenu = (row: Row): MenuEntry[] => [{ label: t("Remove from sidebar"), onSelect: () => changes.hide(row.view) }];
   const rowKey = (row: Row) => viewKey(row.view);
@@ -433,6 +552,16 @@ export function Sidebar({
     prefs.order,
   );
   const recents = prefs.recents.map(folderName).filter((row): row is Row => row !== null);
+  // One account at a time: the one chosen, if it is still there.
+  const scoped = how === "switcher" ? (accounts.find((account) => account.account.id === prefs.account) ?? null) : null;
+  const more = (
+    <li key="more" className="side-entry">
+      <button type="button" className={panel ? "side-item open" : "side-item"} aria-expanded={panel} onClick={() => setPanel(!panel)}>
+        <Icon name="more" size={19} />
+        <span className="label">{t("More")}</span>
+      </button>
+    </li>
+  );
 
   return (
     <nav className={overlay ? "sidebar expanded overlay" : "sidebar expanded"} aria-label={t("Folders")}>
@@ -464,41 +593,123 @@ export function Sidebar({
         </button>
       </div>
       <div className="side-scroll">
-        <ul className="side-list">
-          {item(INBOX, { count: count(INBOX), chevron: "inbox" })}
-          {perAccount("inbox")}
-          <li className="side-gap" aria-hidden="true" />
-          {top.map((row) => {
-            const chevron = row.view.kind === "role" && PER_ACCOUNT.includes(row.view.role) ? row.view.role : undefined;
-            return [
-              item(row, { count: count(row), chevron, menu: hideMenu(row), section: top }),
-              chevron ? perAccount(chevron) : null,
-            ];
-          })}
-        </ul>
-        <h2 className="side-heading">{t("Folders")}</h2>
-        <ul className="side-list">
-          {folders.map((row) =>
-            item(row, {
-              section: folders,
-              menu:
-                row === ARCHIVE
-                  ? hideMenu(row)
-                  : [{ label: t("Remove from sidebar"), onSelect: () => changes.unstar(row.view) }],
-            }),
-          )}
-          <li className="side-entry">
-            <button
-              type="button"
-              className={panel ? "side-item open" : "side-item"}
-              aria-expanded={panel}
-              onClick={() => setPanel(!panel)}
-            >
-              <Icon name="more" size={19} />
-              <span className="label">{t("More")}</span>
-            </button>
-          </li>
-        </ul>
+        {how === "switcher" && accounts.length > 0 && (
+          <>
+            <div className="side-switch" role="group" aria-label={t("Accounts")}>
+              <button
+                type="button"
+                className={scoped ? "side-switch-item" : "side-switch-item on"}
+                title={t("All accounts")}
+                aria-label={t("All accounts")}
+                aria-pressed={!scoped}
+                onClick={() => {
+                  changes.choose(null);
+                  go(INBOX.view);
+                }}
+              >
+                <Icon name="inbox" size={19} />
+              </button>
+              {accounts.map((account) => {
+                const inbox = account.mailboxes.find((m) => m.role === "inbox" && m.selectable);
+                return (
+                  <button
+                    key={account.account.id}
+                    type="button"
+                    className={account === scoped ? "side-switch-item on" : "side-switch-item"}
+                    title={nameOf(account.account)}
+                    aria-label={nameOf(account.account)}
+                    aria-pressed={account === scoped}
+                    onClick={() => {
+                      changes.choose(account.account.id);
+                      const target = inboxOf(account);
+                      if (target) go(target);
+                    }}
+                  >
+                    <Avatar
+                      person={{ name: account.account.display_name, address: account.account.email }}
+                      size="sm"
+                      colour={accountColour(appPrefs, account.account.id)}
+                    />
+                    {inbox?.unread ? <span className="side-switch-dot" aria-hidden="true" /> : null}
+                  </button>
+                );
+              })}
+              {onAddAccount && (
+                <button type="button" className="side-switch-item" title={t("Add an account…")} aria-label={t("Add an account…")} onClick={onAddAccount}>
+                  <span className="side-add-mark" aria-hidden="true">
+                    <Icon name="plus" size={11} />
+                  </span>
+                </button>
+              )}
+            </div>
+            <p className="side-scope">{scoped ? nameOf(scoped.account) : t("All accounts")}</p>
+          </>
+        )}
+        {scoped ? (
+          <>
+            <ul className="side-list">
+              {foldersOf(scoped)
+                .filter((m) => m.role !== null)
+                .flatMap((m) => (m.role === "inbox" ? [folderItem(scoped, m, "main"), item(DRAFTS)] : [folderItem(scoped, m, "main")]))}
+              {outbox.length > 0 && item(OUTBOX, { count: count(OUTBOX) })}
+            </ul>
+            <h2 className="side-heading">{t("Folders")}</h2>
+            <ul className="side-list">
+              {foldersOf(scoped)
+                .filter((m) => m.role === null)
+                .map((m) => folderItem(scoped, m, "main"))}
+              {onNewFolder && (
+                <li className="side-entry">
+                  <button type="button" className="side-item side-add" onClick={() => onNewFolder(scoped.account.id)}>
+                    <Icon name="plus" size={19} />
+                    <span className="label">{t("New folder")}</span>
+                  </button>
+                </li>
+              )}
+              {more}
+            </ul>
+          </>
+        ) : (
+          <>
+            <ul className="side-list">
+              {item(INBOX, { count: count(INBOX), chevron: "inbox" })}
+              {perAccount("inbox")}
+              <li className="side-gap" aria-hidden="true" />
+              {top.map((row) => {
+                const chevron = row.view.kind === "role" && PER_ACCOUNT.includes(row.view.role) ? row.view.role : undefined;
+                return [
+                  item(row, { count: count(row), chevron, menu: hideMenu(row), section: top }),
+                  chevron ? perAccount(chevron) : null,
+                ];
+              })}
+            </ul>
+            {how === "section" && accounts.length > 0 && (
+              <>
+                <h2 className="side-heading">{t("Accounts")}</h2>
+                <ul className="side-list">
+                  {accounts.map((account) => [
+                    accountHead(account),
+                    folded.has(account.account.id) ? null : foldersOf(account).map((m) => folderItem(account, m, "own")),
+                  ])}
+                  {addAccount}
+                </ul>
+              </>
+            )}
+            <h2 className="side-heading">{t("Folders")}</h2>
+            <ul className="side-list">
+              {folders.map((row) =>
+                item(row, {
+                  section: folders,
+                  menu:
+                    row === ARCHIVE
+                      ? hideMenu(row)
+                      : [{ label: t("Remove from sidebar"), onSelect: () => changes.unstar(row.view) }],
+                }),
+              )}
+              {more}
+            </ul>
+          </>
+        )}
         {saved && saved.searches.length > 0 && <SavedSearches saved={saved} onMenu={onMenu} onOpened={() => setPanel(false)} />}
         {recents.length > 0 && (
           <section className="side-recents">
