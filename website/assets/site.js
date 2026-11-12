@@ -1,4 +1,9 @@
 (function(){
+  var ua=navigator.userAgent, os=/Windows/.test(ua)?'windows':/Mac/.test(ua)?'macos':/Linux|X11/.test(ua)?'linux':null;
+  var mine=os&&document.querySelector('.osc[data-os="'+os+'"]');
+  if(mine){ mine.classList.add('mine'); var y=document.createElement('span'); y.className='yours'; y.textContent=document.documentElement.lang==='fr'?'Votre système':'Your system'; mine.querySelector('h3').appendChild(y); }
+})();
+(function(){
   var bar=document.querySelector('.top');
   function nav(){ bar.classList.toggle('scrolled', scrollY>8); }
   addEventListener('scroll',nav,{passive:true}); nav();
