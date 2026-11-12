@@ -41,6 +41,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.TAG }}
+          # Nothing here pushes with git: do not leave the token in its config.
+          persist-credentials: false
       - name: The tag is the app's version
         run: |
           version="$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")"
@@ -86,6 +88,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.TAG }}
+          # Nothing here pushes with git: do not leave the token in its config.
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # stable branch, 2026-10-09
         with:
           toolchain: stable
