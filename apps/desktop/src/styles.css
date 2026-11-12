@@ -8448,3 +8448,125 @@ button.sender-row:hover:not(:disabled) {
     opacity: 0;
   }
 }
+
+/* ---------- Each account's folders in the sidebar (Settings › Appearance › Accounts in the sidebar) ---------- */
+
+/* A list of accounts: each one's row, then its folders. */
+.expanded .side-entry.account-head .side-item {
+  gap: 10px;
+  font-size: 13px;
+}
+
+/* New folder in this account: beside its row, under the pointer or the keyboard. */
+.account-new {
+  position: absolute;
+  top: 50%;
+  right: 15px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--rail-dim);
+  opacity: 0;
+  transform: translateY(-50%);
+}
+
+.side-entry.account-head:hover .account-new,
+.account-new:focus-visible {
+  opacity: 1;
+}
+
+.account-new:hover {
+  background: var(--rail-hover);
+  color: var(--rail-strong);
+}
+
+/* The count makes room for it. */
+.side-entry.account-head:hover .side-item .count {
+  visibility: hidden;
+}
+
+.expanded .side-entry.account-folder .side-item {
+  gap: 9px;
+  height: 30px;
+  padding-left: 45px;
+  font-size: 13px;
+}
+
+.expanded .side-entry.account-folder .side-item.depth-1 { padding-left: 57px; }
+.expanded .side-entry.account-folder .side-item.depth-2 { padding-left: 69px; }
+.expanded .side-entry.account-folder .side-item.depth-3 { padding-left: 81px; }
+.expanded .side-entry.account-folder .side-item.depth-4 { padding-left: 93px; }
+
+/* Under the inbox: an account's own chevron, and its folders one step further in. */
+.expanded .side-entry.account .side-chevron {
+  left: 18px;
+}
+
+.expanded .side-entry.account-folder.nested .side-item { padding-left: 60px; }
+.expanded .side-entry.account-folder.nested .side-item.depth-1 { padding-left: 72px; }
+.expanded .side-entry.account-folder.nested .side-item.depth-2 { padding-left: 84px; }
+.expanded .side-entry.account-folder.nested .side-item.depth-3 { padding-left: 96px; }
+.expanded .side-entry.account-folder.nested .side-item.depth-4 { padding-left: 108px; }
+
+/* One account at a time: the accounts' pictures at the top; the one chosen is ringed. */
+.side-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px 2px 15px;
+}
+
+.side-switch-item {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--rail-text);
+}
+
+.side-switch-item:hover {
+  background: var(--rail-hover);
+  color: var(--rail-strong);
+}
+
+/* A lighter green than the active row's: 3:1 against the sidebar. */
+.side-switch-item.on {
+  box-shadow: inset 0 0 0 2px #40b891;
+  color: #fff;
+}
+
+.side-switch-dot {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #40b891;
+  box-shadow: 0 0 0 2px var(--rail-2);
+}
+
+.no-counts .side-switch-dot {
+  display: none;
+}
+
+.side-scope {
+  overflow: hidden;
+  margin: 6px 0 8px;
+  padding: 0 19px;
+  color: var(--rail-strong);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A long account name is cut short; it never makes the sidebar scroll sideways. */
+.expanded .side-list {
+  grid-template-columns: minmax(0, 1fr);
+}

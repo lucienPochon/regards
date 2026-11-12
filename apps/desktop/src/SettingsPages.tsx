@@ -424,6 +424,18 @@ export function AppearancePage({
           onChange={(value) => onLayout({ locked: value === "open" })}
         />
       </Option>
+      <Option icon="folder" label={t("Accounts in the sidebar")} description={t("Where each account's folders show.")}>
+        <Select
+          label={t("Accounts in the sidebar")}
+          value={prefs.sidebarAccounts}
+          options={[
+            { id: "section", label: t("A list of accounts") },
+            { id: "switcher", label: t("One account at a time") },
+            { id: "inbox", label: t("Under the inbox") },
+          ]}
+          onChange={(sidebarAccounts) => setPrefs({ sidebarAccounts })}
+        />
+      </Option>
       <Option icon="text" label={t("List density")} description={t("When the list fills the window.")}>
         <Select
           label={t("List density")}

@@ -69,6 +69,12 @@ export interface Prefs {
   language: Language;
   /** The unread counts beside the folders. */
   sidebarCounts: boolean;
+  /**
+   * Where each account's folders show in the sidebar: under its row in a list
+   * of accounts, alone once its picture is picked at the top, or under the
+   * inbox's chevron.
+   */
+  sidebarAccounts: "section" | "switcher" | "inbox";
   /** The Agents button at the foot of the sidebar: recipes and the agents on this computer. */
   agentsButton: boolean;
   /** The quick choices of each time picker: shown or not, and at what time. */
@@ -127,6 +133,7 @@ export const DEFAULT_PREFS: Prefs = {
   // French on a French system, English otherwise, until one is chosen.
   language: "system",
   sidebarCounts: true,
+  sidebarAccounts: "section",
   agentsButton: true,
   snoozePresets: {},
   sendPresets: {},

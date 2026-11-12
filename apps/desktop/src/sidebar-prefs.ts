@@ -11,11 +11,15 @@ export interface SidebarPrefs {
   hidden: string[];
   /** Rows the person put in another order (by view key), each section's together. */
   order: string[];
+  /** Accounts whose folders are folded away under their row (by account id). */
+  folded: string[];
+  /** The account the sidebar shows alone, when it shows one at a time; null for all of them. */
+  account: string | null;
 }
 
 const KEY = "regards.sidebar";
 const RECENTS = 5;
-const EMPTY: SidebarPrefs = { starred: [], recents: [], hidden: [], order: [] };
+const EMPTY: SidebarPrefs = { starred: [], recents: [], hidden: [], order: [], folded: [], account: null };
 
 function load(): SidebarPrefs {
   try {
@@ -25,6 +29,8 @@ function load(): SidebarPrefs {
       recents: Array.isArray(saved?.recents) ? saved.recents : [],
       hidden: Array.isArray(saved?.hidden) ? saved.hidden.filter((key) => typeof key === "string") : [],
       order: Array.isArray(saved?.order) ? saved.order.filter((key) => typeof key === "string") : [],
+      folded: Array.isArray(saved?.folded) ? saved.folded.filter((id) => typeof id === "string") : [],
+      account: typeof saved?.account === "string" ? saved.account : null,
     };
   } catch {
     return EMPTY;
@@ -42,6 +48,10 @@ export interface SidebarChanges {
   show: (view: View) => void;
   /** A section's rows (by view key), in their new order. */
   arrange: (keys: string[]) => void;
+  /** Fold an account's folders away under its row, or show them again. */
+  fold: (accountId: string, folded: boolean) => void;
+  /** Show one account alone, or all of them (null). */
+  choose: (accountId: string | null) => void;
 }
 
 /** Rows in the order the person put them; any never moved keep their place after those. */
@@ -92,6 +102,12 @@ export function useSidebarPrefs(): [SidebarPrefs, SidebarChanges] {
       })),
     show: (view) => setPrefs((now) => ({ ...now, hidden: now.hidden.filter((key) => key !== viewKey(view)) })),
     arrange: (keys) => setPrefs((now) => ({ ...now, order: [...keys, ...now.order.filter((key) => !keys.includes(key))] })),
+    fold: (accountId, folded) =>
+      setPrefs((now) => {
+        const others = now.folded.filter((id) => id !== accountId);
+        return { ...now, folded: folded ? [...others, accountId] : others };
+      }),
+    choose: (accountId) => setPrefs((now) => ({ ...now, account: accountId })),
   };
   return [prefs, changes];
 }
