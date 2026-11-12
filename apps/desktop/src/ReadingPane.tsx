@@ -514,6 +514,8 @@ function ThreadMessage({
         <button type="button" className="mail-line" aria-expanded={false} onClick={onToggle ?? undefined}>
           <Avatar person={message.from} size="sm" />
           <span className={message.seen ? "who" : "who unread"}>{personName(message.from)}</span>
+          {/* The start of its text: what the folded message says, without opening it. */}
+          <span className="mail-snippet">{message.preview ?? ""}</span>
           {otherFolder && entry.mailbox_name && <span className="chip">{entry.mailbox_name}</span>}
           <span className="when">{when}</span>
         </button>
