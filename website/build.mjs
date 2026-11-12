@@ -57,7 +57,7 @@ for (const [lang, page] of Object.entries(pages)) {
     );
   }
   const root = page.path ? "../".repeat(page.path.split("/").filter(Boolean).length) : "";
-  const shared = { version, releases, root, site };
+  const shared = { version, releases, root, site, shots: page.shots ?? "" };
   const html = fill(layout, {
     ...shared,
     lang,
