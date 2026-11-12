@@ -42,10 +42,10 @@ To build one bundle locally: `cd apps/desktop && npm run release`, optionally wi
 ## Not yet
 
 - **Signing:**
-  - Windows: SignPath, free for open source.
-  - macOS: Developer ID and notarisation, when funded.
+  - Windows: through the SignPath Foundation, free for open source ([code signing policy](code-signing.md)). Applied for; the signing steps in the workflow come once the project is accepted.
+  - macOS: Developer ID and notarisation need the Apple Developer Program ($99 a year), so not for now.
 
-  Until then, Windows SmartScreen and macOS Gatekeeper warn on first start. Each needs its account and secrets (plan, Phase 0), then a signing step in the workflow.
+  Until then, Windows SmartScreen and macOS Gatekeeper warn on first start.
 - **Installing updates by itself:** this needs a signing key pair for the update files, kept by the owner, and Tauri's updater.
 
 ## Update checks
