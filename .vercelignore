@@ -1,6 +1,10 @@
-# The website needs only website/ and the version in Cargo.toml.
-/*
-!/website
-!/Cargo.toml
-!/vercel.json
+# The website needs only website/ and the version in Cargo.toml. Name what to
+# leave out, not what to keep: a catch-all also removes .git, which Vercel's
+# own build steps need.
+/apps
+/crates
+/docs
+/spikes
+/target
+/.github
 website/dist
