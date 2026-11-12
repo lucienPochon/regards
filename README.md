@@ -2,6 +2,8 @@
 
 Regards is a local-first, open-source email client for **Windows, macOS and Linux**. It offers a calm, sectioned inbox, done / pin / set aside, snooze, reminders, send later, undo everywhere, and a safe interface for AI agents. It is built with a Rust core, Tauri 2 and React.
 
+**Website:** [regards-two.vercel.app](https://regards-two.vercel.app) ([en français](https://regards-two.vercel.app/fr/))
+
 > **Status: pre-alpha.** It reads, sorts and sends mail every day, but has no signed installers or live tests on real providers yet. What works today:
 > - **Accounts:** any IMAP host with a password or app password (kept in the OS credential store), changed in place when it rotates; Microsoft and Google sign-in (OAuth) in builds made with their client ids ([docs/oauth-setup.md](docs/oauth-setup.md)).
 > - **Sync:** every folder, newest first and then older mail in the background. New inbox mail arrives by push (IMAP IDLE); the other folders follow within minutes.
