@@ -6636,9 +6636,9 @@ button.sender-row:hover:not(:disabled) {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--notice);
+  padding: 10px 10px 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
 }
 
 .key-set > .icon {
@@ -6667,76 +6667,140 @@ button.sender-row:hover:not(:disabled) {
   margin-top: 10px;
 }
 
-.key-part-title {
-  margin: 26px 0 8px;
-  font-size: 14px;
-  font-weight: 600;
+.key-search {
+  width: 100%;
+  margin-bottom: 14px;
 }
 
+.settings-pane .key-part-title {
+  margin: 24px 2px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* One card per part, a line per action: its name, then its key as keycaps. */
 .key-rows {
+  overflow: hidden;
   margin: 0;
   padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
   list-style: none;
 }
 
 .key-row {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) 216px;
-  align-items: center;
-  gap: 2px 12px;
-  padding: 3px 0;
-}
-
-.key-row > .icon {
-  color: var(--accent);
-}
-
-/* Looks like a field: clicking it waits for a key. */
-.key-field {
-  position: relative;
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 6px;
+  min-height: 38px;
+  padding: 0 8px 0 14px;
 }
 
+.key-row + .key-row {
+  border-top: 1px solid var(--border);
+}
+
+.key-row:hover {
+  background: var(--row-hover);
+}
+
+.key-row.capturing {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.key-row-name {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 0;
+}
+
+/* A key the person chose, not the set's. */
+.key-changed {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* The keys are the button: clicking them waits for a key. */
 .key-field-main {
-  overflow: hidden;
-  width: 100%;
-  height: 32px;
-  padding: 0 60px 0 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-elev);
+  display: flex;
+  order: 2;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 6px;
+  border-radius: 7px;
   color: var(--text);
   font-size: 13px;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition: border-color 0.12s;
 }
 
 .key-field-main:hover {
-  border-color: var(--border-strong);
+  background: var(--chip);
 }
 
 .key-field-main.capturing {
-  border-color: var(--accent);
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1.5px solid var(--accent);
   background: var(--pill);
   color: var(--accent-hover);
+  font-size: 12.5px;
+  font-weight: 600;
 }
 
-.key-field-tools {
-  position: absolute;
-  top: 3px;
-  right: 3px;
+.keycap-group {
   display: flex;
+  gap: 3px;
+}
+
+.key-field-main kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-color: color-mix(in srgb, var(--border-strong) 40%, var(--border));
+  background: var(--hover);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.key-or {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.key-capture-hint {
+  order: 1;
+}
+
+/* Left of the keys, so the keys stay at the edge when these show. */
+.key-field-tools {
+  display: flex;
+  order: 1;
   gap: 1px;
 }
 
 .key-field-tool {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
   color: var(--muted);
   opacity: 0;
   transition: opacity 0.12s;
@@ -6744,18 +6808,19 @@ button.sender-row:hover:not(:disabled) {
 
 .key-field-tool.kept,
 .key-row:hover .key-field-tool,
-.key-field:focus-within .key-field-tool {
+.key-row:focus-within .key-field-tool {
   opacity: 1;
 }
 
 .key-field-tool:hover {
-  background: var(--hover);
+  background: var(--chip);
   color: var(--text);
 }
 
 .key-row-note {
-  grid-column: 2 / -1;
-  margin: 0 0 4px;
+  flex-basis: 100%;
+  order: 3;
+  margin: 0 0 8px;
 }
 
 .shortcut-list {

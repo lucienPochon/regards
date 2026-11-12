@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { type AccountSummary, removeAccount, syncAccount, updateAccount } from "./accounts";
 import { AgentActivity } from "./AgentActivity";
 import { AgentConnect } from "./AgentConnect";
@@ -831,6 +831,7 @@ const KEY_SETS: { id: KeySet; name: string; about: string }[] = [
 export function ShortcutsTab({ confirm }: { confirm: (request: ConfirmRequest) => Promise<boolean> }) {
   const prefs = usePrefs();
   const [menu, setMenu] = useState<MenuRequest | null>(null);
+  const [filter, setFilter] = useState("");
   const current = KEY_SETS.find((set) => set.id === prefs.keySet) ?? KEY_SETS[0];
   const changed = Object.keys(prefs.myKeys).length;
   // The person's own keys were chosen around the set in use: another set starts clean.
@@ -848,6 +849,14 @@ export function ShortcutsTab({ confirm }: { confirm: (request: ConfirmRequest) =
   return (
     <>
       <h3>{t("Keyboard shortcuts")}</h3>
+      <input
+        className="input key-search"
+        type="search"
+        placeholder={t("Search for an action or a key")}
+        aria-label={t("Search for an action or a key")}
+        value={filter}
+        onChange={(event) => setFilter(event.target.value)}
+      />
       <div className="key-set">
         <Icon name="keyboard" size={18} />
         <strong>{t("Keys in use")}</strong>
@@ -879,7 +888,7 @@ export function ShortcutsTab({ confirm }: { confirm: (request: ConfirmRequest) =
         </button>
       )}
       {!prefs.singleKeys && <SingleKeysOff />}
-      <KeyRows />
+      <KeyRows filter={filter} />
       <p className="muted small">{t("Esc, Enter, Tab, the arrows and {key}+C, X and V always do the same thing.", { key: MOD_KEY })}</p>
       <FrameNote />
       {menu && <Menu request={menu} onClose={() => setMenu(null)} />}
@@ -939,16 +948,25 @@ const fieldKey = (name: string) => {
   return (/^\p{Ll}$/u.test(text) ? text.toUpperCase() : text).replace(/(?<=.)\+(?=.)/g, " + ");
 };
 
+/** Text to search in: lower case, without accents. */
+const plain = (text: string) => text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
 /**
- * Everything a key does, each with its key in a field: click the field and
- * press the new key. Escape, Enter, Tab, the arrows and Ctrl+C/X/V keep theirs.
+ * Everything a key does, each with its key as keycaps: click them and press
+ * the new key. Escape, Enter, Tab, the arrows and Ctrl+C/X/V keep theirs.
+ * `filter` keeps the rows whose name or key has it.
  */
-function KeyRows() {
+function KeyRows({ filter }: { filter: string }) {
   const prefs = usePrefs();
   const [capturing, setCapturing] = useState<string | null>(null);
   // What the last change said, shown under its row.
   const [note, setNote] = useState<{ id: string; text: string } | null>(null);
-  const { keys, labels, icons } = allKeys(prefs);
+  const { keys, labels } = allKeys(prefs);
+  const wanted = plain(filter.trim());
+  const squeezed = wanted.replace(/\s/g, "");
+  const matches = (id: string) =>
+    wanted === "" || plain(labels[id]).includes(wanted) || keys[id].some((key) => plain(fieldKey(key)).replace(/\s/g, "").includes(squeezed));
+  const parts = KEY_PARTS.map((part) => ({ title: part.title, ids: part.ids.filter(matches) })).filter((part) => part.ids.length > 0);
   const choose = (id: string, chosen: string[] | null) => {
     const { [id]: _left, ...rest } = prefs.myKeys;
     setPrefs({ myKeys: chosen === null ? rest : { ...rest, [id]: chosen } });
@@ -987,78 +1005,100 @@ function KeyRows() {
         : null,
     );
   };
+  if (parts.length === 0) {
+    return (
+      <p className="muted settings-note" role="status">
+        {t("Nothing matches.")}
+      </p>
+    );
+  }
   return (
     <>
-      {KEY_PARTS.map((part) => (
+      {parts.map((part) => (
         <section key={part.title}>
           <h4 className="key-part-title">{part.title}</h4>
           <ul className="key-rows">
-            {part.ids.map((id) => {
-              const shown = keys[id].map(fieldKey).join(", ");
-              return (
-                <li key={id} className="key-row">
-                  <Icon name={icons[id]} size={18} />
-                  <span>{labels[id]}</span>
-                  <span className="key-field">
-                    {capturing === id ? (
-                      <button
-                        type="button"
-                        className="key-field-main capturing"
-                        ref={(element) => element?.focus()}
-                        onKeyDown={capture(id)}
-                        onBlur={() => setCapturing(null)}
-                      >
-                        {t("Press a key…")}
-                      </button>
-                    ) : (
-                      <>
+            {part.ids.map((id) => (
+              <li key={id} className={capturing === id ? "key-row capturing" : "key-row"}>
+                <span className="key-row-name">
+                  {Array.isArray(prefs.myKeys[id]) && <span className="key-changed" aria-hidden="true" />}
+                  {labels[id]}
+                </span>
+                {capturing === id ? (
+                  <>
+                    <span className="muted small key-capture-hint">{t("{key} cancels", { key: keyText("Escape") })}</span>
+                    <button
+                      type="button"
+                      className="key-field-main capturing"
+                      ref={(element) => element?.focus()}
+                      onKeyDown={capture(id)}
+                      onBlur={() => setCapturing(null)}
+                    >
+                      {t("Press a key…")}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="key-field-main"
+                      aria-label={t("Change the key of {action}", { action: labels[id] })}
+                      title={t("Click, then press the new key")}
+                      onClick={() => {
+                        setNote(null);
+                        setCapturing(id);
+                      }}
+                    >
+                      {keys[id].length === 0 && <span className="muted">{t("No key")}</span>}
+                      {keys[id].map((key, index) => (
+                        <Fragment key={key}>
+                          {index > 0 && <span className="key-or"> {t("or")} </span>}
+                          <span className="keycap-group">
+                            {fieldKey(key)
+                              .split(" + ")
+                              .map((cap, at) => (
+                                <Fragment key={at}>
+                                  {at > 0 && <span className="sr-only"> + </span>}
+                                  <kbd>{cap}</kbd>
+                                </Fragment>
+                              ))}
+                          </span>
+                        </Fragment>
+                      ))}
+                    </button>
+                    <span className="key-field-tools">
+                      {Array.isArray(prefs.myKeys[id]) && (
                         <button
                           type="button"
-                          className="key-field-main"
-                          aria-label={t("Change the key of {action}", { action: labels[id] })}
-                          title={t("Click, then press the new key")}
-                          onClick={() => {
-                            setNote(null);
-                            setCapturing(id);
-                          }}
+                          className="key-field-tool kept"
+                          aria-label={t("{action}: back to the key set's key", { action: labels[id] })}
+                          title={t("Back to the key set's key")}
+                          onClick={() => choose(id, null)}
                         >
-                          {shown || <span className="muted">{t("No key")}</span>}
+                          <Icon name="back" size={13} />
                         </button>
-                        <span className="key-field-tools">
-                          {Array.isArray(prefs.myKeys[id]) && (
-                            <button
-                              type="button"
-                              className="key-field-tool kept"
-                              aria-label={t("{action}: back to the key set's key", { action: labels[id] })}
-                              title={t("Back to the key set's key")}
-                              onClick={() => choose(id, null)}
-                            >
-                              <Icon name="back" size={13} />
-                            </button>
-                          )}
-                          {shown && (
-                            <button
-                              type="button"
-                              className="key-field-tool"
-                              aria-label={t("No key for {action}", { action: labels[id] })}
-                              title={t("No key")}
-                              onClick={() => choose(id, [])}
-                            >
-                              <Icon name="close" size={13} />
-                            </button>
-                          )}
-                        </span>
-                      </>
-                    )}
-                  </span>
-                  {note?.id === id && (
-                    <p className="muted small key-row-note" role="status">
-                      {note.text}
-                    </p>
-                  )}
-                </li>
-              );
-            })}
+                      )}
+                      {keys[id].length > 0 && (
+                        <button
+                          type="button"
+                          className="key-field-tool"
+                          aria-label={t("No key for {action}", { action: labels[id] })}
+                          title={t("No key")}
+                          onClick={() => choose(id, [])}
+                        >
+                          <Icon name="close" size={13} />
+                        </button>
+                      )}
+                    </span>
+                  </>
+                )}
+                {note?.id === id && (
+                  <p className="muted small key-row-note" role="status">
+                    {note.text}
+                  </p>
+                )}
+              </li>
+            ))}
           </ul>
         </section>
       ))}

@@ -62,9 +62,24 @@ describe("the page", () => {
     expect(field("Print the open message").textContent).toBe("P");
     expect(field("Reply").textContent).toBe("Shift + R");
     expect(field("Move to a folder").textContent).toBe("Ctrl + Shift + M");
-    expect(field("Delete").textContent).toBe("Delete, Backspace");
-    expect(field("Zoom in").textContent).toBe("Ctrl + =, Ctrl + +");
+    expect(field("Delete").textContent).toBe("Delete or Backspace");
+    expect(field("Zoom in").textContent).toBe("Ctrl + = or Ctrl + +");
     expect(field("Mute the conversation").textContent).toBe("No key");
+  });
+
+  it("keeps the rows whose name or key has what is searched", () => {
+    page();
+    const search = screen.getByRole("searchbox", { name: "Search for an action or a key" });
+    fireEvent.change(search, { target: { value: "zoom" } });
+    expect(screen.getAllByRole("button", { name: /^Change the key of / }).map((one) => one.getAttribute("aria-label"))).toEqual([
+      "Change the key of Zoom in",
+      "Change the key of Zoom out",
+    ]);
+    fireEvent.change(search, { target: { value: "ctrl+shift+m" } });
+    expect(screen.getAllByRole("button", { name: /^Change the key of / })).toHaveLength(1);
+    expect(field("Move to a folder")).toBeTruthy();
+    fireEvent.change(search, { target: { value: "qqqq" } });
+    expect(screen.getByRole("status").textContent).toBe("Nothing matches.");
   });
 
   it("waits for a key once the field is clicked, and Escape leaves it as it was", () => {
