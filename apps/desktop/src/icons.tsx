@@ -191,6 +191,17 @@ const PATHS = {
     </>
   ),
   text: <path d="M4 6h16M4 11h16M4 16h10" />,
+  bullets: <path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" />,
+  numbers: <path d="M10 6h10M10 12h10M10 18h10M3.8 4.6 5 4v4M3.6 11.2c.4-.9 2.4-.9 2.4.3 0 .9-2.4 1.4-2.4 2.5H6M3.6 16.4h2.2l-1.3 1.5c1 0 1.6.5 1.6 1.2 0 1.2-2 1.3-2.6.4" />,
+  indentLess: <path d="M4 6h16M11 12h9M4 18h16M7.5 9.5 4.5 12l3 2.5" />,
+  indentMore: <path d="M4 6h16M11 12h9M4 18h16M4.5 9.5l3 2.5-3 2.5" />,
+  table: (
+    <>
+      <rect x="3.5" y="5" width="17" height="14" rx="2" />
+      <path d="M3.5 10h17M3.5 14.5h17M10 5v14" />
+    </>
+  ),
+  clearFormat: <path d="M6 5h11M11.5 5 9 17M5 20h6M15 15l5 5M20 15l-5 5" />,
   plus: <path d="M12 5v14M5 12h14" />,
   user: (
     <>

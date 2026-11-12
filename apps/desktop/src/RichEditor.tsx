@@ -1,10 +1,11 @@
 import { type Editor, Extension } from "@tiptap/core";
+import { Icon } from "./icons";
 import Image from "@tiptap/extension-image";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import { TextStyle } from "@tiptap/extension-text-style";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { IMAGE_TYPES } from "./images";
 import { commandOf } from "./shortcuts";
 // ProseMirror's base styles as files: the app's CSP allows no injected <style>.
@@ -245,7 +246,7 @@ export function RichEditor({
 
   if (!editor) return null;
   const chain = () => editor.chain().focus();
-  const button = (label: string, pressed: boolean, run: () => void, title: string) => (
+  const button = (label: ReactNode, pressed: boolean, run: () => void, title: string) => (
     <button type="button" aria-pressed={pressed} aria-label={title} title={title} onClick={run} disabled={disabled}>
       {label}
     </button>
@@ -310,10 +311,12 @@ export function RichEditor({
             </option>
           ))}
         </select>
+        <span className="format-sep" />
         {button("B", active?.bold ?? false, () => chain().toggleBold().run(), t("Bold"))}
         {button("I", active?.italic ?? false, () => chain().toggleItalic().run(), t("Italic"))}
         {button("U", active?.underline ?? false, () => chain().toggleUnderline().run(), t("Underline"))}
         {button("S", active?.strike ?? false, () => chain().toggleStrike().run(), t("Strikethrough"))}
+        <span className="format-sep" />
         <button
           type="button"
           className="colour-button"
@@ -378,19 +381,21 @@ export function RichEditor({
             </button>
           </span>
         )}
+        <span className="format-sep" />
         {button(
-          t("Link"),
+          <Icon name="link" size={16} />,
           active?.link ?? false,
           () => setLinking(editor.getAttributes("link").href ?? ""),
           t("Add or change a link"),
         )}
-        {button(t("• List"), active?.bullets ?? false, () => chain().toggleBulletList().run(), t("Bulleted list"))}
-        {button(t("1. List"), active?.numbers ?? false, () => chain().toggleOrderedList().run(), t("Numbered list"))}
-        {button(t("Quote"), active?.quote ?? false, () => chain().toggleBlockquote().run(), t("Quote"))}
-        {button("⇤", false, () => (active?.listItem ? chain().liftListItem("listItem").run() : chain().outdent().run()), t("Indent less"))}
-        {button("⇥", false, () => (active?.listItem ? chain().sinkListItem("listItem").run() : chain().indent().run()), t("Indent more"))}
-        {button(t("Table"), active?.table ?? false, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), t("Insert a table"))}
-        {button(t("Clear"), false, () => chain().unsetAllMarks().clearNodes().run(), t("Clear formatting"))}
+        {button(<Icon name="bullets" size={16} />, active?.bullets ?? false, () => chain().toggleBulletList().run(), t("Bulleted list"))}
+        {button(<Icon name="numbers" size={16} />, active?.numbers ?? false, () => chain().toggleOrderedList().run(), t("Numbered list"))}
+        {button(<Icon name="quote" size={16} />, active?.quote ?? false, () => chain().toggleBlockquote().run(), t("Quote"))}
+        <span className="format-sep" />
+        {button(<Icon name="indentLess" size={16} />, false, () => (active?.listItem ? chain().liftListItem("listItem").run() : chain().outdent().run()), t("Indent less"))}
+        {button(<Icon name="indentMore" size={16} />, false, () => (active?.listItem ? chain().sinkListItem("listItem").run() : chain().indent().run()), t("Indent more"))}
+        {button(<Icon name="table" size={16} />, active?.table ?? false, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), t("Insert a table"))}
+        {button(<Icon name="clearFormat" size={16} />, false, () => chain().unsetAllMarks().clearNodes().run(), t("Clear formatting"))}
         {active?.table && (
           <span className="table-tools" role="group" aria-label={t("Table")}>
             {button(t("+ Row"), false, () => chain().addRowAfter().run(), t("Add a row below"))}
