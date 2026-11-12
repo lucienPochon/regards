@@ -21,7 +21,13 @@ What the build fills in:
 
 - `{{version}}`: the workspace version in `Cargo.toml`, so the page follows
   each release.
-- `{{releases}}`: the latest GitHub release, where the download buttons go.
+- `{{dl_windows}}`, `{{dl_mac_arm}}`, `{{dl_mac_intel}}`, `{{dl_deb}}`,
+  `{{dl_rpm}}`, `{{dl_appimage}}`: the installer files of that version on its
+  GitHub release, so a download button fetches the file itself. The build asks
+  GitHub for each one; a file that is not published yet (the release is still
+  a draft) links to the releases page instead, so deploy the site again once
+  the release is published.
+- `{{releases}}`: the latest GitHub release, the fallback above.
 
 ## Keep it true
 

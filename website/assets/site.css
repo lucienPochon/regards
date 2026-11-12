@@ -308,7 +308,8 @@ h1,h2,h3{letter-spacing:-.045em}
 .osc h3{font-size:30px;letter-spacing:-.04em}
 .osc p{color:var(--muted);font-size:15.5px}
 .osc .fmt{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-.osc .fmt span{font:500 12.5px var(--mono);background:var(--pill);color:var(--accent);border-radius:6px;padding:3px 9px}
+.osc .fmt a{font:500 12.5px var(--mono);background:var(--pill);color:var(--accent);border-radius:6px;padding:3px 9px;text-decoration:none}
+.osc .fmt a:hover,.osc .fmt a:focus-visible{background:var(--accent);color:var(--bg)}
 .osc .btn{justify-self:start;margin-top:14px}
 
 /* v3: the real app, in screenshots */

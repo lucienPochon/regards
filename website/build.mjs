@@ -3,7 +3,9 @@
 //
 // - The version shown is the workspace's (Cargo.toml), so the page follows
 //   each release without an edit.
-// - Download buttons go to the latest GitHub release.
+// - Download buttons fetch the installer itself, from the GitHub release of
+//   that version. Until that release is published (it starts as a draft),
+//   they go to the releases page instead: the build asks GitHub for each file.
 // - The languages must stay in step: the build fails when a page's elements
 //   differ from the English page's, so a section added in one language is
 //   not forgotten in the other.
@@ -23,6 +25,31 @@ const releases = "https://github.com/lucienPochon/regards/releases/latest";
 const version = readFileSync(join(here, "..", "Cargo.toml"), "utf8")
   .match(/\[workspace\.package\][^[]*?^version = "([^"]+)"/ms)?.[1];
 if (!version) throw new Error("no workspace version in Cargo.toml");
+
+// The installers of this version, as the release workflow names them.
+const files = {
+  dl_windows: `Regards_${version}_x64-setup.exe`,
+  dl_mac_arm: `Regards_${version}_aarch64.dmg`,
+  dl_mac_intel: `Regards_${version}_x64.dmg`,
+  dl_deb: `Regards_${version}_amd64.deb`,
+  dl_rpm: `Regards-${version}-1.x86_64.rpm`,
+  dl_appimage: `Regards_${version}_amd64.AppImage`,
+};
+/** The file's own address when GitHub has it (it answers with a redirect to the file), else the releases page. */
+async function download(name) {
+  const url = `https://github.com/lucienPochon/regards/releases/download/v${version}/${name}`;
+  try {
+    const answer = await fetch(url, { method: "HEAD", redirect: "manual", signal: AbortSignal.timeout(8000) });
+    if (answer.status === 302 || answer.ok) return url;
+    console.warn(`${name}: not published (${answer.status}), linking to the releases page`);
+  } catch (error) {
+    console.warn(`${name}: could not ask GitHub (${error.message}), linking to the releases page`);
+  }
+  return releases;
+}
+const downloads = Object.fromEntries(
+  await Promise.all(Object.entries(files).map(async ([key, name]) => [key, await download(name)])),
+);
 
 /** A page's elements, without its words: tag names, ids and classes, in order. */
 function shape(html) {
@@ -57,7 +84,7 @@ for (const [lang, page] of Object.entries(pages)) {
     );
   }
   const root = page.path ? "../".repeat(page.path.split("/").filter(Boolean).length) : "";
-  const shared = { version, releases, root, site, shots: page.shots ?? "" };
+  const shared = { version, releases, ...downloads, root, site, shots: page.shots ?? "" };
   const html = fill(layout, {
     ...shared,
     lang,

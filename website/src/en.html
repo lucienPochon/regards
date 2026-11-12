@@ -192,15 +192,15 @@
   <div class="oses">
     <div class="osc" data-os="windows">
       <div class="scr"><div class="frame"><div class="bar2 win2"><span>Regards</span><u>–▢✕</u></div><div class="crop"><img src="{{root}}assets/app-light{{shots}}.png" alt="" width="1280" height="860"></div></div></div>
-      <div class="txt"><h3>Windows</h3><p>Windows 10 and 11</p><div class="fmt"><span>installer .exe</span></div><a class="btn primary small" href="{{releases}}">Download for Windows</a></div>
+      <div class="txt"><h3>Windows</h3><p>Windows 10 and 11</p><div class="fmt"><a href="{{dl_windows}}">installer .exe</a></div><a class="btn primary small" href="{{dl_windows}}">Download for Windows</a></div>
     </div>
     <div class="osc" data-os="macos">
       <div class="scr"><div class="frame"><div class="bar2 mac"><i></i><i></i><i></i><span>Regards</span></div><div class="crop"><img src="{{root}}assets/app-dark{{shots}}.png" alt="" width="1280" height="860"></div></div></div>
-      <div class="txt"><h3>macOS</h3><p>Apple silicon and Intel</p><div class="fmt"><span>.dmg</span></div><a class="btn primary small" href="{{releases}}">Download for macOS</a></div>
+      <div class="txt"><h3>macOS</h3><p>Apple silicon and Intel</p><div class="fmt"><a href="{{dl_mac_arm}}">.dmg Apple silicon</a><a href="{{dl_mac_intel}}">.dmg Intel</a></div><a class="btn primary small" href="{{dl_mac_arm}}">Download for Apple silicon</a></div>
     </div>
     <div class="osc" data-os="linux">
       <div class="scr"><div class="frame"><div class="bar2 lin"><span>Regards</span><i></i><i></i><i></i></div><div class="crop"><img src="{{root}}assets/app-light{{shots}}.png" alt="" width="1280" height="860"></div></div></div>
-      <div class="txt"><h3>Linux</h3><p>For most distributions</p><div class="fmt"><span>.deb</span><span>.rpm</span><span>AppImage</span></div><a class="btn primary small" href="{{releases}}">Download for Linux</a></div>
+      <div class="txt"><h3>Linux</h3><p>For most distributions</p><div class="fmt"><a href="{{dl_deb}}">.deb</a><a href="{{dl_rpm}}">.rpm</a><a href="{{dl_appimage}}">AppImage</a></div><a class="btn primary small" href="{{dl_appimage}}">Download the AppImage</a></div>
     </div>
   </div>
   <p class="also">Prefer to build it yourself? <a href="#open">The code is open.</a></p>
@@ -209,7 +209,7 @@
 <div class="final" id="download"><div class="wrap">
   <h2>Free your <span>inbox.</span></h2>
   <p>Regards {{version}} is free and open source, for Windows, macOS and Linux.</p>
-  <div class="os"><a class="btn glow" href="{{releases}}">Download for Windows</a><a class="btn line" href="{{releases}}">macOS</a><a class="btn line" href="{{releases}}">Linux</a></div>
+  <div class="os"><a class="btn glow" href="{{dl_windows}}">Download for Windows</a><a class="btn line" href="#systems">macOS</a><a class="btn line" href="#systems">Linux</a></div>
   <p class="fine">The installers are not signed yet, so Windows and macOS show a warning the first time. On Windows, choose <em>More info</em>, then <em>Run anyway</em>. <a href="https://github.com/lucienPochon/regards/blob/main/docs/code-signing.md">Code signing policy</a></p>
   <div class="fl"><a href="https://github.com/lucienPochon/regards">GitHub</a><a href="#agents">AI agents</a><a href="#open">Privacy</a><a href="#providers">Supported email</a><span>Regards · Apache-2.0 or MIT</span></div>
 </div></div>
