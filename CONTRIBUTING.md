@@ -39,3 +39,7 @@ Significant design changes need an Architecture Decision Record in [`docs/adr/`]
 ## 5. Privacy
 
 Regards collects no data and ships no third-party analytics ([ADR-0015](docs/adr/0015-privacy-telemetry-and-ai.md)). Never log message bodies, addresses or secrets.
+
+## 6. The website
+
+The public page in [`website/`](website/README.md) says what Regards does. Keep it true: a change to what it describes (a feature, what agents can do, the supported email providers, the platforms, the installers and how they are signed or updated, the price) changes the page in the same pull request, in English and in French.

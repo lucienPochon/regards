@@ -23,8 +23,13 @@ What the build fills in:
   each release.
 - `{{releases}}`: the latest GitHub release, where the download buttons go.
 
-Say only what Regards does today, in step with `README.md` and
-`docs/agents.md`.
+## Keep it true
+
+The page says only what Regards does today, in step with `README.md` and
+`docs/agents.md`. A pull request that changes what the page describes (a
+feature, what agents can do, providers, platforms, installers, signing,
+updates, the price) changes the page too, in both languages. At each release
+the page is read again (`docs/releasing.md`).
 
 ## Publishing
 
