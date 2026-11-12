@@ -40,10 +40,9 @@ everything but `website/` and `Cargo.toml` out of what is uploaded.
 
 - **By hand:** `vercel deploy --prod` from the root of the repository, signed
   in to the project's Vercel account.
-- **By itself:** once the repository is connected to the project
-  (`vercel git connect`, or the project's Git settings on Vercel), each merge
-  to `main` that touches `website/`, `Cargo.toml` or `vercel.json` is
-  published, and each pull request gets a preview.
+- **By itself:** the repository is connected to the project, so each merge
+  to `main` is published and each pull request gets a preview (a Vercel
+  check on the pull request).
 
 The canonical and language links use the project's production domain. With a
 domain of its own, add it to the Vercel project and set `SITE_URL` there.
