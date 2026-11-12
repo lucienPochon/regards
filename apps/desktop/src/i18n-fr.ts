@@ -556,6 +556,8 @@ export const FR: Record<string, Entry> = {
   "Waits for you to sign in again to its account, then goes at once.": "Attend que vous vous reconnectiez à son compte, puis part aussitôt.",
   "What “{name}” looks for": "Ce que cherche « {name} »",
   "Where their mail goes": "Où vont ses messages",
+  "Section": "Section",
+  "This sender": "Cet expéditeur",
   "Which accounts to search": "Comptes où chercher",
   "Why is this here?": "Pourquoi ce message est-il ici ?",
   "Window": "Fenêtre",
