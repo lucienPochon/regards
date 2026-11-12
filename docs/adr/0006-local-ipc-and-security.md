@@ -19,7 +19,8 @@ Loopback TCP is reachable by every local user and, through DNS-rebinding mistake
    - **Windows:** a named pipe `\\.\pipe\regards-<hash of user SID>`.
      - Its security descriptor grants access **only to the current user's SID**.
      - It is created with `FILE_FLAG_FIRST_PIPE_INSTANCE` to prevent squatting.
-     - On connect, the daemon checks the client process's user with `GetNamedPipeClientProcessId` and the process token.
+     - The daemon makes no further check of who connects: the security descriptor already lets no other user open the pipe.
+     - A client checks the pipe's owner before it sends anything, and connects only to a pipe owned by its own user, Administrators or the system. Another user could otherwise create the name while no daemon runs and pose as the daemon.
    - **macOS/Linux:** a Unix domain socket.
      - Location: `$XDG_RUNTIME_DIR/regards/daemon.sock` (Linux) or the per-user Application Support `run/` directory (macOS).
      - The directory is mode `0700` and the socket `0600`.
