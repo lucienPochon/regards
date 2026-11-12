@@ -4661,26 +4661,48 @@ button.list-title:hover {
   color: var(--muted);
 }
 
-/* Accept or block, under a new sender's row (beside it when the list is alone). */
+/* Accept or block, at the end of a new sender's row: two small buttons beside the list, with their words when the list is alone. */
 .screen-actions {
   display: flex;
-  gap: 8px;
-  padding: 0 21px 10px 65px;
+  flex: none;
+  gap: 6px;
+  padding: 0 12px 0 0;
 }
 
-.rows.tall .row:has(> .screen-actions) .row-main {
-  min-height: 0;
-  padding-bottom: 5px;
-}
-
-.rows.wide .row:has(> .screen-actions) {
+.rows .row:has(> .screen-actions) {
   display: flex;
   align-items: center;
 }
 
-.rows.wide .row > .screen-actions {
-  flex: none;
-  padding: 0 12px 0 0;
+.rows .row:has(> .screen-actions) .row-main {
+  flex: 1;
+}
+
+.rows.tall .row:has(> .screen-actions) .row-main {
+  min-height: 0;
+  padding-right: 8px;
+}
+
+.rows.tall .row > .screen-actions {
+  padding-right: 16px;
+}
+
+.rows.tall .screen-btn {
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 8px;
+}
+
+/* Beside the list the icon says it; the word stays for screen readers. */
+.rows.tall .screen-label {
+  position: absolute;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  width: 1px;
+  height: 1px;
+  white-space: nowrap;
 }
 
 .screen-btn {

@@ -564,11 +564,11 @@ export function MessageList({
           <span className="screen-actions">
             <button type="button" className="screen-btn accept" title={t("Accept: their mail goes to People")} onClick={() => screener.accept(item)}>
               <Icon name="thumbUp" size={14} />
-              {t("Accept")}
+              <span className="screen-label">{t("Accept")}</span>
             </button>
             <button type="button" className="screen-btn block" title={t("Block: their mail goes to Junk")} onClick={() => screener.block(item)}>
               <Icon name="thumbDown" size={14} />
-              {t("Block")}
+              <span className="screen-label">{t("Block")}</span>
             </button>
           </span>
         )}
