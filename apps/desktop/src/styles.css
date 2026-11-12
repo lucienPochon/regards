@@ -4939,6 +4939,9 @@ select.composer-from:hover:not(:disabled) {
   background: var(--bg-elev);
   box-shadow: var(--shadow-lg);
   animation: fade 0.08s ease-out;
+  /* Taller than a small window: it scrolls, and nothing is cut off. */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
 }
 
 .sender-card.measuring,
@@ -4993,6 +4996,65 @@ select.composer-from:hover:not(:disabled) {
   background: var(--chip);
   color: var(--text-2);
   font-size: 12px;
+}
+
+/* Write and search: the two things done most, side by side under the name. */
+.sender-actions {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sender-action {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.sender-action:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.sender-action > .icon {
+  flex: none;
+  color: var(--muted);
+}
+
+/* "This sender", "Everyone at …": whom the rows below are about. */
+.sender-card .sender-group {
+  margin: 10px 10px 2px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sender-row > .sender-section {
+  flex: none;
+  margin-top: 0;
+}
+
+/* In the card a detail is read whole, on as many lines as it needs. */
+.sender-card .sender-row-detail {
+  white-space: normal;
+}
+
+.sender-card .sender-notes {
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
 }
 
 .sender-rows {

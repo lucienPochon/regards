@@ -152,6 +152,35 @@ export function SenderCard({
                 <Icon name={copied ? "check" : "copy"} size={13} />
               </button>
             </span>
+          </div>
+        </div>
+        <div className="sender-actions">
+          <button type="button" className="sender-action" onClick={() => onWrite(person)}>
+            <Icon name="compose" size={15} />
+            {t("Write to them")}
+          </button>
+          {onSearch && (
+            <button type="button" className="sender-action" title={address} onClick={() => onSearch(address)} disabled={!address}>
+              <Icon name="search" size={15} />
+              {t("Search mail from them")}
+            </button>
+          )}
+        </div>
+        <div className="sender-rows">
+          <div className="sender-row why">
+            <Icon name="info" size={16} />
+            <span>
+              <strong>{t("Why is this here?")}</strong>
+              <span className="muted">
+                {explanation ? t("In {section}. {reason}", { section: SECTION_LABELS[explanation.section], reason: reasonText(explanation) }) : "…"}
+              </span>
+            </span>
+          </div>
+          {/* What is chosen for this one sender. */}
+          <h4 className="sender-group">{t("This sender")}</h4>
+          <label className="sender-row">
+            <Icon name="inbox" size={16} />
+            <span>{t("Section")}</span>
             <select
               className="sender-section"
               aria-label={t("Where their mail goes")}
@@ -167,31 +196,7 @@ export function SenderCard({
               <option value="notifications">{t("Always Notifications")}</option>
               <option value="newsletters">{t("Always Newsletters")}</option>
             </select>
-          </div>
-        </div>
-        {address && (
-          <SenderNotes
-            accountId={accountId}
-            address={address}
-            name={person.name ?? null}
-            onHolds={onHolds}
-            onFailed={onFailed}
-          />
-        )}
-        <div className="sender-rows">
-          <button type="button" className="sender-row" onClick={() => onWrite(person)}>
-            <Icon name="compose" size={16} />
-            <span>{t("Write to them")}</span>
-          </button>
-          {onSearch && (
-            <button type="button" className="sender-row" onClick={() => onSearch(address)} disabled={!address}>
-              <Icon name="search" size={16} />
-              <span>
-                {t("Search mail from them")}
-                <span className="muted sender-row-detail">{address}</span>
-              </span>
-            </button>
-          )}
+          </label>
           <button
             type="button"
             className="sender-row"
@@ -209,27 +214,6 @@ export function SenderCard({
             </span>
             <span className={sender?.priority ? "toggle on" : "toggle"} aria-hidden="true" />
           </button>
-          {company && (
-            <div className="sender-row sender-domain">
-              <Icon name="people" size={16} />
-              <span>
-                <span>{t("Everyone at {domain}", { domain: company.slice(1) })}</span>
-                <select
-                className="sender-section"
-                aria-label={t("Where mail from everyone at {domain} goes", { domain: company.slice(1) })}
-                value={domainChoice}
-                disabled={!explanation}
-                onChange={(event) => chooseForDomain(event.target.value)}
-              >
-                <option value="auto">{t("Sorted automatically")}</option>
-                <option value="priority">{t("Priority")}</option>
-                <option value="people">{t("Always People")}</option>
-                <option value="notifications">{t("Always Notifications")}</option>
-                  <option value="newsletters">{t("Always Newsletters")}</option>
-                </select>
-              </span>
-            </div>
-          )}
           <button
             type="button"
             className="sender-row"
@@ -248,16 +232,41 @@ export function SenderCard({
             <span className={sender?.quiet ? "toggle on" : "toggle"} aria-hidden="true" />
           </button>
           {onGroup && address && groupRow(searchTerm("from", address), person.name || address, t("Group their mail"))}
-          {onGroup && company && groupRow(searchTerm("from", company), company.slice(1), t("Group everyone at {domain}", { domain: company.slice(1) }))}
-          <div className="sender-row why">
-            <Icon name="info" size={16} />
-            <span>
-              <strong>{t("Why is this here?")}</strong>
-              <span className="muted">
-                {explanation ? t("In {section}. {reason}", { section: SECTION_LABELS[explanation.section], reason: reasonText(explanation) }) : "…"}
-              </span>
-            </span>
-          </div>
+          {company && (
+            <>
+              {/* What is chosen for everyone at their domain. */}
+              <h4 className="sender-group">{t("Everyone at {domain}", { domain: company.slice(1) })}</h4>
+              <label className="sender-row">
+                <Icon name="people" size={16} />
+                <span>{t("Section")}</span>
+                <select
+                  className="sender-section"
+                  aria-label={t("Where mail from everyone at {domain} goes", { domain: company.slice(1) })}
+                  value={domainChoice}
+                  disabled={!explanation}
+                  onChange={(event) => chooseForDomain(event.target.value)}
+                >
+                  <option value="auto">{t("Sorted automatically")}</option>
+                  <option value="priority">{t("Priority")}</option>
+                  <option value="people">{t("Always People")}</option>
+                  <option value="notifications">{t("Always Notifications")}</option>
+                  <option value="newsletters">{t("Always Newsletters")}</option>
+                </select>
+              </label>
+              {onGroup && groupRow(searchTerm("from", company), company.slice(1), t("Group everyone at {domain}", { domain: company.slice(1) }))}
+            </>
+          )}
+        </div>
+        {address && (
+          <SenderNotes
+            accountId={accountId}
+            address={address}
+            name={person.name ?? null}
+            onHolds={onHolds}
+            onFailed={onFailed}
+          />
+        )}
+        <div className="sender-rows">
           <button type="button" className="sender-row danger" onClick={block} disabled={!address}>
             <Icon name="thumbDown" size={16} />
             <span>{sender?.blocked ? t("Unblock sender") : t("Block sender")}</span>
