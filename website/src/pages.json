@@ -1,0 +1,20 @@
+{
+  "en": {
+    "path": "",
+    "locale": "en",
+    "title": "Regards: the free, open-source email app your AI agent can run",
+    "description": "Regards is a free, open-source email client for Windows, macOS and Linux. Your AI agent clears your inbox, files your mail and drafts your replies. Your mail stays on your computer, and nothing is sent without you.",
+    "other_lang": "fr",
+    "other_href": "fr/",
+    "other_text": "Lire cette page en français"
+  },
+  "fr": {
+    "path": "fr/",
+    "locale": "fr",
+    "title": "Regards : l’application e-mail gratuite et open source que votre agent IA peut gérer",
+    "description": "Regards est un client e-mail gratuit et open source pour Windows, macOS et Linux. Votre agent IA vide votre boîte de réception, classe vos messages et rédige vos réponses. Vos e-mails restent sur votre ordinateur, et rien ne part sans vous.",
+    "other_lang": "en",
+    "other_href": "../",
+    "other_text": "Read this page in English"
+  }
+}

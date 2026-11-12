@@ -36,6 +36,7 @@ Development builds don't need any of this: Cargo builds `regards` into the same 
 
    It can also be started by hand (*Run workflow*) for an existing tag.
 3. **Try the installers**, at least on one system, then publish the draft. Nothing is published before that.
+4. **Read the website** ([`website/`](../website/README.md)) against this release. The version and the download buttons follow by themselves; the words do not. Change both languages wherever the page no longer says what the release does: features, installers, signing, updates.
 
 To build one bundle locally: `cd apps/desktop && npm run release`, optionally with `-- --bundles nsis` (or `dmg`, `deb` …) for a single format.
 
