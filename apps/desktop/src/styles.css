@@ -3843,6 +3843,19 @@ button.list-title:hover {
   white-space: nowrap;
 }
 
+/* The signature's list: flat like the From button beside it, as wide as its choice. */
+select.composer-from {
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  field-sizing: content;
+}
+
+select.composer-from:hover:not(:disabled) {
+  background: var(--hover);
+}
+
 /* From: the address, the name small below it, and a list to change it. */
 .composer-from-button {
   display: flex;
@@ -4192,6 +4205,22 @@ button.list-title:hover {
   font-weight: 600;
 }
 
+/* An icon button: square, the icon in the middle. */
+.format-bar button:has(> .icon) {
+  display: inline-grid;
+  place-items: center;
+  padding: 0 6px;
+}
+
+/* Between kinds of formatting. */
+.format-sep {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
 .format-bar button:hover:not(:disabled) {
   background: var(--hover);
   color: var(--text);
@@ -4228,6 +4257,9 @@ button.list-title:hover {
   color: var(--text-2);
   font-size: 12.5px;
   font-weight: 600;
+  /* As wide as what is chosen, not as the longest choice: the bar stays on one line. */
+  field-sizing: content;
+  max-width: 9.5em;
 }
 
 .format-bar .text-style:hover:not(:disabled),
