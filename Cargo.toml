@@ -49,8 +49,9 @@ mail-builder = { version = "1", default-features = false }
 mail-parser = { version = "0.11", default-features = false, features = ["full_encoding"] }
 # The settings file a mail provider publishes (Thunderbird's autoconfig format).
 quick-xml = "0.42"
-rusqlite = { version = "0.40", features = ["bundled"] }
-rusqlite_migration = "2.6"
+rusqlite = { version = "0.41", features = ["bundled"] }
+# Pinned: 2.7.0 (2026-11-10) is the release for rusqlite 0.41, taken for RUSTSEC-2026-0459.
+rusqlite_migration = "=2.7.0"
 rcgen = "0.14"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
