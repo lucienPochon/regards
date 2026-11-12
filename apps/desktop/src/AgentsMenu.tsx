@@ -32,11 +32,16 @@ const MARGIN = 8;
  */
 export function AgentsMenu({
   anchor,
+  waiting = 0,
+  onWaiting,
   onSettings,
   onConnect,
   onClose,
 }: {
   anchor: Anchor;
+  /** How many things agents asked to do wait for the person, and where they are answered. */
+  waiting?: number;
+  onWaiting?: () => void;
   /** Settings › Agents: what each account allows. */
   onSettings: () => void;
   /** The Connect dialog, with this agent's card open. */
@@ -109,6 +114,20 @@ export function AgentsMenu({
         style={position ?? undefined}
         onMouseDown={(event) => event.stopPropagation()}
       >
+        {waiting > 0 && onWaiting && (
+          <button
+            type="button"
+            className="agents-waiting"
+            onClick={() => {
+              onClose();
+              onWaiting();
+            }}
+          >
+            <Icon name="agent" size={15} />
+            <span>{waiting === 1 ? t("An agent is waiting for you") : t("Agents are waiting for you: {count}", { count: waiting })}</span>
+            <Icon name="chevronRight" size={15} />
+          </button>
+        )}
         <div className="agents-tabs" role="tablist" aria-label={t("Agents")}>
           {(["recipes", "agents"] as const).map((id) => (
             <button

@@ -2102,6 +2102,24 @@ export function App() {
         onDoneAll={role === "inbox" || view.kind === "section" ? doneWith : undefined}
         onPalette={(actions, paletteTitle, about) => palette(actions, paletteTitle, about ? [senderEntry(about)] : [])}
         empty={empty}
+        footer={
+          inInbox && aside.length > 0 ? (
+            <button
+              type="button"
+              className="list-footer"
+              title={t("Set aside (Shift+A to add)")}
+              onClick={() => changeView({ kind: "marked", mark: "aside" })}
+            >
+              <span className="faces">
+                {aside.slice(0, 3).map((message) => (
+                  <Avatar key={message.id} person={message.from} size="xs" />
+                ))}
+              </span>
+              <span className="list-footer-text">{t("{count} set aside", { count: aside.length })}</span>
+              <Icon name="chevronRight" size={15} />
+            </button>
+          ) : undefined
+        }
         onSplit={layout.mode === "single" && layout.handle ? () => setLayout({ mode: "split" }) : undefined}
         own={ownAddresses}
         smart={smart}
@@ -2235,8 +2253,6 @@ export function App() {
     );
   }
 
-  const showBubble = inInbox && aside.length > 0 && !openItem && composer?.mode !== "full";
-  const asideFaces = aside.slice(0, 3);
   const framed = PLATFORM !== "linux";
   const sidebarProps = {
     mail,
@@ -2256,6 +2272,7 @@ export function App() {
       setOverlay(false);
       setAgentsMenu(anchor);
     },
+    agentsWaiting: holds.length,
     onSync: syncNow,
     syncing: busy,
     syncProblem,
@@ -2458,7 +2475,8 @@ export function App() {
                 : t("{count} accounts need you to sign in again", { count: signedOut.length })}
             </button>
           )}
-          {holds.length > 0 && composer?.mode !== "full" && (
+          {/* Without the sidebar's Agents button, which carries the count, a pill says so. */}
+          {holds.length > 0 && !appPrefs.agentsButton && composer?.mode !== "full" && (
             <button
               type="button"
               className="aside-bubble agent-waiting"
@@ -2467,21 +2485,6 @@ export function App() {
             >
               <Icon name="agent" size={15} />
               {holds.length === 1 ? t("An agent is waiting for you") : t("Agents are waiting for you: {count}", { count: holds.length })}
-            </button>
-          )}
-          {showBubble && (
-            <button
-              type="button"
-              className="aside-bubble"
-              title={t("Set aside (Shift+A to add)")}
-              onClick={() => changeView({ kind: "marked", mark: "aside" })}
-            >
-              <span className="faces">
-                {asideFaces.map((message) => (
-                  <Avatar key={message.id} person={message.from} size="xs" />
-                ))}
-              </span>
-              {t("{count} set aside", { count: aside.length })}
             </button>
           )}
         </div>
@@ -2507,6 +2510,8 @@ export function App() {
       {agentsMenu && (
         <AgentsMenu
           anchor={agentsMenu}
+          waiting={holds.length}
+          onWaiting={() => setHoldsOpen(true)}
           onSettings={() => setSettings("agents")}
           onConnect={setConnecting}
           onClose={() => setAgentsMenu(null)}

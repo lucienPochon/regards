@@ -70,6 +70,7 @@ export function Sidebar({
   onExpand,
   onSettings,
   onAgents,
+  agentsWaiting = 0,
   onSync,
   syncing,
   syncProblem,
@@ -98,6 +99,8 @@ export function Sidebar({
   onSettings: () => void;
   /** The Agents menu: recipes and the agents on this computer, beside `anchor`. */
   onAgents?: (anchor: Anchor) => void;
+  /** How many things agents asked to do wait for the person: a count on the Agents button. */
+  agentsWaiting?: number;
   onSync: () => void;
   syncing: boolean;
   /** Why the last sync failed, if it did. */
@@ -135,6 +138,12 @@ export function Sidebar({
   const appPrefs = usePrefs();
   const nameOf = (account: { id: string; email: string }) => accountLabel(appPrefs, account);
   const me = accounts[0]?.account;
+  const waitingText =
+    agentsWaiting === 0
+      ? null
+      : agentsWaiting === 1
+        ? t("An agent is waiting for you")
+        : t("Agents are waiting for you: {count}", { count: agentsWaiting });
   const hidden = new Set(prefs.hidden);
   // Offline, or a sync that fails: said at the foot, and on the rail.
   const online = useOnline();
@@ -399,11 +408,12 @@ export function Sidebar({
             <button
               type="button"
               className="rail-me"
-              title={t("Agents")}
-              aria-label={t("Agents")}
+              title={waitingText ?? t("Agents")}
+              aria-label={waitingText ? `${t("Agents")}: ${waitingText}` : t("Agents")}
               onClick={(event) => onAgents(anchorOf(event.currentTarget))}
             >
               <Icon name="agent" size={19} />
+              {agentsWaiting > 0 && <span className="rail-dot" />}
             </button>
           )}
           <button type="button" className="rail-me" title={t("Settings")} aria-label={t("Settings")} onClick={onSettings}>
@@ -532,9 +542,19 @@ export function Sidebar({
           </button>
         )}
         {onAgents && appPrefs.agentsButton && (
-          <button type="button" className="side-item" onClick={(event) => onAgents(anchorOf(event.currentTarget))}>
+          <button
+            type="button"
+            className="side-item"
+            title={waitingText ?? undefined}
+            onClick={(event) => onAgents(anchorOf(event.currentTarget))}
+          >
             <Icon name="agent" size={19} />
             <span className="label">{t("Agents")}</span>
+            {agentsWaiting > 0 && (
+              <span className="count waiting" aria-label={waitingText ?? undefined}>
+                {agentsWaiting}
+              </span>
+            )}
           </button>
         )}
         <button type="button" className="side-item" onClick={onSettings}>

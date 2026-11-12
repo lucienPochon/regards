@@ -221,6 +221,7 @@ export function MessageList({
   onPalette,
   empty,
   onSplit,
+  footer,
   own,
   smart,
   cards,
@@ -259,6 +260,8 @@ export function MessageList({
   empty: { title: string; body: string; arriving?: boolean };
   /** Show the reading pane beside the list (the handle on the list's edge). */
   onSplit?: () => void;
+  /** A strip under the list, always in view: it never covers a message. */
+  footer?: ReactNode;
   /** The person's own addresses, lowercase: their mail reads "to Lena". */
   own: ReadonlySet<string>;
   /** The inbox as the Smart Inbox: cards and groups around the People list. */
@@ -889,6 +892,7 @@ export function MessageList({
           </div>
         )}
       </div>
+      {footer}
       {onSplit && (
         <button type="button" className="split-handle" title={t("Show messages beside the list")} aria-label={t("Split view")} onClick={onSplit}>
           <Icon name="chevronLeft" size={14} />

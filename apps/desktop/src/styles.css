@@ -1194,6 +1194,20 @@ button.link:hover {
   border-radius: 50%;
 }
 
+.rail-me {
+  position: relative;
+}
+
+.rail-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warm);
+}
+
 .rail-me:hover {
   background: var(--rail-hover);
 }
@@ -1312,6 +1326,19 @@ button.link:hover {
 
 .expanded .count.alert {
   color: #ff9b90;
+}
+
+/* Agents asked for something: the count stands out from the unread counts. */
+.expanded .count.waiting {
+  display: grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--warm);
+  color: #2a1a06;
+  font-weight: 700;
 }
 
 .expanded .side-chevron {
@@ -1680,6 +1707,34 @@ button.link:hover {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+}
+
+/* Under the list, never over it: mail set aside. */
+.list-footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 16px 0 32px;
+  border-top: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.list-footer:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+
+.list-footer-text {
+  flex: 1;
+}
+
+.list-footer > .icon {
+  color: var(--muted);
 }
 
 .content.split .list-pane {
@@ -5190,6 +5245,32 @@ button.sender-row:hover:not(:disabled) {
   color: var(--muted);
   font-size: 12.5px;
   line-height: 1.4;
+}
+
+/* At the top of the Agents menu: what waits for an answer. */
+.agents-waiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 16px);
+  height: 36px;
+  margin: 8px 8px 0;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--warm-line);
+  border-radius: 8px;
+  background: var(--warm-soft);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.agents-waiting > span {
+  flex: 1;
+}
+
+.agents-waiting > .icon:first-child {
+  color: var(--warm);
 }
 
 .agents-group {
