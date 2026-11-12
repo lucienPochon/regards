@@ -101,6 +101,10 @@ Set `REGARDS_LOG=debug` for verbose daemon logs.
 
 `daemon status` exit codes: `0` running, `3` not running. `daemon run` exits with `4` when another daemon already owns the data directory.
 
+## Code signing policy
+
+The Windows installers are to be signed through the SignPath Foundation's free programme for open-source projects. What is signed, by whom and how: [Code signing policy](docs/code-signing.md).
+
 ## Contributing
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) first. It covers the clean-room rules, which every contribution must follow, and the `Signed-off-by` requirement (DCO).

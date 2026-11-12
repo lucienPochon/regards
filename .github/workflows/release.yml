@@ -5,9 +5,10 @@ name: Release
 # and puts them on a draft GitHub release. Nothing is published: the owner
 # reads the draft and publishes it.
 #
-# Not signed yet: Windows signing (SignPath) and macOS notarisation come with
-# their accounts (plan, Phase 0 paperwork). Until then Windows SmartScreen
-# and macOS Gatekeeper warn on first start.
+# Not signed yet: Windows signing (SignPath Foundation, docs/code-signing.md)
+# comes once the project is accepted; macOS notarisation needs the Apple
+# Developer Program. Until then Windows SmartScreen and macOS Gatekeeper warn
+# on first start.
 
 on:
   push:
@@ -47,12 +48,15 @@ jobs:
             echo "::error::tag $TAG but tauri.conf.json says $version"
             exit 1
           fi
+      # The notes start with the code signing policy, which the SignPath
+      # Foundation asks every download page to name (docs/code-signing.md).
       - name: Draft, if there is none yet
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          notes="**Code signing policy:** [what is signed, by whom and how](https://github.com/$GITHUB_REPOSITORY/blob/main/docs/code-signing.md)."
           gh release view "$TAG" >/dev/null 2>&1 || \
-            gh release create "$TAG" --draft --verify-tag --title "Regards ${TAG#v}" --generate-notes
+            gh release create "$TAG" --draft --verify-tag --title "Regards ${TAG#v}" --notes "$notes" --generate-notes
 
   bundle:
     name: Bundle (${{ matrix.name }})
