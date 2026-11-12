@@ -1,17 +1,15 @@
 name: Website
 
-# The public page that presents Regards (website/). Built on every change;
-# published to GitHub Pages from main once the owner has turned Pages on
-# (Settings › Pages › Source: GitHub Actions) and set the repository variable
-# WEBSITE_DEPLOY to "true". Actions are pinned as in ci.yml.
+# The public page that presents Regards (website/). This checks that it
+# builds; Vercel publishes it (website/README.md). Actions are pinned as in
+# ci.yml.
 
 on:
   push:
     branches: [main]
-    paths: ["website/**", "Cargo.toml", ".github/workflows/website.yml"]
+    paths: ["website/**", "Cargo.toml", "vercel.json", ".github/workflows/website.yml"]
   pull_request:
-    paths: ["website/**", "Cargo.toml", ".github/workflows/website.yml"]
-  workflow_dispatch:
+    paths: ["website/**", "Cargo.toml", "vercel.json", ".github/workflows/website.yml"]
 
 permissions:
   contents: read
@@ -32,24 +30,3 @@ jobs:
           node-version: 22
       - name: Build
         run: node website/build.mjs
-        env:
-          SITE_URL: ${{ vars.WEBSITE_URL }}
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: website/dist
-
-  deploy:
-    name: Publish
-    needs: build
-    if: github.ref == 'refs/heads/main' && vars.WEBSITE_DEPLOY == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

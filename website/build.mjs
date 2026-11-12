@@ -14,7 +14,11 @@ const here = import.meta.dirname;
 const out = join(here, "dist");
 const read = (...parts) => readFileSync(join(here, ...parts), "utf8");
 
-const site = (process.env.SITE_URL || "https://lucienpochon.github.io/regards").replace(/\/$/, "");
+// The site's address: SITE_URL when given, else the Vercel project's
+// production domain (set by Vercel during its builds), else the default.
+const DEFAULT_SITE = "https://regards-two.vercel.app";
+const onVercel = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+const site = (process.env.SITE_URL || (onVercel ? `https://${onVercel}` : DEFAULT_SITE)).replace(/\/$/, "");
 const releases = "https://github.com/lucienPochon/regards/releases/latest";
 const version = readFileSync(join(here, "..", "Cargo.toml"), "utf8")
   .match(/\[workspace\.package\][^[]*?^version = "([^"]+)"/ms)?.[1];

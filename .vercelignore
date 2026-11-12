@@ -1,0 +1,6 @@
+# The website needs only website/ and the version in Cargo.toml.
+/*
+!/website
+!/Cargo.toml
+!/vercel.json
+website/dist

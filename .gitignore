@@ -25,3 +25,6 @@ Thumbs.db
 
 # The sidecar a release bundle ships (apps/desktop/scripts/sidecar.mjs)
 apps/desktop/src-tauri/binaries/
+
+# Vercel (the website): the local link to the project
+.vercel/

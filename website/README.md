@@ -33,8 +33,19 @@ the page is read again (`docs/releasing.md`).
 
 ## Publishing
 
-`.github/workflows/website.yml` builds the site on every change to it. It
-publishes to GitHub Pages from `main` once the repository has Pages set to
-**GitHub Actions** (Settings › Pages) and the variable `WEBSITE_DEPLOY` set to
-`true`. Set the variable `WEBSITE_URL` to the site's address when it has its
-own domain; it is used for the canonical and language links.
+The site is at <https://regards-two.vercel.app>, on Vercel (project `regards`).
+`vercel.json` at the root of the repository says how it is built: no install,
+`node website/build.mjs`, and `website/dist` served. `.vercelignore` keeps
+everything but `website/` and `Cargo.toml` out of what is uploaded.
+
+- **By hand:** `vercel deploy --prod` from the root of the repository, signed
+  in to the project's Vercel account.
+- **By itself:** once the repository is connected to the project
+  (`vercel git connect`, or the project's Git settings on Vercel), each merge
+  to `main` that touches `website/`, `Cargo.toml` or `vercel.json` is
+  published, and each pull request gets a preview.
+
+The canonical and language links use the project's production domain. With a
+domain of its own, add it to the Vercel project and set `SITE_URL` there.
+
+`.github/workflows/website.yml` only checks that the site builds.
