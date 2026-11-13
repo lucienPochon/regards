@@ -1,0 +1,219 @@
+{
+  "Machine": {
+    "Date": "2026-11-13 19:40",
+    "Cpu": "AMD Ryzen 7 5800X 8-Core Processor",
+    "RamGB": 32,
+    "Windows": "10.0.26320",
+    "Runs": 10,
+    "Passive": false,
+    "Notes": "Regards is 0.3.0 with the fix of pull request 300, built locally. Thunderbird is not the latest release. Run from another signed-in session, not on a quiet computer."
+  },
+  "Results": [
+    {
+      "App": "Regards",
+      "Version": "0.3.0",
+      "InstallMB": 36.6,
+      "DataMB": 56.6,
+      "WindowMs": [
+        1157,
+        534,
+        509,
+        573,
+        540,
+        543,
+        607,
+        806,
+        551
+      ],
+      "DrawnMs": [
+        1506,
+        743,
+        809,
+        887,
+        900,
+        760,
+        916,
+        1197,
+        856
+      ],
+      "QuietMs": [
+        1430,
+        2201,
+        1865,
+        1615,
+        1367
+      ],
+      "StartCpuS": [
+        2.34,
+        2.06,
+        2.44,
+        2.08,
+        2.05
+      ],
+      "Processes": 9,
+      "PrivateWorkingSetMB": 124,
+      "CommitMB": 191,
+      "IdleCpuPercent": 0.31,
+      "WindowMsMedian": 551,
+      "DrawnMsMedian": 887,
+      "QuietMsMedian": 1615,
+      "StartCpuSMedian": 2.08
+    },
+    {
+      "App": "Spark",
+      "Version": "3.32.4.65535",
+      "InstallMB": 690.5,
+      "DataMB": 130.1,
+      "WindowMs": [
+        5090,
+        4957,
+        5242,
+        4861,
+        5141,
+        4908,
+        5116,
+        5260,
+        4977,
+        5007
+      ],
+      "DrawnMs": [
+        5398,
+        5256,
+        5589,
+        5171,
+        5454,
+        5240,
+        5443,
+        5592,
+        5307,
+        5322
+      ],
+      "QuietMs": [
+        6107,
+        6865,
+        6093,
+        6114,
+        5844
+      ],
+      "StartCpuS": [
+        8.05,
+        8.66,
+        7.7,
+        7.5,
+        7.53
+      ],
+      "Processes": 7,
+      "PrivateWorkingSetMB": 449,
+      "CommitMB": 646,
+      "IdleCpuPercent": 1.95,
+      "WindowMsMedian": 5048.5,
+      "DrawnMsMedian": 5360,
+      "QuietMsMedian": 6107,
+      "StartCpuSMedian": 7.7
+    },
+    {
+      "App": "Mailspring",
+      "Version": "1.26.2",
+      "InstallMB": 849.8,
+      "DataMB": 127.9,
+      "WindowMs": [
+        1326,
+        1438,
+        1392,
+        1392,
+        1341,
+        1469,
+        1298,
+        1375,
+        1489,
+        1392
+      ],
+      "DrawnMs": [
+        1416,
+        1525,
+        1477,
+        1479,
+        1429,
+        1553,
+        1385,
+        1460,
+        1572,
+        1478
+      ],
+      "QuietMs": [
+        2188,
+        1666,
+        1680,
+        2316,
+        2299
+      ],
+      "StartCpuS": [
+        2.56,
+        2.61,
+        2.33,
+        2.33,
+        2.59
+      ],
+      "Processes": 8,
+      "PrivateWorkingSetMB": 369,
+      "CommitMB": 565,
+      "IdleCpuPercent": 0.05,
+      "WindowMsMedian": 1392,
+      "DrawnMsMedian": 1477.5,
+      "QuietMsMedian": 2188,
+      "StartCpuSMedian": 2.56
+    },
+    {
+      "App": "Thunderbird",
+      "Version": "153.7.0",
+      "InstallMB": 337.9,
+      "DataMB": 335,
+      "WindowMs": [
+        733,
+        720,
+        701,
+        708,
+        747,
+        766,
+        739,
+        702,
+        767,
+        700
+      ],
+      "DrawnMs": [
+        1742,
+        1666,
+        1618,
+        1790,
+        1695,
+        1645,
+        1741,
+        1630,
+        1772,
+        1602
+      ],
+      "QuietMs": [
+        2146,
+        1858,
+        2114,
+        2628,
+        1863
+      ],
+      "StartCpuS": [
+        3.56,
+        3.58,
+        3.3,
+        3.73,
+        3.56
+      ],
+      "Processes": 7,
+      "PrivateWorkingSetMB": 322,
+      "CommitMB": 592,
+      "IdleCpuPercent": 1.07,
+      "WindowMsMedian": 726.5,
+      "DrawnMsMedian": 1680.5,
+      "QuietMsMedian": 2114,
+      "StartCpuSMedian": 3.56
+    }
+  ]
+}
