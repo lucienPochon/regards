@@ -158,7 +158,7 @@ interface ServerFound {
 }
 
 /** While the first results of a search are on their way. */
-const SEARCHING: MessageFeed = { items: [], loading: true, error: null, more: false, loadMore: () => {} };
+const SEARCHING: MessageFeed = { items: [], loading: true, error: null, more: false, loadingMore: false, loadMore: () => {} };
 
 /** Where a part of the Smart Inbox leads back to: the inbox it was opened from. */
 const inboxOf = (view: Extract<View, { kind: "section" }>): View =>
