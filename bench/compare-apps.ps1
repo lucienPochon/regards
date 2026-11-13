@@ -432,6 +432,11 @@ foreach ($name in $Apps) {
     [Bench.Probe]::Folder = $app.Folder
     $wasRunning = Test-Running $app
     $background = $false
+    # Reopen an app afterwards only if it was open on this desktop: started for
+    # another signed-in user (Start-Process -Credential), the script would
+    # otherwise bring that user's apps up on this screen.
+    $here = (Get-Process -Id $PID).SessionId
+    $onThisDesktop = [bool]([Bench.Probe]::Tree($app.Roots) | Where-Object { (Get-Process -Id $_ -ErrorAction SilentlyContinue).SessionId -eq $here })
     if ($wasRunning) {
         $ids = [Bench.Probe]::Tree($app.Roots)
         $background = [bool](Get-CimInstance Win32_Process | Where-Object { $ids -contains [int]$_.ProcessId -and $_.CommandLine -match '--background' })
@@ -474,7 +479,7 @@ foreach ($name in $Apps) {
 
     if (-not $Passive) {
         Stop-App $app
-        if ($wasRunning) {
+        if ($wasRunning -and $onThisDesktop) {
             $arguments = if ($background) { '--background' } else { $app.Args }
             if ($arguments) { Start-Process -FilePath $app.Exe -ArgumentList $arguments } else { Start-Process -FilePath $app.Exe }
         }
