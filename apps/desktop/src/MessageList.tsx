@@ -118,6 +118,20 @@ export interface SearchControls {
   onSave?: () => void;
 }
 
+/**
+ * The end of a list that has more to fetch. It keeps its height, so the list
+ * does not jump, but the spinner is there only while a page is being fetched:
+ * an animation left running out of sight keeps the window drawing, and
+ * Regards then never rests.
+ */
+export function ListEnd({ loading }: { loading: boolean }) {
+  return (
+    <div className="row-more" aria-hidden="true">
+      {loading && <span className="spinner" />}
+    </div>
+  );
+}
+
 export interface ServerSearch {
   state: "idle" | "loading" | "done" | "failed";
   /** Matches the search here had not found. */
@@ -884,11 +898,7 @@ export function MessageList({
                 </button>
               </div>
             )}
-            {feed.more && !query && (
-              <div className="row-more" aria-hidden="true">
-                <span className="spinner" />
-              </div>
-            )}
+            {feed.more && !query && <ListEnd loading={feed.loadingMore} />}
           </div>
         )}
       </div>

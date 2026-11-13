@@ -365,6 +365,8 @@ export interface MessageFeed {
   loading: boolean;
   error: string | null;
   more: boolean;
+  /** A further page is being fetched right now. */
+  loadingMore: boolean;
   loadMore: () => void;
 }
 
@@ -383,6 +385,7 @@ export function useFeed(sources: Source[]): MessageFeed {
   wanted.current = sources;
   const generation = useRef(0);
   const fetching = useRef(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Re-read the newest of each folder, as many as are already fetched, so scrolled-in pages stay.
   const refresh = useCallback(() => {
@@ -419,6 +422,7 @@ export function useFeed(sources: Source[]): MessageFeed {
     const feed = current.feeds[index];
     const run = generation.current;
     fetching.current = true;
+    setLoadingMore(true);
     feed.source.fetch(feed.next, null)
       .then((page) => {
         if (run !== generation.current) return;
@@ -436,6 +440,7 @@ export function useFeed(sources: Source[]): MessageFeed {
       .catch((failure: unknown) => setError(String(failure)))
       .finally(() => {
         fetching.current = false;
+        setLoadingMore(false);
       });
   }, [key]);
 
@@ -468,6 +473,7 @@ export function useFeed(sources: Source[]): MessageFeed {
     loading: merged === null && error === null,
     error,
     more: merged?.more ?? false,
+    loadingMore,
     loadMore,
   };
 }
