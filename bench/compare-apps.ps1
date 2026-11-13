@@ -1,8 +1,9 @@
 <#
 .SYNOPSIS
   Measures installed mail apps from the outside, all the same way: time from
-  launch to a visible window, time until the app goes quiet, memory, number of
-  processes, idle CPU and size on disk.
+  launch to a visible window, to its content being drawn and to the app going
+  quiet, then memory, number of processes, idle CPU and size on disk.
+  The rules for numbers that are published are in bench/README.md.
 
 .DESCRIPTION
   Black-box: nothing is read from any app's mail. Each app runs with whatever
@@ -20,9 +21,10 @@
 #>
 param(
     [string[]]$Apps = @('Regards', 'Spark', 'Mailspring', 'Thunderbird'),
-    [int]$Runs = 5,
-    [int]$SettleSeconds = 30,
-    [int]$IdleSeconds = 30,
+    # Launches that count. One more is made first and thrown away.
+    [int]$Runs = 10,
+    [int]$SettleSeconds = 60,
+    [int]$IdleSeconds = 60,
     # Only measure apps that are already running; start and stop nothing.
     [switch]$Passive,
     [string]$Out = ''
@@ -34,10 +36,13 @@ $ErrorActionPreference = 'Stop'
 # (Spark, Mailspring) starts as plain Node and exits at once.
 Get-ChildItem env: | Where-Object { $_.Name -match '^(ELECTRON_|VSCODE_|NODE_OPTIONS$)' } | ForEach-Object { [Environment]::SetEnvironmentVariable($_.Name, $null) }
 
-Add-Type -TypeDefinition @'
+Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -77,7 +82,35 @@ namespace Bench
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
         [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd, out RECT r);
 
-        // Every process named like one of `roots`, and everything they started.
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr h, uint flags, System.Text.StringBuilder path, ref uint size);
+
+        // Only programs under this folder count as the app: another copy
+        // elsewhere (a development build, a beta) is left alone.
+        public static string Folder = "";
+
+        static string PathOf(uint pid)
+        {
+            IntPtr h = OpenProcess(0x1000, false, pid);
+            if (h == IntPtr.Zero) return "";
+            var path = new System.Text.StringBuilder(1024);
+            uint size = 1024;
+            bool ok = QueryFullProcessImageName(h, 0, path, ref size);
+            CloseHandle(h);
+            return ok ? path.ToString() : "";
+        }
+
+        static long StartedAt(uint pid)
+        {
+            IntPtr h = OpenProcess(0x1000, false, pid);
+            if (h == IntPtr.Zero) return 0;
+            long c, x, k, u;
+            bool ok = GetProcessTimes(h, out c, out x, out k, out u);
+            CloseHandle(h);
+            return ok ? c : 0;
+        }
+
+        // Every process named like one of `roots` and installed under Folder,
+        // and everything they started.
         public static int[] Tree(string[] roots)
         {
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -92,7 +125,7 @@ namespace Bench
                 do
                 {
                     parents[e.th32ProcessID] = e.th32ParentProcessID;
-                    if (names.Contains(e.szExeFile)) found.Add(e.th32ProcessID);
+                    if (names.Contains(e.szExeFile) && PathOf(e.th32ProcessID).StartsWith(Folder, StringComparison.OrdinalIgnoreCase)) found.Add(e.th32ProcessID);
                 } while (Process32Next(snap, ref e));
             }
             CloseHandle(snap);
@@ -101,7 +134,14 @@ namespace Bench
             {
                 grew = false;
                 foreach (var kv in parents)
-                    if (!found.Contains(kv.Key) && found.Contains(kv.Value)) { found.Add(kv.Key); grew = true; }
+                {
+                    if (found.Contains(kv.Key) || !found.Contains(kv.Value)) continue;
+                    // A process older than its "parent" only shares a reused id.
+                    long child = StartedAt(kv.Key), parent = StartedAt(kv.Value);
+                    if (child != 0 && parent != 0 && child < parent) continue;
+                    found.Add(kv.Key);
+                    grew = true;
+                }
             }
             var result = new int[found.Count];
             int i = 0;
@@ -144,43 +184,135 @@ namespace Bench
             return seen;
         }
 
-        // Starts the app. Returns { ms to a visible window, ms until quiet, CPU
-        // seconds used until quiet }; -1 where the timeout came first. Quiet:
-        // one second in a row under 10% of one core.
+        [DllImport("user32.dll")] static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
+
+        const int GridW = 64, GridH = 40;
+
+        // The app's largest visible window, as a 64x40 grid of brightness.
+        // Null when it has no window yet.
+        static byte[] Frame(string[] roots)
+        {
+            var pids = new HashSet<uint>();
+            foreach (int p in Tree(roots)) pids.Add((uint)p);
+            IntPtr best = IntPtr.Zero;
+            int bw = 0, bh = 0;
+            EnumWindows(delegate (IntPtr hwnd, IntPtr l)
+            {
+                if (!IsWindowVisible(hwnd)) return true;
+                uint pid;
+                GetWindowThreadProcessId(hwnd, out pid);
+                if (!pids.Contains(pid)) return true;
+                RECT r;
+                if (!GetWindowRect(hwnd, out r)) return true;
+                int w = r.Right - r.Left, h = r.Bottom - r.Top;
+                if (w >= 300 && h >= 200 && (long)w * h > (long)bw * bh) { best = hwnd; bw = w; bh = h; }
+                return true;
+            }, IntPtr.Zero);
+            if (best == IntPtr.Zero) return null;
+            var grid = new byte[GridW * GridH];
+            using (var full = new Bitmap(bw, bh, PixelFormat.Format32bppArgb))
+            using (var small = new Bitmap(GridW, GridH, PixelFormat.Format32bppArgb))
+            {
+                using (var g = Graphics.FromImage(full))
+                {
+                    IntPtr dc = g.GetHdc();
+                    PrintWindow(best, dc, 2);
+                    g.ReleaseHdc(dc);
+                }
+                using (var g = Graphics.FromImage(small))
+                {
+                    g.InterpolationMode = InterpolationMode.HighQualityBilinear;
+                    g.DrawImage(full, 0, 0, GridW, GridH);
+                }
+                var data = small.LockBits(new Rectangle(0, 0, GridW, GridH), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+                var raw = new byte[data.Stride * GridH];
+                Marshal.Copy(data.Scan0, raw, 0, raw.Length);
+                small.UnlockBits(data);
+                for (int y = 0; y < GridH; y++)
+                    for (int x = 0; x < GridW; x++)
+                    {
+                        int i = y * data.Stride + x * 4;
+                        grid[y * GridW + x] = (byte)((raw[i] * 11 + raw[i + 1] * 59 + raw[i + 2] * 30) / 100);
+                    }
+            }
+            return grid;
+        }
+
+        // More than 1% of the grid changed: a spinner or a caret is not a change.
+        static bool Differs(byte[] a, byte[] b)
+        {
+            if (a == null || b == null) return a != b;
+            int changed = 0;
+            for (int i = 0; i < a.Length; i++) if (Math.Abs(a[i] - b[i]) > 10) changed++;
+            return changed * 100 > a.Length;
+        }
+
+        // Something is drawn: at least 5% of the grid is not the background.
+        static bool Drawn(byte[] a)
+        {
+            var counts = new int[256];
+            foreach (byte v in a) counts[v]++;
+            int mode = 0;
+            for (int i = 1; i < 256; i++) if (counts[i] > counts[mode]) mode = i;
+            int other = 0;
+            foreach (byte v in a) if (Math.Abs(v - mode) > 10) other++;
+            return other * 20 > a.Length;
+        }
+
+        // Starts the app and watches it. Returns, in ms from the launch (-1
+        // where the timeout came first):
+        //   [0] window: a window is on screen
+        //   [1] drawn:  the window shows its content and then stays the same
+        //               for three seconds (the time of the last change)
+        //   [2] quiet:  start of the first second under 10% of one core
+        //   [3] CPU seconds the app used until it was quiet
         public static double[] Launch(string exe, string args, string[] roots, int timeoutMs)
         {
             var psi = new ProcessStartInfo(exe, args);
             psi.UseShellExecute = true;
             var clock = Stopwatch.StartNew();
             Process.Start(psi);
-            double window = -1, quiet = -1, cpuAtQuiet = -1;
+            double window = -1, drawn = -1, quiet = -1, cpuAtQuiet = -1;
             while (clock.ElapsedMilliseconds < timeoutMs)
             {
                 if (HasWindow(roots)) { window = clock.Elapsed.TotalMilliseconds; break; }
                 Thread.Sleep(5);
             }
-            if (window < 0) return new double[] { -1, -1, -1 };
+            if (window < 0) return new double[] { -1, -1, -1, -1 };
+
+            byte[] last = null;
+            double lastChange = window;
             int calm = 0;
             double streakStart = 0;
-            double lastCpu = CpuSeconds(roots);
-            double lastAt = clock.Elapsed.TotalSeconds;
-            while (clock.ElapsedMilliseconds < timeoutMs)
+            double cpuWas = CpuSeconds(roots);
+            double cpuAt = clock.Elapsed.TotalSeconds;
+            while (clock.ElapsedMilliseconds < timeoutMs && (drawn < 0 || quiet < 0))
             {
-                Thread.Sleep(250);
-                double cpu = CpuSeconds(roots);
-                double at = clock.Elapsed.TotalSeconds;
-                double load = (cpu - lastCpu) / (at - lastAt);
-                if (load < 0.10)
+                Thread.Sleep(50);
+                double now = clock.Elapsed.TotalMilliseconds;
+                if (drawn < 0)
                 {
-                    if (calm == 0) streakStart = lastAt * 1000;
-                    calm++;
-                    if (calm >= 4) { quiet = streakStart; cpuAtQuiet = cpu; break; }
+                    byte[] frame = Frame(roots);
+                    if (Differs(frame, last)) lastChange = now;
+                    last = frame;
+                    if (frame != null && Drawn(frame) && now - lastChange >= 3000) drawn = lastChange;
                 }
-                else calm = 0;
-                lastCpu = cpu;
-                lastAt = at;
+                if (quiet < 0 && now / 1000 - cpuAt >= 0.25)
+                {
+                    double cpu = CpuSeconds(roots);
+                    double load = (cpu - cpuWas) / (now / 1000 - cpuAt);
+                    if (load < 0.10)
+                    {
+                        if (calm == 0) streakStart = cpuAt * 1000;
+                        calm++;
+                        if (calm >= 4) { quiet = streakStart; cpuAtQuiet = cpu; }
+                    }
+                    else calm = 0;
+                    cpuWas = cpu;
+                    cpuAt = now / 1000;
+                }
             }
-            return new double[] { window, quiet, cpuAtQuiet };
+            return new double[] { window, drawn, quiet, cpuAtQuiet };
         }
     }
 }
@@ -208,32 +340,32 @@ $regardsDir = Join-Path $local 'Regards'
 $catalog = [ordered]@{
     Regards     = @{
         Exe = Join-Path $regardsDir 'regards-desktop.exe'; Args = ''
-        Roots = @('regards-desktop', 'regards')
+        Roots = @('regards-desktop', 'regards'); Folder = "$regardsDir\"
         Install = { Get-FolderMB (Get-ChildItem $regardsDir -Filter *.exe).FullName }
         Data = { Get-FolderMB $regardsDir -Exclude '*.exe' }
         PreStop = { & (Join-Path $regardsDir 'regards.exe') daemon stop 2>$null | Out-Null }
     }
     Spark       = @{
         Exe = Join-Path $local 'Programs\SparkDesktop\Spark Desktop.exe'; Args = ''
-        Roots = @('Spark Desktop')
+        Roots = @('Spark Desktop'); Folder = (Join-Path $local 'ProgramsSparkDesktop') + ''
         Install = { Get-FolderMB (Join-Path $local 'Programs\SparkDesktop') }
         Data = { Get-FolderMB (Join-Path $roaming 'Spark Desktop'), (Join-Path $local 'Spark Desktop') }
     }
     Mailspring  = @{
         Exe = Join-Path $local 'Mailspring\mailspring.exe'; Args = ''
-        Roots = @('mailspring')
+        Roots = @('mailspring'); Folder = (Join-Path $local 'Mailspring') + ''
         Install = { Get-FolderMB (Join-Path $local 'Mailspring') }
         Data = { Get-FolderMB (Join-Path $roaming 'Mailspring') }
     }
     Thunderbird = @{
         Exe = 'C:\Program Files\Mozilla Thunderbird\thunderbird.exe'; Args = ''
-        Roots = @('thunderbird')
+        Roots = @('thunderbird'); Folder = 'C:Program FilesMozilla Thunderbird'
         Install = { Get-FolderMB 'C:\Program Files\Mozilla Thunderbird' }
         Data = { Get-FolderMB (Join-Path $roaming 'Thunderbird'), (Join-Path $local 'Thunderbird') }
     }
     Outlook     = @{
         Exe = 'explorer.exe'; Args = 'shell:AppsFolder\Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookforWindows'
-        Roots = @('olk')
+        Roots = @('olk'); Folder = ''
         Install = { Get-FolderMB (Get-AppxPackage Microsoft.OutlookForWindows).InstallLocation }
         Data = { Get-FolderMB (Join-Path $local 'Microsoft\Olk') }
     }
@@ -295,6 +427,7 @@ foreach ($name in $Apps) {
     if (-not $app) { Write-Warning "unknown app $name"; continue }
     if ($app.Exe -ne 'explorer.exe' -and -not (Test-Path -LiteralPath $app.Exe)) { Write-Warning "$name is not installed"; continue }
 
+    [Bench.Probe]::Folder = $app.Folder
     $wasRunning = Test-Running $app
     $background = $false
     if ($wasRunning) {
@@ -305,20 +438,23 @@ foreach ($name in $Apps) {
     $row = [ordered]@{
         App = $name; Version = $version
         InstallMB = & $app.Install; DataMB = & $app.Data
-        WindowMs = @(); QuietMs = @(); StartCpuS = @()
+        WindowMs = @(); DrawnMs = @(); QuietMs = @(); StartCpuS = @()
     }
 
     if ($Passive) {
         if (-not $wasRunning) { Write-Host "$name is not running, skipped (passive)"; continue }
     }
     else {
-        for ($i = 1; $i -le $Runs; $i++) {
+        for ($i = 0; $i -le $Runs; $i++) {
             Stop-App $app
-            Start-Sleep -Seconds 2
+            Start-Sleep -Seconds 3
             $t = [Bench.Probe]::Launch($app.Exe, $app.Args, $app.Roots, 60000)
-            Write-Host ("{0} run {1}: window {2:n0} ms, quiet {3:n0} ms, cpu {4:n2} s" -f $name, $i, $t[0], $t[1], $t[2])
-            if ($t[0] -ge 0) { $row.WindowMs += $t[0] }
-            if ($t[1] -ge 0) { $row.QuietMs += $t[1]; $row.StartCpuS += $t[2] }
+            $label = if ($i -eq 0) { 'warm-up (not counted)' } else { "run $i" }
+            Write-Host ("{0} {1}: window {2:n0} ms, drawn {3:n0} ms, quiet {4:n0} ms, cpu {5:n2} s" -f $name, $label, $t[0], $t[1], $t[2], $t[3])
+            if ($i -eq 0) { continue }
+            if ($t[0] -ge 0) { $row.WindowMs += [math]::Round($t[0]) }
+            if ($t[1] -ge 0) { $row.DrawnMs += [math]::Round($t[1]) }
+            if ($t[2] -ge 0) { $row.QuietMs += [math]::Round($t[2]); $row.StartCpuS += [math]::Round($t[3], 2) }
         }
         Start-Sleep -Seconds $SettleSeconds
     }
@@ -329,6 +465,7 @@ foreach ($name in $Apps) {
     $row.CommitMB = $memory.CommitMB
     $row.IdleCpuPercent = Get-IdleCpuPercent $app $IdleSeconds
     $row.WindowMsMedian = Get-Median $row.WindowMs
+    $row.DrawnMsMedian = Get-Median $row.DrawnMs
     $row.QuietMsMedian = Get-Median $row.QuietMs
     $row.StartCpuSMedian = Get-Median $row.StartCpuS
     $results += [pscustomobject]$row
@@ -353,6 +490,7 @@ $machine = [ordered]@{
 ''
 $results | Format-Table App, Version,
     @{ n = 'Window ms'; e = { if ($null -ne $_.WindowMsMedian) { [int]$_.WindowMsMedian } } },
+    @{ n = 'Drawn ms'; e = { if ($null -ne $_.DrawnMsMedian) { [int]$_.DrawnMsMedian } } },
     @{ n = 'Quiet ms'; e = { if ($null -ne $_.QuietMsMedian) { [int]$_.QuietMsMedian } } },
     @{ n = 'Start CPU s'; e = { if ($null -ne $_.StartCpuSMedian) { [math]::Round($_.StartCpuSMedian, 2) } } },
     @{ n = 'Procs'; e = { $_.Processes } },
