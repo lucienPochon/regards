@@ -173,8 +173,12 @@ const VANISHED: &str = "SELECT d.id, d.updated_at, d.uploaded_at FROM drafts d \
 
 /// Copies in a Drafts folder carrying a draft's Message-ID that are not its
 /// current copy: account, folder, UID.
+///
+/// `CROSS JOIN` makes SQLite start from the drafts, which are few, and look
+/// their messages up. Left to choose, it walked every stored message (16 ms
+/// on a 20,000-message mailbox), and [`unsettled`] asks every few seconds.
 const STRAYS: &str = "SELECT d.account_id, m.mailbox_id, m.uid FROM drafts d \
-    JOIN messages m ON m.message_id_header = d.server_message_id \
+    CROSS JOIN messages m ON m.message_id_header = d.server_message_id \
     JOIN mailboxes b ON b.id = m.mailbox_id AND b.account_id = d.account_id AND b.role = 'drafts' \
     WHERE m.deleted = 0 AND (d.server_uid IS NULL OR m.uid != d.server_uid OR m.mailbox_id IS NOT d.server_mailbox_id) \
     AND NOT EXISTS (SELECT 1 FROM draft_copies_to_delete q WHERE q.mailbox_id = m.mailbox_id AND q.uid = m.uid)";
@@ -236,6 +240,27 @@ mod tests {
     use regards_core::headers::Headers;
     use regards_core::mailbox::Role;
     use regards_core::paths::DataDirs;
+
+    /// The check that runs every few seconds must not read every message.
+    #[tokio::test]
+    async fn the_check_starts_from_the_drafts_not_from_every_message() {
+        let (_temp, store, _account, _drafts_box) = fixture().await;
+        let plan = store
+            .read(|conn| {
+                let sql = format!("EXPLAIN QUERY PLAN SELECT EXISTS ({VANISHED}) OR EXISTS ({STRAYS})");
+                let mut statement = conn.prepare(&sql)?;
+                let steps = statement
+                    .query_map([], |row| row.get::<_, String>(3))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(steps)
+            })
+            .await
+            .unwrap();
+        assert!(
+            !plan.iter().any(|step| step.starts_with("SCAN m")),
+            "the draft check walks the messages table: {plan:?}"
+        );
+    }
 
     async fn fixture() -> (tempfile::TempDir, Store, String, i64) {
         let temp = tempfile::tempdir().unwrap();
