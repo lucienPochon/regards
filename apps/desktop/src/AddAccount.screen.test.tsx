@@ -8,7 +8,9 @@ type Handler = (args: Args) => unknown;
 
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke, convertFileSrc: (path: string) => path }));
-const { AddAccount, AddAccountDialog } = await import("./AddAccount");
+const { AddAccount, AddAccountDialog, pace } = await import("./AddAccount");
+// What was found shows at once, except where a test asks for the pause.
+pace.lookupShownMs = 0;
 
 const account = (email: string) => ({
   id: "added",
@@ -107,6 +109,37 @@ describe("the address", () => {
     await enterAddress("ada@proton.test", /Proton Mail Bridge/);
     expect(screen.getByRole("alert").textContent).toContain("Proton Mail Bridge");
     expect(button("Continue").disabled).toBe(true);
+  });
+});
+
+describe("the address, looked up", () => {
+  it("refuses an address that is an account here already, whatever its case", async () => {
+    handlers.account_list = () => [account("ada@infomaniak.test")];
+    render(<AddAccount onDone={vi.fn()} />);
+    await waitFor(() => expect(calls("account_list")).toHaveLength(1));
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "Ada@Infomaniak.test" } });
+    expect((await screen.findByRole("alert")).textContent).toContain("already one of your accounts");
+    expect(button("Continue").disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "bob@infomaniak.test" } });
+    expect(button("Continue").disabled).toBe(false);
+  });
+
+  it("keeps \"Looking up…\" a moment before saying what was found", async () => {
+    pace.lookupShownMs = 150;
+    try {
+      render(<AddAccount onDone={vi.fn()} />);
+      const field = screen.getByLabelText("Email address");
+      fireEvent.change(field, { target: { value: "ada@infomaniak.test" } });
+      fireEvent.focusOut(field);
+      await waitFor(() => expect(calls("account_discover")).toHaveLength(1));
+      // The lookup has answered; the line still says it is looking.
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(screen.getByText(/Looking up infomaniak.test/)).toBeTruthy();
+      expect(screen.queryByText(/settings found/)).toBeNull();
+      expect(await screen.findByText(/settings found/)).toBeTruthy();
+    } finally {
+      pace.lookupShownMs = 0;
+    }
   });
 });
 
