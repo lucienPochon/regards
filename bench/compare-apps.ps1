@@ -347,19 +347,19 @@ $catalog = [ordered]@{
     }
     Spark       = @{
         Exe = Join-Path $local 'Programs\SparkDesktop\Spark Desktop.exe'; Args = ''
-        Roots = @('Spark Desktop'); Folder = (Join-Path $local 'ProgramsSparkDesktop') + ''
+        Roots = @('Spark Desktop'); Folder = (Join-Path $local 'Programs\SparkDesktop') + '\'
         Install = { Get-FolderMB (Join-Path $local 'Programs\SparkDesktop') }
         Data = { Get-FolderMB (Join-Path $roaming 'Spark Desktop'), (Join-Path $local 'Spark Desktop') }
     }
     Mailspring  = @{
         Exe = Join-Path $local 'Mailspring\mailspring.exe'; Args = ''
-        Roots = @('mailspring'); Folder = (Join-Path $local 'Mailspring') + ''
+        Roots = @('mailspring'); Folder = (Join-Path $local 'Mailspring') + '\'
         Install = { Get-FolderMB (Join-Path $local 'Mailspring') }
         Data = { Get-FolderMB (Join-Path $roaming 'Mailspring') }
     }
     Thunderbird = @{
         Exe = 'C:\Program Files\Mozilla Thunderbird\thunderbird.exe'; Args = ''
-        Roots = @('thunderbird'); Folder = 'C:Program FilesMozilla Thunderbird'
+        Roots = @('thunderbird'); Folder = 'C:\Program Files\Mozilla Thunderbird\'
         Install = { Get-FolderMB 'C:\Program Files\Mozilla Thunderbird' }
         Data = { Get-FolderMB (Join-Path $roaming 'Thunderbird'), (Join-Path $local 'Thunderbird') }
     }
@@ -422,6 +422,8 @@ function Get-Median([double[]]$Values) {
 }
 
 $results = @()
+# `-File` hands "A,B" over as one word.
+$Apps = @($Apps | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 foreach ($name in $Apps) {
     $app = $catalog[$name]
     if (-not $app) { Write-Warning "unknown app $name"; continue }
