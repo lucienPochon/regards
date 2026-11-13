@@ -266,7 +266,7 @@ namespace Bench
         //               for three seconds (the time of the last change)
         //   [2] quiet:  start of the first second under 10% of one core
         //   [3] CPU seconds the app used until it was quiet
-        public static double[] Launch(string exe, string args, string[] roots, int timeoutMs)
+        public static double[] Launch(string exe, string args, string[] roots, int timeoutMs, bool watch)
         {
             var psi = new ProcessStartInfo(exe, args);
             psi.UseShellExecute = true;
@@ -286,18 +286,20 @@ namespace Bench
             double streakStart = 0;
             double cpuWas = CpuSeconds(roots);
             double cpuAt = clock.Elapsed.TotalSeconds;
-            while (clock.ElapsedMilliseconds < timeoutMs && (drawn < 0 || quiet < 0))
+            // Capturing the window makes the app draw, which is work it would not
+            // do alone: a launch is either watched (drawn) or timed (quiet, CPU).
+            while (clock.ElapsedMilliseconds < timeoutMs && (watch ? drawn < 0 : quiet < 0))
             {
                 Thread.Sleep(50);
                 double now = clock.Elapsed.TotalMilliseconds;
-                if (drawn < 0)
+                if (watch && drawn < 0)
                 {
                     byte[] frame = Frame(roots);
                     if (Differs(frame, last)) lastChange = now;
                     last = frame;
                     if (frame != null && Drawn(frame) && now - lastChange >= 3000) drawn = lastChange;
                 }
-                if (quiet < 0 && now / 1000 - cpuAt >= 0.25)
+                if (!watch && quiet < 0 && now / 1000 - cpuAt >= 0.25)
                 {
                     double cpu = CpuSeconds(roots);
                     double load = (cpu - cpuWas) / (now / 1000 - cpuAt);
@@ -452,15 +454,23 @@ foreach ($name in $Apps) {
         if (-not $wasRunning) { Write-Host "$name is not running, skipped (passive)"; continue }
     }
     else {
+        # Watched launches: window and drawn. The first is not counted.
         for ($i = 0; $i -le $Runs; $i++) {
             Stop-App $app
             Start-Sleep -Seconds 3
-            $t = [Bench.Probe]::Launch($app.Exe, $app.Args, $app.Roots, 60000)
+            $t = [Bench.Probe]::Launch($app.Exe, $app.Args, $app.Roots, 60000, $true)
             $label = if ($i -eq 0) { 'warm-up (not counted)' } else { "run $i" }
-            Write-Host ("{0} {1}: window {2:n0} ms, drawn {3:n0} ms, quiet {4:n0} ms, cpu {5:n2} s" -f $name, $label, $t[0], $t[1], $t[2], $t[3])
+            Write-Host ("{0} {1}: window {2:n0} ms, drawn {3:n0} ms" -f $name, $label, $t[0], $t[1])
             if ($i -eq 0) { continue }
             if ($t[0] -ge 0) { $row.WindowMs += [math]::Round($t[0]) }
             if ($t[1] -ge 0) { $row.DrawnMs += [math]::Round($t[1]) }
+        }
+        # Launches left alone: quiet and the processor time to get there.
+        for ($i = 1; $i -le [math]::Ceiling($Runs / 2); $i++) {
+            Stop-App $app
+            Start-Sleep -Seconds 3
+            $t = [Bench.Probe]::Launch($app.Exe, $app.Args, $app.Roots, 60000, $false)
+            Write-Host ("{0} unwatched {1}: quiet {2:n0} ms, cpu {3:n2} s" -f $name, $i, $t[2], $t[3])
             if ($t[2] -ge 0) { $row.QuietMs += [math]::Round($t[2]); $row.StartCpuS += [math]::Round($t[3], 2) }
         }
         Start-Sleep -Seconds $SettleSeconds

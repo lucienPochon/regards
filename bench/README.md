@@ -27,8 +27,10 @@ they start. Regards draws with the WebView2 that comes with Windows: those
 processes are counted in its memory and CPU, and WebView2 is not in its install
 size, because it is already on the computer.
 
-Launch numbers are the median of 10 launches. One more launch is made first and
-not counted. The lowest and highest are published with the median. A launch
+Window and Drawn are the median of 10 launches. One more launch is made first
+and not counted. Quiet and CPU to start are the median of 5 further launches
+during which the window is not captured: capturing a window makes the app draw,
+which is work it would not do alone. The lowest and highest are published with the median. A launch
 here is a warm one: the app has run before since the computer started. A first
 launch after a restart is slower for every app and is not measured.
 
