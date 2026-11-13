@@ -7302,6 +7302,14 @@ button.sender-row:hover:not(:disabled) {
   width: 22px;
 }
 
+/* A step, coming in. */
+.signup-step {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: rise 0.26s ease-out both;
+}
+
 .signup-body {
   display: flex;
   flex-direction: column;
@@ -7362,6 +7370,24 @@ button.sender-row:hover:not(:disabled) {
 
 .signup-found .icon {
   flex: none;
+}
+
+/* What was found arrives after "Looking up…": the line rises, its mark lands a moment later. */
+.signup-found {
+  animation: rise 0.28s ease-out both;
+}
+
+.signup-found.good .icon,
+.signup-found.warn .icon,
+.signup-found.bad .icon {
+  animation: signup-mark 0.36s cubic-bezier(0.3, 1.6, 0.5, 1) 0.12s both;
+}
+
+@keyframes signup-mark {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
 }
 
 .signup-found.good {

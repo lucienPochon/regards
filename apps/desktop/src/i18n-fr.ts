@@ -1442,6 +1442,7 @@ export const FR: Record<string, Entry> = {
   "The server turned password sign-in off for mail apps.": "Le serveur a désactivé la connexion par mot de passe pour les applications de messagerie.",
   "The server was found and the connection is secure; only the sign-in failed. ": "Le serveur a été trouvé et la connexion est sécurisée ; seule la connexion au compte a échoué. ",
   "There is no subject.": "Il n’y a pas d’objet.",
+  "This address is already one of your accounts here.": "Cette adresse est déjà l’un de vos comptes ici.",
   "This address signs in with": "Cette adresse se connecte uniquement avec",
   "This computer ·": "Cet ordinateur ·",
   "This message is being sent. Undo it first to attach files.": "Ce message est en cours d’envoi. Annulez-le d’abord pour joindre des fichiers.",

@@ -21,6 +21,7 @@ import {
   addAccount,
   checkServer,
   discoverAccount,
+  listAccounts,
   oauthProviders,
   updateAccount,
 } from "./accounts";
@@ -35,6 +36,12 @@ import { t } from "./i18n";
 const COMPLETE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 /** How long typing pauses before the address is looked up. */
 const LOOKUP_PAUSE_MS = 700;
+/**
+ * The pace of the screen. "Looking up…" stays this long at least, so that
+ * what was found is seen to arrive: most lookups answer from the provider
+ * list on this computer, in no time. Tests set it to 0.
+ */
+export const pace = { lookupShownMs: 700 };
 
 /** Why adding failed: the server's own words, and what it refused (none when no server was asked). */
 interface Failure {
@@ -99,6 +106,8 @@ export function AddAccount({
   const [found, setFound] = useState<Discovered | null>(null);
   const [looking, setLooking] = useState(false);
   const [providers, setProviders] = useState<Provider[]>([]);
+  // The addresses of the accounts already here, in lower case.
+  const [have, setHave] = useState<string[]>([]);
   const [input, setInput] = useState<AccountInput>(blank(""));
   // Server fields the person typed: the lookup leaves them alone.
   const typed = useRef(new Set<keyof AccountInput>());
@@ -110,6 +119,16 @@ export function AddAccount({
   useEffect(() => {
     oauthProviders().then(setProviders, () => setProviders([]));
   }, []);
+
+  // Asked again on each return to the address, as one may just have been added.
+  const atAddress = step.kind === "address";
+  useEffect(() => {
+    if (!atAddress) return;
+    listAccounts().then(
+      (accounts) => setHave(accounts.map((account) => account.email.toLowerCase())),
+      () => setHave([]),
+    );
+  }, [atAddress]);
 
   const oauth = useOauth((account) => {
     setHistory([]);
@@ -197,10 +216,13 @@ export function AddAccount({
   const provider = offered(known);
   // No way in: the provider's own sign-in only, which this version lacks, or no mail app at all.
   const shut = (result: Discovered) => (result.oauth_only && !offered(result)) || Boolean(result.no_imap);
-  const blocked = known !== null && shut(known);
+  // Already one of the accounts here: the daemon would refuse it at the last step.
+  const taken = have.includes(email.trim().toLowerCase());
+  const blocked = taken || (known !== null && shut(known));
 
   const proceed = async () => {
     const clean = email.trim();
+    if (taken) return;
     const result = known ?? (await lookUp(clean));
     if (!result || shut(result)) return;
     setInput((now) => ({ ...now, email: clean }));
@@ -266,7 +288,7 @@ export function AddAccount({
               onBlur={(event) => void lookUp(event.target.value)}
             />
           </label>
-          <Found email={email.trim()} found={known} looking={looking} provider={provider} blocked={blocked} />
+          <Found email={email.trim()} found={known} looking={looking} provider={provider} blocked={blocked} taken={taken} />
           {onClose ? (
             <>
               <div className="signup-buttons">
@@ -514,7 +536,10 @@ export function AddAccount({
           <Icon name="close" size={17} />
         </button>
       )}
-      {body}
+      {/* Each step comes in afresh. */}
+      <div key={step.kind} className="signup-step">
+        {body}
+      </div>
     </section>
   );
 }
@@ -607,17 +632,29 @@ function Found({
   looking,
   provider,
   blocked,
+  taken,
 }: {
   email: string;
   found: Discovered | null;
   looking: boolean;
   provider: Provider | null;
   blocked: boolean;
+  /** The address is an account here already. */
+  taken: boolean;
 }) {
   const domain = email.split("@")[1] ?? "";
-  if (looking) {
+  const held = useHeld(looking, pace.lookupShownMs);
+  if (taken) {
     return (
-      <p className="signup-found" role="status">
+      <p key="taken" className="signup-found bad" role="alert">
+        <Icon name="alert" size={15} />
+        {t("This address is already one of your accounts here.")}
+      </p>
+    );
+  }
+  if (looking || (held && found)) {
+    return (
+      <p key="looking" className="signup-found" role="status">
         <span className="spinner small" aria-hidden="true" />
         {t("Looking up {domain}…", { domain })}
       </p>
@@ -626,7 +663,7 @@ function Found({
   if (!found) return null;
   if (found.no_imap) {
     return (
-      <p className="signup-found bad" role="alert">
+      <p key="found" className="signup-found bad" role="alert">
         <Icon name="alert" size={15} />
         {found.no_imap}
       </p>
@@ -634,7 +671,7 @@ function Found({
   }
   if (blocked) {
     return (
-      <p className="signup-found bad" role="alert">
+      <p key="found" className="signup-found bad" role="alert">
         <Icon name="alert" size={15} />
         {t("This address signs in with")} {PROVIDERS[found.oauth ?? "microsoft"].label} {t("only, which this version of Regards can't do yet.")}
       </p>
@@ -657,11 +694,25 @@ function Found({
             : // Listed, from the domain's own settings file, its MX or DNS records.
               ["good", t("Settings found for {domain}", { domain })];
   return (
-    <p className={`signup-found ${tone}`} role="status">
+    <p key="found" className={`signup-found ${tone}`} role="status">
       <Icon name={tone === "good" ? "check" : "info"} size={15} />
       <span>{text}</span>
     </p>
   );
+}
+
+/** `on`, kept true for `ms` at least from the moment it starts. */
+function useHeld(on: boolean, ms: number): boolean {
+  const [held, setHeld] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!on || ms <= 0) return;
+    setHeld(true);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setHeld(false), ms);
+  }, [on, ms]);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  return on || held;
 }
 
 function PasswordField({ value, autoFocus, onChange }: { value: string; autoFocus: boolean; onChange: (value: string) => void }) {
