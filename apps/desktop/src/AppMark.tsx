@@ -40,7 +40,7 @@ export function AppMark({
 
   const point = (
     <>
-      {pulsing && <circle className="mark-ring" cx="0" cy="0" r={cut.point} fill="#5FD0AA" />}
+      {pulsing && <circle className="mark-ring" cx="0" cy="0" r={cut.point} fill="#22DD98" />}
       <circle cx="0" cy="0" r={cut.point} fill="#FFFFFF" />
     </>
   );
@@ -55,8 +55,8 @@ export function AppMark({
     >
       <defs>
         <linearGradient id={`${id}-tile`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#2E3236" />
-          <stop offset="1" stopColor="#16181B" />
+          <stop offset="0" stopColor="#17201C" />
+          <stop offset="1" stopColor="#070B09" />
         </linearGradient>
         <linearGradient id={`${id}-sheen`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.1" />
@@ -74,7 +74,7 @@ export function AppMark({
         d={cut.flap}
         pathLength={100}
         fill="none"
-        stroke="#5FD0AA"
+        stroke="#22DD98"
         strokeWidth={cut.line}
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -84,12 +84,12 @@ export function AppMark({
         d={cut.outline}
         pathLength={100}
         fill="none"
-        stroke="#5FD0AA"
+        stroke="#22DD98"
         strokeWidth={cut.line}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      {cut.halo > 0 && !pulsing && <circle cx={cut.end[0]} cy={cut.end[1]} r={cut.halo} fill="#5FD0AA" fillOpacity="0.16" />}
+      {cut.halo > 0 && !pulsing && <circle cx={cut.end[0]} cy={cut.end[1]} r={cut.halo} fill="#22DD98" fillOpacity="0.16" />}
       {drawing ? (
         <g className="mark-point">
           {point}
@@ -164,13 +164,13 @@ const REGULAR: Cut = {
   halo: 112,
 };
 
-/** For 48 px and less: line 100, corners 90, point ⌀ 208, a wider gap. */
+/** For 48 px and less: line 80, corners 83, point ⌀ 172, a wider gap. */
 const SMALL: Cut = {
-  outline: "M196 612 V406 A90 90 0 0 1 286 316 H738 A90 90 0 0 1 828 406 V632 A90 90 0 0 1 738 722 H468",
-  flap: "M250 370 L512 548 L774 370",
-  end: [468, 722],
-  line: 100,
-  point: 104,
+  outline: "M210 604 V397 A83 83 0 0 1 293 314 H731 A83 83 0 0 1 814 397 V634 A83 83 0 0 1 731 717 H456",
+  flap: "M256 360 L512 540 L768 360",
+  end: [456, 717],
+  line: 80,
+  point: 86,
   halo: 0,
 };
 
