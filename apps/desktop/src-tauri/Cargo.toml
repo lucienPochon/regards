@@ -53,12 +53,14 @@ tempfile.workspace = true
 tauri-winrt-notification = "=0.8.1"
 # Snap Layouts on the app's own maximise button (snap.rs): the version the
 # workspace already uses, with the parts that press Win+Z and read Windows'
-# version and setting.
+# version and setting. And the default mail app (mail_app.rs): the registry,
+# and which program a mailto: link runs (UI_Shell).
 windows-sys = { workspace = true, features = [
     "Wdk_System_SystemServices",
     "Win32_System_Registry",
     "Win32_System_SystemInformation",
     "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
 ] }
 
 [lints]

@@ -174,7 +174,7 @@ fn clip(mut text: String, most: usize) -> String {
 }
 
 /// The `mailto:` links among a program's arguments. Regards registers that
-/// scheme only when the person asks ([`make_mail_app`]), so the deep-link
+/// scheme only when the person asks ([`crate::mail_app`]), so the deep-link
 /// plugin, which takes only the configured schemes, leaves these to us.
 pub(crate) fn mailto_args(args: &[String]) -> Vec<String> {
     args.iter()
@@ -205,40 +205,6 @@ pub(crate) fn open(app: &AppHandle, urls: impl IntoIterator<Item = String>, at_s
 #[tauri::command]
 pub(crate) fn link_take(pending: tauri::State<'_, Pending>) -> Option<Open> {
     pending.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take()
-}
-
-/// Whether Regards opens `mailto:` links here (as far as it can tell).
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct MailAppStatus {
-    registered: bool,
-    /// It can register itself; on macOS the person chooses in Mail instead.
-    can_register: bool,
-}
-
-#[tauri::command]
-pub(crate) fn mail_app_status(app: AppHandle) -> MailAppStatus {
-    use tauri_plugin_deep_link::DeepLinkExt;
-    MailAppStatus {
-        registered: app.deep_link().is_registered("mailto").unwrap_or(false),
-        can_register: !cfg!(target_os = "macos"),
-    }
-}
-
-/// The person asked: open `mailto:` links in Regards. On Windows the
-/// system's Default apps then opens, to confirm it there.
-#[tauri::command]
-pub(crate) fn make_mail_app(app: AppHandle) -> Result<(), String> {
-    if cfg!(target_os = "macos") {
-        return Err("on macOS, choose Regards as the default mail app in Mail, under Settings › General".into());
-    }
-    use tauri_plugin_deep_link::DeepLinkExt;
-    app.deep_link()
-        .register("mailto")
-        .map_err(|error| format!("could not make Regards your mail app: {error}"))?;
-    if cfg!(windows) {
-        let _ = open::that_detached("ms-settings:defaultapps");
-    }
-    Ok(())
 }
 
 #[cfg(test)]

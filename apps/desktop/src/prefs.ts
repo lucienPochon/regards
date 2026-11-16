@@ -81,6 +81,8 @@ export interface Prefs {
   snoozePresets: PresetPrefs;
   sendPresets: PresetPrefs;
   reminderPresets: PresetPrefs;
+  /** "Make Regards your default mail app?" was answered (MailAppAsk.tsx): never asked again. */
+  mailAppAsked: boolean;
 }
 
 /**
@@ -138,6 +140,7 @@ export const DEFAULT_PREFS: Prefs = {
   snoozePresets: {},
   sendPresets: {},
   reminderPresets: {},
+  mailAppAsked: false,
 };
 
 /** The zoom steps offered in Settings and by Ctrl + / Ctrl −. */

@@ -75,6 +75,13 @@ Var RegardsInUse
     nsExec::Exec '"$INSTDIR\regards.exe" path remove'
     Pop $RegardsStopExit
   ${EndIf}
+  ; No longer offered as a mail app in Default apps (mail_app.rs) once it is
+  ; gone; an update keeps the person's choice.
+  ${If} $UpdateMode <> 1
+    DeleteRegValue HKCU "Software\RegisteredApplications" "Regards"
+    DeleteRegKey HKCU "Software\Clients\Mail\Regards"
+    DeleteRegKey HKCU "Software\Classes\Regards.Url.mailto"
+  ${EndIf}
   ; "Delete the application data" was ticked: the mail, the settings, the logs
   ; and the passwords in the credential store go too, before regards.exe does.
   ; With no daemon running: this is not something a connected program can ask.

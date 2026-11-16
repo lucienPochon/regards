@@ -20,6 +20,7 @@ mod compose_window;
 mod drops;
 mod lang;
 mod links;
+mod mail_app;
 mod mail_frame;
 mod notify;
 mod snap;
@@ -2215,8 +2216,8 @@ fn main() {
             prefetch_get,
             prefetch_set,
             account_set_auto_copy,
-            links::mail_app_status,
-            links::make_mail_app,
+            mail_app::mail_app_status,
+            mail_app::make_mail_app,
             badge::badge_settings,
             badge::set_badge_settings,
             support::support_settings,
