@@ -99,6 +99,20 @@ pub fn for_addresses(conn: &Connection, account_id: &str, addresses: &[&str]) ->
     Ok(None)
 }
 
+/// The identity any account has at one of `addresses`: mail forwarded from
+/// another account into this one was written to that other account's
+/// address, and a reply to it goes out from there. The first of `addresses`
+/// that matches; among accounts, the oldest identity's.
+pub fn for_address_any_account(conn: &Connection, addresses: &[&str]) -> Result<Option<Identity>, StoreError> {
+    let mut statement = conn.prepare_cached(&format!("{SELECT} WHERE lower(i.email) = lower(?1) ORDER BY i.id"))?;
+    for address in addresses {
+        if let Some(found) = statement.query_row(params![address], from_row).optional()? {
+            return Ok(Some(found));
+        }
+    }
+    Ok(None)
+}
+
 /// Add an identity; the first of an account becomes its default.
 pub fn add(tx: &Transaction<'_>, account_id: &str, fields: &Fields, now: i64) -> Result<i64, StoreError> {
     signature_exists(tx, fields.signature_id)?;
@@ -357,5 +371,67 @@ mod tests {
             !store.write(|tx| set_voice(tx, 999, "", false)).await.unwrap().value,
             "no such identity"
         );
+    }
+
+    #[tokio::test]
+    async fn a_forwarded_reply_finds_the_address_of_whichever_account_was_written_to() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&DataDirs::at(temp.path())).await.unwrap();
+        // Two accounts: mail written to the second is forwarded into the first.
+        let mut ids = Vec::new();
+        for email in ["ada@example.test", "me@qq.test"] {
+            let account = accounts::new_id();
+            let a = account.clone();
+            let email = email.to_owned();
+            store
+                .write(move |tx| {
+                    let server = Server {
+                        host: "h".into(),
+                        port: 993,
+                        security: Security::Tls,
+                    };
+                    accounts::insert(
+                        tx,
+                        NewAccount {
+                            id: a,
+                            display_name: "Ada Lovelace".into(),
+                            email,
+                            auth_kind: AuthKind::Password,
+                            username: "ada".into(),
+                            secret_key: "k".into(),
+                            imap: server.clone(),
+                            smtp: server,
+                            imap_capabilities: vec![],
+                        },
+                    )
+                })
+                .await
+                .unwrap();
+            ids.push(account);
+        }
+        let (inbox, forwarded) = (ids[0].clone(), ids[1].clone());
+
+        // In the inbox account's own list, the address written to is not there.
+        let a = inbox.clone();
+        let found = store
+            .read(move |c| for_addresses(c, &a, &["me@QQ.test"]))
+            .await
+            .unwrap();
+        assert!(found.is_none(), "the search stays within the account");
+        // Any account: it is there, so the reply goes out from it.
+        let found = store
+            .read(move |c| for_address_any_account(c, &["me@QQ.test"]))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(found.account_id, forwarded);
+        // An address nobody has, or none at all: nobody.
+        for addresses in [&["nobody@example.test"][..], &[]] {
+            let found = store
+                .read(move |c| for_address_any_account(c, addresses))
+                .await
+                .unwrap();
+            assert!(found.is_none());
+        }
     }
 }

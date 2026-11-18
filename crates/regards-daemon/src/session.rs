@@ -458,7 +458,11 @@ impl Session {
             methods::DRAFT_REPLY => {
                 let params: DraftReplyParams = params(request)?;
                 self.allow_message(Access::Triage, params.message_id).await?;
-                let result = compose::reply(&self.state, params).await?;
+                // The reply goes out from the address written to, which may be
+                // another account's (mail forwarded from it into this one); an
+                // agent's accounts bound where it may (ADR-0012).
+                let scope = self.scope(Access::Triage, None).await?;
+                let result = compose::reply(&self.state, params, scope).await?;
                 let of = context::Of::draft_in(&result);
                 Ok(self.with_context(result, of).await)
             }

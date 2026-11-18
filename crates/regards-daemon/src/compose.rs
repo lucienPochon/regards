@@ -72,23 +72,29 @@ pub(crate) async fn create(state: &State, params: DraftCreateParams) -> Result<V
 }
 
 /// A reply, addressed (Reply-To, sender, everyone for reply all) and quoted.
-pub(crate) async fn reply(state: &State, params: DraftReplyParams) -> Result<Value, RpcError> {
-    reply_with(state, params, "").await
+/// `scope` is the accounts the reply may go out from (`None`: all of them);
+/// an agent's is theirs (ADR-0012).
+pub(crate) async fn reply(
+    state: &State,
+    params: DraftReplyParams,
+    scope: Option<Vec<String>>,
+) -> Result<Value, RpcError> {
+    reply_with(state, params, "", scope).await
 }
 
-/// A reply with `written` already in it, above the signature and the quote.
-pub(crate) async fn reply_with(state: &State, params: DraftReplyParams, written: &str) -> Result<Value, RpcError> {
+/// [`reply`] with `written` already in it, above the signature and the quote.
+pub(crate) async fn reply_with(
+    state: &State,
+    params: DraftReplyParams,
+    written: &str,
+    scope: Option<Vec<String>>,
+) -> Result<Value, RpcError> {
     let (message, source) = crate::mail::load(state, params.message_id).await?;
     let mailbox_id = message.mailbox_id;
     let original = headers::parse(&source);
-    // It goes out from the address it was written to, if that is one of the account's.
-    let written_to: Vec<String> = original
-        .to
-        .iter()
-        .chain(&original.cc)
-        .filter_map(|person| person.address.clone())
-        .collect();
-    let (account, identity, mine) = state
+    // It goes out from the address it was written to, if that is any account's.
+    let written_to = original.written_to();
+    let (account_id, identity, mine) = state
         .store
         .read(move |conn| {
             let Some(mailbox) = mailboxes::get(conn, mailbox_id)? else {
@@ -98,22 +104,20 @@ pub(crate) async fn reply_with(state: &State, params: DraftReplyParams, written:
                 return Ok(None);
             };
             let addresses: Vec<&str> = written_to.iter().map(String::as_str).collect();
-            let identity = match identities::for_addresses(conn, &account.id, &addresses)? {
-                Some(found) => found,
-                None => identity_of(conn, &account, None)?,
-            };
-            let mut mine: Vec<String> = identities::list(conn, &account.id)?
-                .into_iter()
-                .map(|i| i.email)
-                .collect();
-            mine.push(account.email.clone());
-            Ok(Some((account, identity, mine)))
+            let (account_id, identity) = reply_from(conn, &account, &addresses, scope.as_deref())?;
+            // Every account's addresses are the person's, so none is answered.
+            let mut mine: Vec<String> = Vec::new();
+            for other in accounts::list(conn)? {
+                mine.push(other.email);
+                mine.extend(identities::list(conn, &other.id)?.into_iter().map(|who| who.email));
+            }
+            Ok(Some((account_id, identity, mine)))
         })
         .await
         .map_err(crate::session::internal)?
         .ok_or_else(|| RpcError::new(codes::NOT_FOUND, "the message's account no longer exists"))?;
     let text = regards_core::body::parse(&source).text;
-    // None of the account's own addresses is answered.
+    // None of the person's own addresses is answered.
     let me: Vec<&str> = mine.iter().map(String::as_str).collect();
     let (to, cc) = compose::reply_recipients(
         original.from.as_ref(),
@@ -145,7 +149,7 @@ pub(crate) async fn reply_with(state: &State, params: DraftReplyParams, written:
         identity_id: stored(&identity),
         html,
     };
-    store_new(state, account.id, content).await
+    store_new(state, account_id, content).await
 }
 
 /// An email asking a mailing list to drop the person: to the address its
@@ -158,12 +162,8 @@ pub(crate) async fn unsubscribe_draft(
     mailto: regards_core::unsubscribe::Mailto,
 ) -> Result<i64, RpcError> {
     let original = headers::parse(source);
-    let written_to: Vec<String> = original
-        .to
-        .iter()
-        .chain(&original.cc)
-        .filter_map(|person| person.address.clone())
-        .collect();
+    // From the address the list wrote to, as a reply would go.
+    let written_to = original.written_to();
     let now = now_ms();
     state
         .store
@@ -175,10 +175,7 @@ pub(crate) async fn unsubscribe_draft(
             let account = accounts::get(tx, &mailbox.account_id)?
                 .ok_or_else(|| StoreError::Conflict("the message's account no longer exists".into()))?;
             let addresses: Vec<&str> = written_to.iter().map(String::as_str).collect();
-            let identity = match identities::for_addresses(tx, &account.id, &addresses)? {
-                Some(found) => found,
-                None => identity_of(tx, &account, None)?,
-            };
+            let (account_id, identity) = reply_from(tx, &account, &addresses, None)?;
             let content = Content {
                 to: vec![Person {
                     name: None,
@@ -189,7 +186,7 @@ pub(crate) async fn unsubscribe_draft(
                 identity_id: stored(&identity),
                 ..Content::default()
             };
-            drafts::create(tx, &account.id, &content, now)
+            drafts::create(tx, &account_id, &content, now)
         })
         .await
         .map_err(conflict)
@@ -1261,6 +1258,35 @@ pub(crate) fn outgoing_from(
     }
 }
 
+/// Who a reply to a message in `account`'s mail goes out from: the identity
+/// the message was written to. That is usually one of the account's own (its
+/// default when none of its addresses was written to), but mail forwarded
+/// from another account into this one was written to that other account's
+/// address: then the reply goes out from there, when the caller may write in
+/// that account (`scope`, `None`: all of them). The account the draft goes
+/// under comes with the identity.
+fn reply_from(
+    conn: &rusqlite::Connection,
+    account: &accounts::Account,
+    addresses: &[&str],
+    scope: Option<&[String]>,
+) -> Result<(String, Identity), StoreError> {
+    if let Some(found) = identities::for_addresses(conn, &account.id, addresses)? {
+        return Ok((account.id.clone(), found));
+    }
+    let cross = identities::for_address_any_account(conn, addresses)?
+        .filter(|found| found.account_id != account.id && scope.is_none_or(|scope| scope.contains(&found.account_id)));
+    match cross {
+        Some(found) => {
+            let other = accounts::get(conn, &found.account_id)?.ok_or_else(|| {
+                StoreError::Conflict("the account the message was written to no longer exists".into())
+            })?;
+            Ok((other.id, found))
+        }
+        None => Ok((account.id.clone(), identity_of(conn, account, None)?)),
+    }
+}
+
 /// Who a draft of `account` goes out from: identity `id` if it is one of the
 /// account's, else its default. An account always has one; the account
 /// itself stands in otherwise.
@@ -1415,4 +1441,118 @@ pub(crate) fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use regards_core::paths::DataDirs;
+    use regards_store::Store;
+    use regards_store::accounts::{AuthKind, NewAccount, Security, Server};
+
+    /// Two accounts, as when mail written to the second is forwarded into the
+    /// first: the first holds the mail, the second owns the address.
+    async fn forwarded_accounts() -> (tempfile::TempDir, Store, String, String) {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&DataDirs::at(temp.path())).await.unwrap();
+        let mut ids = Vec::new();
+        for email in ["ada@example.test", "me@qq.test"] {
+            let account = accounts::new_id();
+            let a = account.clone();
+            let email = email.to_owned();
+            store
+                .write(move |tx| {
+                    let server = Server {
+                        host: "h".into(),
+                        port: 993,
+                        security: Security::Tls,
+                    };
+                    accounts::insert(
+                        tx,
+                        NewAccount {
+                            id: a,
+                            display_name: "Ada Lovelace".into(),
+                            email,
+                            auth_kind: AuthKind::Password,
+                            username: "ada".into(),
+                            secret_key: "k".into(),
+                            imap: server.clone(),
+                            smtp: server,
+                            imap_capabilities: vec![],
+                        },
+                    )
+                })
+                .await
+                .unwrap();
+            ids.push(account);
+        }
+        let [inbox, forwarded] = [ids[0].clone(), ids[1].clone()];
+        (temp, store, inbox, forwarded)
+    }
+
+    #[tokio::test]
+    async fn a_reply_to_mail_forwarded_from_another_account_goes_out_from_there() {
+        let (_temp, store, inbox, forwarded) = forwarded_accounts().await;
+
+        // The account the mail was written to, though the mailbox is another's.
+        let found = store
+            .read({
+                let inbox = inbox.clone();
+                move |conn| {
+                    let account = accounts::get(conn, &inbox).unwrap().unwrap();
+                    reply_from(conn, &account, &["me@QQ.test"], None)
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(found.0, forwarded, "the draft goes under the account written to");
+        assert_eq!(found.1.email, "me@qq.test");
+
+        // An agent without access to that account answers from the mailbox's.
+        let found = store
+            .read({
+                let inbox = inbox.clone();
+                move |conn| {
+                    let account = accounts::get(conn, &inbox).unwrap().unwrap();
+                    reply_from(conn, &account, &["me@qq.test"], Some(&[inbox]))
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(found.0, inbox, "the draft stays under the mailbox's account");
+        assert_eq!(found.1.email, "ada@example.test", "its default identity");
+    }
+
+    #[tokio::test]
+    async fn a_reply_to_mail_of_its_own_account_stays_there() {
+        let (_temp, store, inbox, forwarded) = forwarded_accounts().await;
+
+        // Written to the mailbox account's own address: it stays.
+        let found = store
+            .read({
+                let inbox = inbox.clone();
+                move |conn| {
+                    let account = accounts::get(conn, &inbox).unwrap().unwrap();
+                    reply_from(conn, &account, &["ada@example.test", "other@example.test"], None)
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(found.0, inbox);
+        assert_eq!(found.1.email, "ada@example.test");
+
+        // An address nobody has: the mailbox account's default all the same.
+        let found = store
+            .read({
+                let forwarded = forwarded.clone();
+                move |conn| {
+                    let account = accounts::get(conn, &forwarded).unwrap().unwrap();
+                    reply_from(conn, &account, &["nobody@example.test"], None)
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(found.0, forwarded);
+        assert_eq!(found.1.email, "me@qq.test");
+    }
 }

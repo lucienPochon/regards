@@ -343,7 +343,9 @@ pub(crate) async fn run(state: &State, params: AssistantParams) -> Result<Value,
                 all: params.all,
                 utc_offset_minutes: None,
             };
-            let made = crate::compose::reply_with(state, reply, &text).await?;
+            // The assistant runs for the app, so the reply may go out from any
+            // of the person's accounts.
+            let made = crate::compose::reply_with(state, reply, &text, None).await?;
             Some(serde_json::from_value::<DraftView>(made).map_err(crate::session::internal)?)
         }
     };

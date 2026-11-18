@@ -31,9 +31,32 @@ pub struct Headers {
     /// Only in drafts' copies: mail as sent carries no Bcc.
     #[serde(default)]
     pub bcc: Vec<Person>,
+    /// The addresses `Delivered-To`, `X-Original-To` and `X-Forwarded-To`
+    /// name: where the mail went, which a forwarder may keep out of `To`.
+    #[serde(default)]
+    pub delivered_to: Vec<String>,
     /// How it was sent, for the Smart Inbox ([`crate::smart::traits`]).
     #[serde(default)]
     pub traits: u32,
+}
+
+impl Headers {
+    /// The addresses the message was written to: the people in `To` and `Cc`,
+    /// then the delivery headers' (a forwarder may keep the address it went
+    /// to out of `To`). Each once, first mention first: a reply goes out from
+    /// the first of these that is one of the accounts'.
+    pub fn written_to(&self) -> Vec<String> {
+        let mut found: Vec<String> = Vec::new();
+        let people = self.to.iter().chain(&self.cc).filter_map(|who| who.address.as_deref());
+        let delivered = self.delivered_to.iter().map(String::as_str);
+        for address in people.chain(delivered) {
+            let address = address.trim();
+            if address.contains('@') && !found.iter().any(|other| other.eq_ignore_ascii_case(address)) {
+                found.push(address.to_owned());
+            }
+        }
+        found
+    }
 }
 
 /// Parse a header block (for example `BODY[HEADER.FIELDS (…)]`). Never fails:
@@ -53,6 +76,7 @@ pub fn parse(raw: &[u8]) -> Headers {
         references: ids(message.references()),
         reply_to: people(message.reply_to()),
         bcc: people(message.bcc()),
+        delivered_to: delivered_to(&message),
         traits: crate::smart::traits_of(&crate::smart::HeaderValues {
             from: message.from().and_then(Address::first).and_then(|addr| addr.address()),
             list_id: message.header_raw("List-Id"),
@@ -77,6 +101,26 @@ fn person(addr: &mail_parser::Addr<'_>) -> Person {
 
 fn people(address: Option<&Address<'_>>) -> Vec<Person> {
     address.map(|a| a.iter().map(person).collect()).unwrap_or_default()
+}
+
+/// The delivery headers' addresses, each once. A forwarder names the address
+/// the mail went to in `Delivered-To`, `X-Original-To` or `X-Forwarded-To`,
+/// which it may keep out of `To`.
+fn delivered_to(message: &mail_parser::Message<'_>) -> Vec<String> {
+    const NAMES: [&str; 3] = ["Delivered-To", "X-Original-To", "X-Forwarded-To"];
+    let mut found: Vec<String> = Vec::new();
+    for name in NAMES {
+        let Some(value) = message.header_raw(name) else {
+            continue;
+        };
+        for address in value.split(',') {
+            let address = address.trim();
+            if address.contains('@') && !found.iter().any(|other| other.eq_ignore_ascii_case(address)) {
+                found.push(address.to_owned());
+            }
+        }
+    }
+    found
 }
 
 fn ids(value: &HeaderValue<'_>) -> Vec<String> {
@@ -130,5 +174,34 @@ mod tests {
     fn shift_jis_subject_is_decoded() {
         let headers = parse(b"Subject: =?Shift_JIS?B?k/qWe4zq?=\r\n\r\n");
         assert_eq!(headers.subject, "日本語");
+    }
+
+    #[test]
+    fn delivery_headers_name_the_address_the_mail_went_to() {
+        let raw = b"To: someone@else.test\r\n\
+            Delivered-To: ME@QQ.test\r\n\
+            x-original-to: me@qq.test, other@qq.test\r\n\r\n";
+        let headers = parse(raw);
+        assert_eq!(
+            headers.delivered_to,
+            ["ME@QQ.test", "other@qq.test"],
+            "either case, each once"
+        );
+    }
+
+    #[test]
+    fn written_to_is_the_people_then_the_delivery_headers_each_once() {
+        let raw = b"From: bob@example.test\r\n\
+            To: Ada <ada@example.test>, me@qq.test\r\n\
+            Cc: me@QQ.test\r\n\
+            Delivered-To: me@qq.test\r\n\
+            X-Forwarded-To: forwarded@qq.test\r\n\r\n";
+        let headers = parse(raw);
+        assert_eq!(
+            headers.written_to(),
+            ["ada@example.test", "me@qq.test", "forwarded@qq.test"],
+            "in order written, To and Cc before the delivery headers, each once"
+        );
+        assert_eq!(parse(b"Subject: nothing\r\n\r\n").written_to(), Vec::<String>::new());
     }
 }
