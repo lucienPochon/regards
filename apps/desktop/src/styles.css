@@ -4684,6 +4684,34 @@ button.list-title:hover {
   color: var(--muted);
 }
 
+/* Lists in the message: the app-wide reset above takes markers away, mail's lists have them back. */
+.compose-body ul,
+.compose-body ol {
+  margin: 0 0 0.6em;
+  padding-left: 40px;
+}
+
+.compose-body ul {
+  list-style: disc;
+}
+
+.compose-body ul ul {
+  list-style: circle;
+}
+
+.compose-body ul ul ul {
+  list-style: square;
+}
+
+.compose-body ol {
+  list-style: decimal;
+}
+
+/* A list item's one paragraph: tight, the list keeps the rhythm. */
+.compose-body li > p {
+  margin: 0;
+}
+
 .compose-body a {
   color: var(--accent);
 }
