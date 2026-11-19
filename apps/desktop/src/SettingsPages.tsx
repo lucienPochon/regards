@@ -246,9 +246,10 @@ export function GeneralPage({ accounts }: { accounts: AccountSummary[] }) {
 }
 
 /**
- * Regards as the mail app: email links (mailto:) on web pages and in other apps
- * open a new message here. Registered only when the person asks; on Windows the
- * system's Default apps then opens to confirm, and on macOS Mail's settings choose.
+ * Regards as the default mail app: email links (mailto:) on web pages and in
+ * other apps open a new message here. Only when the person asks (here, or once
+ * in the main window: MailAppAsk.tsx); on Windows the system's Default apps then
+ * opens to choose it, and on macOS Mail's settings choose.
  */
 function MailApp() {
   const [status, setStatus] = useState<MailAppStatus | null>(null);
@@ -263,6 +264,8 @@ function MailApp() {
   }, []);
   const make = () => {
     setError(null);
+    // Answered here: the main window does not ask as well.
+    setPrefs({ mailAppAsked: true });
     makeMailApp().then(
       () => {
         setAsked(true);
@@ -282,7 +285,7 @@ function MailApp() {
           ? t("Confirm it in Default apps, which just opened: choose Regards for MAILTO.")
           : t("Email links on web pages and in other apps would open a new message here.");
   return (
-    <Option icon="mail" label={t("Mail app")} description={description}>
+    <Option icon="mail" label={t("Default mail app")} description={description}>
       {status.registered ? (
         <span className="muted mail-app-yes">
           <Icon name="check" size={15} />
@@ -291,7 +294,7 @@ function MailApp() {
       ) : (
         status.can_register && (
           <button type="button" className="btn small" onClick={make}>
-            {t("Make Regards your mail app")}
+            {t("Make Regards your default mail app")}
           </button>
         )
       )}

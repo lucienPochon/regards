@@ -20,7 +20,11 @@ export type OpenLink =
       body: string;
     };
 
-/** Whether Regards opens `mailto:` links; on macOS it cannot register itself (Mail's settings choose). */
+/**
+ * Whether a `mailto:` link opens Regards (on Windows, as Windows itself
+ * decides: only once the person chose it in Default apps); on macOS it
+ * cannot be asked from Regards (Mail's settings choose).
+ */
 export interface MailAppStatus {
   registered: boolean;
   can_register: boolean;
@@ -29,8 +33,9 @@ export interface MailAppStatus {
 export const mailAppStatus = () => invoke<MailAppStatus>("mail_app_status");
 
 /**
- * The person asked: open `mailto:` links in Regards. On Windows, Default apps
- * then opens to confirm it; on macOS this rejects with where to choose it.
+ * The person asked: make Regards the default mail app. On Windows, Default
+ * apps then opens on Regards' page to choose it; on macOS this rejects with
+ * where to choose it.
  */
 export const makeMailApp = () => invoke<void>("make_mail_app");
 

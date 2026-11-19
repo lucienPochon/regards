@@ -8670,23 +8670,27 @@ button.sender-row:hover:not(:disabled) {
   margin-top: 0;
 }
 
-/* Asked once in the main window: check for updates? */
-.toast.ask-updates {
+/* Asked once in the main window: check for updates? Make Regards the default mail app? */
+.toast.ask-updates,
+.toast.ask-mail-app {
   align-items: center;
   max-width: min(560px, calc(100vw - 120px));
 }
 
-.toast.ask-updates > span:not(.muted) {
+.toast.ask-updates > span:not(.muted),
+.toast.ask-mail-app > span:not(.muted) {
   display: grid;
   gap: 1px;
   padding-right: 4px;
 }
 
-.toast.ask-updates .muted {
+.toast.ask-updates .muted,
+.toast.ask-mail-app .muted {
   font-size: 12px;
 }
 
-.toast.ask-updates button.primary {
+.toast.ask-updates button.primary,
+.toast.ask-mail-app button.primary {
   background: var(--accent);
   color: var(--accent-text);
 }

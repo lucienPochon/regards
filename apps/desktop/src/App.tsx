@@ -33,6 +33,7 @@ import { type Action, type ActionHost, type Target, choose, messageActions, newS
 import { AddAccountDialog } from "./AddAccount";
 import { HoldsDialog, usePendingHolds } from "./AgentHolds";
 import { AskUpdates, useUpdateStatus } from "./UpdateCheck";
+import { AskMailApp } from "./MailAppAsk";
 import { Avatar } from "./Avatar";
 import { Composer } from "./Composer";
 import {
@@ -2455,6 +2456,10 @@ export function App() {
             <AskUpdates
               onAnswer={(on) => updates.status && updates.setStatus({ ...updates.status, checks: on })}
             />
+          )}
+          {/* One question at a time: once updates are answered. */}
+          {updates.status?.checks != null && accounts.length > 0 && (
+            <AskMailApp hidden={composer?.mode === "full"} />
           )}
           {updates.status?.available && composer?.mode !== "full" && (
             <button type="button" className="aside-bubble update" onClick={() => setSettings("support")}>
