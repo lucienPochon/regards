@@ -238,7 +238,11 @@ export function Composer({
   const signatureToPut = async (draftId: number, signature: Signature | null, text = "") =>
     signature ? attachPictures(draftId, editorSignature(signature)) : textSignature(text);
 
-  /** Send it from another identity: its signature takes the old one's place. */
+  /**
+   * Send it from another identity: its signature takes the old one's place,
+   * and the automatic copy follows the account (another account's moves the
+   * draft there). Saved first, so it moves as the fields show it.
+   */
   const changeFrom = async (identityId: number) => {
     if (!draft || !fields) return;
     // Of this account, or another, where the draft then goes.
@@ -247,12 +251,19 @@ export function Composer({
     touchDraft(draft.id);
     setError(null);
     try {
+      if (!(await flush())) return;
       const old = currentSignature();
       const moved = await setDraftFrom(draft.id, next.id);
       const chosen = signatures.find((signature) => signature.id === next.signature_id) ?? null;
       const put = await signatureToPut(moved.id, chosen, next.signature);
       setDraft(moved);
-      setFields({ ...fields, html: swapSignatureBlocks(fields.html, old, put) });
+      setFields({
+        ...fields,
+        cc: formatRecipients(moved.cc),
+        bcc: formatRecipients(moved.bcc),
+        html: swapSignatureBlocks(fields.html, old, put),
+      });
+      setCopies((shown) => shown || moved.cc.length + moved.bcc.length > 0);
       setSignatureId(next.signature_id);
       setEditorKey((key) => key + 1);
     } catch (failure) {

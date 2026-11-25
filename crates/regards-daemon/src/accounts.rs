@@ -152,12 +152,14 @@ pub(crate) async fn set_auto_copy(state: &State, params: AutoCopyParams) -> Resu
         ..copy
     });
     if let Some(copy) = &copy {
+        // One address: what the composer splits (`,` and `;`) may not slip
+        // in as part of one, or the copy could never be matched again.
         let valid = copy.address.contains('@')
             && copy.address.len() <= 320
             && !copy
                 .address
                 .chars()
-                .any(|c| c.is_whitespace() || matches!(c, '<' | '>' | ','));
+                .any(|c| c.is_whitespace() || matches!(c, '<' | '>' | ',' | ';'));
         if !valid {
             return Err(invalid("enter one email address to copy"));
         }

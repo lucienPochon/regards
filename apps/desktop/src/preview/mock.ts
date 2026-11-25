@@ -1911,6 +1911,16 @@ function handle(cmd: string, args: Args): unknown {
       // Another account's address moves the draft there, as the daemon does.
       const next = identities.find((i) => i.id === args.identityId);
       if (!next) throw new Error("There is no such address.");
+      // The automatic copy follows the account: the one it had goes, the
+      // new account's is put in, unless that address is a recipient already.
+      const copyOf = (accountId: string) =>
+        (accounts.find((a) => a.account.id === accountId)?.account as
+          | { auto_copy?: { kind: "cc" | "bcc"; address: string } }
+          | undefined)?.auto_copy;
+      const had = copyOf(draft.account_id);
+      for (const field of ["cc", "bcc"] as const) {
+        draft[field] = draft[field].filter((p) => p.address?.toLowerCase() !== had?.address.toLowerCase());
+      }
       draft.account_id = next.account_id;
       const block = (signature: string) => (signature ? `\n\n${signature}` : "");
       const body =
@@ -1918,6 +1928,11 @@ function handle(cmd: string, args: Args): unknown {
           ? draft.body.replace(block(old.signature), block(next.signature))
           : `${draft.body}${block(next.signature)}`;
       Object.assign(draft, { identity_id: next.id, from: { name: next.name, address: next.email }, body, updated_at: Date.now() });
+      const has = copyOf(next.account_id);
+      const present = [...draft.to, ...draft.cc, ...draft.bcc].some(
+        (p) => p.address?.toLowerCase() === has?.address.toLowerCase(),
+      );
+      if (has && !present) draft[has.kind] = [...draft[has.kind], { name: null, address: has.address }];
       changed();
       return draft;
     }

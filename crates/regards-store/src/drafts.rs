@@ -91,8 +91,8 @@ pub fn set_identity(tx: &Transaction<'_>, id: i64, identity_id: i64, body: &str,
 
 /// Send a draft from another account: `identity_id` is one of its
 /// addresses. Its copy on the old account's server is to be deleted, and
-/// the new account's Drafts folder gets one in time. Refused while it is
-/// being sent.
+/// the new account's Drafts folder gets one in time; the automatic copy
+/// follows the account it now belongs to. Refused while it is being sent.
 pub fn move_to(
     tx: &Transaction<'_>,
     id: i64,
@@ -114,11 +114,20 @@ pub fn move_to(
     if let (Some(mailbox_id), Some(uid)) = copy {
         crate::draft_sync::queue_delete(tx, &draft.account_id, mailbox_id, uid)?;
     }
+    // The copy it had was there for the account it leaves; the account it
+    // joins puts its own in, unless that address is a recipient already.
+    let (mut cc, mut bcc) = (draft.cc.clone(), draft.bcc.clone());
+    if let Some(had) = crate::accounts::auto_copy(tx, &draft.account_id)? {
+        had.remove(&mut cc, &mut bcc);
+    }
+    if let Some(has) = crate::accounts::auto_copy(tx, account_id)? {
+        has.apply(&draft.to, &mut cc, &mut bcc);
+    }
     tx.execute(
-        "UPDATE drafts SET account_id = ?2, identity_id = ?3, body = ?4, updated_at = ?5, \
+        "UPDATE drafts SET account_id = ?2, identity_id = ?3, body = ?4, cc_json = ?5, bcc_json = ?6, updated_at = ?7, \
          server_message_id = NULL, server_mailbox_id = NULL, server_uid = NULL, uploaded_at = NULL \
          WHERE id = ?1",
-        params![id, account_id, identity_id, body, now],
+        params![id, account_id, identity_id, body, json(&cc), json(&bcc), now],
     )?;
     Ok(())
 }
@@ -393,6 +402,7 @@ mod tests {
     use super::*;
     use crate::Store;
     use crate::accounts::{self, AuthKind, NewAccount, Security, Server};
+    use regards_core::compose::{AutoCopy, CopyKind};
     use regards_core::paths::DataDirs;
 
     #[tokio::test]
@@ -512,5 +522,127 @@ mod tests {
             found, expected,
             "this account's replies to the conversation, oldest first"
         );
+    }
+
+    #[tokio::test]
+    async fn a_draft_moving_to_another_account_takes_its_automatic_copy() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&DataDirs::at(temp.path())).await.unwrap();
+        let server = Server {
+            host: "h".into(),
+            port: 993,
+            security: Security::Tls,
+        };
+        let (plain, already, leaving, from_a2, from_a3) = store
+            .write(move |tx| {
+                for id in ["a1", "a2", "a3"] {
+                    accounts::insert(
+                        tx,
+                        NewAccount {
+                            id: id.into(),
+                            display_name: "Ada".into(),
+                            email: format!("{id}@example.test"),
+                            auth_kind: AuthKind::Password,
+                            username: "ada".into(),
+                            secret_key: "k".into(),
+                            imap: server.clone(),
+                            smtp: server.clone(),
+                            imap_capabilities: vec![],
+                        },
+                    )?;
+                }
+                accounts::set_auto_copy(
+                    tx,
+                    "a1",
+                    Some(&AutoCopy {
+                        kind: CopyKind::Bcc,
+                        address: "archive-a@example.test".into(),
+                    }),
+                )?;
+                accounts::set_auto_copy(
+                    tx,
+                    "a2",
+                    Some(&AutoCopy {
+                        kind: CopyKind::Cc,
+                        address: "archive-b@example.test".into(),
+                    }),
+                )?;
+                let to = |address: &str| {
+                    vec![Person {
+                        name: None,
+                        address: Some(address.into()),
+                    }]
+                };
+                Ok((
+                    create(
+                        tx,
+                        "a1",
+                        &Content {
+                            to: to("bob@example.test"),
+                            ..Content::default()
+                        },
+                        1_000,
+                    )?,
+                    create(
+                        tx,
+                        "a1",
+                        &Content {
+                            to: to("archive-b@example.test"),
+                            ..Content::default()
+                        },
+                        2_000,
+                    )?,
+                    create(
+                        tx,
+                        "a2",
+                        &Content {
+                            to: to("bob@example.test"),
+                            ..Content::default()
+                        },
+                        3_000,
+                    )?,
+                    crate::identities::default_for(tx, "a2")?.unwrap().id,
+                    crate::identities::default_for(tx, "a3")?.unwrap().id,
+                ))
+            })
+            .await
+            .unwrap()
+            .value;
+
+        store
+            .write(move |tx| {
+                // A new draft of a1 has a1's copy; moved to a2, a1's goes and a2's takes its place.
+                move_to(tx, plain, "a2", from_a2, "body", 4_000)?;
+                let draft = get(tx, plain)?.unwrap();
+                assert_eq!(draft.account_id, "a2");
+                assert_eq!(
+                    draft.to,
+                    [Person {
+                        name: None,
+                        address: Some("bob@example.test".into())
+                    }]
+                );
+                assert_eq!(
+                    draft.cc,
+                    [Person {
+                        name: None,
+                        address: Some("archive-b@example.test".into())
+                    }]
+                );
+                assert!(draft.bcc.is_empty(), "a1's copy went");
+
+                // a2's address is a recipient already: no second copy.
+                move_to(tx, already, "a2", from_a2, "body", 5_000)?;
+                let draft = get(tx, already)?.unwrap();
+                assert!(draft.cc.is_empty() && draft.bcc.is_empty());
+
+                // The account it joins has none: the copy it had goes.
+                move_to(tx, leaving, "a3", from_a3, "body", 6_000)?;
+                let draft = get(tx, leaving)?.unwrap();
+                assert!(draft.cc.is_empty() && draft.bcc.is_empty());
+                Ok(())
+            })
+            .await
+            .unwrap();
     }
 }

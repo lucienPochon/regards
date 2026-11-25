@@ -231,7 +231,30 @@ async fn a_draft_goes_to_another_account_with_its_address() {
     } = world.start().await;
     let ada = world.add_account(&mut desktop).await;
     let bea = world.add_account_as(&mut desktop, "Bea", "bea@example.test").await;
+    // Each account copies its new drafts: the draft takes Bea's when it moves.
+    let copies = |account_id: &str, kind: CopyKind, address: &str| AutoCopyParams {
+        account_id: account_id.into(),
+        auto_copy: Some(AutoCopy {
+            kind,
+            address: address.into(),
+        }),
+    };
+    let _: Value = desktop
+        .call(
+            methods::ACCOUNT_SET_AUTO_COPY,
+            copies(&ada.id, CopyKind::Bcc, "archive-ada@example.test"),
+        )
+        .await
+        .unwrap();
+    let _: Value = desktop
+        .call(
+            methods::ACCOUNT_SET_AUTO_COPY,
+            copies(&bea.id, CopyKind::Cc, "archive-bea@example.test"),
+        )
+        .await
+        .unwrap();
     let draft = new_draft(&mut desktop, &ada.id).await;
+    assert_eq!(draft.bcc[0].address.as_deref(), Some("archive-ada@example.test"));
     let bea_address = identities(&mut desktop, &bea.id).await[0].id;
     let from = |identity_id| DraftSetFromParams {
         id: draft.id,
@@ -259,11 +282,14 @@ async fn a_draft_goes_to_another_account_with_its_address() {
         codes::FORBIDDEN
     );
 
-    // The app moves it: Bea's now, from Bea's address.
+    // The app moves it: Bea's now, from Bea's address, with Bea's automatic copy.
     let moved: DraftView = desktop.call(methods::DRAFT_SET_FROM, from(bea_address)).await.unwrap();
     assert_eq!(moved.account_id, bea.id);
     assert_eq!(moved.from.address.as_deref(), Some("bea@example.test"));
     assert_eq!(moved.subject, "Plans");
+    assert!(moved.bcc.is_empty(), "Ada's automatic copy went");
+    assert_eq!(moved.cc.len(), 1);
+    assert_eq!(moved.cc[0].address.as_deref(), Some("archive-bea@example.test"));
     handle.abort();
 }
 
@@ -384,18 +410,21 @@ async fn every_new_draft_gets_the_accounts_automatic_copy() {
         codes::FORBIDDEN
     );
 
-    let wrong = AutoCopy {
+    // What the composer would split is not one address: no commas, no semicolons.
+    let wrong = |address: &str| AutoCopy {
         kind: CopyKind::Cc,
-        address: "two@a.test, three@b.test".into(),
+        address: address.into(),
     };
-    assert_eq!(
-        code(
-            desktop
-                .call::<_, Value>(methods::ACCOUNT_SET_AUTO_COPY, set(Some(wrong)))
-                .await
-        ),
-        codes::INVALID_PARAMS
-    );
+    for address in ["two@a.test, three@b.test", "two@a.test; three@b.test"] {
+        assert_eq!(
+            code(
+                desktop
+                    .call::<_, Value>(methods::ACCOUNT_SET_AUTO_COPY, set(Some(wrong(address))))
+                    .await
+            ),
+            codes::INVALID_PARAMS
+        );
+    }
     let _: Value = desktop.call(methods::ACCOUNT_SET_AUTO_COPY, set(None)).await.unwrap();
     assert!(new_draft(&mut desktop, &account.id).await.bcc.is_empty());
     handle.abort();

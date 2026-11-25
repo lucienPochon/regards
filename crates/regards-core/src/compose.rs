@@ -53,6 +53,20 @@ impl AutoCopy {
             CopyKind::Bcc => bcc.push(copy),
         }
     }
+
+    /// Take it back out of the copies, wherever the address sits and however
+    /// it is written: a draft that moves to another account loses the copy
+    /// the old account's setting put there.
+    pub fn remove(&self, cc: &mut Vec<Person>, bcc: &mut Vec<Person>) {
+        let was_it = |person: &Person| {
+            person
+                .address
+                .as_deref()
+                .is_some_and(|address| address.eq_ignore_ascii_case(&self.address))
+        };
+        cc.retain(|person| !was_it(person));
+        bcc.retain(|person| !was_it(person));
+    }
 }
 
 /// An outgoing message.
@@ -832,6 +846,31 @@ mod tests {
         let mut bcc = Vec::new();
         copy.apply(&[], &mut cc, &mut bcc);
         assert!(bcc.is_empty());
+    }
+
+    #[test]
+    fn an_automatic_copy_is_taken_back_out() {
+        let copy = AutoCopy {
+            kind: CopyKind::Bcc,
+            address: "archive@example.test".into(),
+        };
+        // Wherever the address sits, and however it is written: it goes.
+        let (mut cc, mut bcc) = (
+            vec![person(None, "Archive@Example.test")],
+            vec![person(None, "bob@example.test")],
+        );
+        copy.remove(&mut cc, &mut bcc);
+        assert!(cc.is_empty());
+        assert_eq!(bcc, [person(None, "bob@example.test")]);
+        // Others stay, and a person without an address does too.
+        let mut cc = vec![person(None, "someone@example.test")];
+        let mut bcc = vec![Person {
+            name: None,
+            address: None,
+        }];
+        copy.remove(&mut cc, &mut bcc);
+        assert_eq!(cc.len(), 1);
+        assert_eq!(bcc.len(), 1);
     }
 
     fn person(name: Option<&str>, address: &str) -> Person {
